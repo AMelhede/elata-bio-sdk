@@ -247,10 +247,13 @@ Before making release-related claims, inspect current `package.json` files and
   two Clippy lints once shipped as a 17,896-line diff across 139 files
   because `biome format --write .` / `cargo fmt --all` got run alongside it
   to also clear the separately-failing Format check. The formatter run is a
-  single, zero-risk command anyone can run on their own with nothing to
-  review line-by-line; a real fix is not. Ship them as separate PRs (or
-  don't ship the formatter run as a PR at all, just note that the command
-  exists) so a reviewer can actually see what changed.
+  single, mechanical command anyone can run on their own; it's still
+  separately reviewable, not risk-free — a formatter can touch generated
+  files, snapshots, or syntax it mishandles, so a formatter-only PR still
+  needs to pass the repo's relevant test/lint gates before it merges. Ship
+  the formatter run and the real fix as separate PRs (or don't ship the
+  formatter run as a PR at all, just note that the command exists) so a
+  reviewer can actually see what changed in each.
 
 ## Good Default Workflow For Agents
 
