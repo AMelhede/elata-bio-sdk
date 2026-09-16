@@ -542,7 +542,7 @@ fn run_ble_muse_classic(
         device.read_samples(&mut sample_buffer)?;
 
         // Send Muse packets for each channel
-        for ch in 0..spec::CHANNEL_COUNT {
+        for (ch, eeg_char) in eeg_chars.iter().enumerate().take(spec::CHANNEL_COUNT) {
             // Get samples for this channel
             let channel_samples: Vec<f32> = sample_buffer
                 .channel_data(ch)
@@ -556,7 +556,7 @@ fn run_ble_muse_classic(
 
             // Send notification
             let buffer = buffer_from_bytes(&packet)?;
-            let _ = pollster::block_on(eeg_chars[ch].NotifyValueAsync(&buffer)?)?;
+            let _ = pollster::block_on(eeg_char.NotifyValueAsync(&buffer)?)?;
         }
 
         seq = seq.wrapping_add(1);
@@ -834,9 +834,9 @@ fn run_ble_legacy(
         let max_name_no_uuid = adv_max_len.saturating_sub(flags_len + NAME_OVERHEAD + RESERVED_LEN);
 
         let mut adv_name = adv_name.to_string();
-        let include_uuid = include_uuid && adv_name.as_bytes().len() <= max_name_with_uuid;
+        let include_uuid = include_uuid && adv_name.len() <= max_name_with_uuid;
 
-        if !include_uuid && adv_name.as_bytes().len() > max_name_no_uuid {
+        if !include_uuid && adv_name.len() > max_name_no_uuid {
             adv_name = truncate_utf8(&adv_name, max_name_no_uuid);
             eprintln!("Advertisement name too long; truncated to '{adv_name}' to fit the payload.");
         }
