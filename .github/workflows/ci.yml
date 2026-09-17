@@ -29,6 +29,11 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   PNPM_VERSION: 10.31.0
+  # Must match the `wasm-bindgen` version resolved in Cargo.lock exactly —
+  # the CLI and the crate it processes have to be the same version or
+  # wasm-bindgen fails with "class ... does not match any exported struct".
+  # Bump this alongside any `cargo update -p wasm-bindgen`.
+  WASM_BINDGEN_VERSION: 0.2.128
 
 jobs:
   rust-lint:
@@ -74,7 +79,7 @@ jobs:
       - name: Install wasm-bindgen CLI (prebuilt)
         uses: taiki-e/install-action@v2
         with:
-          tool: wasm-bindgen-cli
+          tool: wasm-bindgen-cli@${{ env.WASM_BINDGEN_VERSION }}
       - run: cargo build -p eeg-wasm --target wasm32-unknown-unknown --release
       - run: cargo build -p rppg-wasm --target wasm32-unknown-unknown --release
       - name: Run wasm-bindgen for eeg
@@ -121,7 +126,7 @@ jobs:
       - name: Install wasm-bindgen CLI (prebuilt)
         uses: taiki-e/install-action@v2
         with:
-          tool: wasm-bindgen-cli
+          tool: wasm-bindgen-cli@${{ env.WASM_BINDGEN_VERSION }}
       - uses: actions/download-artifact@v4
         with:
           name: eeg-wasm-pkg
@@ -180,7 +185,7 @@ jobs:
       - name: Install wasm-bindgen CLI (prebuilt)
         uses: taiki-e/install-action@v2
         with:
-          tool: wasm-bindgen-cli
+          tool: wasm-bindgen-cli@${{ env.WASM_BINDGEN_VERSION }}
       - uses: actions/download-artifact@v4
         with:
           name: eeg-wasm-pkg
