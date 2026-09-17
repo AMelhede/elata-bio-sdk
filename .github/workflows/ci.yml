@@ -2,248 +2,188 @@ name: CI
 
 on:
   push:
-    branches: [ main, webcam, npm-packages ]
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+
+# A new push to the same branch/PR cancels the superseded run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  PNPM_VERSION: 10.31.0
 
 jobs:
-  test-matrix:
-    name: Test (${{ matrix.os }} / ${{ matrix.crate }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        crate: [rppg, rppg-wasm, rppg-ffi, eeg-wasm, eeg-ffi, facial-affect]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo target
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-target-${{ matrix.crate }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Run tests for crate
-        run: cargo test -p ${{ matrix.crate }} --all-targets
-
-  fmt-check:
-    name: Format check
+  rust-lint:
+    name: Rust lint (fmt + clippy)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
-      - name: Run rustfmt check
-        run: cargo fmt --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-lint
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  rust-test:
+    name: Rust test (linux, workspace)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-test
+      - run: cargo test --workspace --all-targets
 
   build-wasm:
     name: Build WASM targets
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo target
-        uses: actions/cache@v4
+          shared-key: linux-wasm
+      - name: Install wasm-bindgen CLI (prebuilt)
+        uses: taiki-e/install-action@v2
         with:
-          path: target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build eeg-wasm for wasm32
-        run: cargo build -p eeg-wasm --target wasm32-unknown-unknown --release
-
-      - name: Build rppg-wasm for wasm32
-        run: cargo build -p rppg-wasm --target wasm32-unknown-unknown --release
-
-      - name: Install wasm-bindgen CLI
-        run: cargo install wasm-bindgen-cli --locked
-
+          tool: wasm-bindgen-cli
+      - run: cargo build -p eeg-wasm --target wasm32-unknown-unknown --release
+      - run: cargo build -p rppg-wasm --target wasm32-unknown-unknown --release
       - name: Run wasm-bindgen for eeg
         run: |
           wasm-bindgen target/wasm32-unknown-unknown/release/eeg_wasm.wasm \
             --out-dir eeg-demo/pkg --target web
-
       - name: Sync eeg WASM into eeg-web package
         run: bash packages/eeg-web/scripts/sync-wasm.sh
-
       - name: Run wasm-bindgen for rppg
         run: |
           wasm-bindgen target/wasm32-unknown-unknown/release/rppg_wasm.wasm \
             --out-dir packages/rppg-web/demo/pkg --target web
-
-      - name: Upload eeg WASM artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: eeg-wasm-pkg
           path: packages/eeg-web/wasm/
           retention-days: 1
-
-      - name: Upload rppg WASM artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: rppg-wasm-pkg
           path: packages/rppg-web/demo/pkg/
           retention-days: 1
 
-  web-tests:
-    name: Run all web package tests
+  web:
+    name: Web packages (lint, test, build, pack, e2e)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build-wasm
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: 10.31.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
-      - name: Download eeg WASM artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: eeg-wasm-pkg
-          path: packages/eeg-web/wasm
-
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run repo audit, format check, and web lint
-        run: pnpm lint
-
-      - name: Run all unit tests
-        run: pnpm test
-
-      - name: Install Playwright browsers
-        run: pnpm --dir packages/rppg-web exec playwright install --with-deps
-
-      - name: Run Playwright E2E
-        run: pnpm --dir packages/rppg-web run ci:e2e
-
-  package-pack-check:
-    name: Validate npm package tarballs
-    runs-on: ubuntu-latest
-    needs: build-wasm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.31.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-      - name: Install wasm-bindgen CLI
-        run: cargo install wasm-bindgen-cli --locked
-
-      - name: Download eeg WASM artifacts
-        uses: actions/download-artifact@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-wasm
+      - name: Install wasm-bindgen CLI (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli
+      - uses: actions/download-artifact@v4
         with:
           name: eeg-wasm-pkg
           path: packages/eeg-web/wasm
-
-      - name: Download rppg WASM artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: rppg-wasm-pkg
           path: packages/rppg-web/demo/pkg
-
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build all packages
-        run: pnpm build
-
-      - name: Validate tarballs
-        run: node scripts/validate-tarballs.mjs
-
+      - run: pnpm install --frozen-lockfile
+      # Clippy already ran in rust-lint; do not run `pnpm lint` (it re-runs it).
+      - name: Repo audit, format check, web lint
+        run: pnpm run audit:repo && pnpm run format:check && pnpm run lint:web
+      - run: pnpm test
+      - run: pnpm build
+      - run: node scripts/validate-tarballs.mjs
       - name: Dry-run pack all packages
         run: |
           for pkg in packages/eeg-web packages/eeg-web-ble packages/rppg-web packages/create-elata-demo; do
             echo "--- $pkg ---"
             (cd $pkg && pnpm pack --dry-run --json)
           done
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --dir packages/rppg-web exec playwright install --with-deps chromium
+      - name: Install Playwright OS deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm --dir packages/rppg-web exec playwright install-deps chromium
+      - run: pnpm --dir packages/rppg-web run ci:e2e
 
   consumer-smoke:
-    name: Consumer Smoke Tests
+    name: Consumer smoke tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build-wasm
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: 10.31.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-      - name: Install wasm-bindgen CLI
-        run: cargo install wasm-bindgen-cli --locked
-
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run consumer smoke tests
-        run: pnpm smoke:consumers
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-wasm
+      - name: Install wasm-bindgen CLI (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli
+      - uses: actions/download-artifact@v4
+        with:
+          name: eeg-wasm-pkg
+          path: packages/eeg-web/wasm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm smoke:consumers

@@ -1,0 +1,32 @@
+# macOS runners bill at 10x Linux. Run the macOS suite weekly (and on demand),
+# never on every push/PR.
+name: macOS weekly
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: macos-weekly
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  rust-test-macos:
+    name: Rust test (macOS, workspace)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-test
+      - run: cargo test --workspace --all-targets
