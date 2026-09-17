@@ -8,7 +8,7 @@ pub struct WasmRppgPipeline {
     inner: RppgPipeline,
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_class = "RppgPipeline"))]
 impl WasmRppgPipeline {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new(sample_rate: f32, window_sec: f32) -> WasmRppgPipeline {
