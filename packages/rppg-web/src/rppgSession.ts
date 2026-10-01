@@ -384,6 +384,8 @@ export async function createRppgSession(
 	const pulseCheck = options.pulseCheck ? new PulseCheck() : null;
 	const runner = new DemoRunner(source, processor, {
 		pulseChecker: pulseCheck,
+		pulseCheckSampling: options.pulseCheckSampling,
+		pulseCheckProbe: options.pulseCheckProbe,
 		roi: options.roi,
 		sampleRate,
 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,

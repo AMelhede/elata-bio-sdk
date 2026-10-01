@@ -36,6 +36,14 @@ export type LastFaceBox = {
 export type DemoRunnerOptions = {
 	/** Optional real-pulse check (see pulseCheck.ts). Off by default. */
 	pulseChecker?: PulseCheck | null;
+	/**
+	 * Experimental: how the check samples the three regions. `skinMask` (default true) keeps
+	 * only YCbCr skin pixels, as the fuser does; `boxSmoothingS` (default 0, off) smooths each
+	 * region box over time with that time constant before sampling.
+	 */
+	pulseCheckSampling?: { skinMask?: boolean; boxSmoothingS?: number };
+	/** Research only: per frame, the three region means under each sampling variant. */
+	pulseCheckProbe?: (timestampMs: number, variants: Record<string, number[]>) => void;
 	roi?: { x: number; y: number; w: number; h: number } | null;
 	sampleRate?: number;
 	roiSmoothingAlpha?: number;
@@ -134,6 +142,10 @@ export class DemoRunner {
 	private lastBlendshapes: LastBlendshapes | null = null;
 	private lastFaceBox: LastFaceBox | null = null;
 	private fuser: MultiRoiRppgFuser | null = null;
+	private checkBoxes: { x: number; y: number; w: number; h: number }[] = [];
+	private lastCheckTs: number | null = null;
+	private probeBoxes: { x: number; y: number; w: number; h: number }[] = [];
+	private lastProbeTs: number | null = null;
 
 	constructor(
 		private source: FrameSource,
@@ -230,13 +242,48 @@ export class DemoRunner {
 			if (this.fuser && useSkinMask) {
 				fusionResult = this.runFusion(frame, rois);
 			}
+			if (this.opts.pulseCheckProbe && rois.length >= 3 && frame.timestampMs != null) {
+				const dt = this.lastProbeTs == null ? 0 : (frame.timestampMs - this.lastProbeTs) / 1000;
+				this.lastProbeTs = frame.timestampMs;
+				const k = dt > 0 ? 1 - Math.exp(-dt / 0.5) : 1;
+				const out: Record<string, number[]> = { skin: [], plain: [], skinSmooth: [], plainSmooth: [] };
+				rois.slice(0, 3).forEach((roi, i) => {
+					const prev = this.probeBoxes[i];
+					const sm = prev ? { x: prev.x + k * (roi.x - prev.x), y: prev.y + k * (roi.y - prev.y), w: prev.w + k * (roi.w - prev.w), h: prev.h + k * (roi.h - prev.h) } : { ...roi };
+					this.probeBoxes[i] = sm;
+					const raw = clampRoiToFrame(roi, frame.width, frame.height);
+					const smc = clampRoiToFrame({ x: Math.round(sm.x), y: Math.round(sm.y), w: Math.round(sm.w), h: Math.round(sm.h) }, frame.width, frame.height);
+					const put = (key: string, v: { r: number; g: number; b: number }) => out[key].push(v.r, v.g, v.b);
+					put("skin", averageRgbInROIWithSkinMaskStats(frame, raw.x, raw.y, raw.w, raw.h));
+					put("plain", averageRgbInROI(frame, raw.x, raw.y, raw.w, raw.h));
+					put("skinSmooth", averageRgbInROIWithSkinMaskStats(frame, smc.x, smc.y, smc.w, smc.h));
+					put("plainSmooth", averageRgbInROI(frame, smc.x, smc.y, smc.w, smc.h));
+				});
+				this.opts.pulseCheckProbe(frame.timestampMs, out);
+			}
 			if (this.opts.pulseChecker && rois.length >= 3 && frame.timestampMs != null) {
 				// Same three region boxes and the same skin-masked mean the fuser uses.
+				const sampling = this.opts.pulseCheckSampling ?? {};
+				const tau = sampling.boxSmoothingS ?? 0;
+				const dtS = this.lastCheckTs == null ? 0 : (frame.timestampMs - this.lastCheckTs) / 1000;
+				this.lastCheckTs = frame.timestampMs;
+				const k = tau > 0 && dtS > 0 ? 1 - Math.exp(-dtS / tau) : 1;
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
-					rois.slice(0, 3).map((roi) => {
-						const c = clampRoiToFrame(roi, frame.width, frame.height);
-						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
+					rois.slice(0, 3).map((roi, i) => {
+						const prev = this.checkBoxes[i];
+						const box = prev && k < 1
+							? { x: prev.x + k * (roi.x - prev.x), y: prev.y + k * (roi.y - prev.y), w: prev.w + k * (roi.w - prev.w), h: prev.h + k * (roi.h - prev.h) }
+							: { ...roi };
+						this.checkBoxes[i] = box;
+						const c = clampRoiToFrame(
+							{ x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.w), h: Math.round(box.h) },
+							frame.width,
+							frame.height,
+						);
+						return sampling.skinMask === false
+							? averageRgbInROI(frame, c.x, c.y, c.w, c.h)
+							: averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
 					}),
 				);
 			}
