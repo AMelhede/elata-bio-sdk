@@ -35,7 +35,7 @@ export type LastFaceBox = {
 
 export type DemoRunnerOptions = {
 	/** Optional real-pulse check (see pulseCheck.ts). Off by default. */
-	pulseCheck?: PulseCheck | null;
+	pulseChecker?: PulseCheck | null;
 	roi?: { x: number; y: number; w: number; h: number } | null;
 	sampleRate?: number;
 	roiSmoothingAlpha?: number;
@@ -230,9 +230,9 @@ export class DemoRunner {
 			if (this.fuser && useSkinMask) {
 				fusionResult = this.runFusion(frame, rois);
 			}
-			if (this.opts.pulseCheck && rois.length >= 3 && frame.timestampMs != null) {
+			if (this.opts.pulseChecker && rois.length >= 3 && frame.timestampMs != null) {
 				// Same three region boxes and the same skin-masked mean the fuser uses.
-				this.opts.pulseCheck.push(
+				this.opts.pulseChecker.push(
 					frame.timestampMs,
 					rois.slice(0, 3).map((roi) => {
 						const c = clampRoiToFrame(roi, frame.width, frame.height);
