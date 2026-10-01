@@ -189,9 +189,17 @@ export class RppgSession {
 		const metrics = this.processor.getMetrics();
 		const check = this.internals.pulseCheck;
 		if (!check) return metrics;
-		// With the check on, the rate shown is the rate the check proved, or none.
+		// With the check on, the rate shown is the rate the check proved, or none. Breathing
+		// rate and HRV come from the same signal, so they are withheld too until a pulse is proven.
 		const state = check.getState();
-		return { ...metrics, bpm: state.verdict === "measured" ? state.bpm : null };
+		if (state.verdict === "measured") return { ...metrics, bpm: state.bpm };
+		return {
+			...metrics,
+			bpm: null,
+			hrv_rmssd: null,
+			respiration_rate: null,
+			respiration_confidence: null,
+		};
 	}
 
 	/** State of the optional real-pulse check; null when `pulseCheck` is off. */
