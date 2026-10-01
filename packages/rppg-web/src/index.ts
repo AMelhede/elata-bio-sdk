@@ -344,3 +344,4 @@ export type {
 	CorpusComparison,
 	SessionComparison,
 } from "./replayBenchmark";
+export { PulseCheck, type PulseCheckState } from "./pulseCheck";
