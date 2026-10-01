@@ -1,3 +1,4 @@
+import { PulseCheck, type PulseCheckState } from "./pulseCheck";
 import type {
 	FrameSource,
 	FrameSourceError,
@@ -90,6 +91,11 @@ export type CreateRppgSessionOptions = Omit<
 	"onDiagnostics" | "onError"
 > & {
 	video: HTMLVideoElement;
+	/**
+	 * Report a heart rate only once a real pulse is proven, and report the proven rate
+	 * (see pulseCheck.ts). Off by default; when off, nothing changes.
+	 */
+	pulseCheck?: boolean;
 	sampleRate?: number;
 	windowSec?: number;
 	backend?: RppgSessionBackendPreference;
@@ -156,6 +162,7 @@ type SessionInternals = {
 	backendDegraded?: boolean;
 	faceTrackingDegraded?: boolean;
 	beforeStart?: () => Promise<void>;
+	pulseCheck?: PulseCheck | null;
 };
 
 export class RppgSession {
@@ -179,7 +186,17 @@ export class RppgSession {
 	}
 
 	getMetrics(): Metrics {
-		return this.processor.getMetrics();
+		const metrics = this.processor.getMetrics();
+		const check = this.internals.pulseCheck;
+		if (!check) return metrics;
+		// With the check on, the rate shown is the rate the check proved, or none.
+		const state = check.getState();
+		return { ...metrics, bpm: state.verdict === "measured" ? state.bpm : null };
+	}
+
+	/** State of the optional real-pulse check; null when `pulseCheck` is off. */
+	getPulseCheck(): PulseCheckState | null {
+		return this.internals.pulseCheck?.getState() ?? null;
 	}
 
 	/** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -364,7 +381,9 @@ export async function createRppgSession(
 	applyTrackerConfiguration(processor, enableTracker);
 	let session: RppgSession | null = null;
 
+	const pulseCheck = options.pulseCheck ? new PulseCheck() : null;
 	const runner = new DemoRunner(source, processor, {
+		pulseCheck,
 		roi: options.roi,
 		sampleRate,
 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,
@@ -395,6 +414,7 @@ export async function createRppgSession(
 		{
 			onDiagnostics: options.onDiagnostics,
 			onError: options.onError,
+			pulseCheck,
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			beforeStart:
