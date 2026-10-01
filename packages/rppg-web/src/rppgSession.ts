@@ -100,7 +100,7 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 
 export type CreateRppgSessionOptions = Omit<
 	DemoRunnerOptions,
-	"onDiagnostics" | "onError"
+	"onDiagnostics" | "onError" | "pulseChecker"
 > & {
 	video: HTMLVideoElement;
 	bpmTrackerConfig?: BpmTrackerConfigV1;
@@ -431,7 +431,7 @@ export async function createRppgSession(
 
 	const pulseCheck = options.pulseCheck ? new PulseCheck() : null;
 	const runner = new DemoRunner(source, processor, {
-		pulseCheck,
+		pulseChecker: pulseCheck,
 		roi: options.roi,
 		roiGeometryProfile: options.roiGeometryProfile,
 		sampleRate,
