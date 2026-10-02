@@ -1,10 +1,10 @@
 import {
-	FrameSource,
-	Frame,
-	ROI,
-	type FrameSourceError,
-	type FrameBlendshape,
 	type FaceLandmarkPoint,
+	Frame,
+	type FrameBlendshape,
+	FrameSource,
+	type FrameSourceError,
+	ROI,
 } from "./frameSource";
 import type { FaceLandmarkerLike } from "./mediapipeLoader";
 import {
@@ -21,6 +21,29 @@ import {
  * Unlike the legacy FaceMesh (async send/onResults), FaceLandmarker.detectForVideo
  * is synchronous, so detection happens inline in the capture loop.
  */
+/**
+ * Widest frame the pipeline reads, in pixels. The pulse is the mean colour of a skin patch,
+ * and camera noise in that mean falls with the square root of the pixel count, so past a few
+ * thousand pixels per patch more resolution buys nothing: at 640 wide a cheek patch still
+ * averages thousands of pixels, putting sensor noise far under a 0.5% pulse. Every later step
+ * (skin mask, region means, fusion, the pulse check) costs time in proportion to pixels, so
+ * reading a 1280x960 camera at full size cut the analysed frame rate to ~7 per second
+ * (measured 2026-10-02, owner's laptop and a 1280x960 test feed alike).
+ */
+export const MAX_ANALYSIS_WIDTH = 640;
+
+/** Analysis frame size for a video size: same aspect, at most MAX_ANALYSIS_WIDTH wide. */
+export function analysisSize(
+	videoWidth: number,
+	videoHeight: number,
+): { width: number; height: number } {
+	const scale = Math.min(1, MAX_ANALYSIS_WIDTH / videoWidth);
+	return {
+		width: Math.max(1, Math.round(videoWidth * scale)),
+		height: Math.max(1, Math.round(videoHeight * scale)),
+	};
+}
+
 export class MediaPipeFaceFrameSource implements FrameSource {
 	public onFrame: ((frame: Frame) => void) | null = null;
 	public onError: ((error: FrameSourceError) => void) | null = null;
@@ -35,12 +58,15 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		private video: HTMLVideoElement,
 		private faceLandmarker: FaceLandmarkerLike,
 		private fps = 30,
-		private roiGeometryProfile: RoiGeometryProfile =
-			ELATA_FACE_YCBCR_V1_PROFILE,
+		private roiGeometryProfile: RoiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE,
 	) {
 		this.canvas = document.createElement("canvas") as HTMLCanvasElement;
-		this.canvas.width = video.videoWidth || (video as any).width || 320;
-		this.canvas.height = video.videoHeight || (video as any).height || 240;
+		const size = analysisSize(
+			video.videoWidth || (video as any).width || 320,
+			video.videoHeight || (video as any).height || 240,
+		);
+		this.canvas.width = size.width;
+		this.canvas.height = size.height;
 		const ctx = this.canvas.getContext("2d");
 		if (!ctx) throw new Error("2D context unavailable");
 		this.ctx = ctx;
@@ -84,15 +110,39 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 
 	private detectAndEmit(now: number, metadata: any) {
 		// Resize canvas if the video dimensions became known after construction.
-		if (this.video.videoWidth && this.canvas.width !== this.video.videoWidth) {
-			this.canvas.width = this.video.videoWidth;
-			this.canvas.height = this.video.videoHeight;
+		if (this.video.videoWidth) {
+			const size = analysisSize(this.video.videoWidth, this.video.videoHeight);
+			if (
+				this.canvas.width !== size.width ||
+				this.canvas.height !== size.height
+			) {
+				this.canvas.width = size.width;
+				this.canvas.height = size.height;
+			}
+		}
+
+		// Draw the frame once at analysis size, then find the face in THAT image: the face
+		// finder scales its input to ~256 px internally, so the full camera frame only cost it
+		// a larger copy (measured 2026-10-02: ~62 ms of a ~77 ms frame at 1280x960), and the
+		// landmarks now come from exactly the pixels the regions are sampled from, not from a
+		// live video frame that may have advanced in between.
+		try {
+			this.ctx.drawImage(
+				this.video as CanvasImageSource,
+				0,
+				0,
+				this.canvas.width,
+				this.canvas.height,
+			);
+		} catch (error) {
+			this.reportError("capture_failed", "capture", error);
+			return;
 		}
 
 		let landmarks: FaceLandmarkPoint[] | null = null;
 		let blendshapes: FrameBlendshape[] | undefined;
 		try {
-			const result = this.faceLandmarker.detectForVideo(this.video, now);
+			const result = this.faceLandmarker.detectForVideo(this.canvas, now);
 			landmarks = result?.faceLandmarks?.[0] ?? null;
 			const categories = result?.faceBlendshapes?.[0]?.categories;
 			if (categories && categories.length) {
@@ -106,13 +156,6 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		}
 
 		try {
-			this.ctx.drawImage(
-				this.video as CanvasImageSource,
-				0,
-				0,
-				this.canvas.width,
-				this.canvas.height,
-			);
 			const img = this.ctx.getImageData(
 				0,
 				0,
