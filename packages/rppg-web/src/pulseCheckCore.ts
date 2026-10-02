@@ -1,9 +1,9 @@
 /**
  * Real-pulse check: copied unchanged from peak-app src/pulse/ownPulse.ts (commit 59c66d1),
  * the checker Peak ships. Only the import of its sample type was replaced by the
- * local alias below. See pulseCheck.ts for how the SDK uses it.
+ * local alias below, and the file formatted to this repo's style (logic unchanged).
+ * See pulseCheck.ts for how the SDK uses it.
  */
-/* biome-ignore-all lint: kept byte-identical to the Peak source it was measured as */
 /**
  * The app's own pulse estimate, from the raw skin-region colours.
  *
@@ -25,7 +25,18 @@
  * offline analyser (scripts/analyzeRecording.mjs).
  */
 /** [timestampMs, foreheadR, G, B, leftCheekR, G, B, rightCheekR, G, B] */
-export type RawRoiSample = [number, number, number, number, number, number, number, number, number, number];
+export type RawRoiSample = [
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+];
 
 /** Analysis sample rate: above twice the 3 Hz band edge, below any camera. */
 export const OWN_PULSE_FS = 20;
@@ -40,58 +51,67 @@ export const OWN_PULSE_WINDOW_S = 16;
 /** Two regions agreeing within this many bpm counts as agreement (one bin + a half). */
 export const OWN_PULSE_AGREE_BPM = 6;
 
-export type RegionName = 'forehead' | 'leftCheek' | 'rightCheek';
-export const REGIONS: readonly RegionName[] = ['forehead', 'leftCheek', 'rightCheek'];
+export type RegionName = "forehead" | "leftCheek" | "rightCheek";
+export const REGIONS: readonly RegionName[] = [
+	"forehead",
+	"leftCheek",
+	"rightCheek",
+];
 
 export interface RegionEstimate {
-  region: RegionName;
-  bpm: number;
-  /** de Haan SNR, dB: power within 0.1 Hz of the peak and its harmonic over the rest of the band. */
-  snrDb: number;
-  /** Mean R, G, B over the window, for the saturation check. */
-  meanRgb: [number, number, number];
+	region: RegionName;
+	bpm: number;
+	/** de Haan SNR, dB: power within 0.1 Hz of the peak and its harmonic over the rest of the band. */
+	snrDb: number;
+	/** Mean R, G, B over the window, for the saturation check. */
+	meanRgb: [number, number, number];
 }
 
 export interface OwnPulseEstimate {
-  windowS: number;
-  frames: number;
-  fps: number;
-  regions: RegionEstimate[];
-  /** Regions whose own peak sits within OWN_PULSE_AGREE_BPM of the combined line. */
-  agreeing: RegionName[];
-  /** The line in the three regions' combined spectrum, or null when there is no line. */
-  bpm: number | null;
-  /** That line's SNR in the combined spectrum, dB, or null. */
-  snrDb: number | null;
-  /**
-   * The same line's rate estimated between bins (fineBpm), for the rate the
-   * app REPORTS. Everything that decides (agreement, streaks, holds) stays on
-   * `bpm`, the bin. Optional so a hand-built estimate need not carry it.
-   */
-  bpmFine?: number | null;
+	windowS: number;
+	frames: number;
+	fps: number;
+	regions: RegionEstimate[];
+	/** Regions whose own peak sits within OWN_PULSE_AGREE_BPM of the combined line. */
+	agreeing: RegionName[];
+	/** The line in the three regions' combined spectrum, or null when there is no line. */
+	bpm: number | null;
+	/** That line's SNR in the combined spectrum, dB, or null. */
+	snrDb: number | null;
+	/**
+	 * The same line's rate estimated between bins (fineBpm), for the rate the
+	 * app REPORTS. Everything that decides (agreement, streaks, holds) stays on
+	 * `bpm`, the bin. Optional so a hand-built estimate need not carry it.
+	 */
+	bpmFine?: number | null;
 }
 
-export function resample(t: number[], v: number[], from: number, to: number): number[] {
-  const out: number[] = [];
-  let j = 0;
-  for (let g = from; g <= to; g += 1 / OWN_PULSE_FS) {
-    while (j < t.length - 2 && t[j + 1] < g) j++;
-    const span = t[j + 1] - t[j] || 1;
-    const a = Math.min(1, Math.max(0, (g - t[j]) / span));
-    out.push(v[j] + a * (v[j + 1] - v[j]));
-  }
-  return out;
+export function resample(
+	t: number[],
+	v: number[],
+	from: number,
+	to: number,
+): number[] {
+	const out: number[] = [];
+	let j = 0;
+	for (let g = from; g <= to; g += 1 / OWN_PULSE_FS) {
+		while (j < t.length - 2 && t[j + 1] < g) j++;
+		const span = t[j + 1] - t[j] || 1;
+		const a = Math.min(1, Math.max(0, (g - t[j]) / span));
+		out.push(v[j] + a * (v[j + 1] - v[j]));
+	}
+	return out;
 }
 
 function movingMean(x: number[], w: number): number[] {
-  const half = w >> 1;
-  const prefix = [0];
-  for (const v of x) prefix.push(prefix[prefix.length - 1] + v);
-  return x.map((_, k) => {
-    const lo = Math.max(0, k - half);
-    const hi = Math.min(x.length, k + half + 1);
-    return (prefix[hi] - prefix[lo]) / (hi - lo);
-  });
+	const half = w >> 1;
+	const prefix = [0];
+	for (const v of x) prefix.push(prefix[prefix.length - 1] + v);
+	return x.map((_, k) => {
+		const lo = Math.max(0, k - half);
+		const hi = Math.min(x.length, k + half + 1);
+		return (prefix[hi] - prefix[lo]) / (hi - lo);
+	});
 }
 
 /**
@@ -127,29 +147,31 @@ function movingMean(x: number[], w: number): number[] {
 export const OWN_PULSE_DETREND_S = 1.5;
 
 export function detrend(x: number[], seconds = 2): number[] {
-  const w = Math.max(1, Math.round(OWN_PULSE_FS * seconds));
-  const trend = movingMean(movingMean(x, w), w);
-  return x.map((v, k) => v - trend[k]);
+	const w = Math.max(1, Math.round(OWN_PULSE_FS * seconds));
+	const trend = movingMean(movingMean(x, w), w);
+	return x.map((v, k) => v - trend[k]);
 }
 
 /** Hann-windowed power spectrum over the band and a little either side. */
 export function spectrum(x: number[]): Array<[number, number]> {
-  const N = x.length;
-  const han = x.map((v, k) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * k) / (N - 1))));
-  const out: Array<[number, number]> = [];
-  for (let fi = 1; fi < N / 2; fi++) {
-    const f = (fi * OWN_PULSE_FS) / N;
-    if (f > 4) break;
-    let re = 0;
-    let im = 0;
-    for (let k = 0; k < N; k++) {
-      const ang = (-2 * Math.PI * fi * k) / N;
-      re += han[k] * Math.cos(ang);
-      im += han[k] * Math.sin(ang);
-    }
-    out.push([f, re * re + im * im]);
-  }
-  return out;
+	const N = x.length;
+	const han = x.map(
+		(v, k) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * k) / (N - 1))),
+	);
+	const out: Array<[number, number]> = [];
+	for (let fi = 1; fi < N / 2; fi++) {
+		const f = (fi * OWN_PULSE_FS) / N;
+		if (f > 4) break;
+		let re = 0;
+		let im = 0;
+		for (let k = 0; k < N; k++) {
+			const ang = (-2 * Math.PI * fi * k) / N;
+			re += han[k] * Math.cos(ang);
+			im += han[k] * Math.sin(ang);
+		}
+		out.push([f, re * re + im * im]);
+	}
+	return out;
 }
 
 /**
@@ -175,41 +197,48 @@ export const OWN_PULSE_HARMONIC_WEIGHT = 0.5;
  * its power plus that share of its second harmonic's; the SNR is unchanged.
  */
 export function peakOfSpectrum(
-  P: Array<[number, number]>,
-  harmonicWeight = 0,
-  /** The spectrum as measured, when `P` is a reshaped copy of it (whitenedSpectrum). */
-  measured?: Array<[number, number]>,
+	P: Array<[number, number]>,
+	harmonicWeight = 0,
+	/** The spectrum as measured, when `P` is a reshaped copy of it (whitenedSpectrum). */
+	measured?: Array<[number, number]>,
 ): { bpm: number; snrDb: number } {
-  const [lo, hi] = OWN_PULSE_BAND_HZ;
-  // The SNR is always judged on the spectrum as measured, which the -3 dB bar was set on.
-  const measuredBand = (measured ?? P).filter(([f]) => f >= lo && f <= hi);
-  if (harmonicWeight > 0) {
-    // Nearest bin to twice each frequency; none when it lies past the spectrum.
-    const step = P.length > 1 ? P[1][0] - P[0][0] : 0;
-    const at = (hz: number) => {
-      const i = step > 0 ? Math.round((hz - P[0][0]) / step) : -1;
-      return i >= 0 && i < P.length ? P[i][1] : 0;
-    };
-    P = P.map(([f, p]) => [f, p + harmonicWeight * at(2 * f)] as [number, number]);
-  }
-  const band = P.filter(([f]) => f >= lo && f <= hi);
-  if (!band.length) return { bpm: NaN, snrDb: -Infinity };
-  const peak = band.reduce((a, b) => (b[1] > a[1] ? b : a));
-  // A line is a local maximum. The largest in-band bin with a larger bin just
-  // below the band is the skirt of below-band drift (breathing, slow motion)
-  // running into the band floor, not a pulse. Measured on the corpus: this
-  // alone removed the last 45.9 bpm excursion from a capture otherwise held at
-  // 69 to 72, and moved no correct capture's measured rate.
-  const i = P.indexOf(peak);
-  const below = P[i - 1];
-  const above = P[i + 1];
-  if ((below && below[1] >= peak[1]) || (above && above[1] >= peak[1])) return { bpm: NaN, snrDb: -Infinity };
-  const f0 = peak[0];
-  const inWin = (f: number) => Math.abs(f - f0) <= 0.1 || Math.abs(f - 2 * f0) <= 0.1;
-  let sig = 0;
-  let rest = 0;
-  for (const [f, p] of measuredBand) if (inWin(f)) sig += p; else rest += p;
-  return { bpm: f0 * 60, snrDb: 10 * Math.log10(sig / Math.max(rest, 1e-12)) };
+	const [lo, hi] = OWN_PULSE_BAND_HZ;
+	// The SNR is always judged on the spectrum as measured, which the -3 dB bar was set on.
+	const measuredBand = (measured ?? P).filter(([f]) => f >= lo && f <= hi);
+	if (harmonicWeight > 0) {
+		// Nearest bin to twice each frequency; none when it lies past the spectrum.
+		const step = P.length > 1 ? P[1][0] - P[0][0] : 0;
+		const at = (hz: number) => {
+			const i = step > 0 ? Math.round((hz - P[0][0]) / step) : -1;
+			return i >= 0 && i < P.length ? P[i][1] : 0;
+		};
+		// biome-ignore lint/style/noParameterAssign: kept as in the Peak source this was measured as
+		P = P.map(
+			([f, p]) => [f, p + harmonicWeight * at(2 * f)] as [number, number],
+		);
+	}
+	const band = P.filter(([f]) => f >= lo && f <= hi);
+	if (!band.length) return { bpm: NaN, snrDb: -Infinity };
+	const peak = band.reduce((a, b) => (b[1] > a[1] ? b : a));
+	// A line is a local maximum. The largest in-band bin with a larger bin just
+	// below the band is the skirt of below-band drift (breathing, slow motion)
+	// running into the band floor, not a pulse. Measured on the corpus: this
+	// alone removed the last 45.9 bpm excursion from a capture otherwise held at
+	// 69 to 72, and moved no correct capture's measured rate.
+	const i = P.indexOf(peak);
+	const below = P[i - 1];
+	const above = P[i + 1];
+	if ((below && below[1] >= peak[1]) || (above && above[1] >= peak[1]))
+		return { bpm: NaN, snrDb: -Infinity };
+	const f0 = peak[0];
+	const inWin = (f: number) =>
+		Math.abs(f - f0) <= 0.1 || Math.abs(f - 2 * f0) <= 0.1;
+	let sig = 0;
+	let rest = 0;
+	for (const [f, p] of measuredBand)
+		if (inWin(f)) sig += p;
+		else rest += p;
+	return { bpm: f0 * 60, snrDb: 10 * Math.log10(sig / Math.max(rest, 1e-12)) };
 }
 
 /**
@@ -230,20 +259,20 @@ export function peakOfSpectrum(
  * Used for the early path's rate it did worse (1.84), so that stays as it was.
  */
 export function fineBpm(P: Array<[number, number]>, bpm: number): number {
-  const i = P.findIndex(([f]) => Math.abs(f * 60 - bpm) < 1e-6);
-  if (i <= 0 || i >= P.length - 1) return bpm;
-  const ln = (p: number) => Math.log(Math.max(p, 1e-30));
-  const a = ln(P[i - 1][1]);
-  const b = ln(P[i][1]);
-  const c = ln(P[i + 1][1]);
-  const den = a - 2 * b + c;
-  const d = den !== 0 ? (a - c) / (2 * den) : 0;
-  if (!(Math.abs(d) <= 0.5)) return bpm;
-  return (P[i][0] + d * (P[i + 1][0] - P[i][0])) * 60;
+	const i = P.findIndex(([f]) => Math.abs(f * 60 - bpm) < 1e-6);
+	if (i <= 0 || i >= P.length - 1) return bpm;
+	const ln = (p: number) => Math.log(Math.max(p, 1e-30));
+	const a = ln(P[i - 1][1]);
+	const b = ln(P[i][1]);
+	const c = ln(P[i + 1][1]);
+	const den = a - 2 * b + c;
+	const d = den !== 0 ? (a - c) / (2 * den) : 0;
+	if (!(Math.abs(d) <= 0.5)) return bpm;
+	return (P[i][0] + d * (P[i + 1][0] - P[i][0])) * 60;
 }
 
 export function peakAndSnr(x: number[]): { bpm: number; snrDb: number } {
-  return peakOfSpectrum(spectrum(detrend(x)));
+	return peakOfSpectrum(spectrum(detrend(x)));
 }
 
 /**
@@ -264,14 +293,19 @@ export function peakAndSnr(x: number[]): { bpm: number; snrDb: number } {
  * previously correct capture stays within 66 to 72, the capture the SDK
  * committed at 120 reads 69.6, and the pulseless fixture never measures.
  */
-export function combinedSpectrum(spectra: Array<Array<[number, number]>>): Array<[number, number]> {
-  const [lo, hi] = OWN_PULSE_BAND_HZ;
-  const out: Array<[number, number]> = spectra[0].map(([f]) => [f, 0]);
-  for (const P of spectra) {
-    const total = P.filter(([f]) => f >= lo && f <= hi).reduce((a, [, p]) => a + p, 0) || 1;
-    P.forEach(([, p], i) => (out[i][1] += p / total));
-  }
-  return out;
+export function combinedSpectrum(
+	spectra: Array<Array<[number, number]>>,
+): Array<[number, number]> {
+	const [lo, hi] = OWN_PULSE_BAND_HZ;
+	const out: Array<[number, number]> = spectra[0].map(([f]) => [f, 0]);
+	for (const P of spectra) {
+		const total =
+			P.filter(([f]) => f >= lo && f <= hi).reduce((a, [, p]) => a + p, 0) || 1;
+		P.forEach(([, p], i) => {
+			out[i][1] += p / total;
+		});
+	}
+	return out;
 }
 
 /**
@@ -312,60 +346,63 @@ export function combinedSpectrum(spectra: Array<Array<[number, number]>>): Array
 export const OWN_PULSE_WHITEN_HALF_HZ = 0.65;
 export const OWN_PULSE_WHITEN_POWER = 0.4;
 
-export function whitenedSpectrum(P: Array<[number, number]>): Array<[number, number]> {
-  if (P.length < 3) return P;
-  const step = P[1][0] - P[0][0];
-  const h = Math.max(2, Math.round(OWN_PULSE_WHITEN_HALF_HZ / step));
-  return P.map(([f, p], i) => {
-    const nb: number[] = [];
-    for (let j = i - h; j <= i + h; j++) if (j >= 0 && j < P.length && Math.abs(j - i) > 2) nb.push(P[j][1]);
-    nb.sort((a, b) => a - b);
-    const floor = nb[nb.length >> 1] || 1e-12;
-    return [f, p / Math.pow(floor, OWN_PULSE_WHITEN_POWER)] as [number, number];
-  });
+export function whitenedSpectrum(
+	P: Array<[number, number]>,
+): Array<[number, number]> {
+	if (P.length < 3) return P;
+	const step = P[1][0] - P[0][0];
+	const h = Math.max(2, Math.round(OWN_PULSE_WHITEN_HALF_HZ / step));
+	return P.map(([f, p], i) => {
+		const nb: number[] = [];
+		for (let j = i - h; j <= i + h; j++)
+			if (j >= 0 && j < P.length && Math.abs(j - i) > 2) nb.push(P[j][1]);
+		nb.sort((a, b) => a - b);
+		const floor = nb[nb.length >> 1] || 1e-12;
+		return [f, p / floor ** OWN_PULSE_WHITEN_POWER] as [number, number];
+	});
 }
 
 /** POS (Wang 2017): temporally normalised RGB, S1 = G - B, S2 = G + B - 2R, h = S1 + alpha S2, 1.6 s sliding windows, overlap-added. */
 export function pos(R: number[], G: number[], B: number[]): number[] {
-  const win = Math.round(1.6 * OWN_PULSE_FS);
-  const h = new Array<number>(R.length).fill(0);
-  const sd = (a: number[]) => {
-    const m = a.reduce((s, v) => s + v, 0) / a.length;
-    return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length) || 1;
-  };
-  for (let n = win; n <= R.length; n++) {
-    const m = n - win;
-    let mr = 0;
-    let mg = 0;
-    let mb = 0;
-    for (let k = m; k < n; k++) {
-      mr += R[k];
-      mg += G[k];
-      mb += B[k];
-    }
-    mr /= win;
-    mg /= win;
-    mb /= win;
-    const s1: number[] = [];
-    const s2: number[] = [];
-    for (let k = m; k < n; k++) {
-      const r = R[k] / mr;
-      const g = G[k] / mg;
-      const b = B[k] / mb;
-      s1.push(g - b);
-      s2.push(g + b - 2 * r);
-    }
-    const alpha = sd(s1) / sd(s2);
-    let mean = 0;
-    const seg = s1.map((v, i) => {
-      const y = v + alpha * s2[i];
-      mean += y;
-      return y;
-    });
-    mean /= win;
-    for (let k = 0; k < win; k++) h[m + k] += seg[k] - mean;
-  }
-  return h;
+	const win = Math.round(1.6 * OWN_PULSE_FS);
+	const h = new Array<number>(R.length).fill(0);
+	const sd = (a: number[]) => {
+		const m = a.reduce((s, v) => s + v, 0) / a.length;
+		return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length) || 1;
+	};
+	for (let n = win; n <= R.length; n++) {
+		const m = n - win;
+		let mr = 0;
+		let mg = 0;
+		let mb = 0;
+		for (let k = m; k < n; k++) {
+			mr += R[k];
+			mg += G[k];
+			mb += B[k];
+		}
+		mr /= win;
+		mg /= win;
+		mb /= win;
+		const s1: number[] = [];
+		const s2: number[] = [];
+		for (let k = m; k < n; k++) {
+			const r = R[k] / mr;
+			const g = G[k] / mg;
+			const b = B[k] / mb;
+			s1.push(g - b);
+			s2.push(g + b - 2 * r);
+		}
+		const alpha = sd(s1) / sd(s2);
+		let mean = 0;
+		const seg = s1.map((v, i) => {
+			const y = v + alpha * s2[i];
+			mean += y;
+			return y;
+		});
+		mean /= win;
+		for (let k = 0; k < win; k++) h[m + k] += seg[k] - mean;
+	}
+	return h;
 }
 
 /**
@@ -374,54 +411,76 @@ export function pos(R: number[], G: number[], B: number[]): number[] {
  * band (below 2x the band edge, i.e. 6 fps).
  */
 export function estimateOwnPulse(
-  samples: readonly RawRoiSample[],
-  windowS: number = OWN_PULSE_WINDOW_S,
-  /** The instant to judge at; defaults to the last sample. A window whose newest sample is older than 1 s is stale and yields null. */
-  atMs: number = samples.length ? samples[samples.length - 1][0] : 0,
+	samples: readonly RawRoiSample[],
+	windowS: number = OWN_PULSE_WINDOW_S,
+	/** The instant to judge at; defaults to the last sample. A window whose newest sample is older than 1 s is stale and yields null. */
+	atMs: number = samples.length ? samples[samples.length - 1][0] : 0,
 ): OwnPulseEstimate | null {
-  if (samples.length < 8) return null;
-  const end = atMs;
-  const start = end - windowS * 1000;
-  const win = samples.filter((s) => s[0] >= start && s[0] <= end);
-  if (win.length < 8 || win[0][0] - start > 1000 || end - win[win.length - 1][0] > 1000) return null;
-  const t = win.map((s) => s[0] / 1000);
-  const span = t[t.length - 1] - t[0];
-  const fps = win.length / Math.max(span, 1e-6);
-  if (fps < 2 * OWN_PULSE_BAND_HZ[1]) return null;
-  const from = t[0];
-  const to = t[t.length - 1];
-  const spectra: Array<Array<[number, number]>> = [];
-  const regions: RegionEstimate[] = REGIONS.map((region, ri) => {
-    const R = resample(t, win.map((s) => s[1 + ri * 3]), from, to);
-    const G = resample(t, win.map((s) => s[2 + ri * 3]), from, to);
-    const B = resample(t, win.map((s) => s[3 + ri * 3]), from, to);
-    const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
-    const P = spectrum(detrend(pos(R, G, B), OWN_PULSE_DETREND_S));
-    spectra.push(P);
-    const { bpm, snrDb } = peakOfSpectrum(P);
-    return { region, bpm, snrDb, meanRgb: [mean(R), mean(G), mean(B)] };
-  });
-  // The rate is the line in the COMBINED spectrum (combinedSpectrum); the
-  // per-region peaks stay for diagnostics and for the low-band agreement rule.
-  // The line is chosen, and its rate fitted, against its local noise floor
-  // (whitenedSpectrum); its SNR is judged on the spectrum as measured.
-  const measured = combinedSpectrum(spectra);
-  const comb = whitenedSpectrum(measured);
-  const combined = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
-  const found = Number.isFinite(combined.bpm);
-  const agreeing = found
-    ? regions.filter((r) => Math.abs(r.bpm - combined.bpm) <= OWN_PULSE_AGREE_BPM).map((r) => r.region)
-    : [];
-  return {
-    windowS,
-    frames: win.length,
-    fps: Math.round(fps * 10) / 10,
-    regions,
-    agreeing,
-    bpm: found ? Math.round(combined.bpm * 10) / 10 : null,
-    snrDb: found ? Math.round(combined.snrDb * 10) / 10 : null,
-    bpmFine: found ? Math.round(fineBpm(comb, combined.bpm) * 10) / 10 : null,
-  };
+	if (samples.length < 8) return null;
+	const end = atMs;
+	const start = end - windowS * 1000;
+	const win = samples.filter((s) => s[0] >= start && s[0] <= end);
+	if (
+		win.length < 8 ||
+		win[0][0] - start > 1000 ||
+		end - win[win.length - 1][0] > 1000
+	)
+		return null;
+	const t = win.map((s) => s[0] / 1000);
+	const span = t[t.length - 1] - t[0];
+	const fps = win.length / Math.max(span, 1e-6);
+	if (fps < 2 * OWN_PULSE_BAND_HZ[1]) return null;
+	const from = t[0];
+	const to = t[t.length - 1];
+	const spectra: Array<Array<[number, number]>> = [];
+	const regions: RegionEstimate[] = REGIONS.map((region, ri) => {
+		const R = resample(
+			t,
+			win.map((s) => s[1 + ri * 3]),
+			from,
+			to,
+		);
+		const G = resample(
+			t,
+			win.map((s) => s[2 + ri * 3]),
+			from,
+			to,
+		);
+		const B = resample(
+			t,
+			win.map((s) => s[3 + ri * 3]),
+			from,
+			to,
+		);
+		const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+		const P = spectrum(detrend(pos(R, G, B), OWN_PULSE_DETREND_S));
+		spectra.push(P);
+		const { bpm, snrDb } = peakOfSpectrum(P);
+		return { region, bpm, snrDb, meanRgb: [mean(R), mean(G), mean(B)] };
+	});
+	// The rate is the line in the COMBINED spectrum (combinedSpectrum); the
+	// per-region peaks stay for diagnostics and for the low-band agreement rule.
+	// The line is chosen, and its rate fitted, against its local noise floor
+	// (whitenedSpectrum); its SNR is judged on the spectrum as measured.
+	const measured = combinedSpectrum(spectra);
+	const comb = whitenedSpectrum(measured);
+	const combined = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
+	const found = Number.isFinite(combined.bpm);
+	const agreeing = found
+		? regions
+				.filter((r) => Math.abs(r.bpm - combined.bpm) <= OWN_PULSE_AGREE_BPM)
+				.map((r) => r.region)
+		: [];
+	return {
+		windowS,
+		frames: win.length,
+		fps: Math.round(fps * 10) / 10,
+		regions,
+		agreeing,
+		bpm: found ? Math.round(combined.bpm * 10) / 10 : null,
+		snrDb: found ? Math.round(combined.snrDb * 10) / 10 : null,
+		bpmFine: found ? Math.round(fineBpm(comb, combined.bpm) * 10) / 10 : null,
+	};
 }
 
 /**
@@ -429,18 +488,21 @@ export function estimateOwnPulse(
  * step: what the app would have concluded, second by second, offline.
  */
 export function ownPulseSeries(
-  samples: readonly RawRoiSample[],
-  windowS: number = OWN_PULSE_WINDOW_S,
-  stepS = 2,
+	samples: readonly RawRoiSample[],
+	windowS: number = OWN_PULSE_WINDOW_S,
+	stepS = 2,
 ): Array<{ tS: number; est: OwnPulseEstimate | null }> {
-  if (!samples.length) return [];
-  const t0 = samples[0][0];
-  const tEnd = samples[samples.length - 1][0];
-  const out: Array<{ tS: number; est: OwnPulseEstimate | null }> = [];
-  for (let end = t0 + windowS * 1000; end <= tEnd; end += stepS * 1000) {
-    out.push({ tS: Math.round((end - t0) / 100) / 10, est: estimateOwnPulse(samples, windowS, end) });
-  }
-  return out;
+	if (!samples.length) return [];
+	const t0 = samples[0][0];
+	const tEnd = samples[samples.length - 1][0];
+	const out: Array<{ tS: number; est: OwnPulseEstimate | null }> = [];
+	for (let end = t0 + windowS * 1000; end <= tEnd; end += stepS * 1000) {
+		out.push({
+			tS: Math.round((end - t0) / 100) / 10,
+			est: estimateOwnPulse(samples, windowS, end),
+		});
+	}
+	return out;
 }
 
 /**
@@ -619,15 +681,25 @@ export const OWN_PULSE_DARK_MEAN_AGREEING = 1.5;
 export const OWN_PULSE_DARK_HOLD_SNR_DB = -5.5;
 
 function slowedForLight(e: OwnPulseEstimate): boolean {
-  return e.fps >= OWN_PULSE_SLOW_CAMERA_MIN_FPS && e.fps < OWN_PULSE_SLOW_CAMERA_FPS;
+	return (
+		e.fps >= OWN_PULSE_SLOW_CAMERA_MIN_FPS && e.fps < OWN_PULSE_SLOW_CAMERA_FPS
+	);
 }
 
 /** A window from a camera slowed for light that the dark streak may count. */
-function countsInDark(e: OwnPulseEstimate | null): e is OwnPulseEstimate & { bpm: number; snrDb: number } {
-  if (e == null || e.bpm == null || e.snrDb == null || !Number.isFinite(e.snrDb)) return false;
-  if (!slowedForLight(e) || e.snrDb < OWN_PULSE_DARK_FLOOR_DB) return false;
-  if (e.agreeing.length < OWN_PULSE_DARK_MIN_AGREEING) return false;
-  return e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length;
+function countsInDark(
+	e: OwnPulseEstimate | null,
+): e is OwnPulseEstimate & { bpm: number; snrDb: number } {
+	if (
+		e == null ||
+		e.bpm == null ||
+		e.snrDb == null ||
+		!Number.isFinite(e.snrDb)
+	)
+		return false;
+	if (!slowedForLight(e) || e.snrDb < OWN_PULSE_DARK_FLOOR_DB) return false;
+	if (e.agreeing.length < OWN_PULSE_DARK_MIN_AGREEING) return false;
+	return e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length;
 }
 
 /**
@@ -647,11 +719,15 @@ function countsInDark(e: OwnPulseEstimate | null): e is OwnPulseEstimate & { bpm
 export const OWN_PULSE_MIN_AGREEING = 2;
 
 /** Whether a window counts toward the verdict: a line and an SNR, every region behind a low-band line, and stronger evidence from a camera slowed by low light. */
-function counts(e: OwnPulseEstimate | null): e is OwnPulseEstimate & { bpm: number; snrDb: number } {
-  if (e == null || e.bpm == null || e.snrDb == null) return false;
-  if (slowedForLight(e) && e.snrDb < OWN_PULSE_SLOW_CAMERA_MIN_SNR_DB) return false;
-  if (!slowedForLight(e) && e.agreeing.length < OWN_PULSE_MIN_AGREEING) return false;
-  return e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length;
+function counts(
+	e: OwnPulseEstimate | null,
+): e is OwnPulseEstimate & { bpm: number; snrDb: number } {
+	if (e == null || e.bpm == null || e.snrDb == null) return false;
+	if (slowedForLight(e) && e.snrDb < OWN_PULSE_SLOW_CAMERA_MIN_SNR_DB)
+		return false;
+	if (!slowedForLight(e) && e.agreeing.length < OWN_PULSE_MIN_AGREEING)
+		return false;
+	return e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length;
 }
 /**
  * Once measured, the verdict HOLDS while at least this many of the last
@@ -670,104 +746,111 @@ function counts(e: OwnPulseEstimate | null): e is OwnPulseEstimate & { bpm: numb
  */
 export const OWN_PULSE_HOLD_MIN = 6;
 
-export type OwnPulseVerdict = 'measured' | 'not-measured' | 'unknown';
+export type OwnPulseVerdict = "measured" | "not-measured" | "unknown";
 
 export function ownPulseVerdict(
-  history: readonly (OwnPulseEstimate | null)[],
-  /** The rate the previous verdict was measured at, if it was; enables the hold. */
-  held: number | null = null,
+	history: readonly (OwnPulseEstimate | null)[],
+	/** The rate the previous verdict was measured at, if it was; enables the hold. */
+	held: number | null = null,
 ): {
-  verdict: OwnPulseVerdict;
-  bpm: number | null;
-  snrDb: number | null;
-  streak: number;
+	verdict: OwnPulseVerdict;
+	bpm: number | null;
+	snrDb: number | null;
+	streak: number;
 } {
-  let streak = 0;
-  const rates: number[] = [];
-  const fines: number[] = [];
-  const snrs: number[] = [];
-  for (let i = history.length - 1; i >= 0; i--) {
-    const e = history[i];
-    if (!counts(e)) break;
-    if (rates.length && Math.abs(e.bpm - rates[0]) > OWN_PULSE_AGREE_BPM) break;
-    rates.push(e.bpm);
-    fines.push(e.bpmFine ?? e.bpm);
-    snrs.push(e.snrDb);
-    streak += 1;
-  }
-  const avg = (xs: number[]) => xs.reduce((s, v) => s + v, 0) / xs.length;
-  const excess = snrs.reduce((sum, v) => sum + (v - OWN_PULSE_MIN_SNR_DB), 0);
-  if (
-    (streak >= OWN_PULSE_STREAK && avg(snrs) >= OWN_PULSE_MIN_SNR_DB) ||
-    (streak >= OWN_PULSE_STRONG_STREAK &&
-      excess >= OWN_PULSE_STRONG_EXCESS_DB &&
-      avg(rates) >= OWN_PULSE_LOW_BAND_BPM)
-  ) {
-    return {
-      verdict: 'measured',
-      // The windows' fine rate, not the bins they agreed on (fineBpm).
-      bpm: Math.round(avg(fines) * 10) / 10,
-      snrDb: Math.round(avg(snrs) * 10) / 10,
-      streak,
-    };
-  }
-  // The dark entry: the same shape of streak, longer, at a lower bar, only from
-  // a camera slowed for light (OWN_PULSE_DARK_STREAK above).
-  {
-    const darkRates: number[] = [];
-    const darkFines: number[] = [];
-    const darkSnrs: number[] = [];
-    const darkAgreeing: number[] = [];
-    for (let i = history.length - 1; i >= 0; i--) {
-      const e = history[i];
-      if (!countsInDark(e)) break;
-      if (darkRates.length && Math.abs(e.bpm - darkRates[0]) > OWN_PULSE_AGREE_BPM) break;
-      darkRates.push(e.bpm);
-      darkFines.push(e.bpmFine ?? e.bpm);
-      darkSnrs.push(e.snrDb);
-      darkAgreeing.push(e.agreeing.length);
-    }
-    if (
-      darkRates.length >= OWN_PULSE_DARK_STREAK &&
-      avg(darkSnrs) >= OWN_PULSE_DARK_MIN_SNR_DB &&
-      avg(darkAgreeing) >= OWN_PULSE_DARK_MEAN_AGREEING
-    ) {
-      return {
-        verdict: 'measured',
-        bpm: Math.round(avg(darkFines) * 10) / 10,
-        snrDb: Math.round(avg(darkSnrs) * 10) / 10,
-        streak: darkRates.length,
-      };
-    }
-  }
-  if (held != null) {
-    const recent = history.slice(-OWN_PULSE_STREAK);
-    // A rate the dark entry measured is held by the windows that measured it.
-    const agreeing = recent.filter(
-      (e): e is OwnPulseEstimate =>
-        (counts(e) || countsInDark(e)) && Math.abs((e.bpm as number) - held) <= OWN_PULSE_AGREE_BPM,
-    );
-    if (agreeing.length >= OWN_PULSE_HOLD_MIN) {
-      const heldRates = agreeing.map((e) => (e.bpmFine ?? e.bpm) as number);
-      const heldSnrs = agreeing.map((e) => e.snrDb as number);
-      const bar = agreeing.every(slowedForLight) ? OWN_PULSE_DARK_HOLD_SNR_DB : OWN_PULSE_MIN_SNR_DB;
-      if (avg(heldSnrs) >= bar) {
-        return {
-          verdict: 'measured',
-          bpm: Math.round(avg(heldRates) * 10) / 10,
-          snrDb: Math.round(avg(heldSnrs) * 10) / 10,
-          streak,
-        };
-      }
-    }
-  }
-  const seen = history.filter((e) => e != null).length;
-  return {
-    verdict: seen >= OWN_PULSE_STREAK ? 'not-measured' : 'unknown',
-    bpm: null,
-    snrDb: null,
-    streak,
-  };
+	let streak = 0;
+	const rates: number[] = [];
+	const fines: number[] = [];
+	const snrs: number[] = [];
+	for (let i = history.length - 1; i >= 0; i--) {
+		const e = history[i];
+		if (!counts(e)) break;
+		if (rates.length && Math.abs(e.bpm - rates[0]) > OWN_PULSE_AGREE_BPM) break;
+		rates.push(e.bpm);
+		fines.push(e.bpmFine ?? e.bpm);
+		snrs.push(e.snrDb);
+		streak += 1;
+	}
+	const avg = (xs: number[]) => xs.reduce((s, v) => s + v, 0) / xs.length;
+	const excess = snrs.reduce((sum, v) => sum + (v - OWN_PULSE_MIN_SNR_DB), 0);
+	if (
+		(streak >= OWN_PULSE_STREAK && avg(snrs) >= OWN_PULSE_MIN_SNR_DB) ||
+		(streak >= OWN_PULSE_STRONG_STREAK &&
+			excess >= OWN_PULSE_STRONG_EXCESS_DB &&
+			avg(rates) >= OWN_PULSE_LOW_BAND_BPM)
+	) {
+		return {
+			verdict: "measured",
+			// The windows' fine rate, not the bins they agreed on (fineBpm).
+			bpm: Math.round(avg(fines) * 10) / 10,
+			snrDb: Math.round(avg(snrs) * 10) / 10,
+			streak,
+		};
+	}
+	// The dark entry: the same shape of streak, longer, at a lower bar, only from
+	// a camera slowed for light (OWN_PULSE_DARK_STREAK above).
+	{
+		const darkRates: number[] = [];
+		const darkFines: number[] = [];
+		const darkSnrs: number[] = [];
+		const darkAgreeing: number[] = [];
+		for (let i = history.length - 1; i >= 0; i--) {
+			const e = history[i];
+			if (!countsInDark(e)) break;
+			if (
+				darkRates.length &&
+				Math.abs(e.bpm - darkRates[0]) > OWN_PULSE_AGREE_BPM
+			)
+				break;
+			darkRates.push(e.bpm);
+			darkFines.push(e.bpmFine ?? e.bpm);
+			darkSnrs.push(e.snrDb);
+			darkAgreeing.push(e.agreeing.length);
+		}
+		if (
+			darkRates.length >= OWN_PULSE_DARK_STREAK &&
+			avg(darkSnrs) >= OWN_PULSE_DARK_MIN_SNR_DB &&
+			avg(darkAgreeing) >= OWN_PULSE_DARK_MEAN_AGREEING
+		) {
+			return {
+				verdict: "measured",
+				bpm: Math.round(avg(darkFines) * 10) / 10,
+				snrDb: Math.round(avg(darkSnrs) * 10) / 10,
+				streak: darkRates.length,
+			};
+		}
+	}
+	if (held != null) {
+		const recent = history.slice(-OWN_PULSE_STREAK);
+		// A rate the dark entry measured is held by the windows that measured it.
+		const agreeing = recent.filter(
+			(e): e is OwnPulseEstimate =>
+				(counts(e) || countsInDark(e)) &&
+				Math.abs((e.bpm as number) - held) <= OWN_PULSE_AGREE_BPM,
+		);
+		if (agreeing.length >= OWN_PULSE_HOLD_MIN) {
+			const heldRates = agreeing.map((e) => (e.bpmFine ?? e.bpm) as number);
+			const heldSnrs = agreeing.map((e) => e.snrDb as number);
+			const bar = agreeing.every(slowedForLight)
+				? OWN_PULSE_DARK_HOLD_SNR_DB
+				: OWN_PULSE_MIN_SNR_DB;
+			if (avg(heldSnrs) >= bar) {
+				return {
+					verdict: "measured",
+					bpm: Math.round(avg(heldRates) * 10) / 10,
+					snrDb: Math.round(avg(heldSnrs) * 10) / 10,
+					streak,
+				};
+			}
+		}
+	}
+	const seen = history.filter((e) => e != null).length;
+	return {
+		verdict: seen >= OWN_PULSE_STREAK ? "not-measured" : "unknown",
+		bpm: null,
+		snrDb: null,
+		streak,
+	};
 }
 
 /**
@@ -822,56 +905,78 @@ export const OWN_PULSE_EARLY_MAX_CV = 0.18;
 export const OWN_PULSE_EARLY_HOLD_S = 8;
 
 /** Beat rate from the peaks of the three regions' POS signals, summed; null when too few beats. */
-export function beatRate(samples: readonly RawRoiSample[], fromMs: number, toMs: number): { bpm: number; cv: number } | null {
-  const win = samples.filter((r) => r[0] >= fromMs && r[0] <= toMs);
-  if (win.length < 20) return null;
-  const t = win.map((r) => r[0] / 1000);
-  const a = t[0];
-  const b = t[t.length - 1];
-  let sum: number[] | null = null;
-  for (let ri = 0; ri < REGIONS.length; ri++) {
-    const h = detrend(
-      pos(
-        resample(t, win.map((s) => s[1 + ri * 3]), a, b),
-        resample(t, win.map((s) => s[2 + ri * 3]), a, b),
-        resample(t, win.map((s) => s[3 + ri * 3]), a, b),
-      ),
-      OWN_PULSE_DETREND_S,
-    );
-    const m = h.reduce((x, y) => x + y, 0) / h.length;
-    const sd = Math.sqrt(h.reduce((x, y) => x + (y - m) ** 2, 0) / h.length) || 1;
-    const z = h.map((v) => (v - m) / sd);
-    sum = sum ? sum.map((v, i) => v + z[i]) : z;
-  }
-  // A light smoothing (0.35 s), then local maxima at least 0.33 s apart (180 bpm).
-  const k = 3;
-  const x = sum!.map((_, i) => {
-    let s = 0;
-    let n = 0;
-    for (let j = i - k; j <= i + k; j++) if (j >= 0 && j < sum!.length) {
-      s += sum![j];
-      n++;
-    }
-    return s / n;
-  });
-  const minGap = Math.round(0.33 * OWN_PULSE_FS);
-  const pk: number[] = [];
-  for (let i = 1; i < x.length - 1; i++) {
-    if (x[i] > x[i - 1] && x[i] >= x[i + 1] && x[i] > 0.3) {
-      if (pk.length && i - pk[pk.length - 1] < minGap) {
-        if (x[i] > x[pk[pk.length - 1]]) pk[pk.length - 1] = i;
-      } else pk.push(i);
-    }
-  }
-  if (pk.length < 4) return null;
-  const ibi = pk
-    .slice(1)
-    .map((p, i) => (p - pk[i]) / OWN_PULSE_FS)
-    .sort((p, q) => p - q);
-  const med = ibi[ibi.length >> 1];
-  const mean = ibi.reduce((p, q) => p + q, 0) / ibi.length;
-  const cv = Math.sqrt(ibi.reduce((p, q) => p + (q - mean) ** 2, 0) / ibi.length) / mean;
-  return { bpm: 60 / med, cv };
+export function beatRate(
+	samples: readonly RawRoiSample[],
+	fromMs: number,
+	toMs: number,
+): { bpm: number; cv: number } | null {
+	const win = samples.filter((r) => r[0] >= fromMs && r[0] <= toMs);
+	if (win.length < 20) return null;
+	const t = win.map((r) => r[0] / 1000);
+	const a = t[0];
+	const b = t[t.length - 1];
+	let sum: number[] | null = null;
+	for (let ri = 0; ri < REGIONS.length; ri++) {
+		const h = detrend(
+			pos(
+				resample(
+					t,
+					win.map((s) => s[1 + ri * 3]),
+					a,
+					b,
+				),
+				resample(
+					t,
+					win.map((s) => s[2 + ri * 3]),
+					a,
+					b,
+				),
+				resample(
+					t,
+					win.map((s) => s[3 + ri * 3]),
+					a,
+					b,
+				),
+			),
+			OWN_PULSE_DETREND_S,
+		);
+		const m = h.reduce((x, y) => x + y, 0) / h.length;
+		const sd =
+			Math.sqrt(h.reduce((x, y) => x + (y - m) ** 2, 0) / h.length) || 1;
+		const z = h.map((v) => (v - m) / sd);
+		sum = sum ? sum.map((v, i) => v + z[i]) : z;
+	}
+	// A light smoothing (0.35 s), then local maxima at least 0.33 s apart (180 bpm).
+	const k = 3;
+	const x = sum!.map((_, i) => {
+		let s = 0;
+		let n = 0;
+		for (let j = i - k; j <= i + k; j++)
+			if (j >= 0 && j < sum!.length) {
+				s += sum![j];
+				n++;
+			}
+		return s / n;
+	});
+	const minGap = Math.round(0.33 * OWN_PULSE_FS);
+	const pk: number[] = [];
+	for (let i = 1; i < x.length - 1; i++) {
+		if (x[i] > x[i - 1] && x[i] >= x[i + 1] && x[i] > 0.3) {
+			if (pk.length && i - pk[pk.length - 1] < minGap) {
+				if (x[i] > x[pk[pk.length - 1]]) pk[pk.length - 1] = i;
+			} else pk.push(i);
+		}
+	}
+	if (pk.length < 4) return null;
+	const ibi = pk
+		.slice(1)
+		.map((p, i) => (p - pk[i]) / OWN_PULSE_FS)
+		.sort((p, q) => p - q);
+	const med = ibi[ibi.length >> 1];
+	const mean = ibi.reduce((p, q) => p + q, 0) / ibi.length;
+	const cv =
+		Math.sqrt(ibi.reduce((p, q) => p + (q - mean) ** 2, 0) / ibi.length) / mean;
+	return { bpm: 60 / med, cv };
 }
 
 /**
@@ -880,16 +985,25 @@ export function beatRate(samples: readonly RawRoiSample[], fromMs: number, toMs:
  * rate, or null. Never before that much signal exists, and never from a
  * camera slowed for light, where the sweep had no evidence it holds.
  */
-export function earlyPulse(samples: readonly RawRoiSample[], atMs: number): number | null {
-  if (!samples.length) return null;
-  const elapsedS = Math.round((atMs - samples[0][0]) / 1000);
-  if (elapsedS < OWN_PULSE_EARLY_FROM_S) return null;
-  // The trailing 12 s, wherever they fall (see OWN_PULSE_EARLY_HOLD_S).
-  const fromMs = atMs - OWN_PULSE_EARLY_FROM_S * 1000;
-  const sp = estimateOwnPulse(samples, OWN_PULSE_EARLY_FROM_S, atMs);
-  if (!sp || sp.bpm == null || sp.agreeing.length !== REGIONS.length) return null;
-  if (sp.fps < OWN_PULSE_SLOW_CAMERA_FPS) return null;
-  const bt = beatRate(samples, fromMs, atMs);
-  if (!bt || bt.cv >= OWN_PULSE_EARLY_MAX_CV || Math.abs(bt.bpm - sp.bpm) > OWN_PULSE_EARLY_AGREE_BPM) return null;
-  return Math.round(((sp.bpm + bt.bpm) / 2) * 10) / 10;
+export function earlyPulse(
+	samples: readonly RawRoiSample[],
+	atMs: number,
+): number | null {
+	if (!samples.length) return null;
+	const elapsedS = Math.round((atMs - samples[0][0]) / 1000);
+	if (elapsedS < OWN_PULSE_EARLY_FROM_S) return null;
+	// The trailing 12 s, wherever they fall (see OWN_PULSE_EARLY_HOLD_S).
+	const fromMs = atMs - OWN_PULSE_EARLY_FROM_S * 1000;
+	const sp = estimateOwnPulse(samples, OWN_PULSE_EARLY_FROM_S, atMs);
+	if (!sp || sp.bpm == null || sp.agreeing.length !== REGIONS.length)
+		return null;
+	if (sp.fps < OWN_PULSE_SLOW_CAMERA_FPS) return null;
+	const bt = beatRate(samples, fromMs, atMs);
+	if (
+		!bt ||
+		bt.cv >= OWN_PULSE_EARLY_MAX_CV ||
+		Math.abs(bt.bpm - sp.bpm) > OWN_PULSE_EARLY_AGREE_BPM
+	)
+		return null;
+	return Math.round(((sp.bpm + bt.bpm) / 2) * 10) / 10;
 }

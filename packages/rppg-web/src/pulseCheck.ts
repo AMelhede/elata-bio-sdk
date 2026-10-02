@@ -42,14 +42,34 @@ export class PulseCheck {
 	private history: (OwnPulseEstimate | null)[] = [];
 	private held: number | null = null;
 	private lastEvalMs: number | null = null;
-	private state: PulseCheckState = { verdict: "unknown", bpm: null, snrDb: null, streak: 0 };
+	private state: PulseCheckState = {
+		verdict: "unknown",
+		bpm: null,
+		snrDb: null,
+		streak: 0,
+	};
 
 	/** One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp. */
-	push(timestampMs: number, regions: readonly { r: number; g: number; b: number }[]): void {
+	push(
+		timestampMs: number,
+		regions: readonly { r: number; g: number; b: number }[],
+	): void {
 		if (regions.length < 3 || !Number.isFinite(timestampMs)) return;
 		const [f, l, r] = regions;
-		this.samples.push([timestampMs, f.r, f.g, f.b, l.r, l.g, l.b, r.r, r.g, r.b]);
-		while (this.samples.length && this.samples[0][0] < timestampMs - KEEP_MS) this.samples.shift();
+		this.samples.push([
+			timestampMs,
+			f.r,
+			f.g,
+			f.b,
+			l.r,
+			l.g,
+			l.b,
+			r.r,
+			r.g,
+			r.b,
+		]);
+		while (this.samples.length && this.samples[0][0] < timestampMs - KEEP_MS)
+			this.samples.shift();
 		if (this.lastEvalMs == null) this.lastEvalMs = timestampMs;
 		if (timestampMs - this.lastEvalMs < EVAL_EVERY_MS) return;
 		this.lastEvalMs = timestampMs;
@@ -59,7 +79,12 @@ export class PulseCheck {
 		if (this.history.length > HISTORY_MAX) this.history.shift();
 		const v = ownPulseVerdict(this.history, this.held);
 		this.held = v.verdict === "measured" ? v.bpm : null;
-		this.state = { verdict: v.verdict, bpm: this.held, snrDb: v.snrDb, streak: v.streak };
+		this.state = {
+			verdict: v.verdict,
+			bpm: this.held,
+			snrDb: v.snrDb,
+			streak: v.streak,
+		};
 	}
 
 	getState(): PulseCheckState {

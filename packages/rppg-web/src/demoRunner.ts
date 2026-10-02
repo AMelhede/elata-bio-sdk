@@ -280,7 +280,11 @@ export class DemoRunner {
 			if (this.fuser && useSkinMask) {
 				fusionResult = this.runFusion(frame, rois);
 			}
-			if (this.opts.pulseChecker && rois.length >= 3 && frame.timestampMs != null) {
+			if (
+				this.opts.pulseChecker &&
+				rois.length >= 3 &&
+				frame.timestampMs != null
+			) {
 				// Same three region boxes and the same skin-masked mean the fuser uses.
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
