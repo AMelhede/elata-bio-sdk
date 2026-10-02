@@ -279,6 +279,8 @@ export class RppgSession {
 				colourProjectionFix:
 					procFixes?.colourProjectionFix ?? fixes.colourProjectionFix,
 				noRateDoubling: procFixes?.noRateDoubling ?? fixes.noRateDoubling,
+				analysisSchedule:
+					procFixes?.analysisSchedule ?? fixes.analysisSchedule,
 			},
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,

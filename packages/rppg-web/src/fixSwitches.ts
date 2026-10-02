@@ -43,6 +43,12 @@ export type RppgFixSwitches = {
 	 * the rate holds over 35% of its strength (a pulse wave's own second harmonic often does).
 	 */
 	noRateDoubling?: boolean;
+	/**
+	 * Speed 1. The heart-rate analysis runs at most once per 250 ms of sample time and reads in
+	 * between return that result, so the estimate no longer depends on how often an app reads
+	 * it. Off: every read runs the analysis, as published.
+	 */
+	analysisSchedule?: boolean;
 };
 
 /** `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless `false`. */
@@ -56,6 +62,7 @@ export const FIX_SWITCH_NAMES = [
 	"realFrameRate",
 	"posFusion",
 	"noRateDoubling",
+	"analysisSchedule",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
