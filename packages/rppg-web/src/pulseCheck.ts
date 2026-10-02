@@ -31,6 +31,12 @@ export type PulseCheckState = {
 	snrDb: number | null;
 	/** Consecutive windows agreeing on the current rate. */
 	streak: number;
+	/**
+	 * The latest one-second window as it is, proven or not: its rate and how far its line
+	 * stands above the noise. For diagnosis only; nothing decides on these two.
+	 */
+	windowBpm?: number | null;
+	windowSnrDb?: number | null;
 };
 
 const EVAL_EVERY_MS = 1000;
@@ -98,6 +104,8 @@ export class PulseCheck {
 			bpm: this.held,
 			snrDb: v.snrDb,
 			streak: v.streak,
+			windowBpm: est?.bpm ?? null,
+			windowSnrDb: est?.snrDb ?? null,
 		};
 	}
 
