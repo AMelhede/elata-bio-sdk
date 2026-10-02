@@ -1,7 +1,6 @@
 import { RppgSession } from "../rppgSession";
 
-// The session's getMetrics with the check on: nothing pulse-derived is reported until a pulse
-// is proven; then the proven rate replaces the processor's.
+// The session's getMetrics with the check on: only the proven heart rate is reported.
 const processorMetrics = { bpm: 97, confidence: 0.75, signal_quality: 0.3, hrv_rmssd: 180, respiration_rate: 12.3, respiration_confidence: 1 };
 const make = (state: { verdict: string; bpm: number | null } | null) =>
 	new RppgSession(
@@ -26,5 +25,11 @@ describe("RppgSession with pulseCheck", () => {
 	});
 	it("reports the rate the check proved once it is proven", () => {
 		expect(make({ verdict: "measured", bpm: 71.5 }).getMetrics().bpm).toBe(71.5);
+	});
+	it("withholds breathing and HRV even with a proven pulse: neither passes a known answer yet", () => {
+		const m = make({ verdict: "measured", bpm: 71.5 }).getMetrics();
+		expect(m.hrv_rmssd).toBeNull();
+		expect(m.respiration_rate).toBeNull();
+		expect(m.respiration_confidence).toBeNull();
 	});
 });
