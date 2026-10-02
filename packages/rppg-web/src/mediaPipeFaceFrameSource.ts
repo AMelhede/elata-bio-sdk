@@ -32,6 +32,17 @@ import {
  */
 export const MAX_ANALYSIS_WIDTH = 640;
 
+/**
+ * The face finder runs at most once per this much VIDEO time; frames in between are sampled
+ * at the last landmarks. Every frame's colour is a sample of the pulse, so dropping frames
+ * costs signal; the face's position changes far more slowly (a head turning steadily moves a
+ * few percent of a face-width per 33 ms frame), so ~16 position updates a second keep the
+ * regions on the face. Before this the face finder ran on every frame and was the costliest
+ * step: on the owner's laptop 30 frames a second arrived and ~23 were analysed (2026-10-02).
+ * Video time, not wall time, so a slowed replay sees the same head motion per update as live.
+ */
+export const FACE_DETECT_EVERY_MS = 60;
+
 /** Analysis frame size for a video size: same aspect, at most MAX_ANALYSIS_WIDTH wide. */
 export function analysisSize(
 	videoWidth: number,
@@ -53,6 +64,12 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 	private vfcHandle: number | null = null;
 	private smoothedFaceRoi: ROI | null = null;
 	private lastError: FrameSourceError | null = null;
+	/** The last face-finder result and the video time it was found at (FACE_DETECT_EVERY_MS). */
+	private lastDetect: {
+		atMs: number;
+		landmarks: FaceLandmarkPoint[] | null;
+		blendshapes: FrameBlendshape[] | undefined;
+	} | null = null;
 
 	constructor(
 		private video: HTMLVideoElement,
@@ -97,6 +114,7 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 	async stop(): Promise<void> {
 		this.running = false;
 		this.smoothedFaceRoi = null;
+		this.lastDetect = null;
 		const cancel = (this.video as any).cancelVideoFrameCallback;
 		if (this.vfcHandle !== null && typeof cancel === "function") {
 			cancel.call(this.video, this.vfcHandle);
@@ -139,20 +157,32 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 			return;
 		}
 
+		const ts =
+			typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0
+				? metadata.mediaTime * 1000
+				: now;
 		let landmarks: FaceLandmarkPoint[] | null = null;
 		let blendshapes: FrameBlendshape[] | undefined;
-		try {
-			const result = this.faceLandmarker.detectForVideo(this.canvas, now);
-			landmarks = result?.faceLandmarks?.[0] ?? null;
-			const categories = result?.faceBlendshapes?.[0]?.categories;
-			if (categories && categories.length) {
-				blendshapes = categories.map((c) => ({
-					categoryName: c.categoryName,
-					score: c.score,
-				}));
+		const last = this.lastDetect;
+		if (last && ts >= last.atMs && ts - last.atMs < FACE_DETECT_EVERY_MS) {
+			landmarks = last.landmarks;
+			blendshapes = last.blendshapes;
+		} else {
+			try {
+				const result = this.faceLandmarker.detectForVideo(this.canvas, now);
+				landmarks = result?.faceLandmarks?.[0] ?? null;
+				const categories = result?.faceBlendshapes?.[0]?.categories;
+				if (categories && categories.length) {
+					blendshapes = categories.map((c) => ({
+						categoryName: c.categoryName,
+						score: c.score,
+					}));
+				}
+				this.lastDetect = { atMs: ts, landmarks, blendshapes };
+			} catch (error) {
+				this.lastDetect = null;
+				this.reportError("face_mesh_failed", "face_mesh", error);
 			}
-		} catch (error) {
-			this.reportError("face_mesh_failed", "face_mesh", error);
 		}
 
 		try {
@@ -162,10 +192,6 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 				this.canvas.width,
 				this.canvas.height,
 			);
-			const ts =
-				typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0
-					? metadata.mediaTime * 1000
-					: now;
 			const frame: Frame = {
 				data: img.data,
 				width: this.canvas.width,

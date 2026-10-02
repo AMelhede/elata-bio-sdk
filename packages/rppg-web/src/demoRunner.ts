@@ -31,7 +31,7 @@ import {
 	ELATA_FACE_YCBCR_V1_PROFILE,
 	type RoiGeometryProfile,
 } from "./roiProfile";
-import { RppgProcessor } from "./rppgProcessor";
+import type { RppgProcessorLike } from "./workerRppgProcessor";
 
 export type LastBlendshapes = {
 	blendshapes: FrameBlendshape[];
@@ -161,7 +161,7 @@ export class DemoRunner {
 
 	constructor(
 		private source: FrameSource,
-		private processor: RppgProcessor,
+		private processor: RppgProcessorLike,
 		private opts: DemoRunnerOptions = {},
 	) {
 		this.source.onFrame = this.onFrame.bind(this);
