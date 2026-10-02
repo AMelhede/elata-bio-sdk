@@ -297,6 +297,50 @@ export function wallBesideFace(
 }
 
 /**
+ * The wall beside the face as ONE signal, although the patch it is read from may move between
+ * the distances in WALL_GAPS from frame to frame. Two patches of wall differ in brightness (one
+ * nearer a window, one in shadow), so a raw switch between them is a step in the wall's
+ * brightness, and a step puts power at every rate: it hides a lamp's rhythm from the wall check
+ * and corrupts green minus the wall. So when the patch changes, the new patch is scaled to start
+ * exactly where the old one left off, and that scale is kept while it stays: a lamp's swing,
+ * shared by every patch, passes through unchanged. Both users of the wall are blind to its
+ * absolute level (the wall check judges a signal-to-noise ratio, green minus the wall a least-
+ * squares share of normalised signals).
+ */
+export class WallTracker {
+	private gapIndex = 0;
+	private current: number | null = null;
+	private gain: Rgb = { r: 1, g: 1, b: 1 };
+	private last: Rgb | null = null;
+
+	/** The wall this frame on one continuous scale, or null when none was found. */
+	next(
+		points: readonly { x: number; y: number }[],
+		frame: Frame,
+	): { rgb: Rgb; gapIndex: number } | null {
+		const w = wallBesideFace(points, frame, this.gapIndex);
+		if (!w) return null;
+		this.gapIndex = w.gapIndex;
+		return { rgb: this.continuous(w.gapIndex, w.rgb), gapIndex: w.gapIndex };
+	}
+
+	/** `rgb` from patch `gapIndex`, rescaled at a change of patch so the signal does not step. */
+	continuous(gapIndex: number, rgb: Rgb): Rgb {
+		if (gapIndex !== this.current) {
+			const to = this.last ?? rgb;
+			this.gain = {
+				r: to.r / (rgb.r || 1e-6),
+				g: to.g / (rgb.g || 1e-6),
+				b: to.b / (rgb.b || 1e-6),
+			};
+			this.current = gapIndex;
+		}
+		this.last = { r: rgb.r * this.gain.r, g: rgb.g * this.gain.g, b: rgb.b * this.gain.b };
+		return this.last;
+	}
+}
+
+/**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame
  * (the face fills it), otherwise "skin" (every patch looked like skin: an ear or neck, or a
  * beige or wooden wall, or warm light making the wall skin-coloured).

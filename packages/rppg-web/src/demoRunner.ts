@@ -19,7 +19,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, wallBesideFace, wallMissReason } from "./pulseCheck";
+import { type PulseCheck, WallTracker, wallMissReason } from "./pulseCheck";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
 	type RoiPixelSampler,
@@ -131,8 +131,8 @@ export class DemoRunner {
 	private frameTimes: number[] = [];
 	private lastFps: number | null = null;
 	private lastCenter: { x: number; y: number } | null = null;
-	/** The wall distance (WALL_GAPS) that showed wall last frame; tried first next frame. */
-	private wallGapIndex = 0;
+	/** The wall beside the face, one signal across patches (see WallTracker). */
+	private wallTracker = new WallTracker();
 	private smoothedSkinRatio: number | null = null;
 	private diagnostics: DemoRunnerDiagnostics = {
 		framesSeen: 0,
@@ -300,9 +300,8 @@ export class DemoRunner {
 				// pixels that do not look like skin, so a face edge or an ear in it
 				// cannot carry the person's own pulse into the wall.
 				const wall = frame.landmarks
-					? wallBesideFace(frame.landmarks, frame, this.wallGapIndex)
+					? this.wallTracker.next(frame.landmarks, frame)
 					: null;
-				if (wall) this.wallGapIndex = wall.gapIndex;
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
 					rois.slice(0, 3).map((roi) => {

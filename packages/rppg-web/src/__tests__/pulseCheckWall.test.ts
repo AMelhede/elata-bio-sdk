@@ -1,5 +1,5 @@
 import { averageRgbInROINonSkin } from "../frameSource";
-import { PulseCheck, WALL_GAPS, wallBesideFace, wallMissReason, wallPatchFromLandmarks } from "../pulseCheck";
+import { PulseCheck, WALL_GAPS, WallTracker, wallBesideFace, wallMissReason, wallPatchFromLandmarks } from "../pulseCheck";
 
 // Face regions with a rhythm at `bpm` (a real pulse is chromatic: green drops most), plus a
 // patch of grey wall beside the face. `wall`: "same" is a pulsing lamp, which scales a grey
@@ -189,5 +189,39 @@ describe("why the wall was not seen", () => {
 		expect(f!.seen).toBe(5);
 		expect(f!.noRoom).toBe(5);
 		expect(f!.skin).toBe(10);
+	});
+});
+
+describe("WallTracker: the wall as one signal across patches", () => {
+	// The wall seen through two patches at different distances (a darker and a brighter part of
+	// the room), switching every 2 s, both under one lamp swinging 1% at 72/min.
+	function series(tracker: WallTracker) {
+		const out: number[] = [];
+		for (let t = 0; t <= 20000; t += 1000 / 30) {
+			const lamp = 1 + 0.01 * Math.sin((2 * Math.PI * 72 * t) / 60000);
+			const gap = Math.floor(t / 2000) % 2;
+			const level = gap === 0 ? 0.4 : 0.63;
+			const rgb = tracker.continuous(gap, { r: level * lamp, g: level * lamp, b: level * lamp });
+			out.push(rgb.r + rgb.g + rgb.b);
+		}
+		return out;
+	}
+
+	it("does not step when the patch changes", () => {
+		const s = series(new WallTracker());
+		const steps = s.slice(1).map((v, i) => Math.abs(v - s[i]));
+		const mean = s.reduce((a, v) => a + v, 0) / s.length;
+		// A 1% swing at 72/min moves at most 1% x 2 pi x 1.2 Hz / 30 fps = 0.25% of the level per
+		// frame; switching between the raw patches (0.4 and 0.63) would step by about 45%.
+		expect(Math.max(...steps) / mean).toBeLessThan(0.003);
+	});
+
+	it("keeps the lamp's swing", () => {
+		const s = series(new WallTracker());
+		const mean = s.reduce((a, v) => a + v, 0) / s.length;
+		const sd = Math.sqrt(s.reduce((a, v) => a + (v - mean) ** 2, 0) / s.length);
+		// A 1% sine has a standard deviation of 0.71% of its level.
+		expect(sd / mean).toBeGreaterThan(0.005);
+		expect(sd / mean).toBeLessThan(0.009);
 	});
 });
