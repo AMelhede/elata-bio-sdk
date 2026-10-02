@@ -92,6 +92,8 @@ export interface OwnPulseEstimate {
 	method?: "pos" | "greenMinusWall";
 	/** The colour-damage measure this window (see OWN_PULSE_COLOUR_DAMAGE), or null. */
 	colourDamage?: number | null;
+	/** Whether the wall beside the face was seen through the whole window. */
+	wallSeen?: boolean;
 }
 
 export function resample(
@@ -544,6 +546,7 @@ export function estimateOwnPulse(
 		bpmFine: found ? Math.round(fineBpm(comb, combined.bpm) * 10) / 10 : null,
 		method,
 		colourDamage,
+		wallSeen,
 	};
 }
 

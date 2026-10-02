@@ -10,7 +10,6 @@ import {
 	averageGreenInROI,
 	averageGreenInROIWithSkinMaskStats,
 	averageRgbInROI,
-	averageRgbInROINonSkin,
 	averageRgbInROIWithSkinMaskStats,
 } from "./frameSource";
 import {
@@ -20,7 +19,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, wallPatchFromLandmarks } from "./pulseCheck";
+import { type PulseCheck, wallBesideFace } from "./pulseCheck";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
 	type RoiPixelSampler,
@@ -132,6 +131,8 @@ export class DemoRunner {
 	private frameTimes: number[] = [];
 	private lastFps: number | null = null;
 	private lastCenter: { x: number; y: number } | null = null;
+	/** The wall distance (WALL_GAPS) that showed wall last frame; tried first next frame. */
+	private wallGapIndex = 0;
 	private smoothedSkinRatio: number | null = null;
 	private diagnostics: DemoRunnerDiagnostics = {
 		framesSeen: 0,
@@ -298,27 +299,17 @@ export class DemoRunner {
 				// And a patch of wall beside the face, for the wall check: only its
 				// pixels that do not look like skin, so a face edge or an ear in it
 				// cannot carry the person's own pulse into the wall.
-				const patch = frame.landmarks
-					? wallPatchFromLandmarks(frame.landmarks, frame.width, frame.height)
+				const wall = frame.landmarks
+					? wallBesideFace(frame.landmarks, frame, this.wallGapIndex)
 					: null;
-				const wallBox = patch
-					? clampRoiToFrame(patch, frame.width, frame.height)
-					: null;
+				if (wall) this.wallGapIndex = wall.gapIndex;
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
 					rois.slice(0, 3).map((roi) => {
 						const c = clampRoiToFrame(roi, frame.width, frame.height);
 						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
 					}),
-					(wallBox &&
-						averageRgbInROINonSkin(
-							frame,
-							wallBox.x,
-							wallBox.y,
-							wallBox.w,
-							wallBox.h,
-						)) ??
-						undefined,
+					wall?.rgb,
 				);
 			}
 			if (frame.roi) {

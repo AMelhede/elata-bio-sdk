@@ -1,5 +1,5 @@
 import { averageRgbInROINonSkin } from "../frameSource";
-import { PulseCheck, wallPatchFromLandmarks } from "../pulseCheck";
+import { PulseCheck, WALL_GAPS, wallBesideFace, wallPatchFromLandmarks } from "../pulseCheck";
 
 // Face regions with a rhythm at `bpm` (a real pulse is chromatic: green drops most), plus a
 // patch of grey wall beside the face. `wall`: "same" is a pulsing lamp, which scales a grey
@@ -128,5 +128,40 @@ describe("averageRgbInROINonSkin", () => {
 
 	it("returns null for a box that is all skin", () => {
 		expect(averageRgbInROINonSkin(frame(), 0, 0, 5, 10)).toBeNull();
+	});
+});
+
+describe("wallBesideFace", () => {
+	// A turned head, as a side camera sees it: skin (cheek, ear, neck) carries on past the
+	// face finder's points for `skinPast` of the face's width, then grey wall.
+	function turnedHead(skinPast: number) {
+		const width = 640;
+		const height = 480;
+		const faceRight = 0.35 * width;
+		const fw = 0.25 * width;
+		const data = new Uint8ClampedArray(width * height * 4);
+		for (let i = 0; i < width * height; i++) {
+			const skin = i % width < faceRight + skinPast * fw;
+			data.set(skin ? [200, 150, 120, 255] : [100, 100, 100, 255], i * 4);
+		}
+		return { points: face(0.1, 0.35, 0.2, 0.8), frame: { data, width, height, timestampMs: 0 } as unknown as Parameters<typeof wallBesideFace>[1] };
+	}
+
+	it("finds the wall past skin that sticks out beyond the face's points", () => {
+		const { points, frame } = turnedHead(0.3);
+		const w = wallBesideFace(points, frame, 0);
+		expect(w).not.toBeNull();
+		expect(w!.rgb.g).toBeCloseTo(100 / 255, 3);
+		expect(WALL_GAPS[w!.gapIndex]).toBeGreaterThan(0.3);
+	});
+
+	it("keeps the same distance while it still shows wall, so the wall is one patch, not several", () => {
+		const { points, frame } = turnedHead(0);
+		expect(wallBesideFace(points, frame, 2)!.gapIndex).toBe(2);
+	});
+
+	it("returns null when every distance shows skin", () => {
+		const { points, frame } = turnedHead(5);
+		expect(wallBesideFace(points, frame, 0)).toBeNull();
 	});
 });

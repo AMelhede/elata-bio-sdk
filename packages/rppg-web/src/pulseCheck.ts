@@ -24,6 +24,7 @@
  * for 27 s; the wall check withheld all 27. On 240 real recordings it withheld none of
  * 4,965 right seconds and delayed no first reading.
  */
+import { type Frame, averageRgbInROINonSkin } from "./frameSource";
 import {
 	OWN_PULSE_AGREE_BPM,
 	OWN_PULSE_DETREND_S,
@@ -57,6 +58,9 @@ export type PulseCheckState = {
 	windowSnrDb?: number | null;
 	/** How that window's pulse was read: "pos", or "greenMinusWall" for damaged colour. */
 	windowMethod?: "pos" | "greenMinusWall" | null;
+	/** That window's colour-damage measure, and whether the wall was seen through the whole window. */
+	windowColourDamage?: number | null;
+	windowWallSeen?: boolean;
 };
 
 type Rgb = { r: number; g: number; b: number };
@@ -193,6 +197,8 @@ export class PulseCheck {
 					windowBpm: est?.bpm ?? null,
 					windowSnrDb: est?.snrDb ?? null,
 					windowMethod: est?.method ?? null,
+					windowColourDamage: est?.colourDamage ?? null,
+					windowWallSeen: est?.wallSeen ?? false,
 				}
 			: {
 					verdict: v.verdict,
@@ -203,6 +209,8 @@ export class PulseCheck {
 					windowBpm: est?.bpm ?? null,
 					windowSnrDb: est?.snrDb ?? null,
 					windowMethod: est?.method ?? null,
+					windowColourDamage: est?.colourDamage ?? null,
+					windowWallSeen: est?.wallSeen ?? false,
 				};
 	}
 
@@ -235,10 +243,47 @@ export class PulseCheck {
 }
 
 /**
+ * How far the wall patch sits from the face's points, as a share of the face's width, tried in
+ * this order. 0.15 clears hair on a face seen from the front. A side camera sees a turned head,
+ * whose cheek, ear and neck reach well past the points, so at 0.15 the patch is all skin and the
+ * wall check never runs: on the MCD-rPPG phone camera (IriunWebcam, 3 recordings, 171 frames)
+ * the patch was skin in 165 of 171 frames. Trying 0.4, 0.7 and 1.0 next found wall in 170 of
+ * 171 across those plus 2 side-webcam and 1 front recordings, and no single distance did
+ * (0.4 failed one side webcam entirely, 0.7 and 1.0 another). Measured 2026-10-02.
+ */
+export const WALL_GAPS = [0.15, 0.4, 0.7, 1.0] as const;
+
+/**
+ * The wall beside the face: the first of WALL_GAPS whose patch is mostly not skin, starting from
+ * `preferIndex` (the distance that worked last frame), so the wall stays one patch while it can
+ * and its brightness does not step between patches. Null when every distance shows skin.
+ */
+export function wallBesideFace(
+	points: readonly { x: number; y: number }[],
+	frame: Frame,
+	preferIndex: number,
+): { rgb: Rgb; gapIndex: number } | null {
+	const order = [preferIndex, ...WALL_GAPS.map((_, i) => i).filter((i) => i !== preferIndex)];
+	for (const i of order) {
+		const gap = WALL_GAPS[i];
+		if (gap == null) continue;
+		const patch = wallPatchFromLandmarks(points, frame.width, frame.height, gap);
+		if (!patch) continue;
+		const x = Math.max(0, Math.min(frame.width - 1, patch.x));
+		const y = Math.max(0, Math.min(frame.height - 1, patch.y));
+		const w = Math.max(1, Math.min(frame.width - x, patch.w));
+		const h = Math.max(1, Math.min(frame.height - y, patch.h));
+		const rgb = averageRgbInROINonSkin(frame, x, y, w, h);
+		if (rgb) return { rgb, gapIndex: i };
+	}
+	return null;
+}
+
+/**
  * A patch of wall beside the face for the wall check, in pixels, or null when there is no
  * room for one (a face that fills the frame). Same rule as Peak's capture: at cheek height
- * (the middle third of the face), a quarter of the face wide, 0.15 of the face clear of its
- * edge so hair is not counted, on whichever side has more room. The face's edges are taken
+ * (the middle third of the face), a quarter of the face wide, `gap` of the face's width clear of its
+ * edge (WALL_GAPS), on whichever side has more room. The face's edges are taken
  * at the 5th and 95th percentile of the points across and the 3rd and 97th down, so a single
  * stray point cannot move the patch.
  */
@@ -246,6 +291,7 @@ export function wallPatchFromLandmarks(
 	points: readonly { x: number; y: number }[],
 	width: number,
 	height: number,
+	gap: number = WALL_GAPS[0],
 ): { x: number; y: number; w: number; h: number } | null {
 	if (!points.length || width <= 0 || height <= 0) return null;
 	const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -258,15 +304,15 @@ export function wallPatchFromLandmarks(
 	const fw = Math.max(1, pick(xs, 0.95) - x0);
 	const fh = Math.max(1, pick(ys, 0.97) - y0);
 	const w = fw * 0.25;
-	const gap = fw * 0.15;
+	const clear = fw * gap;
 	const y = y0 + fh / 3;
 	const h = fh / 3;
 	if (y < 0 || y + h > height) return null;
-	const roomLeft = x0 - gap;
-	const roomRight = width - (x0 + fw + gap);
+	const roomLeft = x0 - clear;
+	const roomRight = width - (x0 + fw + clear);
 	let x: number | null = null;
 	if (roomLeft >= roomRight && roomLeft >= w) x = roomLeft - w;
-	else if (roomRight > roomLeft && roomRight >= w) x = x0 + fw + gap;
+	else if (roomRight > roomLeft && roomRight >= w) x = x0 + fw + clear;
 	if (x == null) return null;
 	return {
 		x: Math.round(x),
