@@ -24,7 +24,10 @@
  * DOM, no SDK, so it runs identically in the app, in unit tests and in the
  * offline analyser (scripts/analyzeRecording.mjs).
  */
-/** [timestampMs, foreheadR, G, B, leftCheekR, G, B, rightCheekR, G, B] */
+/**
+ * [timestampMs, foreheadR, G, B, leftCheekR, G, B, rightCheekR, G, B], optionally followed by
+ * the wall beside the face [wallR, G, B] (NaN when it was not visible in that frame).
+ */
 export type RawRoiSample = [
 	number,
 	number,
@@ -36,6 +39,7 @@ export type RawRoiSample = [
 	number,
 	number,
 	number,
+	...number[],
 ];
 
 /** Analysis sample rate: above twice the 3 Hz band edge, below any camera. */
@@ -84,6 +88,10 @@ export interface OwnPulseEstimate {
 	 * `bpm`, the bin. Optional so a hand-built estimate need not carry it.
 	 */
 	bpmFine?: number | null;
+	/** How the pulse was read from the colours this window (see OWN_PULSE_COLOUR_DAMAGE). */
+	method?: "pos" | "greenMinusWall";
+	/** The colour-damage measure this window (see OWN_PULSE_COLOUR_DAMAGE), or null. */
+	colourDamage?: number | null;
 }
 
 export function resample(
@@ -406,6 +414,47 @@ export function pos(R: number[], G: number[], B: number[]): number[] {
 }
 
 /**
+ * When the camera's colour channels are too damaged for POS, read the pulse from green minus
+ * what the wall beside the face shares with it.
+ *
+ * POS compares the three colour channels, which cancels changes of light and movement, but
+ * only while each channel is clean: a near-dead channel (a dark camera's blue reading 4 to 20
+ * of 255) has rounding noise that POS's per-channel normalisation multiplies, and video
+ * compression (a phone streaming as a webcam) discards colour detail first. Green alone
+ * survives both but follows the room light; the wall carries the room light and never the
+ * pulse, so subtracting the share of green that the wall explains leaves the pulse.
+ *
+ * Damage is measured per window: the frame-to-frame (fast) noise of the POS signal relative to
+ * green's, median over the regions. On the MCD-rPPG dataset (560 recordings) it reads a median
+ * 14 on the front webcam and 40 to 51 on the two side cameras. Swept as the live switch
+ * (2026-10-02, sandbox fix 11), against POS everywhere (206 recordings with a number, 2.97%
+ * of judged seconds wrong, median first 45 s): at 50, 251 recordings, 2.72% wrong, 43 s; at
+ * 45, 275, 3.04%, 42 s; at 40, 281, 3.13%. 50 is the setting that is no worse on any count.
+ * Green minus the wall alone does not replace POS: at any bar it stays ~6% wrong, because
+ * head movement changes the face's shading and not the wall's, which POS cancels.
+ */
+export const OWN_PULSE_COLOUR_DAMAGE = 50;
+
+const zeroMeanNorm = (x: number[]): number[] => {
+	const m = x.reduce((a, v) => a + v, 0) / x.length || 1;
+	return x.map((v) => v / m - 1);
+};
+const fastNoise = (x: number[]): number => {
+	const d = x.slice(1).map((v, i) => v - x[i]);
+	const m = d.reduce((a, v) => a + v, 0) / d.length;
+	return Math.sqrt(d.reduce((a, v) => a + (v - m) ** 2, 0) / d.length) || 1e-12;
+};
+
+/** Green minus the share of it the wall's brightness explains (least squares), sign as POS. */
+export function greenMinusWall(G: number[], wall: number[]): number[] {
+	const g = detrend(zeroMeanNorm(G), OWN_PULSE_DETREND_S);
+	const w = detrend(zeroMeanNorm(wall), OWN_PULSE_DETREND_S);
+	const ww = w.reduce((a, v) => a + v * v, 0) || 1e-12;
+	const beta = g.reduce((a, v, i) => a + v * w[i], 0) / ww;
+	return g.map((v, i) => -(v - beta * w[i]));
+}
+
+/**
  * Estimate over the most recent `windowS` seconds of raw samples. Returns null
  * when the window is not yet full or the frame rate is too low to resolve the
  * band (below 2x the band edge, i.e. 6 fps).
@@ -433,27 +482,40 @@ export function estimateOwnPulse(
 	const from = t[0];
 	const to = t[t.length - 1];
 	const spectra: Array<Array<[number, number]>> = [];
+	const channels = REGIONS.map((_, ri) =>
+		[1, 2, 3].map((c) =>
+			resample(
+				t,
+				win.map((s) => s[c + ri * 3]),
+				from,
+				to,
+			),
+		),
+	);
+	// The wall is used only when it was visible for the whole window.
+	const wallSeen = win.every((s) => s.length >= 13 && Number.isFinite(s[11]));
+	const wall = wallSeen
+		? resample(
+				t,
+				win.map((s) => s[10] + s[11] + s[12]),
+				from,
+				to,
+			)
+		: null;
+	const damages = channels
+		.map(([R, G, B]) => fastNoise(pos(R, G, B)) / fastNoise(zeroMeanNorm(G)))
+		.sort((a, b) => a - b);
+	const colourDamage = Math.round(damages[1] * 10) / 10;
+	const method =
+		wall && colourDamage >= OWN_PULSE_COLOUR_DAMAGE ? "greenMinusWall" : "pos";
 	const regions: RegionEstimate[] = REGIONS.map((region, ri) => {
-		const R = resample(
-			t,
-			win.map((s) => s[1 + ri * 3]),
-			from,
-			to,
-		);
-		const G = resample(
-			t,
-			win.map((s) => s[2 + ri * 3]),
-			from,
-			to,
-		);
-		const B = resample(
-			t,
-			win.map((s) => s[3 + ri * 3]),
-			from,
-			to,
-		);
+		const [R, G, B] = channels[ri];
 		const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
-		const P = spectrum(detrend(pos(R, G, B), OWN_PULSE_DETREND_S));
+		const pulse =
+			method === "greenMinusWall" && wall
+				? greenMinusWall(G, wall)
+				: pos(R, G, B);
+		const P = spectrum(detrend(pulse, OWN_PULSE_DETREND_S));
 		spectra.push(P);
 		const { bpm, snrDb } = peakOfSpectrum(P);
 		return { region, bpm, snrDb, meanRgb: [mean(R), mean(G), mean(B)] };
@@ -480,6 +542,8 @@ export function estimateOwnPulse(
 		bpm: found ? Math.round(combined.bpm * 10) / 10 : null,
 		snrDb: found ? Math.round(combined.snrDb * 10) / 10 : null,
 		bpmFine: found ? Math.round(fineBpm(comb, combined.bpm) * 10) / 10 : null,
+		method,
+		colourDamage,
 	};
 }
 

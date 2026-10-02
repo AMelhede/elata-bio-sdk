@@ -55,6 +55,8 @@ export type PulseCheckState = {
 	 */
 	windowBpm?: number | null;
 	windowSnrDb?: number | null;
+	/** How that window's pulse was read: "pos", or "greenMinusWall" for damaged colour. */
+	windowMethod?: "pos" | "greenMinusWall" | null;
 };
 
 type Rgb = { r: number; g: number; b: number };
@@ -153,6 +155,10 @@ export class PulseCheck {
 			r.r,
 			r.g,
 			r.b,
+			// The wall beside the face, for the colour-damage switch (OWN_PULSE_COLOUR_DAMAGE).
+			wall?.r ?? Number.NaN,
+			wall?.g ?? Number.NaN,
+			wall?.b ?? Number.NaN,
 		]);
 		while (this.samples.length && this.samples[0][0] < timestampMs - KEEP_MS)
 			this.samples.shift();
@@ -186,6 +192,7 @@ export class PulseCheck {
 					wallMatch,
 					windowBpm: est?.bpm ?? null,
 					windowSnrDb: est?.snrDb ?? null,
+					windowMethod: est?.method ?? null,
 				}
 			: {
 					verdict: v.verdict,
@@ -195,6 +202,7 @@ export class PulseCheck {
 					wallMatch,
 					windowBpm: est?.bpm ?? null,
 					windowSnrDb: est?.snrDb ?? null,
+					windowMethod: est?.method ?? null,
 				};
 	}
 
