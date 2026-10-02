@@ -1,27 +1,7 @@
-import { PulseCheck, type PulseCheckState } from "./pulseCheck";
 import type {
-	FrameSource,
-	FrameSourceError,
-	FrameSourceWithErrors,
-} from "./frameSource";
-import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
-import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
-import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
-import { ensureVideoPlaying } from "./videoPlayback";
-import {
-	RppgProcessor,
-	type Metrics,
-	type RppgDebugIssueCode,
-	type RppgDebugSnapshot,
-	type RppgProcessorBackendFailure,
-	type RppgTraceSnapshot,
-} from "./rppgProcessor";
-import {
-	loadWasmBackend,
-	createUnavailableBackend,
-	type Backend,
-	type WasmImporter,
-} from "./wasmBackend";
+	BpmEvidenceQualityProvider,
+	BpmTrackerConfigV1,
+} from "./bpmBayesTracker";
 import {
 	DemoRunner,
 	type DemoRunnerDiagnostics,
@@ -29,9 +9,29 @@ import {
 	type DemoRunnerOptions,
 } from "./demoRunner";
 import type {
-	BpmEvidenceQualityProvider,
-	BpmTrackerConfigV1,
-} from "./bpmBayesTracker";
+	FrameSource,
+	FrameSourceError,
+	FrameSourceWithErrors,
+} from "./frameSource";
+import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
+import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
+import { type FaceLandmarkerLike, loadFaceLandmarker } from "./mediapipeLoader";
+import { PulseCheck, type PulseCheckState } from "./pulseCheck";
+import {
+	type Metrics,
+	type RppgDebugIssueCode,
+	type RppgDebugSnapshot,
+	RppgProcessor,
+	type RppgProcessorBackendFailure,
+	type RppgTraceSnapshot,
+} from "./rppgProcessor";
+import { ensureVideoPlaying } from "./videoPlayback";
+import {
+	type Backend,
+	type WasmImporter,
+	createUnavailableBackend,
+	loadWasmBackend,
+} from "./wasmBackend";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow";
 import type {
 	RppgModelDiagnosticsV1,
@@ -210,13 +210,15 @@ export class RppgSession {
 		const metrics = this.processor.getMetrics();
 		const check = this.internals.pulseCheck;
 		if (!check) return metrics;
-		// With the check on, the rate shown is the rate the check proved, or none. Breathing
-		// rate and HRV come from the same signal, so they are withheld too until a pulse is proven.
+		// With the check on, the only number reported is the heart rate the check proved, or none.
+		// Breathing rate and HRV are withheld always, because neither yet passes a known answer
+		// even with the pulse proven (sandbox, 2026-10-02, synthetic face, rate proven at 70):
+		// with NO breathing in the video, breathing read 14 to 21 in 42 of 42 seconds; at a true
+		// 12 it was within 2 in 22 of 42. Each comes back when it has a check of its own.
 		const state = check.getState();
-		if (state.verdict === "measured") return { ...metrics, bpm: state.bpm };
 		return {
 			...metrics,
-			bpm: null,
+			bpm: state.verdict === "measured" ? state.bpm : null,
 			hrv_rmssd: null,
 			respiration_rate: null,
 			respiration_confidence: null,

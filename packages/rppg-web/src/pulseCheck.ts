@@ -25,16 +25,16 @@
  * 4,965 right seconds and delayed no first reading.
  */
 import {
-	estimateOwnPulse,
-	OWN_PULSE_WINDOW_S,
-	type OwnPulseEstimate,
-	ownPulseVerdict,
 	OWN_PULSE_AGREE_BPM,
 	OWN_PULSE_DETREND_S,
 	OWN_PULSE_STRONG_STREAK,
-	detrend,
-	peakOfSpectrum,
+	OWN_PULSE_WINDOW_S,
+	type OwnPulseEstimate,
 	type RawRoiSample,
+	detrend,
+	estimateOwnPulse,
+	ownPulseVerdict,
+	peakOfSpectrum,
 	resample,
 	spectrum,
 } from "./pulseCheckCore";
@@ -100,6 +100,15 @@ const KEEP_MS = (OWN_PULSE_WINDOW_S + 2) * 1000;
 /** The wall check looks back over OWN_PULSE_STRONG_STREAK windows, so it keeps that much more. */
 const WALL_KEEP_MS = KEEP_MS + OWN_PULSE_STRONG_STREAK * EVAL_EVERY_MS;
 const HISTORY_MAX = 120;
+/**
+ * A proven rate belongs to the face it was measured on. Once no face has reached the check
+ * for this long, the rate is dropped and the proof starts over: the face that comes back may
+ * be someone else, or in other light. One evaluation interval, so a rate is never shown for
+ * longer than the check takes to re-judge it, while a one-frame face-finder dropout (a few
+ * tens of ms) keeps it. Found on a real laptop 2026-10-02: a proven 67 stayed on screen with
+ * the camera turned to a wall, because nothing reached the check to change its mind.
+ */
+const FACE_GONE_MS = EVAL_EVERY_MS;
 
 export class PulseCheck {
 	private samples: RawRoiSample[] = [];
@@ -107,6 +116,7 @@ export class PulseCheck {
 	private history: (OwnPulseEstimate | null)[] = [];
 	private held: number | null = null;
 	private lastEvalMs: number | null = null;
+	private lostSinceMs: number | null = null;
 	private state: PulseCheckState = {
 		verdict: "unknown",
 		bpm: null,
@@ -121,6 +131,10 @@ export class PulseCheck {
 	 */
 	push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb): void {
 		if (regions.length < 3 || !Number.isFinite(timestampMs)) return;
+		// Frames that stopped arriving unannounced count as a lost face too.
+		const last = this.samples[this.samples.length - 1];
+		if (last && timestampMs - last[0] > FACE_GONE_MS) this.reset();
+		this.lostSinceMs = null;
 		const [f, l, r] = regions;
 		this.samples.push([
 			timestampMs,
@@ -174,6 +188,13 @@ export class PulseCheck {
 				};
 	}
 
+	/** A frame in which no face (no forehead and cheeks) was found. */
+	faceLost(timestampMs: number): void {
+		if (!Number.isFinite(timestampMs)) return;
+		if (this.lostSinceMs == null) this.lostSinceMs = timestampMs;
+		else if (timestampMs - this.lostSinceMs >= FACE_GONE_MS) this.reset();
+	}
+
 	getState(): PulseCheckState {
 		return this.state;
 	}
@@ -184,6 +205,7 @@ export class PulseCheck {
 		this.history = [];
 		this.held = null;
 		this.lastEvalMs = null;
+		this.lostSinceMs = null;
 		this.state = {
 			verdict: "unknown",
 			bpm: null,
