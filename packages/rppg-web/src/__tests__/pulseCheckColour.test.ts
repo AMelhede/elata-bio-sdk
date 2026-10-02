@@ -24,22 +24,26 @@ function capture(opts: { bpm: number; blue: number; wall: boolean; seconds?: num
 }
 
 describe("pulse check: colour-damage switch", () => {
+	it("is off in the live check: POS even when the blue channel is crushed and the wall is seen", () => {
+		expect(estimateOwnPulse(capture({ bpm: 66, blue: 4, wall: true }), 16)?.method).toBe("pos");
+	});
+
 	it("stays on POS for a clean camera, and finds the pulse", () => {
-		const e = estimateOwnPulse(capture({ bpm: 66, blue: 90, wall: true }), 16);
+		const e = estimateOwnPulse(capture({ bpm: 66, blue: 90, wall: true }), 16, undefined, OWN_PULSE_COLOUR_DAMAGE);
 		expect(e?.method).toBe("pos");
 		expect(e?.colourDamage ?? 0).toBeLessThan(OWN_PULSE_COLOUR_DAMAGE);
 		expect(Math.abs((e?.bpm ?? 0) - 66)).toBeLessThanOrEqual(4);
 	});
 
 	it("reads green minus the wall when the blue channel is crushed, and finds the pulse, not the light", () => {
-		const e = estimateOwnPulse(capture({ bpm: 66, blue: 4, wall: true }), 16);
+		const e = estimateOwnPulse(capture({ bpm: 66, blue: 4, wall: true }), 16, undefined, OWN_PULSE_COLOUR_DAMAGE);
 		expect(e?.colourDamage ?? 0).toBeGreaterThanOrEqual(OWN_PULSE_COLOUR_DAMAGE);
 		expect(e?.method).toBe("greenMinusWall");
 		expect(Math.abs((e?.bpm ?? 0) - 66)).toBeLessThanOrEqual(4);
 	});
 
 	it("keeps POS when the wall was not visible, however damaged the colour", () => {
-		const e = estimateOwnPulse(capture({ bpm: 66, blue: 4, wall: false }), 16);
+		const e = estimateOwnPulse(capture({ bpm: 66, blue: 4, wall: false }), 16, undefined, OWN_PULSE_COLOUR_DAMAGE);
 		expect(e?.method).toBe("pos");
 	});
 });

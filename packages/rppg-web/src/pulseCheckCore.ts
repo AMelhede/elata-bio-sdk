@@ -436,6 +436,16 @@ export function pos(R: number[], G: number[], B: number[]): number[] {
  * head movement changes the face's shading and not the wall's, which POS cancels.
  */
 export const OWN_PULSE_COLOUR_DAMAGE = 50;
+/**
+ * The switch as the live check uses it: OFF. The sweep above was run on full-box region means,
+ * which the live check never sees (it gets skin-masked means). Re-measured 2026-10-02 on what the
+ * live check actually receives (per-frame inputs recorded in the browser, wall found past a turned
+ * head): at 50 it never changes a reading (60 + 50 MCD-rPPG recordings); at 20 it read 17 of 59
+ * (today 14) with 0 wrong seconds of 266 (today 5 of 230), but on 50 people it was not tuned on
+ * the front camera dropped from 10 of 18 to 7 of 18. Off until a front-camera set (UBFC-rPPG)
+ * shows it costs the front camera nothing.
+ */
+export const OWN_PULSE_COLOUR_SWITCH = Number.POSITIVE_INFINITY;
 
 const zeroMeanNorm = (x: number[]): number[] => {
 	const m = x.reduce((a, v) => a + v, 0) / x.length || 1;
@@ -466,6 +476,8 @@ export function estimateOwnPulse(
 	windowS: number = OWN_PULSE_WINDOW_S,
 	/** The instant to judge at; defaults to the last sample. A window whose newest sample is older than 1 s is stale and yields null. */
 	atMs: number = samples.length ? samples[samples.length - 1][0] : 0,
+	/** Colour damage at which green minus the wall replaces POS (OWN_PULSE_COLOUR_SWITCH). */
+	colourSwitch: number = OWN_PULSE_COLOUR_SWITCH,
 ): OwnPulseEstimate | null {
 	if (samples.length < 8) return null;
 	const end = atMs;
@@ -509,7 +521,7 @@ export function estimateOwnPulse(
 		.sort((a, b) => a - b);
 	const colourDamage = Math.round(damages[1] * 10) / 10;
 	const method =
-		wall && colourDamage >= OWN_PULSE_COLOUR_DAMAGE ? "greenMinusWall" : "pos";
+		wall && colourDamage >= colourSwitch ? "greenMinusWall" : "pos";
 	const regions: RegionEstimate[] = REGIONS.map((region, ri) => {
 		const [R, G, B] = channels[ri];
 		const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
