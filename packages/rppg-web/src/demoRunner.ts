@@ -259,6 +259,31 @@ export class DemoRunner {
 					put("skinSmooth", averageRgbInROIWithSkinMaskStats(frame, smc.x, smc.y, smc.w, smc.h));
 					put("plainSmooth", averageRgbInROI(frame, smc.x, smc.y, smc.w, smc.h));
 				});
+				// Head turn: where the nose tip (landmark 1) sits between the face's left and right
+				// edges (234, 454). About 0.5 facing the camera; towards 0 or 1 turned to a side.
+				const lm = frame.landmarks;
+				if (lm && lm.length > 454) {
+					const span = lm[454].x - lm[234].x;
+					out.yaw = [span !== 0 ? (lm[1].x - lm[234].x) / span : Number.NaN];
+				}
+				// Background: the room beside the face, as Peak samples it (stableRois.ts): middle third
+				// of the face's height, a quarter of its width, 0.15 of its width clear of its edge, on
+				// whichever side has more room. Plain mean: there is no skin to mask.
+				if (lm && lm.length) {
+					const norm = lm.every((p) => p.x <= 1.5 && p.y <= 1.5);
+					const xs = lm.map((p) => (norm ? p.x * frame.width : p.x)).sort((a, b) => a - b);
+					const ys = lm.map((p) => (norm ? p.y * frame.height : p.y)).sort((a, b) => a - b);
+					const pick = (v: number[], q: number) => v[Math.min(v.length - 1, Math.max(0, Math.floor((v.length - 1) * q)))];
+					const x0 = pick(xs, 0.05), y0 = pick(ys, 0.03), fw = Math.max(1, pick(xs, 0.95) - x0), fh = Math.max(1, pick(ys, 0.97) - y0);
+					const w = fw * 0.25, gap = fw * 0.15, y = y0 + fh / 3, h = fh / 3;
+					const roomL = x0 - gap, roomR = frame.width - (x0 + fw + gap);
+					const bx = roomL >= roomR && roomL >= w ? roomL - w : roomR > roomL && roomR >= w ? x0 + fw + gap : null;
+					if (bx != null && y >= 0 && y + h <= frame.height) {
+						const c = clampRoiToFrame({ x: Math.round(bx), y: Math.round(y), w: Math.round(w), h: Math.round(h) }, frame.width, frame.height);
+						const m = averageRgbInROI(frame, c.x, c.y, c.w, c.h);
+						out.bg = [m.r, m.g, m.b];
+					}
+				}
 				this.opts.pulseCheckProbe(frame.timestampMs, out);
 			}
 			if (this.opts.pulseChecker && rois.length >= 3 && frame.timestampMs != null) {
