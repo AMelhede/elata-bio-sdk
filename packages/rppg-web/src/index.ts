@@ -345,3 +345,8 @@ export type {
 	SessionComparison,
 } from "./replayBenchmark";
 export { PulseCheck, type PulseCheckState } from "./pulseCheck";
+export {
+	createWorkerRppgProcessor,
+	type RppgProcessorLike,
+	WorkerRppgProcessor,
+} from "./workerRppgProcessor";
