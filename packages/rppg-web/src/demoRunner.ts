@@ -19,7 +19,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, wallBesideFace } from "./pulseCheck";
+import { type PulseCheck, wallBesideFace, wallMissReason } from "./pulseCheck";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
 	type RoiPixelSampler,
@@ -310,6 +310,9 @@ export class DemoRunner {
 						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
 					}),
 					wall?.rgb,
+					frame.landmarks && !wall
+						? wallMissReason(frame.landmarks, frame.width, frame.height)
+						: undefined,
 				);
 			}
 			if (frame.roi) {

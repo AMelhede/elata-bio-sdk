@@ -61,7 +61,15 @@ export type PulseCheckState = {
 	/** That window's colour-damage measure, and whether the wall was seen through the whole window. */
 	windowColourDamage?: number | null;
 	windowWallSeen?: boolean;
+	/**
+	 * Frames in the last one-second step: with the wall seen, and without it because the face
+	 * left no room beside it or because every patch beside it looked like skin (wallMissReason).
+	 */
+	wallFrames?: { seen: number; noRoom: number; skin: number };
 };
+
+/** Why no wall was found beside the face this frame (see wallBesideFace). */
+export type WallMiss = "no-room" | "skin";
 
 type Rgb = { r: number; g: number; b: number };
 
@@ -129,6 +137,7 @@ export class PulseCheck {
 	private held: number | null = null;
 	private lastEvalMs: number | null = null;
 	private lostSinceMs: number | null = null;
+	private wallTally = { seen: 0, noRoom: 0, skin: 0 };
 	private state: PulseCheckState = {
 		verdict: "unknown",
 		bpm: null,
@@ -141,8 +150,11 @@ export class PulseCheck {
 	 * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
 	 * and optionally the mean RGB of a patch of wall beside the face (see the wall check).
 	 */
-	push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb): void {
+	push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss): void {
 		if (regions.length < 3 || !Number.isFinite(timestampMs)) return;
+		if (wall) this.wallTally.seen++;
+		else if (wallMiss === "no-room") this.wallTally.noRoom++;
+		else if (wallMiss === "skin") this.wallTally.skin++;
 		// Frames that stopped arriving unannounced count as a lost face too.
 		const last = this.samples[this.samples.length - 1];
 		if (last && timestampMs - last[0] > FACE_GONE_MS) this.reset();
@@ -172,6 +184,8 @@ export class PulseCheck {
 		if (this.lastEvalMs == null) this.lastEvalMs = timestampMs;
 		if (timestampMs - this.lastEvalMs < EVAL_EVERY_MS) return;
 		this.lastEvalMs = timestampMs;
+		const wallFrames = this.wallTally;
+		this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
 		const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs);
 		if (est && (est as { skip?: boolean }).skip) return;
 		this.history.push(est);
@@ -199,6 +213,7 @@ export class PulseCheck {
 					windowMethod: est?.method ?? null,
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
+					wallFrames,
 				}
 			: {
 					verdict: v.verdict,
@@ -211,6 +226,7 @@ export class PulseCheck {
 					windowMethod: est?.method ?? null,
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
+					wallFrames,
 				};
 	}
 
@@ -232,6 +248,7 @@ export class PulseCheck {
 		this.held = null;
 		this.lastEvalMs = null;
 		this.lostSinceMs = null;
+		this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
 		this.state = {
 			verdict: "unknown",
 			bpm: null,
@@ -277,6 +294,21 @@ export function wallBesideFace(
 		if (rgb) return { rgb, gapIndex: i };
 	}
 	return null;
+}
+
+/**
+ * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame
+ * (the face fills it), otherwise "skin" (every patch looked like skin: an ear or neck, or a
+ * beige or wooden wall, or warm light making the wall skin-coloured).
+ */
+export function wallMissReason(
+	points: readonly { x: number; y: number }[],
+	width: number,
+	height: number,
+): WallMiss {
+	return WALL_GAPS.some((g) => wallPatchFromLandmarks(points, width, height, g))
+		? "skin"
+		: "no-room";
 }
 
 /**

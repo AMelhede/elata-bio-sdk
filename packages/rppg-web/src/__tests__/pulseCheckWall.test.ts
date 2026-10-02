@@ -1,5 +1,5 @@
 import { averageRgbInROINonSkin } from "../frameSource";
-import { PulseCheck, WALL_GAPS, wallBesideFace, wallPatchFromLandmarks } from "../pulseCheck";
+import { PulseCheck, WALL_GAPS, wallBesideFace, wallMissReason, wallPatchFromLandmarks } from "../pulseCheck";
 
 // Face regions with a rhythm at `bpm` (a real pulse is chromatic: green drops most), plus a
 // patch of grey wall beside the face. `wall`: "same" is a pulsing lamp, which scales a grey
@@ -163,5 +163,31 @@ describe("wallBesideFace", () => {
 	it("returns null when every distance shows skin", () => {
 		const { points, frame } = turnedHead(5);
 		expect(wallBesideFace(points, frame, 0)).toBeNull();
+	});
+});
+
+describe("why the wall was not seen", () => {
+	it("says no room when the face fills the frame", () => {
+		expect(wallMissReason(face(0.02, 0.98, 0.05, 0.95), 640, 480)).toBe("no-room");
+	});
+
+	it("says skin when there is room but every patch looks like skin", () => {
+		expect(wallMissReason(face(0.1, 0.35, 0.2, 0.8), 640, 480)).toBe("skin");
+	});
+
+	it("counts, per one-second window, the frames with the wall seen and why it was missed", () => {
+		const check = new PulseCheck();
+		const region = { r: 150, g: 120, b: 100 };
+		const wall = { r: 100, g: 100, b: 100 };
+		for (let t = 0; t <= 2000; t += 50) {
+			const k = Math.round(t / 50) % 4;
+			check.push(t, [region, region, region], k === 0 ? wall : undefined, k === 1 ? "no-room" : k >= 2 ? "skin" : undefined);
+		}
+		const f = check.getState().wallFrames;
+		expect(f).toBeDefined();
+		expect(f!.seen + f!.noRoom + f!.skin).toBe(20);
+		expect(f!.seen).toBe(5);
+		expect(f!.noRoom).toBe(5);
+		expect(f!.skin).toBe(10);
 	});
 });
