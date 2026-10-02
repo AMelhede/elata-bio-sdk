@@ -28,6 +28,7 @@ import { type Frame, averageRgbInROINonSkin } from "./frameSource";
 import {
 	OWN_PULSE_AGREE_BPM,
 	OWN_PULSE_DETREND_S,
+	OWN_PULSE_FS,
 	OWN_PULSE_STRONG_STREAK,
 	OWN_PULSE_WINDOW_S,
 	type OwnPulseEstimate,
@@ -66,7 +67,81 @@ export type PulseCheckState = {
 	 * left no room beside it or because every patch beside it looked like skin (wallMissReason).
 	 */
 	wallFrames?: { seen: number; noRoom: number; skin: number };
+	/** True while the face's own rhythm at the proven rate is brightness, not colour (FACE_FLICKER_RATIO). */
+	faceFlicker?: boolean;
 };
+
+/**
+ * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
+ * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
+ * So at the proven rate, each region's relative colour is split into brightness (the part
+ * common to all three channels) and colour (the rest), and the pooled brightness / colour
+ * amplitude ratio is judged. A blood-volume pulse keeps it near 3 (de Haan & van Leest 2014,
+ * the PBV signature); the method is the perception lab's achromatic test (Elata perception-lab
+ * lighting.ts, MIT). Withheld when the ratio exceeds this in each of the last
+ * OWN_PULSE_STRONG_STREAK one-second windows, judged at once like the wall check.
+ *
+ * Measured 2026-10-02 on what the live check receives, the wall left out: a no-pulse video
+ * under a lamp swinging 3% at 72/min showed a made-up 72 for 26 s, all 26 withheld at any
+ * limit from 3.3 to 20; on 255 MCD-rPPG recordings the limit withheld 46 of 1,269 right
+ * seconds at 3.3, 2 at 4 and none from 6 to 20, and none of the 23 wrong ones (those are not
+ * flicker). 10 sits inside the clean range, over three times a pulse's own ratio.
+ */
+export const FACE_FLICKER_RATIO = 10;
+
+/** Brightness / colour amplitude ratio of the face regions within 0.1 Hz of `bpm`. */
+export function faceFlickerRatio(
+	samples: readonly RawRoiSample[],
+	atMs: number,
+	bpm: number,
+): number | null {
+	const win = samples.filter(
+		(s) => s[0] > atMs - OWN_PULSE_WINDOW_S * 1000 && s[0] <= atMs,
+	);
+	if (win.length < WALL_MIN_SAMPLES) return null;
+	const t = win.map((s) => s[0] / 1000);
+	const f0 = bpm / 60;
+	let bright = 0;
+	let colour = 0;
+	for (let ri = 0; ri < 3; ri++) {
+		const ch = [1, 2, 3].map((c) => {
+			const x = resample(
+				t,
+				win.map((s) => s[c + ri * 3]),
+				t[0],
+				t[t.length - 1],
+			);
+			const m = x.reduce((a, v) => a + v, 0) / x.length || 1;
+			const d = detrend(
+				x.map((v) => v / m - 1),
+				OWN_PULSE_DETREND_S,
+			);
+			const n = d.length;
+			return d.map((v, k) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * k) / (n - 1))));
+		});
+		const n = ch[0].length;
+		for (let f = f0 - 0.1; f <= f0 + 0.1 + 1e-9; f += 0.05) {
+			const re = [0, 0, 0];
+			const im = [0, 0, 0];
+			for (let k = 0; k < n; k++) {
+				const a = (2 * Math.PI * f * k) / OWN_PULSE_FS;
+				const c = Math.cos(a);
+				const sn = Math.sin(a);
+				for (let j = 0; j < 3; j++) {
+					re[j] += ch[j][k] * c;
+					im[j] += ch[j][k] * sn;
+				}
+			}
+			const sr = re[0] + re[1] + re[2];
+			const si = im[0] + im[1] + im[2];
+			const iPow = (sr * sr + si * si) / 3;
+			const total = re.reduce((a, v, j) => a + v * v + im[j] * im[j], 0);
+			bright += iPow;
+			colour += Math.max(0, total - iPow);
+		}
+	}
+	return colour > 0 ? Math.sqrt(bright / colour) : Number.POSITIVE_INFINITY;
+}
 
 /** Why no wall was found beside the face this frame (see wallBesideFace). */
 export type WallMiss = "no-room" | "skin";
@@ -201,7 +276,13 @@ export class PulseCheck {
 			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
 				wallCarries(this.wall, timestampMs - k * EVAL_EVERY_MS, held),
 			);
-		this.state = wallMatch
+		const faceFlicker =
+			held != null &&
+			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => {
+				const q = faceFlickerRatio(this.samples, timestampMs - k * EVAL_EVERY_MS, held);
+				return q != null && q > FACE_FLICKER_RATIO;
+			});
+		this.state = wallMatch || faceFlicker
 			? {
 					verdict: "not-measured",
 					bpm: null,
@@ -214,6 +295,7 @@ export class PulseCheck {
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
 					wallFrames,
+					faceFlicker,
 				}
 			: {
 					verdict: v.verdict,
@@ -227,6 +309,7 @@ export class PulseCheck {
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
 					wallFrames,
+					faceFlicker,
 				};
 	}
 
