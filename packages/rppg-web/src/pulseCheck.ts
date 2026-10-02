@@ -17,10 +17,12 @@
  *
  * Wall check (optional, used when the caller passes a patch of wall beside the face): a
  * heartbeat is only in skin, a light that pulses changes the wall as well. If the wall's
- * strongest rhythm is the proven rate, clearly above its noise, in each of the last 4
- * one-second windows, the rate is withheld. Measured (sandbox fix 07): a no-pulse video with a light swinging 3%
- * at 72/min showed 72 for 26 s; the wall check withheld all 26. On 240 real recordings it
- * withheld 95 of 4,965 right seconds and delayed one first reading of 131 by 3 s.
+ * brightness pulses at the proven rate, far above its noise, in each of the last 4
+ * one-second windows, the rate is withheld. The caller passes only wall pixels that do not
+ * look like skin: a face edge or an ear in the patch carries the person's own pulse.
+ * Measured (sandbox fix 07): a no-pulse video with a light swinging 3% at 72/min showed 72
+ * for 27 s; the wall check withheld all 27. On 240 real recordings it withheld none of
+ * 4,965 right seconds and delayed no first reading.
  */
 import {
 	estimateOwnPulse,
@@ -29,11 +31,9 @@ import {
 	ownPulseVerdict,
 	OWN_PULSE_AGREE_BPM,
 	OWN_PULSE_DETREND_S,
-	OWN_PULSE_MIN_SNR_DB,
 	OWN_PULSE_STRONG_STREAK,
 	detrend,
 	peakOfSpectrum,
-	pos,
 	type RawRoiSample,
 	resample,
 	spectrum,
@@ -57,9 +57,19 @@ type Rgb = { r: number; g: number; b: number };
 const WALL_MIN_SAMPLES = 60;
 
 /**
- * Whether the wall carries `bpm` the way a face must to count: its strongest in-band line
- * (the check's own peak picker) within OWN_PULSE_AGREE_BPM of the rate and above the check's
- * own bar. Power at that rate alone is not enough: noise has some power at every rate.
+ * How loud the wall's line must be, in dB over its noise, to count as a light. Measured
+ * (sandbox fix 07): on 240 real recordings the wall's brightness reached at most +7.9 dB at
+ * the person's proven rate by chance (99 in 100 windows under +6.1); a light swinging 3% put
+ * the wall at +26 to +32 dB. +12 clears every real window with 4 dB to spare and sits about
+ * 5 dB under where a 1% light lands (scaled from the 3% figure).
+ */
+const WALL_MIN_SNR_DB = 12;
+
+/**
+ * Whether the wall carries `bpm` the way a light would: the strongest in-band line of its
+ * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate and WALL_MIN_SNR_DB above its
+ * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
+ * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
 function wallCarries(
 	wall: [number, number, number, number][],
@@ -71,22 +81,17 @@ function wallCarries(
 	);
 	if (win.length < WALL_MIN_SAMPLES) return false;
 	const t = win.map((w) => w[0] / 1000);
-	const from = t[0];
-	const to = t[t.length - 1];
-	const ch = (k: 1 | 2 | 3) =>
-		resample(
-			t,
-			win.map((w) => w[k]),
-			from,
-			to,
-		);
-	const pk = peakOfSpectrum(
-		spectrum(detrend(pos(ch(1), ch(2), ch(3)), OWN_PULSE_DETREND_S)),
+	const brightness = resample(
+		t,
+		win.map((w) => w[1] + w[2] + w[3]),
+		t[0],
+		t[t.length - 1],
 	);
+	const pk = peakOfSpectrum(spectrum(detrend(brightness, OWN_PULSE_DETREND_S)));
 	return (
 		Number.isFinite(pk.bpm) &&
 		Math.abs(pk.bpm - bpm) <= OWN_PULSE_AGREE_BPM &&
-		pk.snrDb >= OWN_PULSE_MIN_SNR_DB
+		pk.snrDb >= WALL_MIN_SNR_DB
 	);
 }
 

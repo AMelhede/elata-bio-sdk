@@ -5,6 +5,7 @@ import {
 	averageGreenInROI,
 	averageGreenInROIWithSkinMaskStats,
 	averageRgbInROI,
+	averageRgbInROINonSkin,
 	averageRgbInROIWithSkinMaskStats,
 } from "./frameSource";
 import {
@@ -286,8 +287,9 @@ export class DemoRunner {
 				frame.timestampMs != null
 			) {
 				// Same three region boxes and the same skin-masked mean the fuser uses.
-				// And a patch of wall beside the face, for the wall check (plain
-				// mean: there is no skin to mask).
+				// And a patch of wall beside the face, for the wall check: only its
+				// pixels that do not look like skin, so a face edge or an ear in it
+				// cannot carry the person's own pulse into the wall.
 				const patch = frame.landmarks
 					? wallPatchFromLandmarks(frame.landmarks, frame.width, frame.height)
 					: null;
@@ -300,9 +302,15 @@ export class DemoRunner {
 						const c = clampRoiToFrame(roi, frame.width, frame.height);
 						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
 					}),
-					wallBox
-						? averageRgbInROI(frame, wallBox.x, wallBox.y, wallBox.w, wallBox.h)
-						: undefined,
+					(wallBox &&
+						averageRgbInROINonSkin(
+							frame,
+							wallBox.x,
+							wallBox.y,
+							wallBox.w,
+							wallBox.h,
+						)) ??
+						undefined,
 				);
 			}
 			if (frame.roi) {
