@@ -17,8 +17,8 @@
  *
  * Wall check (optional, used when the caller passes a patch of wall beside the face): a
  * heartbeat is only in skin, a light that pulses changes the wall as well. If the wall's
- * strongest rhythm is the proven rate, clearly above its noise, in 4 evaluations in a row,
- * the rate is withheld. Measured (sandbox fix 07): a no-pulse video with a light swinging 3%
+ * strongest rhythm is the proven rate, clearly above its noise, in each of the last 4
+ * one-second windows, the rate is withheld. Measured (sandbox fix 07): a no-pulse video with a light swinging 3%
  * at 72/min showed 72 for 26 s; the wall check withheld all 26. On 240 real recordings it
  * withheld 95 of 4,965 right seconds and delayed one first reading of 131 by 3 s.
  */
@@ -92,12 +92,13 @@ function wallCarries(
 
 const EVAL_EVERY_MS = 1000;
 const KEEP_MS = (OWN_PULSE_WINDOW_S + 2) * 1000;
+/** The wall check looks back over OWN_PULSE_STRONG_STREAK windows, so it keeps that much more. */
+const WALL_KEEP_MS = KEEP_MS + OWN_PULSE_STRONG_STREAK * EVAL_EVERY_MS;
 const HISTORY_MAX = 120;
 
 export class PulseCheck {
 	private samples: RawRoiSample[] = [];
 	private wall: [number, number, number, number][] = [];
-	private wallRun = 0;
 	private history: (OwnPulseEstimate | null)[] = [];
 	private held: number | null = null;
 	private lastEvalMs: number | null = null;
@@ -131,7 +132,7 @@ export class PulseCheck {
 		while (this.samples.length && this.samples[0][0] < timestampMs - KEEP_MS)
 			this.samples.shift();
 		if (wall) this.wall.push([timestampMs, wall.r, wall.g, wall.b]);
-		while (this.wall.length && this.wall[0][0] < timestampMs - KEEP_MS)
+		while (this.wall.length && this.wall[0][0] < timestampMs - WALL_KEEP_MS)
 			this.wall.shift();
 		if (this.lastEvalMs == null) this.lastEvalMs = timestampMs;
 		if (timestampMs - this.lastEvalMs < EVAL_EVERY_MS) return;
@@ -143,11 +144,14 @@ export class PulseCheck {
 		const v = ownPulseVerdict(this.history, this.held);
 		this.held = v.verdict === "measured" ? v.bpm : null;
 		// The wall check only withholds; it never changes what the check itself has proven.
-		this.wallRun =
-			this.held != null && wallCarries(this.wall, timestampMs, this.held)
-				? this.wallRun + 1
-				: 0;
-		const wallMatch = this.wallRun >= OWN_PULSE_STRONG_STREAK;
+		// Judged over the last 4 one-second windows at once, not counted forward from the
+		// moment of proof, so a lamp's rate is withheld from its first second.
+		const held = this.held;
+		const wallMatch =
+			held != null &&
+			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
+				wallCarries(this.wall, timestampMs - k * EVAL_EVERY_MS, held),
+			);
 		this.state = wallMatch
 			? {
 					verdict: "not-measured",
@@ -172,7 +176,6 @@ export class PulseCheck {
 	reset(): void {
 		this.samples = [];
 		this.wall = [];
-		this.wallRun = 0;
 		this.history = [];
 		this.held = null;
 		this.lastEvalMs = null;

@@ -15,7 +15,32 @@ function feed(check: PulseCheck, bpm: number, wall: "same" | "quiet" | "none", s
 	}
 }
 
+// Every state seen once a second, to catch a rate that leaks out before the wall check acts.
+function feedStates(bpm: number, wall: "same" | "quiet", seconds: number) {
+	const check = new PulseCheck();
+	const states: ReturnType<PulseCheck["getState"]>[] = [];
+	let s = 11;
+	const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.4;
+	let next = 1000;
+	for (let t = 0; t <= seconds * 1000; t += 1000 / 30) {
+		const p = 0.01 * Math.sin((2 * Math.PI * bpm * t) / 60000);
+		const region = () => ({ r: 150 * (1 - 0.3 * p) + noise(), g: 120 * (1 - p) + noise(), b: 100 * (1 - 0.6 * p) + noise() });
+		const q = wall === "same" ? p : 0;
+		check.push(t, [region(), region(), region()], { r: 90 * (1 + q) + noise(), g: 100 * (1 - 0.5 * q) + noise(), b: 110 * (1 + q) + noise() });
+		if (t >= next) {
+			states.push(check.getState());
+			next += 1000;
+		}
+	}
+	return states;
+}
+
 describe("PulseCheck wall check", () => {
+	it("never lets the wall's rate out, not even for the first seconds", () => {
+		const shown = feedStates(72, "same", 45).filter((st) => st.bpm != null);
+		expect(shown).toHaveLength(0);
+	});
+
 	it("refuses a rate the wall beside the face also carries", () => {
 		const check = new PulseCheck();
 		feed(check, 72, "same", 45);
