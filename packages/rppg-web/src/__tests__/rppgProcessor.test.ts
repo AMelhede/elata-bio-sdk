@@ -1,5 +1,5 @@
 import { BpmBayesTracker } from '../bpmBayesTracker';
-import { RppgProcessor, MuseCalibrationModel, MuseFusionCalibrator } from '../rppgProcessor';
+import { ANALYSIS_EVERY_MS, RppgProcessor, MuseCalibrationModel, MuseFusionCalibrator } from '../rppgProcessor';
 
 describe('MuseCalibrationModel', () => {
   let model: MuseCalibrationModel;
@@ -271,6 +271,22 @@ describe('RppgProcessor', () => {
     expect(m.bpm).toBe(72);
     expect(m.confidence).toBeGreaterThan(0.7);
     expect(m.agreement).toBe(0.6);
+  });
+
+  test('runs the analysis at most once per ANALYSIS_EVERY_MS of sample time, however often it is read', () => {
+    const backend = createMockBackend({
+      get_metrics: jest.fn(() => ({ bpm: 72, confidence: 0.8, signal_quality: 0.7 })),
+    });
+    const p = new RppgProcessor(backend as any, 30, 5);
+    p.pushSample(1000, 0.5);
+    p.getMetrics();
+    p.pushSample(1100, 0.5);
+    for (let i = 0; i < 10; i++) p.getMetrics();
+    p.getDebugSnapshot();
+    expect(backend.pipeline.get_metrics).toHaveBeenCalledTimes(1);
+    p.pushSample(1000 + ANALYSIS_EVERY_MS, 0.5);
+    expect(p.getMetrics().bpm).toBe(72);
+    expect(backend.pipeline.get_metrics).toHaveBeenCalledTimes(2);
   });
 
   test('enableTracker calls backend method', () => {

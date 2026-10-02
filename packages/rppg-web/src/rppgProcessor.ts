@@ -6,22 +6,14 @@ import {
 	type TrackerEstimate,
 } from "./bpmBayesTracker";
 import {
-	type WaveformPeriodicityProfile,
-} from "./rppgDiagnostics";
-import {
-	ChannelGainController,
-	ChromPulseModel,
-} from "./rppgSignalModel";
-import {
-	analyzePulseWindow,
-	type HarmonicRelation,
-} from "./pulseAnalysis";
-import {
-	CaptureConfidenceScorer,
 	type CaptureConfidenceConfig,
 	type CaptureConfidenceResult,
+	CaptureConfidenceScorer,
 	type CaptureFrameSample,
 } from "./captureConfidence";
+import { type HarmonicRelation, analyzePulseWindow } from "./pulseAnalysis";
+import { type WaveformPeriodicityProfile } from "./rppgDiagnostics";
+import { ChannelGainController, ChromPulseModel } from "./rppgSignalModel";
 
 export type Backend = {
 	newPipeline: (sampleRate: number, windowSec: number) => any;
@@ -215,6 +207,16 @@ type Sample = {
 };
 
 const BPM_MIN = 40;
+/**
+ * The heart-rate analysis (spectral estimate, beat tracker, breathing) runs at most once per
+ * this much SAMPLE time; every read in between returns that result. A heartbeat is ~1 s and a
+ * display updates about once a second, so 4 analyses a second lose nothing. Before this, every
+ * read ran the analysis, and the runner's per-frame diagnostics read it twice a frame: on a
+ * 1280x960 test feed that held the analysed frame rate to ~7 per second (measured
+ * 2026-10-02), and since each run is one more Bayesian update on the same evidence, the
+ * tracker's own estimate depended on how often an app happened to read it.
+ */
+export const ANALYSIS_EVERY_MS = 250;
 const BPM_MAX = 180;
 const BPM_TOLERANCE = 6;
 const DEFAULT_Q = Math.SQRT1_2;
@@ -465,9 +467,7 @@ export class MuseFusionCalibrator {
 		return nowMs - this.lastMuseTs < 2500 && this.lastMuseQuality >= 50;
 	}
 
-	getReference(
-		nowMs = Date.now(),
-	): { bpm: number; strength: number } | null {
+	getReference(nowMs = Date.now()): { bpm: number; strength: number } | null {
 		if (!this.isMuseFresh(nowMs) || this.lastMuseBpm == null) return null;
 		return {
 			bpm: this.lastMuseBpm,
@@ -510,6 +510,8 @@ export class RppgProcessor {
 	// When set, it overrides the backend's RGB-derived signal_quality, because the
 	// fused path bypasses the backend CHROM stage. Cleared by any non-fused push.
 	private fusedQuality: number | null = null;
+	/** Last analysis result and the sample time it was computed at (see ANALYSIS_EVERY_MS). */
+	private analysed: { atMs: number; metrics: Metrics } | null = null;
 	// Capture-confidence (motion + lighting) scorer. Lazily created the first
 	// time the host feeds a frame via pushCaptureFrame; null/no-op otherwise so
 	// non-face hosts pay nothing and `capture_*` metrics stay absent.
@@ -605,6 +607,7 @@ export class RppgProcessor {
 		this.disposed = true;
 		this.releasePipeline();
 		this.samples.length = 0;
+		this.analysed = null;
 		this.bpmHistory.length = 0;
 		this.resetCalibration();
 	}
@@ -653,7 +656,9 @@ export class RppgProcessor {
 	pushFusedSample(timestampMs: number, fusedValue: number, fusedSnr: number) {
 		if (!Number.isFinite(timestampMs) || !Number.isFinite(fusedValue)) return;
 		this.pushSample(timestampMs, fusedValue);
-		this.fusedQuality = Number.isFinite(fusedSnr) ? fusedSnrToQuality(fusedSnr) : null;
+		this.fusedQuality = Number.isFinite(fusedSnr)
+			? fusedSnrToQuality(fusedSnr)
+			: null;
 	}
 
 	pushSampleRgb(
@@ -789,6 +794,7 @@ export class RppgProcessor {
 		this.baselineBpm = null;
 		this.baselineDeviationStartMs = null;
 		this.lastBayesUpdateMs = null;
+		this.analysed = null;
 	}
 
 	getStateSnapshot() {
@@ -835,10 +841,8 @@ export class RppgProcessor {
 	}
 
 	getMetrics(): Metrics {
-		const backendMetrics = this.readBackendMetrics();
-		if (this.failedBackendError) return backendMetrics;
-		const advanced = this.computeAdvancedMetrics(backendMetrics);
-		const metrics = { ...backendMetrics, ...advanced };
+		const metrics = this.analyse();
+		if (this.failedBackendError) return metrics;
 		// In multi-ROI fusion mode the backend CHROM (and its RGB-derived quality)
 		// is bypassed — the fuser's in-band SNR is the authoritative quality.
 		if (this.fusedQuality != null) metrics.signal_quality = this.fusedQuality;
@@ -850,6 +854,31 @@ export class RppgProcessor {
 			metrics.capture_reasons = this.lastCapture.reasons;
 		}
 		return metrics;
+	}
+
+	/** The analysis, run at most once per ANALYSIS_EVERY_MS of sample time. */
+	private analyse(): Metrics {
+		const lastMs =
+			this.samples.length > 0
+				? this.samples[this.samples.length - 1].timestampMs
+				: null;
+		const cached = this.analysed;
+		if (
+			cached &&
+			lastMs != null &&
+			lastMs >= cached.atMs &&
+			lastMs - cached.atMs < ANALYSIS_EVERY_MS
+		) {
+			return { ...cached.metrics };
+		}
+		const backendMetrics = this.readBackendMetrics();
+		if (this.failedBackendError) return backendMetrics;
+		const metrics = {
+			...backendMetrics,
+			...this.computeAdvancedMetrics(backendMetrics),
+		};
+		this.analysed = lastMs != null ? { atMs: lastMs, metrics } : null;
+		return { ...metrics };
 	}
 
 	getDebugSnapshot(nowMs = Date.now()): RppgDebugSnapshot {
@@ -893,18 +922,16 @@ export class RppgProcessor {
 
 	getTraceSnapshot(maxPoints = 300): RppgTraceSnapshot {
 		const safeMaxPoints = Math.max(1, Math.floor(maxPoints));
-		const points = this.samples
-			.slice(-safeMaxPoints)
-			.map((sample) => ({
-				timestampMs: sample.timestampMs,
-				intensity: sample.intensity,
-				r: sample.r,
-				g: sample.g,
-				b: sample.b,
-				skinRatio: sample.skinRatio,
-				motion: sample.motion,
-				clipRatio: sample.clipRatio,
-			}));
+		const points = this.samples.slice(-safeMaxPoints).map((sample) => ({
+			timestampMs: sample.timestampMs,
+			intensity: sample.intensity,
+			r: sample.r,
+			g: sample.g,
+			b: sample.b,
+			skinRatio: sample.skinRatio,
+			motion: sample.motion,
+			clipRatio: sample.clipRatio,
+		}));
 		const firstPoint = points[0] ?? null;
 		const lastPoint = points[points.length - 1] ?? null;
 		const windowDurationMs =
@@ -960,9 +987,7 @@ export class RppgProcessor {
 
 	private assertBackendHealthy(operation: string) {
 		if (this.disposed || !this.pipeline) {
-			throw new Error(
-				`rPPG backend has been disposed; refusing ${operation}.`,
-			);
+			throw new Error(`rPPG backend has been disposed; refusing ${operation}.`);
 		}
 		if (!this.failedBackendError) return;
 		const previousOp = this.failedOperation ?? "an earlier backend call";
@@ -1193,12 +1218,13 @@ export class RppgProcessor {
 			(resolved.aliasFlag && estimatorSpread > 28);
 		const cameraCandidate = lowConfidenceGate
 			? null
-			: calibratedBpm ?? resolvedBpm ?? base.bpm ?? null;
-		const cameraQuality = clamp(
-			((base.signal_quality || 0) + (analysis.quality || 0)) * 50,
-			0,
-			100,
-		) * (lowConfidenceGate ? 0.45 : 1);
+			: (calibratedBpm ?? resolvedBpm ?? base.bpm ?? null);
+		const cameraQuality =
+			clamp(
+				((base.signal_quality || 0) + (analysis.quality || 0)) * 50,
+				0,
+				100,
+			) * (lowConfidenceGate ? 0.45 : 1);
 		this.fusion.updateCamera(cameraCandidate, cameraQuality, analysis.nowMs);
 		const fused = this.fusion.fuse(
 			cameraCandidate,
@@ -1534,12 +1560,10 @@ function resolveBpmCandidates(
 
 function buildTrackerMeasurements(
 	spectral: { bpm: number; confidence: number } | null,
-	acf:
-		| {
-				bpm: number;
-				confidence: number;
-		  }
-		| null,
+	acf: {
+		bpm: number;
+		confidence: number;
+	} | null,
 	peaks: { bpm: number; confidence: number } | null,
 ): EstimatorMeasurement[] {
 	const measurements: EstimatorMeasurement[] = [];
@@ -1644,24 +1668,39 @@ function computeAgreementScore(input: {
 	estimatorSpread: number;
 	aliasFlag: boolean;
 }): number {
-	const { candidates, resolved, resolvedChoice, bayes, analysis, winningSources, estimatorSpread, aliasFlag } =
-		input;
+	const {
+		candidates,
+		resolved,
+		resolvedChoice,
+		bayes,
+		analysis,
+		winningSources,
+		estimatorSpread,
+		aliasFlag,
+	} = input;
 	const targetBpm = resolvedChoice.bpm;
 
 	if (targetBpm == null || !Number.isFinite(targetBpm)) return 0;
 
 	const directCandidates = candidates.filter(
-		(candidate) => candidate.source !== "calibrated" && candidate.source !== "backend",
+		(candidate) =>
+			candidate.source !== "calibrated" && candidate.source !== "backend",
 	);
-	const supportCandidates = directCandidates.length ? directCandidates : candidates;
+	const supportCandidates = directCandidates.length
+		? directCandidates
+		: candidates;
 	let weightedSupport = 0;
 	let totalWeight = 0;
 	for (const candidate of supportCandidates) {
-		if (!Number.isFinite(candidate.bpm) || !Number.isFinite(candidate.confidence)) {
+		if (
+			!Number.isFinite(candidate.bpm) ||
+			!Number.isFinite(candidate.confidence)
+		) {
 			continue;
 		}
 		const weight = clamp(candidate.confidence, 0, 1);
-		weightedSupport += Math.exp(-Math.abs(candidate.bpm - targetBpm) / 10) * weight;
+		weightedSupport +=
+			Math.exp(-Math.abs(candidate.bpm - targetBpm) / 10) * weight;
 		totalWeight += weight;
 	}
 	const candidateAgreement =
@@ -1718,8 +1757,10 @@ function scoreWaveformAgreement(
 	let bestSupport = 0;
 	for (const candidate of waveformProfile.topCandidates.slice(0, 3)) {
 		const direct = Math.exp(-Math.abs(candidate.bpm - targetBpm) / 10);
-		const half = Math.exp(-Math.abs(candidate.bpm - targetBpm * 0.5) / 8) * 0.92;
-		const double = Math.exp(-Math.abs(candidate.bpm - targetBpm * 2) / 12) * 0.75;
+		const half =
+			Math.exp(-Math.abs(candidate.bpm - targetBpm * 0.5) / 8) * 0.92;
+		const double =
+			Math.exp(-Math.abs(candidate.bpm - targetBpm * 2) / 12) * 0.75;
 		bestSupport = Math.max(bestSupport, Math.max(direct, half, double));
 	}
 
@@ -1729,4 +1770,3 @@ function scoreWaveformAgreement(
 		1,
 	);
 }
-
