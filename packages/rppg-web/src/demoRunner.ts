@@ -12,7 +12,7 @@ import {
 	padFaceBoxToHead,
 	type FaceBox,
 } from "./faceFraming";
-import type { PulseCheck } from "./pulseCheck";
+import { type PulseCheck, wallPatchFromLandmarks } from "./pulseCheck";
 import {
 	FUSION_ROIS,
 	type FusionRoiName,
@@ -286,12 +286,23 @@ export class DemoRunner {
 				frame.timestampMs != null
 			) {
 				// Same three region boxes and the same skin-masked mean the fuser uses.
+				// And a patch of wall beside the face, for the wall check (plain
+				// mean: there is no skin to mask).
+				const patch = frame.landmarks
+					? wallPatchFromLandmarks(frame.landmarks, frame.width, frame.height)
+					: null;
+				const wallBox = patch
+					? clampRoiToFrame(patch, frame.width, frame.height)
+					: null;
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
 					rois.slice(0, 3).map((roi) => {
 						const c = clampRoiToFrame(roi, frame.width, frame.height);
 						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
 					}),
+					wallBox
+						? averageRgbInROI(frame, wallBox.x, wallBox.y, wallBox.w, wallBox.h)
+						: undefined,
 				);
 			}
 			if (frame.roi) {
