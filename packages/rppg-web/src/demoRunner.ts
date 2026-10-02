@@ -1,18 +1,17 @@
 import {
-	FrameSource,
+	type FaceBox,
+	faceBoxFromLandmarks,
+	padFaceBoxToHead,
+} from "./faceFraming";
+import {
 	Frame,
 	type FrameBlendshape,
+	FrameSource,
 	averageGreenInROI,
 	averageGreenInROIWithSkinMaskStats,
 	averageRgbInROI,
 	averageRgbInROIWithSkinMaskStats,
 } from "./frameSource";
-import {
-	faceBoxFromLandmarks,
-	padFaceBoxToHead,
-	type FaceBox,
-} from "./faceFraming";
-import type { PulseCheck } from "./pulseCheck";
 import {
 	FUSION_ROIS,
 	type FusionRoiName,
@@ -20,7 +19,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { RppgProcessor } from "./rppgProcessor";
+import type { PulseCheck } from "./pulseCheck";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
 	type RoiPixelSampler,
@@ -31,6 +30,7 @@ import {
 	ELATA_FACE_YCBCR_V1_PROFILE,
 	type RoiGeometryProfile,
 } from "./roiProfile";
+import { RppgProcessor } from "./rppgProcessor";
 
 export type LastBlendshapes = {
 	blendshapes: FrameBlendshape[];
@@ -235,8 +235,7 @@ export class DemoRunner {
 		}
 		const useSkinMask = this.opts.useSkinMask !== false;
 		if (this.opts.onRoiSamples && frame.namedRois) {
-			const sampler =
-				this.opts.roiPixelSampler ?? ELATA_YCBCR_V1_PIXEL_SAMPLER;
+			const sampler = this.opts.roiPixelSampler ?? ELATA_YCBCR_V1_PIXEL_SAMPLER;
 			const samples = Object.entries(frame.namedRois).flatMap(([name, roi]) =>
 				roi
 					? [
@@ -261,6 +260,15 @@ export class DemoRunner {
 		let fusionResult: MultiRoiFusionResult | null = null;
 
 		const rois = frame.rois && frame.rois.length > 0 ? frame.rois : null;
+		// No forehead and cheeks this frame: tell the check, so a rate proven on a face
+		// does not outlive the face (see FACE_GONE_MS in pulseCheck.ts).
+		if (
+			this.opts.pulseChecker &&
+			(!rois || rois.length < 3) &&
+			frame.timestampMs != null
+		) {
+			this.opts.pulseChecker.faceLost(frame.timestampMs);
+		}
 		if (rois) {
 			roiSource = "multi_roi";
 			this.diagnostics.framesWithMultiRoi += 1;
@@ -377,10 +385,7 @@ export class DemoRunner {
 		const ts = frame.timestampMs ?? Date.now();
 		const proc = this.processor as any;
 		try {
-			if (
-				fusionResult?.valid &&
-				typeof proc.pushFusedSample === "function"
-			) {
+			if (fusionResult?.valid && typeof proc.pushFusedSample === "function") {
 				// Fused pulse already carries CHROM + SNR-weighted blending; feed it
 				// straight to spectral BPM/HRV, with the fused SNR as quality.
 				proc.pushFusedSample(ts, fusionResult.fused, fusionResult.fusedSnr);
@@ -453,11 +458,7 @@ export class DemoRunner {
 		const n = Math.min(FUSION_ROIS.length, rois.length);
 		for (let i = 0; i < n; i++) {
 			const c = clampRoiToFrame(rois[i]!, frame.width, frame.height);
-			const s = sampleRgbWithSkinMask(
-				frame,
-				c,
-				this.opts.roiPixelSampler,
-			);
+			const s = sampleRgbWithSkinMask(frame, c, this.opts.roiPixelSampler);
 			samples[FUSION_ROIS[i]!] = {
 				r: s.r,
 				g: s.g,
@@ -594,13 +595,7 @@ function sampleRgbWithSkinMask(
 	pixelSampler?: RoiPixelSampler,
 ) {
 	if (!pixelSampler) {
-		return averageRgbInROIWithSkinMaskStats(
-			frame,
-			roi.x,
-			roi.y,
-			roi.w,
-			roi.h,
-		);
+		return averageRgbInROIWithSkinMaskStats(frame, roi.x, roi.y, roi.w, roi.h);
 	}
 	const sample = pixelSampler.sample(frame, roi);
 	return {
