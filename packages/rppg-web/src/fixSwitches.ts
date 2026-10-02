@@ -61,6 +61,13 @@ export type RppgFixSwitches = {
 	 * face finder runs on every frame, as published.
 	 */
 	faceFinderInterval?: boolean;
+	/**
+	 * Speed 4. The heart-rate analysis runs in a Web Worker so it never blocks camera frames,
+	 * falling back to the main thread when a worker or the WASM core in it cannot start. Off:
+	 * the analysis runs on the main thread, as published. The session option `analysisWorker`,
+	 * when given, wins over this switch.
+	 */
+	analysisWorker?: boolean;
 };
 
 /** `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless `false`. */
@@ -77,6 +84,7 @@ export const FIX_SWITCH_NAMES = [
 	"analysisSchedule",
 	"analysisWidth",
 	"faceFinderInterval",
+	"analysisWorker",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */

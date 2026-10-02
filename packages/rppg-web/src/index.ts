@@ -355,3 +355,8 @@ export {
 	resolveFixSwitches,
 } from "./fixSwitches";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo";
+export {
+	createWorkerRppgProcessor,
+	type RppgProcessorLike,
+	WorkerRppgProcessor,
+} from "./workerRppgProcessor";

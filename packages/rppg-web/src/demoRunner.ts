@@ -37,6 +37,7 @@ import {
 	ELATA_FACE_YCBCR_V1_PROFILE,
 	type RoiGeometryProfile,
 } from "./roiProfile";
+import type { RppgProcessorLike } from "./workerRppgProcessor";
 
 export type LastBlendshapes = {
 	blendshapes: FrameBlendshape[];
@@ -247,7 +248,7 @@ export class DemoRunner {
 
 	constructor(
 		private source: FrameSource,
-		private processor: RppgProcessor,
+		private processor: RppgProcessorLike,
 		private opts: DemoRunnerOptions = {},
 	) {
 		this.source.onFrame = this.onFrame.bind(this);
@@ -337,8 +338,7 @@ export class DemoRunner {
 		}
 		const useSkinMask = this.opts.useSkinMask !== false;
 		if (this.opts.onRoiSamples && frame.namedRois) {
-			const sampler =
-				this.opts.roiPixelSampler ?? ELATA_YCBCR_V1_PIXEL_SAMPLER;
+			const sampler = this.opts.roiPixelSampler ?? ELATA_YCBCR_V1_PIXEL_SAMPLER;
 			const samples = Object.entries(frame.namedRois).flatMap(([name, roi]) =>
 				roi
 					? [
@@ -677,11 +677,7 @@ export class DemoRunner {
 		const n = Math.min(FUSION_ROIS.length, rois.length);
 		for (let i = 0; i < n; i++) {
 			const c = clampRoiToFrame(rois[i]!, frame.width, frame.height);
-			const s = sampleRgbWithSkinMask(
-				frame,
-				c,
-				this.opts.roiPixelSampler,
-			);
+			const s = sampleRgbWithSkinMask(frame, c, this.opts.roiPixelSampler);
 			samples[FUSION_ROIS[i]!] = {
 				r: s.r,
 				g: s.g,
@@ -818,13 +814,7 @@ function sampleRgbWithSkinMask(
 	pixelSampler?: RoiPixelSampler,
 ) {
 	if (!pixelSampler) {
-		return averageRgbInROIWithSkinMaskStats(
-			frame,
-			roi.x,
-			roi.y,
-			roi.w,
-			roi.h,
-		);
+		return averageRgbInROIWithSkinMaskStats(frame, roi.x, roi.y, roi.w, roi.h);
 	}
 	const sample = pixelSampler.sample(frame, roi);
 	return {

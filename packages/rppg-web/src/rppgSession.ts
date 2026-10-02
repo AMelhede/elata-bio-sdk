@@ -44,6 +44,11 @@ import type {
 	WaveformReconstructor,
 } from "./waveformModel";
 import { WaveformReconstructionController } from "./waveformReconstructionController";
+import {
+	type RppgProcessorLike,
+	createWorkerRppgProcessor,
+	WorkerRppgProcessor,
+} from "./workerRppgProcessor";
 
 export type RppgSessionBackendPreference = "auto" | "wasm";
 export type RppgSessionBackendMode = "wasm" | "unavailable";
@@ -132,6 +137,14 @@ export type CreateRppgSessionOptions = Omit<
 		/** Reserved for later validation; reconstructed BPM evidence is disabled. */
 		useReconstructedBpmEvidence?: false;
 	};
+	/**
+	 * Run the heart-rate analysis in a Web Worker, so it never blocks the camera frames (see
+	 * workerRppgProcessor.ts). Defaults to the `analysisWorker` fix switch. Falls back to the main thread, exactly as
+	 * without the option, when workers are unavailable, the worker cannot load the WASM core,
+	 * or a function option is set that cannot cross to a worker (wasmImporter,
+	 * bpmEvidenceQualityProvider).
+	 */
+	analysisWorker?: boolean;
 	sampleRate?: number;
 	windowSec?: number;
 	backend?: RppgSessionBackendPreference;
@@ -207,7 +220,7 @@ export class RppgSession {
 
 	constructor(
 		public readonly source: FrameSource,
-		public readonly processor: RppgProcessor,
+		public readonly processor: RppgProcessorLike,
 		public readonly runner: DemoRunner,
 		public readonly backendMode: RppgSessionBackendMode,
 		public readonly faceTrackingMode: RppgSessionFaceTrackingMode,
@@ -288,6 +301,7 @@ export class RppgSession {
 				analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
 				faceFinderInterval:
 					srcFixes?.faceFinderInterval ?? fixes.faceFinderInterval,
+				analysisWorker: this.processor instanceof WorkerRppgProcessor,
 			},
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
@@ -478,21 +492,39 @@ export async function createRppgSession(
 			)
 		: new MediaPipeFrameSource(options.video, { fps: sampleRate });
 
-	const backendResult = await resolveBackend(backendPreference, {
-		wasmJsUrl: options.wasmJsUrl,
-		wasmBinaryUrl: options.wasmBinaryUrl,
-		wasmImporter: options.wasmImporter,
-	});
-	const processor = new RppgProcessor(
-		backendResult.backend,
-		sampleRate,
-		windowSec,
-		{
-			bpmTrackerConfig: options.bpmTrackerConfig,
-			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
-			fixes: options.fixes,
-		},
-	);
+	const workerProcessor =
+		(options.analysisWorker ??
+			resolveFixSwitches(options.fixes).analysisWorker) &&
+		!options.wasmImporter &&
+		!options.bpmEvidenceQualityProvider
+			? await createWorkerRppgProcessor({
+					sampleRate,
+					windowSec,
+					wasmJsUrl: options.wasmJsUrl,
+					wasmBinaryUrl: options.wasmBinaryUrl,
+					bpmTrackerConfig: options.bpmTrackerConfig,
+					fixes: options.fixes,
+				})
+			: null;
+	const backendResult = workerProcessor
+		? { mode: "wasm" as const }
+		: await resolveBackend(backendPreference, {
+				wasmJsUrl: options.wasmJsUrl,
+				wasmBinaryUrl: options.wasmBinaryUrl,
+				wasmImporter: options.wasmImporter,
+			});
+	const processor: RppgProcessorLike =
+		workerProcessor ??
+		new RppgProcessor(
+			(backendResult as { backend: Backend }).backend,
+			sampleRate,
+			windowSec,
+			{
+				bpmTrackerConfig: options.bpmTrackerConfig,
+				bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+				fixes: options.fixes,
+			},
+		);
 	applyTrackerConfiguration(processor, enableTracker);
 	let session: RppgSession | null = null;
 	const waveformBuilder = options.experimental
@@ -645,7 +677,7 @@ async function resolveBackend(
 }
 
 function applyTrackerConfiguration(
-	processor: RppgProcessor,
+	processor: RppgProcessorLike,
 	enableTracker: CreateRppgSessionOptions["enableTracker"],
 ) {
 	if (!enableTracker) return;
