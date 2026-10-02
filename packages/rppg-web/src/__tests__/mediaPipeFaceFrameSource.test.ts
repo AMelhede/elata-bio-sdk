@@ -300,3 +300,34 @@ describe('MediaPipeFaceFrameSource edge cases', () => {
     jest.useRealTimers();
   });
 });
+
+describe('MediaPipeFaceFrameSource analysis width switch', () => {
+  const lm = [
+    { x: 0.45, y: 0.4 },
+    { x: 0.55, y: 0.4 },
+    { x: 0.5, y: 0.5 },
+  ];
+  test('on: a 1280x960 camera is read at 640x480 and the face finder reads that image', () => {
+    const restore = setupCanvasMock(1280, 960);
+    const video = new FakeVideo(1280, 960) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30);
+    (src as any).detectAndEmit(1000, { mediaTime: 0.001 });
+    const canvas = (src as any).canvas;
+    expect([canvas.width, canvas.height]).toEqual([640, 480]);
+    expect(landmarker.detectForVideo.mock.calls[0][0]).toBe(canvas);
+    restore();
+  });
+
+  test('off: the full camera frame, and the face finder reads the live video, as published', () => {
+    const restore = setupCanvasMock(1280, 960);
+    const video = new FakeVideo(1280, 960) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { analysisWidth: false });
+    (src as any).detectAndEmit(1000, { mediaTime: 0.001 });
+    const canvas = (src as any).canvas;
+    expect([canvas.width, canvas.height]).toEqual([1280, 960]);
+    expect(landmarker.detectForVideo.mock.calls[0][0]).toBe(video);
+    restore();
+  });
+});

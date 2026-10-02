@@ -21,7 +21,7 @@ export type FaceLandmarkerResult = {
 /** Minimal surface of MediaPipe's FaceLandmarker used by the frame source (mockable in tests). */
 export type FaceLandmarkerLike = {
 	detectForVideo(
-		video: HTMLVideoElement,
+		image: HTMLVideoElement | HTMLCanvasElement,
 		timestampMs: number,
 	): FaceLandmarkerResult;
 	close?: () => void;
@@ -58,7 +58,9 @@ export async function loadFaceLandmarker(
 
 	// Runtime ESM import of the CDN bundle. The dynamic URL keeps bundlers from
 	// trying to resolve tasks-vision at build time (the package stays dep-free).
-	const mod: any = await import(/* @vite-ignore */ /* webpackIgnore: true */ `${cdn}/vision_bundle.mjs`);
+	const mod: any = await import(
+		/* @vite-ignore */ /* webpackIgnore: true */ `${cdn}/vision_bundle.mjs`
+	);
 	const FilesetResolver = mod.FilesetResolver;
 	const FaceLandmarker = mod.FaceLandmarker;
 	if (!FilesetResolver || !FaceLandmarker) return null;

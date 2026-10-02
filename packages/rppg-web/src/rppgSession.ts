@@ -7,7 +7,10 @@ import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
 import { PulseCheck, type PulseCheckState } from "./pulseCheck";
-import { type ResolvedRppgFixSwitches, resolveFixSwitches } from "./fixSwitches";
+import {
+	type ResolvedRppgFixSwitches,
+	resolveFixSwitches,
+} from "./fixSwitches";
 import { ensureVideoPlaying } from "./videoPlayback";
 import {
 	RppgProcessor,
@@ -273,14 +276,16 @@ export class RppgSession {
 			resolveFixSwitches();
 		const procFixes = (this.processor as { fixes?: ResolvedRppgFixSwitches })
 			.fixes;
+		const srcFixes = (this.source as { fixes?: ResolvedRppgFixSwitches } | null)
+			?.fixes;
 		return {
 			fixes: {
 				...fixes,
 				colourProjectionFix:
 					procFixes?.colourProjectionFix ?? fixes.colourProjectionFix,
 				noRateDoubling: procFixes?.noRateDoubling ?? fixes.noRateDoubling,
-				analysisSchedule:
-					procFixes?.analysisSchedule ?? fixes.analysisSchedule,
+				analysisSchedule: procFixes?.analysisSchedule ?? fixes.analysisSchedule,
+				analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
 			},
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
@@ -467,6 +472,7 @@ export async function createRppgSession(
 				faceMeshResult.faceMesh,
 				sampleRate,
 				options.roiGeometryProfile,
+				options.fixes,
 			)
 		: new MediaPipeFrameSource(options.video, { fps: sampleRate });
 

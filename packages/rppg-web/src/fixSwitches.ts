@@ -49,6 +49,12 @@ export type RppgFixSwitches = {
 	 * it. Off: every read runs the analysis, as published.
 	 */
 	analysisSchedule?: boolean;
+	/**
+	 * Speed 2. Frames are read at most 640 wide (same aspect), and the face finder reads that
+	 * same image, so landmarks and pixels come from one frame. Off: the full camera frame, and
+	 * the face finder reads the live video, as published.
+	 */
+	analysisWidth?: boolean;
 };
 
 /** `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless `false`. */
@@ -63,6 +69,7 @@ export const FIX_SWITCH_NAMES = [
 	"posFusion",
 	"noRateDoubling",
 	"analysisSchedule",
+	"analysisWidth",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
