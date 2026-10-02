@@ -146,6 +146,45 @@ export function averageGreenInROIWithSkinMaskStats(
 	return { intensity: sum / skinCount / 255.0, skinRatio };
 }
 
+/**
+ * Mean RGB of the pixels in a box that do NOT look like skin (the same YCbCr skin test as
+ * averageRgbInROIWithSkinMaskStats), or null when fewer than 10% of them qualify. For a patch
+ * that must be wall: a face edge or an ear drifting into it carries the person's own pulse.
+ */
+export function averageRgbInROINonSkin(
+	frame: Frame,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+): { r: number; g: number; b: number } | null {
+	const data = frame.data;
+	const width = frame.width;
+	let sumR = 0;
+	let sumG = 0;
+	let sumB = 0;
+	let n = 0;
+	let count = 0;
+	for (let row = y; row < y + h; row++) {
+		for (let col = x; col < x + w; col++) {
+			const idx = (row * width + col) * 4;
+			const r = (data as any)[idx + 0];
+			const g = (data as any)[idx + 1];
+			const b = (data as any)[idx + 2];
+			const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+			const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+			count++;
+			if (cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) continue;
+			sumR += r;
+			sumG += g;
+			sumB += b;
+			n++;
+		}
+	}
+	if (n < Math.max(10, count * 0.1)) return null;
+	return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255 };
+}
+
 export function averageRgbInROIWithSkinMaskStats(
 	frame: Frame,
 	x: number,

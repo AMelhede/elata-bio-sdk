@@ -5,6 +5,7 @@ import {
 	averageGreenInROI,
 	averageGreenInROIWithSkinMaskStats,
 	averageRgbInROI,
+	averageRgbInROINonSkin,
 	averageRgbInROIWithSkinMaskStats,
 } from "./frameSource";
 import {
@@ -282,6 +283,8 @@ export class DemoRunner {
 						const c = clampRoiToFrame({ x: Math.round(bx), y: Math.round(y), w: Math.round(w), h: Math.round(h) }, frame.width, frame.height);
 						const m = averageRgbInROI(frame, c.x, c.y, c.w, c.h);
 						out.bg = [m.r, m.g, m.b];
+						const ns = averageRgbInROINonSkin(frame, c.x, c.y, c.w, c.h);
+						if (ns) out.bgNoSkin = [ns.r, ns.g, ns.b];
 					}
 				}
 				this.opts.pulseCheckProbe(frame.timestampMs, out);
