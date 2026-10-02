@@ -49,6 +49,12 @@ export type PulseCheckState = {
 	streak: number;
 	/** True while the wall beside the face carries the proven rate, so the rate is withheld. */
 	wallMatch: boolean;
+	/**
+	 * The latest one-second window as it is, proven or not: its rate and how far its line
+	 * stands above the noise. For diagnosis only; nothing decides on these two.
+	 */
+	windowBpm?: number | null;
+	windowSnrDb?: number | null;
 };
 
 type Rgb = { r: number; g: number; b: number };
@@ -178,6 +184,8 @@ export class PulseCheck {
 					snrDb: v.snrDb,
 					streak: v.streak,
 					wallMatch,
+					windowBpm: est?.bpm ?? null,
+					windowSnrDb: est?.snrDb ?? null,
 				}
 			: {
 					verdict: v.verdict,
@@ -185,6 +193,8 @@ export class PulseCheck {
 					snrDb: v.snrDb,
 					streak: v.streak,
 					wallMatch,
+					windowBpm: est?.bpm ?? null,
+					windowSnrDb: est?.snrDb ?? null,
 				};
 	}
 
