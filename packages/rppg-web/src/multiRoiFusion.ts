@@ -1,4 +1,12 @@
-import { Bandpass, ChromPulseModel, spectralSnr } from "./rppgSignalModel";
+import {
+	Bandpass,
+	ChromPulseModel,
+	PosPulseModel,
+	spectralSnr,
+} from "./rppgSignalModel";
+
+/** Per-region pulse projection. POS by default: see {@link PosPulseModel} for the evidence. */
+export type FusionProjection = "pos" | "chrom";
 
 /**
  * Multi-ROI rPPG fusion.
@@ -49,7 +57,10 @@ const MIN_SKIN_FRACTION = 0.1;
 
 export class MultiRoiRppgFuser {
 	private readonly fs: number;
-	private readonly chrom: Record<FusionRoiName, ChromPulseModel>;
+	private readonly chrom: Record<
+		FusionRoiName,
+		ChromPulseModel | PosPulseModel
+	>;
 	private readonly band: Record<FusionRoiName, Bandpass>;
 	private buf: Record<FusionRoiName, number[]>;
 	private fusedBuf: number[] = [];
@@ -62,12 +73,19 @@ export class MultiRoiRppgFuser {
 	private readonly updateEvery: number;
 	private readonly weightEma = 0.3;
 
-	constructor(fs = 30, windowSeconds = 8, updateEverySeconds = 0.5) {
+	constructor(
+		fs = 30,
+		windowSeconds = 8,
+		updateEverySeconds = 0.5,
+		projection: FusionProjection = "pos",
+	) {
 		this.fs = fs;
 		this.bufLimit = Math.max(60, Math.round(fs * windowSeconds));
 		this.minSamples = Math.round(fs * 3);
 		this.updateEvery = Math.max(1, Math.round(fs * updateEverySeconds));
-		this.chrom = this.makeRecord(() => new ChromPulseModel());
+		this.chrom = this.makeRecord(() =>
+			projection === "chrom" ? new ChromPulseModel() : new PosPulseModel(),
+		);
 		this.band = this.makeRecord(() => new Bandpass(fs, 0.7, 4.0));
 		this.buf = this.makeRecord(() => [] as number[]);
 		this.weights = this.makeRecord(() => 1 / FUSION_ROIS.length);

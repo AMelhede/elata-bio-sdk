@@ -442,6 +442,7 @@ export async function createRppgSession(
 		useSkinMask: options.useSkinMask ?? true,
 		multiRoiFusion: options.multiRoiFusion,
 		requireFace: faceTrackingMode === "face_mesh" && options.roi === undefined,
+		fusionProjection: options.fusionProjection,
 		roiPixelSampler: options.roiPixelSampler,
 		onRoiSamples: (samples) => {
 			options.onRoiSamples?.(samples);
