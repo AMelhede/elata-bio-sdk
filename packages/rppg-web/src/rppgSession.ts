@@ -419,6 +419,7 @@ export async function createRppgSession(
 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,
 		useSkinMask: options.useSkinMask ?? true,
 		multiRoiFusion: options.multiRoiFusion,
+		fusionProjection: options.fusionProjection,
 		roiPixelSampler: options.roiPixelSampler,
 		onRoiSamples: (samples) => {
 			options.onRoiSamples?.(samples);
