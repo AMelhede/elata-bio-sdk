@@ -14,6 +14,7 @@ import {
 } from "./frameSource";
 import {
 	FUSION_ROIS,
+	type FusionProjection,
 	type FusionRoiName,
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
@@ -72,6 +73,8 @@ export type DemoRunnerOptions = {
 	 * aggregated-ROI path when sub-ROIs are unavailable.
 	 */
 	multiRoiFusion?: boolean;
+	/** Per-region projection inside the fuser: "pos" (default) or "chrom". */
+	fusionProjection?: FusionProjection;
 	/**
 	 * Pixel-selection and spatial-weighting profile. When omitted, the original
 	 * SDK YCbCr helper is used unchanged.
@@ -214,7 +217,12 @@ export class DemoRunner {
 		this.diagnostics.roiPixelSamplerId =
 			opts.roiPixelSampler?.id ?? ELATA_YCBCR_V1_PIXEL_SAMPLER.id;
 		if (opts.multiRoiFusion !== false) {
-			this.fuser = new MultiRoiRppgFuser(opts.sampleRate ?? 30);
+			this.fuser = new MultiRoiRppgFuser(
+				opts.sampleRate ?? 30,
+				8,
+				0.5,
+				opts.fusionProjection ?? "pos",
+			);
 		}
 	}
 

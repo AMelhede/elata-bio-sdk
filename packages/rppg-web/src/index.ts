@@ -163,11 +163,13 @@ export {
 	ChannelGainController,
 	ChromPulseModel,
 	computeSignalSnrDb,
+	PosPulseModel,
 	spectralSnr,
 	zeroPhaseBandpass,
 } from "./rppgSignalModel";
 export { FUSION_ROIS, MultiRoiRppgFuser } from "./multiRoiFusion";
 export type {
+	FusionProjection,
 	FusionRoiName,
 	MultiRoiFusionResult,
 	RoiRgbSample,
