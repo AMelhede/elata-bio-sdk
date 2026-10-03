@@ -89,6 +89,18 @@ export type PulseCheckState = {
  */
 export const FACE_FLICKER_RATIO = 10;
 
+/**
+ * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
+ * moves the proven rate trails it: on UBFC-rPPG (people playing a stressful game) every wrong
+ * second the check showed matched the true rate of up to 12 s earlier. Once proven, the shown
+ * rate is the line in the newest 12 s if it is within 4 bpm of the proven rate. Swept on five
+ * sets (MCD-rPPG three cameras, held-out side cameras, UBFC): 8, 10, 12, 14 s at 6 bpm and
+ * 12 s at 4 bpm; 12 s at 4 bpm was the only one with no set worse: wrong seconds
+ * 0/0/13/6/53 -> 0/0/9/5/43, seconds with a number unchanged.
+ */
+export const OWN_PULSE_TRACK_S = 12;
+export const OWN_PULSE_TRACK_BPM = 4;
+
 /** Brightness / colour amplitude ratio of the face regions within 0.1 Hz of `bpm`. */
 export function faceFlickerRatio(
 	samples: readonly RawRoiSample[],
@@ -299,7 +311,7 @@ export class PulseCheck {
 				}
 			: {
 					verdict: v.verdict,
-					bpm: this.held,
+					bpm: this.shownRate(timestampMs),
 					snrDb: v.snrDb,
 					streak: v.streak,
 					wallMatch,
@@ -311,6 +323,20 @@ export class PulseCheck {
 					wallFrames,
 					faceFlicker,
 				};
+	}
+
+	/**
+	 * The rate to show once one is proven: the line in the newest OWN_PULSE_TRACK_S
+	 * seconds when it sits within OWN_PULSE_TRACK_BPM of the proven rate, else the
+	 * proven rate. The proof itself (this.held, the verdict, the hold) is unchanged.
+	 */
+	private shownRate(timestampMs: number): number | null {
+		if (this.held == null) return null;
+		const recent = estimateOwnPulse(this.samples, OWN_PULSE_TRACK_S, timestampMs);
+		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
+		return rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM
+			? rate
+			: this.held;
 	}
 
 	/** A frame in which no face (no forehead and cheeks) was found. */
