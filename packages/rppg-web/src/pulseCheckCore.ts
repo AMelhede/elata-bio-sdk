@@ -437,15 +437,22 @@ export function pos(R: number[], G: number[], B: number[]): number[] {
  */
 export const OWN_PULSE_COLOUR_DAMAGE = 50;
 /**
- * The switch as the live check uses it: OFF. The sweep above was run on full-box region means,
- * which the live check never sees (it gets skin-masked means). Re-measured 2026-10-02 on what the
- * live check actually receives (per-frame inputs recorded in the browser, wall found past a turned
- * head): at 50 it never changes a reading (60 + 50 MCD-rPPG recordings); at 20 it read 17 of 59
- * (today 14) with 0 wrong seconds of 266 (today 5 of 230), but on 50 people it was not tuned on
- * the front camera dropped from 10 of 18 to 7 of 18. Off until a front-camera set (UBFC-rPPG)
- * shows it costs the front camera nothing.
+ * The switch point the live check uses. The sweep above was run on full-box region means, which
+ * the live check never sees (it gets skin-masked means), so it was re-measured 2026-10-02/03 on
+ * what the live check actually receives: per-frame inputs recorded in the browser, with the wall
+ * found past a turned head and kept one signal across patches. At 50 the switch never changed a
+ * reading. At 20, chosen on 59 recordings and confirmed on 48, 97 and 109 more:
+ *  - front camera, 95 recordings: 57 with a number either way; wrong seconds 17 of 1,227 -> 11
+ *    of 1,263;
+ *  - side and phone cameras re-recorded with the fixed wall, 109: 12 with a number -> 18;
+ *    right seconds 69 -> 157; wrong 9 -> 6;
+ *  - together 69 -> 75 recordings with a number, right 1,279 -> 1,409 s, wrong 26 -> 17 s;
+ *  - no-pulse videos (lamp, light and tint flicker, nod, moving face), wall seen or not: none
+ *    shows a number; a moving face with a true 70 reads 70.
+ * 10 and 15 read one more recording than 20 on the first set but 4 fewer on the second.
+ * Not yet checked on a second dataset (UBFC-rPPG could not be downloaded); MCD-rPPG only.
  */
-export const OWN_PULSE_COLOUR_SWITCH = Number.POSITIVE_INFINITY;
+export const OWN_PULSE_COLOUR_SWITCH = 20;
 
 const zeroMeanNorm = (x: number[]): number[] => {
 	const m = x.reduce((a, v) => a + v, 0) / x.length || 1;

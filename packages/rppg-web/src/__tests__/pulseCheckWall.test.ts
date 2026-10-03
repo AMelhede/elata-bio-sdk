@@ -54,7 +54,11 @@ describe("PulseCheck wall check", () => {
 		feed(check, 72, "same", 45);
 		expect(check.getState().bpm).toBeNull();
 		expect(check.getState().verdict).toBe("not-measured");
-		expect(check.getState().wallMatch).toBe(true);
+		// Either the wall check withholds the rate, or (when this 8-bit, noisy synthetic colour
+		// reads as damaged, OWN_PULSE_COLOUR_SWITCH) green minus the wall has already taken the
+		// wall's rhythm out, so there is no rate left to withhold.
+		const st = check.getState();
+		expect(st.wallMatch || st.windowMethod === "greenMinusWall").toBe(true);
 	});
 
 	it("keeps a pulse that reaches the wall only through a sliver of face edge", () => {
