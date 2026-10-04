@@ -813,8 +813,26 @@ function counts(
 		return false;
 	if (!slowedForLight(e) && e.agreeing.length < OWN_PULSE_MIN_AGREEING)
 		return false;
+	if (e.bpm < OWN_PULSE_EDGE_BPM && e.snrDb < OWN_PULSE_EDGE_MIN_SNR_DB)
+		return false;
 	return e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length;
 }
+/**
+ * The bottom of the band (OWN_PULSE_BAND_HZ, 42 bpm) is where slow drift that every region shares (room
+ * light, exposure, a slowly moving head) piles up, and all three regions can agree on it. Below
+ * OWN_PULSE_EDGE_BPM a window counts only at OWN_PULSE_EDGE_MIN_SNR_DB or more.
+ *
+ * Measured 2026-10-04 on what the live check receives: every number shown below 52 on MCD-rPPG and
+ * UBFC-rPPG (live3-6, 355 recordings) was wrong (4 s, 0 right), and three different people's regions
+ * mixed so that no rate is shared (340 trios, 5.3 h) showed a number for 43 s, 37 of them at 44-50.
+ * With this rule: mixed faces 43 -> 16 s, side cameras 5 -> 1 wrong second, no right second lost, and
+ * a clean synthetic pulse at 45, 48 and 50 bpm down to 0.08% amplitude is still shown exactly.
+ * No dataset holds a true rate under 50, so a hard floor could not be checked and was not used; the
+ * bar asks a slow heart for a clearer signal instead of refusing it.
+ */
+export const OWN_PULSE_EDGE_BPM = 52;
+export const OWN_PULSE_EDGE_MIN_SNR_DB = 0;
+
 /**
  * Once measured, the verdict HOLDS while at least this many of the last
  * OWN_PULSE_STREAK windows still agree with the held rate.

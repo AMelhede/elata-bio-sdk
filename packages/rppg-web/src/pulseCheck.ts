@@ -104,6 +104,20 @@ export const FACE_FLICKER_RATIO = 10;
  * 0/0/13/6/53 -> 0/0/9/5/43, seconds with a number unchanged.
  */
 export const OWN_PULSE_TRACK_S = 12;
+/**
+ * A number on screen must be backed by fresh evidence. The proven rate is an average over 8+ windows
+ * of 16 s, so it describes the last ~20 s; when the heart rate moves fast (after exercise, 72 -> 90 in
+ * 10 s) the pulse drops out of every short window while the 16 s window, mostly old data, still reports
+ * the old rate. So the rate shown follows the newest OWN_PULSE_SUPPORT_S seconds (replacing the 12 s
+ * OWN_PULSE_TRACK_S window), and after OWN_PULSE_SUPPORT_MISS evaluations without it nothing is shown.
+ *
+ * Measured 2026-10-04 (with OWN_PULSE_EDGE_BPM): MCD-rPPG tuned set 99.1 -> 99.2% right, invented
+ * seconds 4 -> 0; UBFC-rPPG 92.4 -> 95.3%; 19 held-out MCD people 89.7 -> 92.2% (94.6 -> 98.2% against
+ * a past-only reference, the beats a live reading can know). Cost: 7-18% fewer seconds with a number.
+ * Following the newest window to a NEW rate instead invented more (tuned 4 -> 9) and was not used.
+ */
+export const OWN_PULSE_SUPPORT_S = 8;
+export const OWN_PULSE_SUPPORT_MISS = 3;
 export const OWN_PULSE_TRACK_BPM = 4;
 
 /** Brightness / colour amplitude ratio of the face regions within 0.1 Hz of `bpm`. */
@@ -347,18 +361,32 @@ export class PulseCheck {
 				};
 	}
 
+	/** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
+	private unsupported = 0;
+
 	/**
-	 * The rate to show once one is proven: the line in the newest OWN_PULSE_TRACK_S
-	 * seconds when it sits within OWN_PULSE_TRACK_BPM of the proven rate, else the
-	 * proven rate. The proof itself (this.held, the verdict, the hold) is unchanged.
+	 * The rate to show once one is proven: the line in the newest OWN_PULSE_SUPPORT_S seconds when it sits
+	 * within OWN_PULSE_TRACK_BPM of the proven rate, else the proven rate, and nothing once the newest
+	 * window has not carried it for OWN_PULSE_SUPPORT_MISS evaluations in a row. The proof itself
+	 * (this.held, the verdict, the hold) is unchanged.
 	 */
 	private shownRate(timestampMs: number): number | null {
-		if (this.held == null) return null;
-		const recent = estimateOwnPulse(this.samples, OWN_PULSE_TRACK_S, timestampMs);
+		if (this.held == null) {
+			this.unsupported = 0;
+			return null;
+		}
+		const recent = estimateOwnPulse(
+			this.samples,
+			OWN_PULSE_SUPPORT_S,
+			timestampMs,
+		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
-		return rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM
-			? rate
-			: this.held;
+		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
+			this.unsupported = 0;
+			return rate;
+		}
+		this.unsupported += 1;
+		return this.unsupported >= OWN_PULSE_SUPPORT_MISS ? null : this.held;
 	}
 
 	/** A frame in which no face (no forehead and cheeks) was found. */
