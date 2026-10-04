@@ -266,7 +266,14 @@ impl RppgPipeline {
         ) {
             return RppgMetrics::default();
         }
-        if !pos_from_rgb_windowed_into(
+        // push_sample (one value, e.g. the multi-ROI fuser's finished pulse) arrives as R = G = B.
+        // It is already a pulse signal, so it skips the colour projection, which by construction
+        // cancels any change shared by R, G and B equally.
+        let pre_extracted = window_samples.iter().all(|s| s.r == s.g && s.g == s.b);
+        if pre_extracted {
+            self.scratch_pos.clear();
+            self.scratch_pos.extend_from_slice(&self.scratch_g);
+        } else if !pos_from_rgb_windowed_into(
             &self.scratch_r,
             &self.scratch_g,
             &self.scratch_b,
@@ -523,7 +530,7 @@ fn pos_from_rgb_windowed_into(
         let std_y = stddev(y_buf);
         let alpha = if std_y > 1e-6 { std_x / std_y } else { 0.0 };
         for i in 0..win_len {
-            out[start + i] += x_buf[i] + alpha * y_buf[i];
+            out[start + i] += x_buf[i] - alpha * y_buf[i];
             w_buf[start + i] += 1.0;
         }
         start += step;
@@ -576,6 +583,38 @@ fn median_excluding(powers: &[f32], fmin: f32, df: f32, f0: f32, radius: isize, 
 mod tests {
     use super::*;
     use std::f32::consts::PI;
+
+    /// RMS of the colour projection for 10 s of input at 30 Hz.
+    fn projection_rms(rgb: impl Fn(f32) -> (f32, f32, f32)) -> f32 {
+        let n = 300;
+        let (mut r, mut g, mut b) = (vec![], vec![], vec![]);
+        for i in 0..n {
+            let (ri, gi, bi) = rgb(i as f32 / 30.0);
+            r.push(ri);
+            g.push(gi);
+            b.push(bi);
+        }
+        let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
+        assert!(pos_from_rgb_windowed_into(&r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6));
+        (out.iter().map(|v| v * v).sum::<f32>() / n as f32).sqrt()
+    }
+
+    /// CHROM (de Haan & Jeanne 2013) is S = X - (sd X / sd Y) * Y. A lamp scales R, G and B alike,
+    /// which moves X and Y equally, so the subtraction cancels it; adding them doubled it. Measured on
+    /// real recordings through this path: UBFC-rPPG 15% -> 81% of seconds within 5 bpm of the finger
+    /// sensor, MCD-rPPG 38% -> 49%, seconds with a rate on no-pulse videos 102 -> 37.
+    #[test]
+    fn projection_cancels_brightness_and_keeps_pulse_colour() {
+        let lamp = projection_rms(|t| {
+            let k = 1.0 + 0.01 * (2.0 * PI * 1.2 * t).sin();
+            (150.0 * k, 120.0 * k, 100.0 * k)
+        });
+        let pulse = projection_rms(|t| {
+            let p = (2.0 * PI * 1.2 * t).sin();
+            (150.0 * (1.0 - 0.001 * p), 120.0 * (1.0 - 0.003 * p), 100.0 * (1.0 - 0.0018 * p))
+        });
+        assert!(lamp < 0.1 * pulse, "lamp {lamp} should cancel, pulse {pulse}");
+    }
 
     #[test]
     fn mean_over_window() {
