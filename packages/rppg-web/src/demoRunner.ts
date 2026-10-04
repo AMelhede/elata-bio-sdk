@@ -73,6 +73,13 @@ export type DemoRunnerOptions = {
 	 * aggregated-ROI path when sub-ROIs are unavailable.
 	 */
 	multiRoiFusion?: boolean;
+	/**
+	 * Face tracking is on: a frame with no face is dropped instead of read. Without it the
+	 * runner reads a 100x100 square in the middle of the frame, which is right for whole-frame
+	 * mode and wrong with face tracking on: every published rppg-web (0.1.1 to 0.14.0) then kept
+	 * reporting a heart rate from a plain wall (27 of 41 seconds on real footage, demo settings).
+	 */
+	requireFace?: boolean;
 	/** Per-region projection inside the fuser: "pos" (default) or "chrom". */
 	fusionProjection?: FusionProjection;
 	/**
@@ -86,6 +93,7 @@ export type DemoRunnerOptions = {
 export type DemoRunnerDropReason =
 	| "frame_invalid"
 	| "roi_missing"
+	| "no_face"
 	| "non_finite_intensity"
 	| "processor_error";
 
@@ -202,6 +210,9 @@ export class DemoRunner {
 	private lastBlendshapes: LastBlendshapes | null = null;
 	private lastFaceBox: LastFaceBox | null = null;
 	private fuser: MultiRoiRppgFuser | null = null;
+	/** Timestamp of the first frame of the current run without a face; null while a face is in view. */
+	private noFaceSinceMs: number | null = null;
+	private noFaceLastMs: number | null = null;
 	/** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
 	private gridPrev: GridSample | null = null;
 	private gridNextT = 0;
@@ -224,6 +235,11 @@ export class DemoRunner {
 				opts.fusionProjection ?? "pos",
 			);
 		}
+	}
+
+	/** How long no face has been in view as of `nowMs` (0 while a face is in view). */
+	faceAbsentMs(nowMs: number = this.noFaceLastMs ?? 0): number {
+		return this.noFaceSinceMs == null ? 0 : Math.max(0, nowMs - this.noFaceSinceMs);
 	}
 
 	/** Latest face blendshapes (for affect estimation), with capture timestamp. */
@@ -249,6 +265,7 @@ export class DemoRunner {
 		this.running = false;
 		this.fuser?.reset();
 		this.gridPrev = null;
+		this.noFaceSinceMs = null;
 		await this.source.stop();
 	}
 
@@ -323,6 +340,7 @@ export class DemoRunner {
 		) {
 			this.opts.pulseChecker.faceLost(frame.timestampMs);
 		}
+		if (rois || frame.roi) this.noFaceSinceMs = null;
 		if (rois) {
 			roiSource = "multi_roi";
 			this.diagnostics.framesWithMultiRoi += 1;
@@ -381,6 +399,12 @@ export class DemoRunner {
 			if (frame.roi) {
 				this.diagnostics.framesWithFaceRoi += 1;
 				roiSource = "face_roi";
+			}
+			if (!roi && this.opts.requireFace) {
+				this.noFaceSinceMs ??= frame.timestampMs ?? Date.now();
+				this.noFaceLastMs = frame.timestampMs ?? Date.now();
+				this.recordDrop("no_face");
+				return;
 			}
 			if (!roi) {
 				if (frame.width <= 0 || frame.height <= 0 || !frame.data.length) {

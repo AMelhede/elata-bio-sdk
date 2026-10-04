@@ -198,6 +198,9 @@ type SessionInternals = {
 	pulseCheck?: PulseCheck | null;
 };
 
+/** How long without a face (face tracking on) before the session reports no heart rate. */
+const NO_FACE_MS = 1000;
+
 export class RppgSession {
 	private lastErrorValue: RppgSessionError | null = null;
 
@@ -220,6 +223,11 @@ export class RppgSession {
 
 	getMetrics(): Metrics {
 		const metrics = this.processor.getMetrics();
+		// No face for a second (face tracking on): nothing to report, not the last number.
+		// One second, as the pulse check drops a proven rate (FACE_GONE_MS in pulseCheck.ts).
+		if ((this.runner.faceAbsentMs?.() ?? 0) >= NO_FACE_MS) {
+			return { ...metrics, bpm: null, hrv_rmssd: null, respiration_rate: null, respiration_confidence: null };
+		}
 		const check = this.internals.pulseCheck;
 		if (!check) return metrics;
 		// With the check on, the only number reported is the heart rate the check proved, or none.
@@ -476,6 +484,7 @@ export async function createRppgSession(
 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,
 		useSkinMask: options.useSkinMask ?? true,
 		multiRoiFusion: options.multiRoiFusion,
+		requireFace: faceTrackingMode === "face_mesh" && options.roi === undefined,
 		fusionProjection: options.fusionProjection,
 		roiPixelSampler: options.roiPixelSampler,
 		onRoiSamples: (samples) => {
