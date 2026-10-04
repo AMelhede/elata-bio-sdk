@@ -213,6 +213,7 @@ export class DemoRunner {
 	/** Timestamp of the first frame of the current run without a face; null while a face is in view. */
 	private noFaceSinceMs: number | null = null;
 	private noFaceLastMs: number | null = null;
+	private lastOpinionMs: number | null = null;
 	/** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
 	private gridPrev: GridSample | null = null;
 	private gridNextT = 0;
@@ -507,6 +508,12 @@ export class DemoRunner {
 			return;
 		}
 		this.diagnostics.samplesPushed += 1;
+		// Once a second, the SDK's own rate to the pulse check, for its opt-in agreement path.
+		if (this.opts.pulseChecker && (this.lastOpinionMs == null || ts - this.lastOpinionMs >= 1000)) {
+			this.lastOpinionMs = ts;
+			const bpm = typeof proc.getMetrics === "function" ? proc.getMetrics()?.bpm : null;
+			this.opts.pulseChecker.secondOpinion?.(bpm ?? null);
+		}
 		this.diagnostics.lastDropReason = null;
 		this.diagnostics.lastTimestampMs = ts;
 		this.diagnostics.lastIntensity = intensity;

@@ -1093,3 +1093,37 @@ export function earlyPulse(
 		return null;
 	return Math.round(((sp.bpm + bt.bpm) / 2) * 10) / 10;
 }
+
+/**
+ * A second way to a number, for when the check's own streak falls short: the SDK's own rate
+ * (fused POS and processor, a different estimator on the same face) and the check's window rate
+ * agree for AGREE_SECONDS running. Each condition removes a measured failure: within 3 bpm (a
+ * 5 bpm tolerance let the pair settle on neighbouring noise lines), the window line at
+ * AGREE_MIN_SNR_DB or stronger (the wrong pairs sat at -6 to -7 dB), the rate at
+ * OWN_PULSE_LOW_BAND_BPM or above (both estimators can lock on the same low line, as the check's
+ * own low-band rule already knows). Swept 4, 6, 8 s x 2, 3 bpm x -5, -4 dB on five sets (MCD-rPPG
+ * live3 to live6, UBFC-rPPG 42 people); 8 s, 3 bpm, -4 dB: +4 recordings with a number, +93 right
+ * seconds, 0 wrong, nothing on the no-pulse videos. Chosen as the best of 12, so it stays opt-in
+ * until data it was not chosen on agrees.
+ */
+export const AGREE_SECONDS = 8;
+export const AGREE_BPM = 3;
+export const AGREE_MIN_SNR_DB = -4;
+
+export type AgreementSecond = { sdk: number | null; win: number | null; winSnr: number | null };
+
+/** The SDK's rate when the last AGREE_SECONDS seconds all agree (see AGREE_SECONDS), else null. */
+export function agreementRate(seconds: readonly AgreementSecond[]): number | null {
+	if (seconds.length < AGREE_SECONDS) return null;
+	const recent = seconds.slice(-AGREE_SECONDS);
+	const ok = recent.every(
+		(s) =>
+			s.sdk != null &&
+			s.win != null &&
+			s.winSnr != null &&
+			Math.abs(s.sdk - s.win) <= AGREE_BPM &&
+			s.winSnr >= AGREE_MIN_SNR_DB &&
+			s.sdk >= OWN_PULSE_LOW_BAND_BPM,
+	);
+	return ok ? (recent[recent.length - 1]!.sdk as number) : null;
+}

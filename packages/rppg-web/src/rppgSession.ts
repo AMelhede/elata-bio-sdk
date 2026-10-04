@@ -121,6 +121,13 @@ export type CreateRppgSessionOptions = Omit<
 	 */
 	pulseCheck?: boolean;
 	/**
+	 * With `pulseCheck`, also report the SDK's own rate when it agrees with the check's window
+	 * rate for 8 seconds running (agreementRate in pulseCheckCore.ts). Off by default: measured
+	 * on five sets with no wrong second, but chosen as the best of 12 versions, so it waits for
+	 * data it was not chosen on.
+	 */
+	pulseCheckAgreement?: boolean;
+	/**
 	 * Run the heart-rate analysis in a Web Worker, so it never blocks the camera frames (see
 	 * workerRppgProcessor.ts). Off by default. Falls back to the main thread, exactly as
 	 * without the option, when workers are unavailable, the worker cannot load the WASM core,
@@ -475,7 +482,9 @@ export async function createRppgSession(
 			)
 		: undefined;
 
-	const pulseCheck = options.pulseCheck ? new PulseCheck() : null;
+	const pulseCheck = options.pulseCheck
+		? new PulseCheck({ agreement: options.pulseCheckAgreement === true })
+		: null;
 	const runner = new DemoRunner(source, processor, {
 		pulseChecker: pulseCheck,
 		roi: options.roi,
