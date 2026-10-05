@@ -71,6 +71,13 @@ export type DemoRunnerOptions = {
 	 */
 	multiRoiFusion?: boolean;
 	/**
+	 * Face tracking is on: a frame with no face is dropped instead of read. Without it the
+	 * runner reads a 100x100 square in the middle of the frame, which is right for whole-frame
+	 * mode and wrong with face tracking on: every published rppg-web (0.1.1 to 0.14.0) then kept
+	 * reporting a heart rate from a plain wall (27 of 41 seconds on real footage, demo settings).
+	 */
+	requireFace?: boolean;
+	/**
 	 * Pixel-selection and spatial-weighting profile. When omitted, the original
 	 * SDK YCbCr helper is used unchanged.
 	 */
@@ -81,6 +88,7 @@ export type DemoRunnerOptions = {
 export type DemoRunnerDropReason =
 	| "frame_invalid"
 	| "roi_missing"
+	| "no_face"
 	| "non_finite_intensity"
 	| "processor_error";
 
@@ -119,6 +127,9 @@ export type DemoRunnerError = {
 	cause?: unknown;
 };
 
+/** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
+export const FACE_GONE_RESET_MS = 1000;
+
 export class DemoRunner {
 	private running = false;
 	private frameCount = 0;
@@ -154,6 +165,9 @@ export class DemoRunner {
 	private lastBlendshapes: LastBlendshapes | null = null;
 	private lastFaceBox: LastFaceBox | null = null;
 	private fuser: MultiRoiRppgFuser | null = null;
+	/** Timestamp of the first frame of the current run without a face; null while a face is in view. */
+	private noFaceSinceMs: number | null = null;
+	private noFaceLastMs: number | null = null;
 
 	constructor(
 		private source: FrameSource,
@@ -168,6 +182,13 @@ export class DemoRunner {
 		if (opts.multiRoiFusion !== false) {
 			this.fuser = new MultiRoiRppgFuser(opts.sampleRate ?? 30);
 		}
+	}
+
+	/** How long no face has been in view as of `nowMs` (0 while a face is in view). */
+	faceAbsentMs(nowMs: number = this.noFaceLastMs ?? 0): number {
+		return this.noFaceSinceMs == null
+			? 0
+			: Math.max(0, nowMs - this.noFaceSinceMs);
 	}
 
 	/** Latest face blendshapes (for affect estimation), with capture timestamp. */
@@ -192,6 +213,7 @@ export class DemoRunner {
 	async stop() {
 		this.running = false;
 		this.fuser?.reset();
+		this.noFaceSinceMs = null;
 		await this.source.stop();
 	}
 
@@ -258,6 +280,16 @@ export class DemoRunner {
 		let fusionResult: MultiRoiFusionResult | null = null;
 
 		const rois = frame.rois && frame.rois.length > 0 ? frame.rois : null;
+		if ((rois || frame.roi) && this.noFaceSinceMs != null) {
+			// The face is back. After an absence long enough for the session to have stopped
+			// reporting, start the analysis afresh, or the first number back would come from a
+			// window still holding the frames before the face was lost.
+			if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
+				this.fuser?.reset();
+				(this.processor as { reset?: () => void }).reset?.();
+			}
+			this.noFaceSinceMs = null;
+		}
 		if (rois) {
 			roiSource = "multi_roi";
 			this.diagnostics.framesWithMultiRoi += 1;
@@ -293,11 +325,20 @@ export class DemoRunner {
 				this.diagnostics.framesWithFaceRoi += 1;
 				roiSource = "face_roi";
 			}
+			if (
+				!roi &&
+				(frame.width <= 0 || frame.height <= 0 || !frame.data.length)
+			) {
+				this.recordDrop("frame_invalid");
+				return;
+			}
+			if (!roi && this.opts.requireFace) {
+				this.noFaceSinceMs ??= frame.timestampMs ?? Date.now();
+				this.noFaceLastMs = frame.timestampMs ?? Date.now();
+				this.recordDrop("no_face");
+				return;
+			}
 			if (!roi) {
-				if (frame.width <= 0 || frame.height <= 0 || !frame.data.length) {
-					this.recordDrop("frame_invalid");
-					return;
-				}
 				roi = {
 					x: Math.floor((frame.width - 100) / 2),
 					y: Math.floor((frame.height - 100) / 2),
