@@ -15,7 +15,6 @@ import {
 import {
 	FUSION_ROIS,
 	type FusionRoiName,
-	type MultiRoiFusionResult,
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
@@ -129,6 +128,50 @@ export type DemoRunnerError = {
 
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
 export const FACE_GONE_RESET_MS = 1000;
+type FusionSamples = Partial<Record<FusionRoiName, RoiRgbSample>>;
+type GridSample = {
+	t: number;
+	regions: FusionSamples;
+	rgb: { r: number; g: number; b: number };
+};
+
+/**
+ * Longest gap between frames that the sample grid bridges. 250 ms covers a
+ * camera down to 4 frames a second (the slowest measured here was 6, with
+ * analysis on the main thread of a real laptop); a longer gap is a stall, and
+ * a straight line across it would stand in for a third of a beat or more.
+ */
+const GRID_MAX_GAP_MS = 250;
+
+function interpolateGrid(a: GridSample, b: GridSample, t: number): GridSample {
+	const w = (t - a.t) / (b.t - a.t);
+	const mix = (x: number, y: number) => x + w * (y - x);
+	const regions: FusionSamples = {};
+	for (const name of Object.keys(b.regions) as FusionRoiName[]) {
+		const p = a.regions[name];
+		const q = b.regions[name]!;
+		regions[name] = p
+			? {
+					r: mix(p.r, q.r),
+					g: mix(p.g, q.g),
+					b: mix(p.b, q.b),
+					skinFraction:
+						p.skinFraction != null && q.skinFraction != null
+							? mix(p.skinFraction, q.skinFraction)
+							: q.skinFraction,
+				}
+			: q;
+	}
+	return {
+		t,
+		regions,
+		rgb: {
+			r: mix(a.rgb.r, b.rgb.r),
+			g: mix(a.rgb.g, b.rgb.g),
+			b: mix(a.rgb.b, b.rgb.b),
+		},
+	};
+}
 
 export class DemoRunner {
 	private running = false;
@@ -168,6 +211,9 @@ export class DemoRunner {
 	/** Timestamp of the first frame of the current run without a face; null while a face is in view. */
 	private noFaceSinceMs: number | null = null;
 	private noFaceLastMs: number | null = null;
+	/** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
+	private gridPrev: GridSample | null = null;
+	private gridNextT = 0;
 
 	constructor(
 		private source: FrameSource,
@@ -214,6 +260,7 @@ export class DemoRunner {
 		this.running = false;
 		this.fuser?.reset();
 		this.noFaceSinceMs = null;
+		this.gridPrev = null;
 		await this.source.stop();
 	}
 
@@ -277,7 +324,7 @@ export class DemoRunner {
 		let intensity = 0;
 		let motion = 0;
 		let roiSource: DemoRunnerDiagnostics["lastRoiSource"] = null;
-		let fusionResult: MultiRoiFusionResult | null = null;
+		let fusionSamples: FusionSamples | null = null;
 
 		const rois = frame.rois && frame.rois.length > 0 ? frame.rois : null;
 		if ((rois || frame.roi) && this.noFaceSinceMs != null) {
@@ -307,7 +354,7 @@ export class DemoRunner {
 			// aggregate above is still computed for diagnostics/onStats and as the
 			// fallback if the fuser can't produce a valid frame this tick.
 			if (this.fuser && useSkinMask) {
-				fusionResult = this.runFusion(frame, rois);
+				fusionSamples = this.sampleFusionRegions(frame, rois);
 			}
 			if (frame.roi) {
 				motion = computeMotion(frame.roi, this.lastCenter);
@@ -400,18 +447,18 @@ export class DemoRunner {
 		this.smoothedSkinRatio = skinRatio;
 		const ts = frame.timestampMs ?? Date.now();
 		const proc = this.processor as any;
+		// A frame that bypasses the grid pushes its own timestamp; the grid restarts after it, or
+		// it would later fill times before that timestamp and send the processor samples out of order.
+		if (!fusionSamples) this.gridPrev = null;
 		try {
-			if (
-				fusionResult?.valid &&
-				typeof proc.pushFusedSample === "function"
-			) {
-				// Fused pulse already carries CHROM + SNR-weighted blending; feed it
-				// straight to spectral BPM/HRV, with the fused SNR as quality.
-				proc.pushFusedSample(ts, fusionResult.fused, fusionResult.fusedSnr);
-				this.diagnostics.lastProcessorMethod = "fused";
-				this.diagnostics.framesWithFusion += 1;
-				this.diagnostics.lastFusionWeights = fusionResult.weights;
-				this.diagnostics.lastFusedSnr = fusionResult.fusedSnr;
+			if (fusionSamples) {
+				this.pushOnGrid(
+					proc,
+					{ t: ts, regions: fusionSamples, rgb },
+					skinRatio,
+					motion,
+					clipRatio,
+				);
 			} else if (typeof proc.pushSampleRgbMeta === "function") {
 				proc.pushSampleRgbMeta(
 					ts,
@@ -463,17 +510,73 @@ export class DemoRunner {
 	}
 
 	/**
-	 * Sample per-region skin-masked RGB and push one frame through the fuser. The
-	 * sub-ROIs arrive ordered as {@link FUSION_ROIS} (forehead, leftCheek,
-	 * rightCheek) from `computeFusionSubRois`; a region with too little skin is
-	 * skipped by the fuser.
+	 * Feed the fuser and the processor on the evenly spaced grid they were built
+	 * for (`sampleRate`, 30 by default). Both read their input as one sample per
+	 * 1/sampleRate seconds, so a camera that delivers fewer frames (15 to 25 a
+	 * second on a laptop in dim light) would scale every rate they report by
+	 * delivered/assumed. Each grid time between the previous frame and this one
+	 * gets the two frames' region means, linearly interpolated. Measured on 255
+	 * real recordings (MCD-rPPG, finger-sensor truth): camera slowed to 16 fps,
+	 * right 17% of seconds without the grid, 26% with it, the same as at full
+	 * rate. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow camera:
+	 * the grid restarts at the new frame instead of drawing a line across it.
 	 */
-	private runFusion(
+	private pushOnGrid(
+		proc: any,
+		cur: GridSample,
+		skinRatio: number,
+		motion: number,
+		clipRatio: number,
+	) {
+		const step = 1000 / (this.opts.sampleRate ?? 30);
+		const prev = this.gridPrev;
+		const ticks: GridSample[] = [];
+		if (!prev || cur.t <= prev.t || cur.t - prev.t > GRID_MAX_GAP_MS) {
+			ticks.push(cur);
+			this.gridNextT = cur.t + step;
+		} else {
+			// 1e-6 ms: a grid time that equals the frame time up to float rounding is this frame.
+			for (; this.gridNextT <= cur.t + 1e-6; this.gridNextT += step) {
+				ticks.push(interpolateGrid(prev, cur, this.gridNextT));
+			}
+		}
+		this.gridPrev = cur;
+		for (const tick of ticks) {
+			const fused = this.fuser?.pushFrame(tick.regions) ?? null;
+			if (fused?.valid && typeof proc.pushFusedSample === "function") {
+				// Fused pulse already carries CHROM + SNR-weighted blending; feed it
+				// straight to spectral BPM/HRV, with the fused SNR as quality.
+				proc.pushFusedSample(tick.t, fused.fused, fused.fusedSnr);
+				this.diagnostics.lastProcessorMethod = "fused";
+				this.diagnostics.framesWithFusion += 1;
+				this.diagnostics.lastFusionWeights = fused.weights;
+				this.diagnostics.lastFusedSnr = fused.fusedSnr;
+			} else if (typeof proc.pushSampleRgbMeta === "function") {
+				proc.pushSampleRgbMeta(
+					tick.t,
+					tick.rgb.r,
+					tick.rgb.g,
+					tick.rgb.b,
+					skinRatio,
+					motion,
+					clipRatio,
+				);
+				this.diagnostics.lastProcessorMethod = "rgb_meta";
+			}
+		}
+	}
+
+	/**
+	 * Per-region skin-masked RGB for the fuser. The sub-ROIs arrive ordered as
+	 * {@link FUSION_ROIS} (forehead, leftCheek, rightCheek) from
+	 * `computeFusionSubRois`; a region with too little skin is skipped by the fuser.
+	 */
+	private sampleFusionRegions(
 		frame: Frame,
 		rois: { x: number; y: number; w: number; h: number }[],
-	): MultiRoiFusionResult | null {
+	): FusionSamples | null {
 		if (!this.fuser) return null;
-		const samples: Partial<Record<FusionRoiName, RoiRgbSample>> = {};
+		const samples: FusionSamples = {};
 		const n = Math.min(FUSION_ROIS.length, rois.length);
 		for (let i = 0; i < n; i++) {
 			const c = clampRoiToFrame(rois[i]!, frame.width, frame.height);
@@ -489,7 +592,7 @@ export class DemoRunner {
 				skinFraction: s.skinRatio,
 			};
 		}
-		return this.fuser.pushFrame(samples);
+		return samples;
 	}
 
 	private recordDrop(reason: DemoRunnerDropReason) {
