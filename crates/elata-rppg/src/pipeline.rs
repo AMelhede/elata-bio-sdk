@@ -266,14 +266,7 @@ impl RppgPipeline {
         ) {
             return RppgMetrics::default();
         }
-        // push_sample (one value, e.g. the multi-ROI fuser's finished pulse) arrives as R = G = B.
-        // It is already a pulse signal, so it skips the colour projection, which by construction
-        // cancels any change shared by R, G and B equally.
-        let pre_extracted = window_samples.iter().all(|s| s.r == s.g && s.g == s.b);
-        if pre_extracted {
-            self.scratch_pos.clear();
-            self.scratch_pos.extend_from_slice(&self.scratch_g);
-        } else if !pos_from_rgb_windowed_into(
+        if !pos_from_rgb_windowed_into(
             &self.scratch_r,
             &self.scratch_g,
             &self.scratch_b,
@@ -530,7 +523,18 @@ fn pos_from_rgb_windowed_into(
         let std_y = stddev(y_buf);
         let alpha = if std_y > 1e-6 { std_x / std_y } else { 0.0 };
         for i in 0..win_len {
-            out[start + i] += x_buf[i] - alpha * y_buf[i];
+            // push_sample (one value, e.g. the multi-ROI fuser's finished pulse) arrives as
+            // R = G = B, so X = Y and the projection would cancel it: such a sample is already a
+            // pulse and passes through as its normalised value, with the same per-window
+            // normalisation and overlap-add as before. Decided per sample, so a window mixing
+            // camera RGB with fused samples keeps both.
+            let k = start + i;
+            let pre_extracted = r[k] == g[k] && g[k] == b[k];
+            out[k] += if pre_extracted {
+                x_buf[i]
+            } else {
+                x_buf[i] - alpha * y_buf[i]
+            };
             w_buf[start + i] += 1.0;
         }
         start += step;
@@ -595,7 +599,9 @@ mod tests {
             b.push(bi);
         }
         let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
-        assert!(pos_from_rgb_windowed_into(&r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6));
+        assert!(pos_from_rgb_windowed_into(
+            &r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6
+        ));
         (out.iter().map(|v| v * v).sum::<f32>() / n as f32).sqrt()
     }
 
@@ -611,9 +617,53 @@ mod tests {
         });
         let pulse = projection_rms(|t| {
             let p = (2.0 * PI * 1.2 * t).sin();
-            (150.0 * (1.0 - 0.001 * p), 120.0 * (1.0 - 0.003 * p), 100.0 * (1.0 - 0.0018 * p))
+            (
+                150.0 * (1.0 - 0.001 * p),
+                120.0 * (1.0 - 0.003 * p),
+                100.0 * (1.0 - 0.0018 * p),
+            )
         });
-        assert!(lamp < 0.1 * pulse, "lamp {lamp} should cancel, pulse {pulse}");
+        assert!(
+            lamp < 0.1 * pulse,
+            "lamp {lamp} should cancel, pulse {pulse}"
+        );
+    }
+
+    /// The fused path (push_sample, R = G = B) must read a clean pulse at its rate across the band,
+    /// alone and after a stretch of camera RGB in the same window (DemoRunner sends RGB until the
+    /// fuser is ready). A window-level bypass read 72 bpm as 48 and 140 as none; this
+    /// reads them exactly as the shipped sign did.
+    #[test]
+    fn fused_samples_keep_their_rate() {
+        let fs = 30.0_f32;
+        // 72 to 140: where the unchanged estimator downstream reads a clean sine within 5 bpm
+        // (it reads 48 as 59, 60 as 64 and 170 as none with or without this change).
+        for &bpm in &[72.0_f32, 90.0, 110.0, 140.0] {
+            for &rgb_first_s in &[0.0_f32, 3.0] {
+                let mut p = RppgPipeline::new(fs, 10.0);
+                for i in 0..(14.0 * fs) as usize {
+                    let t = i as f32 / fs;
+                    let v = (2.0 * PI * bpm / 60.0 * t).sin();
+                    let ts = (t * 1000.0) as i64;
+                    if t < rgb_first_s {
+                        p.push_sample_rgb(
+                            ts,
+                            150.0 * (1.0 - 0.001 * v),
+                            120.0 * (1.0 - 0.003 * v),
+                            100.0 * (1.0 - 0.0018 * v),
+                            1.0,
+                        );
+                    } else {
+                        p.push_sample(ts, v);
+                    }
+                }
+                let got = p.get_metrics().bpm;
+                assert!(
+                    got.map_or(false, |b| (b - bpm).abs() <= 5.0),
+                    "true {bpm} (RGB first {rgb_first_s} s) read {got:?}"
+                );
+            }
+        }
     }
 
     #[test]
