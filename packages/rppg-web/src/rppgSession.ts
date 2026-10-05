@@ -23,6 +23,7 @@ import {
 } from "./wasmBackend";
 import {
 	DemoRunner,
+	FACE_GONE_RESET_MS,
 	type DemoRunnerDiagnostics,
 	type DemoRunnerError,
 	type DemoRunnerOptions,
@@ -200,7 +201,28 @@ export class RppgSession {
 	}
 
 	getMetrics(): Metrics {
-		return this.processor.getMetrics();
+		const metrics = this.processor.getMetrics();
+		// No face for a second (face tracking on): nothing to report, not the last number.
+		// One second rides out a brief face-finder miss without dropping a real reading.
+		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
+			// Every rate, not only the headline one: the intermediate estimates (spectral, ACF,
+			// peaks, Bayes, calibrated) would otherwise keep reporting numbers from the last face.
+			const cleared: Metrics = { ...metrics };
+			for (const key of Object.keys(cleared) as (keyof Metrics)[]) {
+				if (key.endsWith("_bpm"))
+					(cleared as Record<string, unknown>)[key] = null;
+			}
+			return {
+				...cleared,
+				bpm: null,
+				confidence: 0,
+				hrv_rmssd: null,
+				respiration_rate: null,
+				respiration_confidence: null,
+				reason_codes: [...(metrics.reason_codes ?? []), "no_face"],
+			};
+		}
+		return metrics;
 	}
 
 	/** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -419,6 +441,7 @@ export async function createRppgSession(
 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,
 		useSkinMask: options.useSkinMask ?? true,
 		multiRoiFusion: options.multiRoiFusion,
+		requireFace: faceTrackingMode === "face_mesh" && options.roi === undefined,
 		roiPixelSampler: options.roiPixelSampler,
 		onRoiSamples: (samples) => {
 			options.onRoiSamples?.(samples);
