@@ -1,23 +1,21 @@
 {
-	"name": "@elata-biosciences/rppg-web",
-	"version": "0.14.0",
-	"description": "TypeScript wrapper for the Elata rPPG pipeline",
+	"name": "@amelhede/rppg-web",
+	"version": "0.15.0-test.0",
+	"description": "Test build of the Elata rPPG web SDK (rppg-web 0.14.0) with five heart-rate fixes and a real-pulse check, each behind an on/off switch. For testing in apps only.",
 	"license": "MIT",
-	"author": "Elata",
+	"author": "Andreas Melhede",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Elata-Biosciences/elata-bio-sdk.git",
+		"url": "git+https://github.com/AMelhede/elata-bio-sdk.git",
 		"directory": "packages/rppg-web"
 	},
-	"homepage": "https://github.com/Elata-Biosciences/elata-bio-sdk#readme",
-	"bugs": "https://github.com/Elata-Biosciences/elata-bio-sdk/issues",
+	"homepage": "https://github.com/AMelhede/elata-bio-sdk/tree/release/test-0/packages/rppg-web#readme",
+	"bugs": "https://github.com/AMelhede/elata-bio-sdk/issues",
 	"keywords": [
 		"rppg",
 		"heart-rate",
 		"photoplethysmography",
-		"elata",
-		"bci",
-		"neuroscience"
+		"test-build"
 	],
 	"engines": {
 		"node": ">=20"
@@ -40,10 +38,10 @@
 		"llms.txt"
 	],
 	"publishConfig": {
-		"access": "public"
+		"access": "public",
+		"tag": "test"
 	},
 	"scripts": {
-		"prepare": "pnpm run build",
 		"lint": "pnpm exec biome lint src playwright.config.ts scripts/build-demo.mjs jest.config.cjs",
 		"test": "jest --config jest.config.cjs --passWithNoTests",
 		"bench:replay": "node ./bench/replaySessionBenchmark.mjs",
@@ -62,7 +60,9 @@
 		"prepare:wasm": "pnpm build:wasm",
 		"e2e": "pnpm exec playwright test",
 		"ci:e2e": "pnpm exec playwright test --project=chromium --retries=1",
-		"prepack": "pnpm run prepare:publish && pnpm run verify:publish"
+		"prepack": "node ./scripts/check-test-release.mjs",
+		"prepublishOnly": "node ./scripts/check-test-release.mjs --publish",
+		"verify:test-release": "node ./scripts/verify-test-release.mjs"
 	},
 	"devDependencies": {
 		"@elata-biosciences/ppg-web": "workspace:*",

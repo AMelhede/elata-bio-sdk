@@ -1,8 +1,83 @@
-# @elata-biosciences/rppg-web
+# @amelhede/rppg-web (test build)
+
+**This is a test build, not the official package.** It is Elata's rPPG web SDK
+(`@elata-biosciences/rppg-web` 0.14.0, MIT licence) with five fixes to the heart-rate
+pipeline and a real-pulse check added. Every fix and the check has its own on/off switch, so
+an app can compare each one against the published behaviour. It exists so the team can try
+the changes in real apps before anything is proposed to the official SDK. It is published
+under the npm `test` tag only; `latest` never points at it.
+
+- Version: `0.15.0-test.0` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+  against the exact build).
+- Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-0`.
+- Everything below the "Switches" section is the upstream documentation, unchanged in
+  substance. It uses the official package name, which is also how an app imports this build.
+
+## Install it in place of the official package
+
+Keep every import as it is (`@elata-biosciences/rppg-web`) and point the dependency at this
+build with an npm alias, one line in the app's `package.json`:
+
+```json
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.0"
+```
+
+Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
+`@elata-biosciences/rppg-web/pkg/rppg_wasm.js?url` keep working, because the package keeps
+the same `exports` map. To go back, put the official version back in that line.
+
+## Switches
+
+All of them are ON by default in this build. Each one set to `false` gives back exactly what
+the published 0.14.0 does for that part, so "off" is the comparison. Set them on
+`createRppgSession(...)` (or on `DemoRunner` / `RppgProcessor` when used directly):
+
+```ts
+const session = await createRppgSession({
+  video,
+  faceMesh: "auto",
+  // every fix on (the default); `fixes: false` turns all five off
+  fixes: {
+    noFaceNoReading: true,
+    colourProjectionFix: true,
+    realFrameRate: true,
+    posFusion: true,
+    noRateDoubling: true,
+  },
+  pulseCheck: true, // the default in this build
+});
+console.log(session.getBuildSwitches()); // what this session actually runs
+```
+
+| Switch | What it does when ON | What OFF gives back |
+|---|---|---|
+| `fixes.noFaceNoReading` | With face tracking on and no face in view, no frame is read. After one second with no face the session reports no heart rate, HRV or breathing, and the analysis starts afresh when a face returns. | The published behaviour: with no face found, the SDK reads a square in the middle of the picture (a wall, a chair) and keeps reporting a heart rate from it. |
+| `fixes.colourProjectionFix` | Inside the WASM core: the colour step subtracts, as the CHROM method (de Haan and Jeanne 2013) says, so a lamp's flicker cancels and the pulse colour stays. Samples that are already a pulse pass through unchanged. Runs when the multi-region fusion is off and in the first moments before it has enough data. | The published core, which adds instead of subtracting: a flickering lamp passes as a pulse and the real pulse colour cancels. The switch reaches the WASM through `set_colour_projection_fix`. |
+| `fixes.realFrameRate` | Frames are placed on the even 30-per-second time grid the analysis assumes, filling between frames, so a camera that delivers 15 to 25 frames a second (common indoors) does not scale every rate it reports. Gaps over 250 ms count as a stall and are not bridged. | Each frame is used as it arrives, as published; on a slow camera every rate comes out scaled. |
+| `fixes.posFusion` | The step that blends forehead and both cheeks reads each region with POS (Wang et al. 2017), the method designed for its short windows (about 1.6 s). | CHROM, as published. An explicit `fusionProjection: "pos" \| "chrom"` option wins over this switch. |
+| `fixes.noRateDoubling` | The rate estimator keeps the strongest rhythm it finds. | The published rule that, below 85 bpm, replaces the strongest rate with twice that rate whenever a pulse wave's own second harmonic is strong, so a resting 65 can read 130. |
+| `pulseCheck` | A heart rate is reported only while a real pulse is proven: forehead and both cheeks agree on one rate, clearly above the noise, over 8 one-second windows, and the newest 8 seconds still back it. The reported rate is the one the check measured. A patch of wall beside the face is checked too: a light that flickers at the same rhythm is refused. HRV and breathing are always withheld while it is on, because neither yet passes a known-answer test. `session.getPulseCheck()` shows the check's state. | The SDK's own rate (with the fixes chosen above), HRV and breathing, as published. |
+| `pulseCheckAgreement` | Off by default. With the check on, also report the SDK's own rate when it agrees with the check's latest window for 8 seconds running. | (default) |
+
+Things to know while testing:
+
+- **The pulse check needs face tracking.** With `faceMesh: "off"`, or if the face finder
+  failed to load, there are no face regions to check, so no heart rate is shown. That is by
+  design (no proof, no number). Check `diagnostics.faceTrackingMode`; set `pulseCheck: false`
+  to see the SDK's own rate instead.
+- **Silence is an answer.** The check stays quiet when the pulse cannot be read clearly (poor
+  light, movement, a turned head). It usually takes 20 to 40 seconds of a still face to show
+  a number. A number that never comes is worth reporting, with the light and the camera used.
+- **None of the fixes alone stops a number from a face with no pulse** (a photo, a lamp on a
+  face). Only the pulse check does that.
+- Every result worth keeping should be logged with `RPPG_WEB_BUILD_VERSION` and
+  `session.getBuildSwitches()`.
+
+## What the original package is
 
 TypeScript wrapper for the Elata rPPG pipeline.
 
-## What This Package Is
+### What This Package Is
 
 This package provides:
 
@@ -14,7 +89,7 @@ This package provides:
 ## When To Use It
 
 **Abstraction level: managed session.** This package owns the camera capture
-loop, WASM loading, face ROI, diagnostics, and lifecycle for you — you call
+loop, WASM loading, face ROI, diagnostics, and lifecycle for you: you call
 `createRppgSession()` and poll `getMetrics()`.
 
 Use `@elata-biosciences/rppg-web` when you want:
@@ -34,7 +109,7 @@ npm install @elata-biosciences/rppg-web
 ```
 
 **Using a local `file:` path** (monorepo or local dev)? You must build the
-WASM backend before running `pnpm install` in your app — `file:` installs copy
+WASM backend before running `pnpm install` in your app: `file:` installs copy
 whatever is on disk at the time. Run `build:wasm` first:
 
 ```bash
@@ -42,7 +117,7 @@ pnpm --dir packages/rppg-web run build:wasm  # requires Rust + wasm-bindgen
 cd your-app && pnpm install
 ```
 
-The published npm package includes pre-built `pkg/` assets — this step is only
+The published npm package includes pre-built `pkg/` assets: this step is only
 needed when working from the repo source.
 
 ## Requirements
@@ -81,9 +156,9 @@ or use the import-based options below to let Vite manage the asset URLs instead.
 Vite 7 blocks `import(url)` for files served from `/public`, which is where
 most projects place the `pkg/` WASM assets. **If you skip this step, the
 session will start, `backendMode` will be `"unavailable"`, and BPM will always
-be null — no error is thrown.** Two approaches to fix it:
+be null: no error is thrown.** Two approaches to fix it:
 
-**Option A — vite-plugin-wasm (recommended)**
+**Option A: vite-plugin-wasm (recommended)**
 
 ```bash
 npm install -D vite-plugin-wasm vite-plugin-top-level-await
@@ -112,7 +187,7 @@ const session = await createRppgSession({
 });
 ```
 
-**Option B — explicit URL imports (no extra plugins)**
+**Option B: explicit URL imports (no extra plugins)**
 
 ```ts
 import rppgWasmJsUrl from "@elata-biosciences/rppg-web/pkg/rppg_wasm.js?url";
@@ -165,13 +240,13 @@ const interval = setInterval(() => {
 Expect a ~10 second warmup before the first BPM estimate.
 
 > **If BPM is always null:** check `session.backendMode` before assuming bad
-> signal. If it is `"unavailable"`, the WASM assets did not load — the session
+> signal. If it is `"unavailable"`, the WASM assets did not load: the session
 > runs gracefully but metrics will always be null. This looks identical to the
 > warmup period. See the [Vite Config](#vite-config) section above.
 
 If you need a single boolean for UI gating (e.g. "show the BPM display"),
 use `createRppgAppAdapter().canPublish` instead of polling `getMetrics()`
-directly — it handles the backend check, confidence threshold, and warmup
+directly: it handles the backend check, confidence threshold, and warmup
 window in one place.
 
 With diagnostics:
@@ -205,10 +280,10 @@ failing silently.
 
 | API | Use when |
 |-----|----------|
-| `createRppgSession()` | Starting point for most browser apps — handles WASM init, frame capture, ROI, diagnostics, and cleanup. |
+| `createRppgSession()` | Starting point for most browser apps: handles WASM init, frame capture, ROI, diagnostics, and cleanup. |
 | `createManagedRppgSession()` | Same as above, plus automatic restart after terminal processor failures. |
-| `createRppgAppAdapter()` | You want a single app-facing snapshot (status, BPM, `canPublish`, trace) to drive UI state — use this instead of calling `getMetrics()` yourself and writing the gating logic. |
-| `createRppgAppMonitor()` | You want the SDK to own the update loop entirely — it polls on an interval and pushes snapshots to a subscriber, so you don't write any `setInterval` + `getMetrics()` code at all. |
+| `createRppgAppAdapter()` | You want a single app-facing snapshot (status, BPM, `canPublish`, trace) to drive UI state: use this instead of calling `getMetrics()` yourself and writing the gating logic. |
+| `createRppgAppMonitor()` | You want the SDK to own the update loop entirely: it polls on an interval and pushes snapshots to a subscriber, so you don't write any `setInterval` + `getMetrics()` code at all. |
 | `RppgProcessor` / `DemoRunner` | You need custom capture orchestration or rendering that the session helpers don't cover. |
 
 If you're unsure, start with `createRppgSession()` and a `setInterval` +
@@ -258,8 +333,8 @@ and `get_metrics` or camelCase equivalents.
 
 rPPG is fragile under motion and bad lighting, and the classic failure is a
 calibration bar that silently freezes. `CaptureConfidenceScorer` turns that into
-honest UX: a 0..1 confidence in the **capture environment** — separate from the
-pulse-domain `confidence`/`signal_quality` — plus the limiting factor
+honest UX: a 0..1 confidence in the **capture environment**, separate from the
+pulse-domain `confidence`/`signal_quality`, plus the limiting factor
 (`"motion"` vs `"lighting"`) and actionable reason codes, so you can gate
 calibration and tell the user exactly what to fix.
 
@@ -267,7 +342,7 @@ calibration and tell the user exactly what to fix.
 import { CaptureConfidenceScorer } from "@elata-biosciences/rppg-web";
 
 const capture = new CaptureConfidenceScorer();
-// Per processed frame (everything optional — it degrades to what you have):
+// Per processed frame (everything optional: it degrades to what you have):
 const c = capture.push({ landmarks, faceBox, motion, clipRatio, skinRatio, meanLuma });
 // c.score, c.motion, c.lighting, c.limiting, c.reasons, c.ready
 ```
@@ -275,7 +350,7 @@ const c = capture.push({ landmarks, faceBox, motion, clipRatio, skinRatio, meanL
 Or let `RppgProcessor` carry it for you: call `proc.pushCaptureFrame(sample)` each
 frame and read the `capture_confidence` / `capture_motion` / `capture_lighting` /
 `capture_limiting` fields from `getMetrics()`. `BaselineCalibrator.push(bpm, hrv,
-quality, capture)` then gates intake on it — progress *pauses* (never retreats)
+quality, capture)` then gates intake on it: progress *pauses* (never retreats)
 with `calibrator.stallReason` naming the fix instead of leaving a frozen %.
 
 The motion half ports the open features (TI / FMX / FMY / FSM) from
@@ -321,7 +396,7 @@ sample count if you want to show a progress indicator.
 
 **FaceMesh fallback:** `faceMesh: "auto"` falls back to `video_frame` mode if
 MediaPipe fails to load. Check `diagnostics.faceTrackingMode` to see which
-mode is active — `"face_mesh"` or `"video_frame"`.
+mode is active: `"face_mesh"` or `"video_frame"`.
 
 **Multi-ROI fusion (on by default):** in `face_mesh` mode the session runs CHROM +
 bandpass independently on the forehead and both cheeks and blends them by in-band
@@ -357,12 +432,12 @@ The built-in profiles have deliberately narrow meanings:
 | Profile | Contract |
 |---------|----------|
 | `ELATA_FACE_YCBCR_V1_PROFILE` | Current SDK forehead/cheek geometry; default. |
-| `MCD_PROXY_INPUT_V1_PROFILE` | Frozen five-ROI geometry used by the MCD waveform proxy. |
+| `MCD_PROXY_INPUT_V1_PROFILE` | Frozen five-ROI geometry used by the waveform proxy model. |
 | `TRADELOCK_LIVE_FOREHEAD_V1_PROFILE` | Landmark-anchored forehead rectangle for TradeLock live-pipeline replay and ablation. |
 | `ELATA_YCBCR_V1_PIXEL_SAMPLER` | SDK YCbCr skin predicate and fallback semantics. |
 | `TRADELOCK_RGB_WEIGHTED_V1_PIXEL_SAMPLER` | TradeLock normalized-RGB skin predicate with center weighting. |
 
-Geometry and sampling profiles are independent because the MCD model input
+Geometry and sampling profiles are independent because the waveform model's input
 geometry and the TradeLock live forehead ROI are not the same algorithm. Keep
 the model's expected profile ID with its artifact metadata. `sampleRppgRoi()`
 emits the versioned `elata.rppg.roi-sample/v1` boundary with RGB, raw skin
@@ -622,7 +697,7 @@ first. This requires Rust and `wasm-bindgen`.
 
 **Using via `file:` path (monorepo or local integration)?** Run `build:wasm`
 *before* running `pnpm install` in the consumer app. `file:` installs copy
-whatever is on disk at install time — if `pkg/` doesn't exist yet, it won't
+whatever is on disk at install time: if `pkg/` doesn't exist yet, it won't
 be included. The sequence is:
 
 ```bash

@@ -29,6 +29,10 @@ IS_PRIVATE="$(node -p "Boolean(require('$PKG_DIR/package.json').private)")"
 
 [[ "$IS_PRIVATE" == "false" ]] || die "$PKG_NAME is marked private in package.json"
 
+# Test-release branch: this script publishes with the npm 'latest' tag, so it is disabled here.
+die "disabled on the test-release branch: it would publish $PKG_NAME with the 'latest' tag" \
+    "publish the test package by hand with the 'test' tag: packages/rppg-web/PUBLISHING.md"
+
 # --- Auth: NPM_TOKEN from env or .env, written to a temp npmrc -----------------
 if [[ -z "${NPM_TOKEN:-}" && -f "$ROOT_DIR/.env" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do

@@ -955,7 +955,17 @@ verify_release_contract_for_target() {
     fi
 }
 
+# Test-release branch: the repo-wide publish, release and promote commands publish with the
+# npm 'latest' tag, so they are disabled here. The test package is published only by hand,
+# with the 'test' tag, as packages/rppg-web/PUBLISHING.md describes.
+refuse_latest_on_test_release_branch() {
+    echo "This branch carries the test package @amelhede/rppg-web. Repo-wide publish/release/promote" >&2
+    echo "would use the npm 'latest' tag and are disabled here. See packages/rppg-web/PUBLISHING.md." >&2
+    exit 1
+}
+
 publish_packages() {
+    refuse_latest_on_test_release_branch
     local raw_target="${1:-all}"
     local dist_tag="${2:-latest}"
     local skip_verify="${3:-0}"
@@ -1046,6 +1056,7 @@ view_packages() {
 }
 
 promote_latest() {
+    refuse_latest_on_test_release_branch
     local raw_target="${1:-all}"
     local target
     local pkg
@@ -1225,6 +1236,7 @@ release_check_for_target() {
 }
 
 release_packages() {
+    refuse_latest_on_test_release_branch
     local raw_target="${1:-all}"
     local dist_tag="${2:-latest}"
     local target
