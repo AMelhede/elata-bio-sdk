@@ -53,6 +53,19 @@ impl WasmRppgPipeline {
         self.inner.enable_tracker(prior, num_particles as usize);
     }
 
+    /// Colour projection fix switch (on by default): `false` restores the published projection
+    /// exactly, for comparison. See `RppgPipeline::set_colour_projection_fix`.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn set_colour_projection_fix(&mut self, on: bool) {
+        self.inner.set_colour_projection_fix(on)
+    }
+
+    /// Whether the colour projection fix is on.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn colour_projection_fix(&self) -> bool {
+        self.inner.colour_projection_fix()
+    }
+
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn get_metrics(&mut self) -> String {
         serde_json::to_string(&self.inner.get_metrics()).unwrap_or_else(|_| "null".to_string())

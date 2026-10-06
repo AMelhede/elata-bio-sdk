@@ -25,6 +25,10 @@ pub struct RppgPipeline {
     scratch_w: Vec<f32>,
     scratch_norm: Vec<f32>,
     scratch_filtered: Vec<f32>,
+    /// Colour projection fix (on by default in this build): subtract alpha*Y as CHROM does, and
+    /// let pre-extracted samples (R = G = B) through unprojected. Off reproduces the published
+    /// projection (X + alpha*Y) exactly. See `set_colour_projection_fix`.
+    colour_projection_fix: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -137,7 +141,20 @@ impl RppgPipeline {
             scratch_w: Vec::with_capacity(window_len + 4),
             scratch_norm: Vec::with_capacity(window_len + 4),
             scratch_filtered: Vec::with_capacity(window_len + 4),
+            colour_projection_fix: true,
         }
+    }
+
+    /// Switch for the colour projection fix. `true` (the default): CHROM's X - alpha*Y, with
+    /// pre-extracted samples (R = G = B) passed through. `false`: the published X + alpha*Y,
+    /// unchanged, for comparison.
+    pub fn set_colour_projection_fix(&mut self, on: bool) {
+        self.colour_projection_fix = on;
+    }
+
+    /// Whether the colour projection fix is on (see `set_colour_projection_fix`).
+    pub fn colour_projection_fix(&self) -> bool {
+        self.colour_projection_fix
     }
 
     /// Enable the particle filter tracker with optional prior and number of particles
@@ -276,6 +293,7 @@ impl RppgPipeline {
             &mut self.scratch_w,
             self.sample_rate,
             1.6,
+            self.colour_projection_fix,
         ) {
             return RppgMetrics::default();
         }
@@ -482,6 +500,7 @@ fn pos_from_rgb_windowed_into(
     w_buf: &mut Vec<f32>,
     fs: f32,
     window_sec: f32,
+    fixed: bool,
 ) -> bool {
     let n = r.len().min(g.len()).min(b.len());
     if n == 0 {
@@ -528,13 +547,18 @@ fn pos_from_rgb_windowed_into(
             // pulse and passes through as its normalised value, with the same per-window
             // normalisation and overlap-add as before. Decided per sample, so a window mixing
             // camera RGB with fused samples keeps both.
+            // With the fix off (`fixed == false`), the published projection, unchanged.
             let k = start + i;
-            let pre_extracted = r[k] == g[k] && g[k] == b[k];
-            out[k] += if pre_extracted {
-                x_buf[i]
+            if !fixed {
+                out[k] += x_buf[i] + alpha * y_buf[i];
             } else {
-                x_buf[i] - alpha * y_buf[i]
-            };
+                let pre_extracted = r[k] == g[k] && g[k] == b[k];
+                out[k] += if pre_extracted {
+                    x_buf[i]
+                } else {
+                    x_buf[i] - alpha * y_buf[i]
+                };
+            }
             w_buf[start + i] += 1.0;
         }
         start += step;
@@ -588,8 +612,12 @@ mod tests {
     use super::*;
     use std::f32::consts::PI;
 
-    /// RMS of the colour projection for 10 s of input at 30 Hz.
+    /// RMS of the colour projection for 10 s of input at 30 Hz, fix on.
     fn projection_rms(rgb: impl Fn(f32) -> (f32, f32, f32)) -> f32 {
+        projection_rms_with(rgb, true)
+    }
+
+    fn projection_rms_with(rgb: impl Fn(f32) -> (f32, f32, f32), fixed: bool) -> f32 {
         let n = 300;
         let (mut r, mut g, mut b) = (vec![], vec![], vec![]);
         for i in 0..n {
@@ -600,7 +628,7 @@ mod tests {
         }
         let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
         assert!(pos_from_rgb_windowed_into(
-            &r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6
+            &r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6, fixed
         ));
         (out.iter().map(|v| v * v).sum::<f32>() / n as f32).sqrt()
     }
@@ -627,6 +655,73 @@ mod tests {
             lamp < 0.1 * pulse,
             "lamp {lamp} should cancel, pulse {pulse}"
         );
+    }
+
+    /// With the switch off the projection is the published one: a lamp passes and is not
+    /// cancelled (the behaviour the fix removes), so "off" can be compared against "on".
+    #[test]
+    fn switch_off_restores_the_published_projection() {
+        let lamp = |t: f32| {
+            let k = 1.0 + 0.01 * (2.0 * PI * 1.2 * t).sin();
+            (150.0 * k, 120.0 * k, 100.0 * k)
+        };
+        let off = projection_rms_with(lamp, false);
+        let on = projection_rms_with(lamp, true);
+        assert!(off > 10.0 * on, "off {off} should keep the lamp, on {on} cancels it");
+        let mut p = RppgPipeline::new(30.0, 10.0);
+        assert!(p.colour_projection_fix(), "on by default");
+        p.set_colour_projection_fix(false);
+        assert!(!p.colour_projection_fix());
+    }
+
+    /// The published projection, computed independently, matches the switch-off path exactly.
+    #[test]
+    fn switch_off_matches_the_published_formula_exactly() {
+        let n = 120;
+        let (mut r, mut g, mut b) = (vec![], vec![], vec![]);
+        for i in 0..n {
+            let t = i as f32 / 30.0;
+            r.push(150.0 + (2.0 * PI * 1.1 * t).sin());
+            g.push(120.0 + 0.7 * (2.0 * PI * 1.3 * t).cos());
+            b.push(100.0 + 0.3 * (2.0 * PI * 0.4 * t).sin());
+        }
+        let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
+        assert!(pos_from_rgb_windowed_into(
+            &r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6, false
+        ));
+        // Reference: the published loop body, X + alpha*Y, overlap-added and divided by weight.
+        let win = 48usize;
+        let step = 24usize;
+        let mut acc = vec![0.0f32; n];
+        let mut wt = vec![0.0f32; n];
+        let mut s = 0usize;
+        while s + win <= n {
+            let m = |v: &[f32]| v[s..s + win].iter().sum::<f32>() / win as f32;
+            let (mr, mg, mb) = (m(&r), m(&g), m(&b));
+            let xs: Vec<f32> = (0..win)
+                .map(|i| 3.0 * (r[s + i] / mr - 1.0) - 2.0 * (g[s + i] / mg - 1.0))
+                .collect();
+            let ys: Vec<f32> = (0..win)
+                .map(|i| 1.5 * (r[s + i] / mr - 1.0) + (g[s + i] / mg - 1.0) - 1.5 * (b[s + i] / mb - 1.0))
+                .collect();
+            let (sx, sy) = (stddev(&xs), stddev(&ys));
+            let alpha = if sy > 1e-6 { sx / sy } else { 0.0 };
+            for i in 0..win {
+                acc[s + i] += xs[i] + alpha * ys[i];
+                wt[s + i] += 1.0;
+            }
+            s += step;
+        }
+        let mut reference = vec![];
+        for i in 0..n {
+            if wt[i] > 0.0 {
+                reference.push(acc[i] / wt[i]);
+            }
+        }
+        let got: Vec<f32> = out.iter().copied().take(reference.len()).collect();
+        for (a, e) in got.iter().zip(reference.iter()) {
+            assert!((a - e).abs() < 1e-6, "switch-off {a} vs published {e}");
+        }
     }
 
     /// The fused path (push_sample, R = G = B) must read a clean pulse at its rate across the band,
