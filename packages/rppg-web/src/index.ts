@@ -346,3 +346,12 @@ export type {
 	CorpusComparison,
 	SessionComparison,
 } from "./replayBenchmark";
+export { PulseCheck, type PulseCheckState } from "./pulseCheck";
+export {
+	FIX_SWITCH_NAMES,
+	type ResolvedRppgFixSwitches,
+	type RppgFixesOption,
+	type RppgFixSwitches,
+	resolveFixSwitches,
+} from "./fixSwitches";
+export { RPPG_WEB_BUILD_VERSION } from "./buildInfo";

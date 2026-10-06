@@ -43,7 +43,7 @@ export const ELATA_FACE_YCBCR_V1_FRACTIONS: FaceRoiFractions = {
 };
 
 /**
- * Frozen five-ROI geometry used to train the MCD waveform proxy.
+ * Frozen five-ROI geometry used to train the waveform proxy model.
  * It intentionally differs from the current Elata forehead geometry.
  */
 export const MCD_PROXY_INPUT_V1_FRACTIONS: FaceRoiFractions = {
@@ -151,7 +151,7 @@ const TRADELOCK_LIVE_FOREHEAD_INDICES = [108, 151, 337, 107, 9, 336] as const;
 
 /**
  * TradeLock's primary live forehead rectangle. This is a replay/ablation
- * profile, not the SDK default and not the five-ROI MCD model profile.
+ * profile, not the SDK default and not the five-ROI waveform-model profile.
  */
 export const TRADELOCK_LIVE_FOREHEAD_V1_PROFILE: RoiGeometryProfile = {
 	id: "tradelock-live-forehead-v1",

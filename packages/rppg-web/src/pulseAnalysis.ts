@@ -47,8 +47,18 @@ export type PulseWindowAnalysis = {
 const BPM_MIN = 40;
 const BPM_MAX = 180;
 
+export type PulseAnalysisOptions = {
+	/**
+	 * The published rule that replaces the strongest rate with twice that rate (see
+	 * {@link estimateDominantBpm}). Off (false) by default in this build: fix 5, switch
+	 * `noRateDoubling`.
+	 */
+	doublingRule?: boolean;
+};
+
 export function analyzePulseWindow(
 	samples: PulseWindowSample[],
+	options: PulseAnalysisOptions = {},
 ): PulseWindowAnalysis | null {
 	const n = samples.length;
 	if (n < 24) return null;
@@ -63,7 +73,7 @@ export function analyzePulseWindow(
 	const norm = temporalNormalize(values);
 	const snrDb = computeSignalSnrDb(norm);
 
-	const spectral = estimateDominantBpm(norm, fs, 0.7, 3.3);
+	const spectral = estimateDominantBpm(norm, fs, 0.7, 3.3, options);
 	const acf = calculateBpmViaAutocorrelation(norm, fs, spectral?.bpm ?? null);
 	const waveformProfile = computeWaveformPeriodicityProfile(norm, fs);
 
@@ -138,6 +148,7 @@ export function estimateDominantBpm(
 	sampleRate: number,
 	minHz: number,
 	maxHz: number,
+	options: PulseAnalysisOptions = {},
 ): PulseEstimatorResult | null {
 	const n = data.length;
 	if (n < 60 || sampleRate <= 0) return null;
@@ -171,10 +182,24 @@ export function estimateDominantBpm(
 
 	if (!(bestMag > 0) || !Number.isFinite(bestBpm)) return null;
 
-	// No jump to twice the strongest rate: a pulse wave's own second harmonic (the dicrotic
-	// notch) routinely exceeds a third of the fundamental, so such a rule doubles correct
-	// rates. Removing it: 49% -> 54% of seconds right on 255 real recordings (see
-	// spectralNoDoubling.test.ts).
+	// No jump to twice the strongest rate by default: a pulse wave's own second harmonic (the
+	// dicrotic notch) routinely exceeds a third of the fundamental, so such a rule doubles
+	// correct rates (see spectralNoDoubling.test.ts). `doublingRule: true` restores the
+	// published rule exactly, for comparison (switch `noRateDoubling: false`).
+	if (options.doublingRule === true && minHz >= 0.6 && maxHz <= 4.5) {
+		const baseHz = bestBpm / 60;
+		const doubleHz = baseHz * 2;
+		if (doubleHz <= maxHz + 1e-6) {
+			const doubleMag = getMagnitude(doubleHz);
+			const ratio = doubleMag / (bestMag + 1e-9);
+			const doubleBpm = doubleHz * 60;
+			if (ratio > 0.35 && bestBpm < 85 && doubleBpm >= 60 && doubleBpm <= 190) {
+				bestBpm = doubleBpm;
+				bestMag = doubleMag;
+			}
+		}
+	}
+
 	const energy = centered.reduce((acc, value) => acc + value * value, 0) / n;
 	const confidence =
 		energy > 1e-9 ? clamp(bestMag / (Math.sqrt(energy) + 1e-9), 0, 1) : 0;

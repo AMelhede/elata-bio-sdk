@@ -13,12 +13,19 @@ import {
 	type FaceBox,
 } from "./faceFraming";
 import {
+	type ResolvedRppgFixSwitches,
+	type RppgFixesOption,
+	resolveFixSwitches,
+} from "./fixSwitches";
+import {
 	FUSION_ROIS,
 	type FusionProjection,
 	type FusionRoiName,
+	type MultiRoiFusionResult,
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
+import { type PulseCheck, WallTracker, wallMissReason } from "./pulseCheck";
 import { RppgProcessor } from "./rppgProcessor";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
@@ -43,6 +50,17 @@ export type LastFaceBox = {
 };
 
 export type DemoRunnerOptions = {
+	/**
+	 * Fix switches (see fixSwitches.ts). All on unless set to false. The runner applies
+	 * noFaceNoReading, realFrameRate and posFusion; the processor applies the other two.
+	 */
+	fixes?: RppgFixesOption;
+	/**
+	 * The real-pulse check (see pulseCheck.ts), fed the same three face regions the fuser
+	 * reads plus a patch of wall beside the face. The session creates it (`pulseCheck`);
+	 * null or left out: no check.
+	 */
+	pulseChecker?: PulseCheck | null;
 	roi?: { x: number; y: number; w: number; h: number } | null;
 	/** Face-mesh ROI geometry profile. */
 	roiGeometryProfile?: RoiGeometryProfile;
@@ -70,13 +88,17 @@ export type DemoRunnerOptions = {
 	 * aggregated-ROI path when sub-ROIs are unavailable.
 	 */
 	multiRoiFusion?: boolean;
-	/** Per-region projection inside the fuser: "pos" (default) or "chrom". */
+	/**
+	 * Per-region projection inside the fuser: "pos" or "chrom". Left out, it follows the
+	 * `posFusion` fix switch ("pos" when on, "chrom", as published, when off).
+	 */
 	fusionProjection?: FusionProjection;
 	/**
-	 * Face tracking is on: a frame with no face is dropped instead of read. Without it the
-	 * runner reads a 100x100 square in the middle of the frame, which is right for whole-frame
-	 * mode and wrong with face tracking on: every published rppg-web (0.1.1 to 0.14.0) then kept
-	 * reporting a heart rate from a plain wall (27 of 41 seconds on real footage, demo settings).
+	 * Face tracking is on. With the `noFaceNoReading` fix switch on, a frame with no face is
+	 * then dropped instead of read. Otherwise the runner reads a 100x100 square in the middle
+	 * of the frame, which is right for whole-frame mode and wrong with face tracking on: every
+	 * published rppg-web (0.1.1 to 0.14.0) then kept reporting a heart rate from a plain wall
+	 * (27 of 41 seconds on real wall footage, demo settings).
 	 */
 	requireFace?: boolean;
 	/**
@@ -217,6 +239,11 @@ export class DemoRunner {
 	/** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
 	private gridPrev: GridSample | null = null;
 	private gridNextT = 0;
+	/** The fix switches this runner applies. */
+	readonly fixes: ResolvedRppgFixSwitches;
+	/** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
+	private wallTracker = new WallTracker();
+	private lastOpinionMs: number | null = null;
 
 	constructor(
 		private source: FrameSource,
@@ -228,12 +255,13 @@ export class DemoRunner {
 			opts.roiGeometryProfile?.id ?? ELATA_FACE_YCBCR_V1_PROFILE.id;
 		this.diagnostics.roiPixelSamplerId =
 			opts.roiPixelSampler?.id ?? ELATA_YCBCR_V1_PIXEL_SAMPLER.id;
+		this.fixes = resolveFixSwitches(opts.fixes);
 		if (opts.multiRoiFusion !== false) {
 			this.fuser = new MultiRoiRppgFuser(
 				opts.sampleRate ?? 30,
 				8,
 				0.5,
-				opts.fusionProjection ?? "pos",
+				opts.fusionProjection ?? (this.fixes.posFusion ? "pos" : "chrom"),
 			);
 		}
 	}
@@ -333,8 +361,18 @@ export class DemoRunner {
 		let motion = 0;
 		let roiSource: DemoRunnerDiagnostics["lastRoiSource"] = null;
 		let fusionSamples: FusionSamples | null = null;
+		let fusionResult: MultiRoiFusionResult | null = null;
 
 		const rois = frame.rois && frame.rois.length > 0 ? frame.rois : null;
+		// No forehead and cheeks this frame: tell the check, so a rate proven on a face
+		// does not outlive the face (see FACE_GONE_MS in pulseCheck.ts).
+		if (
+			this.opts.pulseChecker &&
+			(!rois || rois.length < 3) &&
+			frame.timestampMs != null
+		) {
+			this.opts.pulseChecker.faceLost(frame.timestampMs);
+		}
 		if ((rois || frame.roi) && this.noFaceSinceMs != null) {
 			// The face is back. After an absence long enough for the session to have stopped
 			// reporting, start the analysis afresh, or the first number back would come from a
@@ -363,6 +401,35 @@ export class DemoRunner {
 			// fallback if the fuser can't produce a valid frame this tick.
 			if (this.fuser && useSkinMask) {
 				fusionSamples = this.sampleFusionRegions(frame, rois);
+				if (fusionSamples && !this.fixes.realFrameRate) {
+					// Switch off: the published path, one fuser step per camera frame, here.
+					fusionResult = this.fuser.pushFrame(fusionSamples);
+					fusionSamples = null;
+				}
+			}
+			if (
+				this.opts.pulseChecker &&
+				rois.length >= 3 &&
+				frame.timestampMs != null
+			) {
+				// Same three region boxes and the same skin-masked mean the fuser uses.
+				// And a patch of wall beside the face, for the wall check: only its
+				// pixels that do not look like skin, so a face edge or an ear in it
+				// cannot carry the person's own pulse into the wall.
+				const wall = frame.landmarks
+					? this.wallTracker.next(frame.landmarks, frame)
+					: null;
+				this.opts.pulseChecker.push(
+					frame.timestampMs,
+					rois.slice(0, 3).map((roi) => {
+						const c = clampRoiToFrame(roi, frame.width, frame.height);
+						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
+					}),
+					wall?.rgb,
+					frame.landmarks && !wall
+						? wallMissReason(frame.landmarks, frame.width, frame.height)
+						: undefined,
+				);
 			}
 			if (frame.roi) {
 				motion = computeMotion(frame.roi, this.lastCenter);
@@ -387,7 +454,7 @@ export class DemoRunner {
 				this.recordDrop("frame_invalid");
 				return;
 			}
-			if (!roi && this.opts.requireFace) {
+			if (!roi && this.opts.requireFace && this.fixes.noFaceNoReading) {
 				this.noFaceSinceMs ??= frame.timestampMs ?? Date.now();
 				this.noFaceLastMs = frame.timestampMs ?? Date.now();
 				this.recordDrop("no_face");
@@ -467,6 +534,18 @@ export class DemoRunner {
 					motion,
 					clipRatio,
 				);
+			} else if (
+				fusionResult?.valid &&
+				typeof proc.pushFusedSample === "function"
+			) {
+				// realFrameRate off: the published path. Fused pulse already carries the
+				// per-region projection + SNR-weighted blending; feed it straight to
+				// spectral BPM/HRV, with the fused SNR as quality.
+				proc.pushFusedSample(ts, fusionResult.fused, fusionResult.fusedSnr);
+				this.diagnostics.lastProcessorMethod = "fused";
+				this.diagnostics.framesWithFusion += 1;
+				this.diagnostics.lastFusionWeights = fusionResult.weights;
+				this.diagnostics.lastFusedSnr = fusionResult.fusedSnr;
 			} else if (typeof proc.pushSampleRgbMeta === "function") {
 				proc.pushSampleRgbMeta(
 					ts,
@@ -495,6 +574,18 @@ export class DemoRunner {
 			return;
 		}
 		this.diagnostics.samplesPushed += 1;
+		// Once a second, the SDK's own rate to the pulse check, for its opt-in agreement path.
+		// Only when that path is on: reading the processor runs its analysis, and an extra read
+		// would change what the SDK's own rate does.
+		if (
+			this.opts.pulseChecker?.agreementOn &&
+			(this.lastOpinionMs == null || ts - this.lastOpinionMs >= 1000)
+		) {
+			this.lastOpinionMs = ts;
+			const bpm =
+				typeof proc.getMetrics === "function" ? proc.getMetrics()?.bpm : null;
+			this.opts.pulseChecker.secondOpinion(bpm ?? null);
+		}
 		this.diagnostics.lastDropReason = null;
 		this.diagnostics.lastTimestampMs = ts;
 		this.diagnostics.lastIntensity = intensity;
@@ -523,10 +614,8 @@ export class DemoRunner {
 	 * 1/sampleRate seconds, so a camera that delivers fewer frames (15 to 25 a
 	 * second on a laptop in dim light) would scale every rate they report by
 	 * delivered/assumed. Each grid time between the previous frame and this one
-	 * gets the two frames' region means, linearly interpolated. Measured on 255
-	 * real recordings (MCD-rPPG, finger-sensor truth): camera slowed to 16 fps,
-	 * right 17% of seconds without the grid, 26% with it, the same as at full
-	 * rate. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow camera:
+	 * gets the two frames' region means, linearly interpolated, so a slowed
+	 * camera reads close to the same rate as a full-rate one. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow camera:
 	 * the grid restarts at the new frame instead of drawing a line across it.
 	 */
 	private pushOnGrid(

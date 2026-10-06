@@ -105,9 +105,7 @@ export class ChromPulseModel {
  * S2 = G + B - 2R, and the pulse is h = S1 + (sd S1 / sd S2) S2. The plane is orthogonal
  * to the skin's own colour, so a brightness change (all channels scaled together) cannot
  * reach the output, where CHROM's fixed skin-tone weights let part of it through. The
- * 45-sample window is 1.5 s at 30 Hz, the paper's 1.6 s. Measured on 255 real recordings
- * through the SDK's own fuser and processor (MCD-rPPG, finger-sensor truth): right in 29%
- * of seconds with CHROM, 49% with POS; held-out side cameras 23% vs 38%.
+ * 45-sample window is 1.5 s at 30 Hz, the paper's 1.6 s.
  */
 export class PosPulseModel {
 	private rQueue: number[] = [];

@@ -17,6 +17,11 @@ import {
 	type HarmonicRelation,
 } from "./pulseAnalysis";
 import {
+	type ResolvedRppgFixSwitches,
+	type RppgFixesOption,
+	resolveFixSwitches,
+} from "./fixSwitches";
+import {
 	CaptureConfidenceScorer,
 	type CaptureConfidenceConfig,
 	type CaptureConfidenceResult,
@@ -524,6 +529,8 @@ export class RppgProcessor {
 	private disposed = false;
 	private readonly sampleRate: number;
 	private readonly windowSec: number;
+	/** The fix switches this processor applies (colourProjectionFix, noRateDoubling). */
+	readonly fixes: ResolvedRppgFixSwitches;
 
 	constructor(
 		private backend: Backend,
@@ -532,10 +539,13 @@ export class RppgProcessor {
 		options: {
 			bpmTrackerConfig?: BpmTrackerConfigV1;
 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+			/** Fix switches, all on unless set to false (see fixSwitches.ts). */
+			fixes?: RppgFixesOption;
 		} = {},
 	) {
 		this.sampleRate = sampleRate;
 		this.windowSec = windowSec;
+		this.fixes = resolveFixSwitches(options.fixes);
 		this.bayesTracker = new BpmBayesTracker(
 			BPM_MIN,
 			BPM_MAX,
@@ -544,6 +554,12 @@ export class RppgProcessor {
 			options.bpmEvidenceQualityProvider,
 		);
 		this.pipeline = this.backend.newPipeline(sampleRate, windowSec);
+		// Fix 2 lives in the WASM core; the switch reaches it through this setter. A core built
+		// without the setter (the published 0.14.0 WASM) has only the published projection.
+		const setFix = this.pipeline?.set_colour_projection_fix;
+		if (typeof setFix === "function") {
+			setFix.call(this.pipeline, this.fixes.colourProjectionFix);
+		}
 	}
 
 	enableTracker(minBpm = 50, maxBpm = 160, numParticles = 150) {
@@ -1056,7 +1072,9 @@ export class RppgProcessor {
 			};
 		}
 
-		const analysis = analyzePulseWindow(this.samples);
+		const analysis = analyzePulseWindow(this.samples, {
+			doublingRule: !this.fixes.noRateDoubling,
+		});
 		if (!analysis) {
 			return {
 				calibrated_bpm: base.bpm ?? null,

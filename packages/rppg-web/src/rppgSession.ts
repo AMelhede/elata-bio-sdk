@@ -6,6 +6,8 @@ import type {
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
+import { PulseCheck, type PulseCheckState } from "./pulseCheck";
+import { type ResolvedRppgFixSwitches, resolveFixSwitches } from "./fixSwitches";
 import { ensureVideoPlaying } from "./videoPlayback";
 import {
 	RppgProcessor,
@@ -100,9 +102,25 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 
 export type CreateRppgSessionOptions = Omit<
 	DemoRunnerOptions,
-	"onDiagnostics" | "onError"
+	"onDiagnostics" | "onError" | "pulseChecker"
 > & {
 	video: HTMLVideoElement;
+	/**
+	 * The real-pulse check (see pulseCheck.ts). ON by default in this test build. A heart rate
+	 * is reported only while the check has proven a real pulse (the forehead and both cheeks
+	 * agree on one rate, clearly above the noise, over 8 one-second windows, and the newest
+	 * 8 seconds still back it), and the reported rate is the one the check measured. HRV and
+	 * breathing are withheld while it is on. `false`: the SDK's own rate, as published, with
+	 * the fixes set by `fixes`. It needs face tracking: with `faceMesh: "off"` (or when the face
+	 * finder failed to load) there are no face regions to check, so no heart rate is reported.
+	 */
+	pulseCheck?: boolean;
+	/**
+	 * With `pulseCheck`, also report the SDK's own rate when it agrees with the check's window
+	 * rate for 8 seconds running (agreementRate in pulseCheckCore.ts). Off by default: a small
+	 * gain on new recordings, kept opt-in.
+	 */
+	pulseCheckAgreement?: boolean;
 	bpmTrackerConfig?: BpmTrackerConfigV1;
 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 	experimental?: {
@@ -178,6 +196,7 @@ type SessionInternals = {
 	faceTrackingDegraded?: boolean;
 	beforeStart?: () => Promise<void>;
 	waveformController?: WaveformReconstructionController;
+	pulseCheck?: PulseCheck | null;
 };
 
 export class RppgSession {
@@ -222,7 +241,48 @@ export class RppgSession {
 				reason_codes: [...(metrics.reason_codes ?? []), "no_face"],
 			};
 		}
-		return metrics;
+		const check = this.internals.pulseCheck;
+		if (!check) return metrics;
+		// With the check on, the only number reported is the heart rate the check proved, or none.
+		// Breathing rate and HRV are withheld always: neither yet passes a known answer, even with
+		// the pulse proven (synthetic face, rate proven at 70, no breathing in the video: breathing
+		// read 14 to 21 in 42 of 42 seconds). Each comes back when it has a check of its own.
+		const state = check.getState();
+		return {
+			...metrics,
+			bpm: state.verdict === "measured" ? state.bpm : null,
+			hrv_rmssd: null,
+			respiration_rate: null,
+			respiration_confidence: null,
+		};
+	}
+
+	/** State of the real-pulse check; null when `pulseCheck` is off. */
+	getPulseCheck(): PulseCheckState | null {
+		return this.internals.pulseCheck?.getState() ?? null;
+	}
+
+	/** Which fixes and checks this session runs, for logging results against a build. */
+	getBuildSwitches(): {
+		fixes: ResolvedRppgFixSwitches;
+		pulseCheck: boolean;
+		pulseCheckAgreement: boolean;
+	} {
+		const fixes =
+			(this.runner as { fixes?: ResolvedRppgFixSwitches }).fixes ??
+			resolveFixSwitches();
+		const procFixes = (this.processor as { fixes?: ResolvedRppgFixSwitches })
+			.fixes;
+		return {
+			fixes: {
+				...fixes,
+				colourProjectionFix:
+					procFixes?.colourProjectionFix ?? fixes.colourProjectionFix,
+				noRateDoubling: procFixes?.noRateDoubling ?? fixes.noRateDoubling,
+			},
+			pulseCheck: this.internals.pulseCheck != null,
+			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
+		};
 	}
 
 	/** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -420,6 +480,7 @@ export async function createRppgSession(
 		{
 			bpmTrackerConfig: options.bpmTrackerConfig,
 			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+			fixes: options.fixes,
 		},
 	);
 	applyTrackerConfiguration(processor, enableTracker);
@@ -434,7 +495,13 @@ export async function createRppgSession(
 			)
 		: undefined;
 
+	const pulseCheck =
+		options.pulseCheck !== false
+			? new PulseCheck({ agreement: options.pulseCheckAgreement === true })
+			: null;
 	const runner = new DemoRunner(source, processor, {
+		fixes: options.fixes,
+		pulseChecker: pulseCheck,
 		roi: options.roi,
 		roiGeometryProfile: options.roiGeometryProfile,
 		sampleRate,
@@ -489,6 +556,7 @@ export async function createRppgSession(
 		{
 			onDiagnostics: options.onDiagnostics,
 			onError: options.onError,
+			pulseCheck,
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,
