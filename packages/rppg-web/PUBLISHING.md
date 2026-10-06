@@ -18,8 +18,9 @@ cd C:\Users\andre; if (-not (Test-Path elata-bio-sdk-test)) { git clone https://
 
 1. `npm login` opens the browser to sign in as `amelhede`.
 2. `npm stage publish --tag test --access public` first runs `scripts/check-test-release.mjs`
-   (the built files are present, the version matches, the WASM has the switch, nothing that
-   ships names a test dataset or a local path, and the tag is not `latest`), then uploads the
+   (the built files are present, the version matches, the WASM has the switch, Elata's MIT
+   LICENSE is in the package unedited, nothing that ships names a test dataset or a local path,
+   and the tag is not `latest`), then uploads the
    package to npm's staging area. Nothing is public yet. (For a package name that does not exist
    yet, npm creates a public placeholder for the name; the version itself stays hidden until
    approved.)

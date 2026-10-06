@@ -2,7 +2,7 @@
 // Runs before `npm pack` / `npm publish` / `npm stage publish` (prepack, prepublishOnly).
 // Needs only Node: the built files are committed on this branch, so publishing needs no
 // Rust or TypeScript toolchain. Fails loudly instead of publishing something wrong.
-//   node scripts/check-test-release.mjs            files, version, switch in the WASM, scrub
+//   node scripts/check-test-release.mjs            files, version, licence, switch in the WASM, scrub
 //   node scripts/check-test-release.mjs --publish  the same, plus: the npm tag is not 'latest'
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -36,6 +36,23 @@ if (existsSync(built)) {
 	if (m?.[1] !== pkg.version)
 		problems.push(`dist says ${m?.[1]}, package.json says ${pkg.version}: rebuild dist`);
 }
+// Licence: the SDK is Elata's, under MIT, and MIT lets a copy be shared only with its
+// copyright and permission notice. npm always packs a top-level LICENSE, so the notice ships
+// as long as this file is here, unedited.
+const licence = path.join(root, "LICENSE");
+if (!existsSync(licence)) {
+	problems.push("missing LICENSE: copy the repo root LICENSE (MIT, Copyright (c) 2024 Elata) here");
+} else {
+	const text = readFileSync(licence, "utf8");
+	if (!text.includes("Copyright (c) 2024 Elata") || !text.includes("Permission is hereby granted"))
+		problems.push("LICENSE is not Elata's MIT notice");
+	const rootLicence = path.join(root, "../../LICENSE");
+	if (existsSync(rootLicence) && readFileSync(rootLicence, "utf8") !== text)
+		problems.push("LICENSE differs from the repo root LICENSE");
+}
+if (!pkg.files.includes("LICENSE")) problems.push("package.json files does not list LICENSE");
+if (pkg.license !== "MIT") problems.push(`license field is ${pkg.license}, not MIT`);
+
 const glue = path.join(root, "pkg/rppg_wasm.js");
 if (existsSync(glue) && !readFileSync(glue, "utf8").includes("set_colour_projection_fix"))
 	problems.push("pkg/ WASM has no set_colour_projection_fix: rebuild the WASM from this branch");

@@ -8,10 +8,11 @@
 //   4. known answers: a clean colour pulse at 60, 72 and 120 bpm reads within 2 bpm with every
 //      fix on; with `colourProjectionFix: false` the 120 does not (the published core), which
 //      proves the switch changes what the WASM does;
-//   5. the packed file list holds only dist/, pkg/, README.md, llms.txt and package.json.
+//   5. the packed file list holds only dist/, pkg/, README.md, llms.txt, LICENSE and package.json,
+//      and LICENSE is the repo root's MIT notice, byte for byte.
 // BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red.
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,13 +29,18 @@ let failed = false;
 try {
 	const out = run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", tmp], root);
 	const info = JSON.parse(out)[0];
-	const allowed = /^(dist\/|pkg\/|README\.md$|llms\.txt$|package\.json$)/;
+	const allowed = /^(dist\/|pkg\/|README\.md$|llms\.txt$|LICENSE$|package\.json$)/;
 	const stray = info.files.map((f) => f.path).filter((p) => !allowed.test(p) || /\.test\.|__tests__|\.tsbuildinfo$/.test(p));
 	if (stray.length) throw new Error(`unexpected files in the package: ${stray.join(", ")}`);
 	const tgz = path.join(tmp, info.filename);
 	const unpacked = path.join(tmp, "unpacked");
 	mkdirSync(unpacked);
 	run("tar", ["-xzf", tgz, "-C", unpacked], tmp);
+	// The MIT notice must travel with every copy: the packed LICENSE is the repo root's, byte for byte.
+	const packedLicence = path.join(unpacked, "package", "LICENSE");
+	if (!existsSync(packedLicence)) throw new Error("the package has no LICENSE (MIT requires the notice in every copy)");
+	if (!readFileSync(packedLicence).equals(readFileSync(path.join(root, "../../LICENSE"))))
+		throw new Error("the packed LICENSE differs from the repo root LICENSE");
 	const app = path.join(tmp, "app");
 	for (const name of ["@amelhede/rppg-web", "@elata-biosciences/rppg-web"]) {
 		const dir = path.join(app, "node_modules", ...name.split("/"));
