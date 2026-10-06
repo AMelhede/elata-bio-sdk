@@ -55,6 +55,12 @@ export type RppgFixSwitches = {
 	 * the face finder reads the live video, as published.
 	 */
 	analysisWidth?: boolean;
+	/**
+	 * Speed 3. The face finder runs at most every 60 ms of video time and the frames between
+	 * are sampled at the last landmarks, so every camera frame becomes a pulse sample. Off: the
+	 * face finder runs on every frame, as published.
+	 */
+	faceFinderInterval?: boolean;
 };
 
 /** `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless `false`. */
@@ -70,6 +76,7 @@ export const FIX_SWITCH_NAMES = [
 	"noRateDoubling",
 	"analysisSchedule",
 	"analysisWidth",
+	"faceFinderInterval",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */

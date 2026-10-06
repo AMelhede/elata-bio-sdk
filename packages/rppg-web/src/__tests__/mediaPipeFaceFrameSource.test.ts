@@ -331,3 +331,49 @@ describe('MediaPipeFaceFrameSource analysis width switch', () => {
     restore();
   });
 });
+
+describe('MediaPipeFaceFrameSource face finder rate', () => {
+  const lm = [
+    { x: 0.45, y: 0.4 },
+    { x: 0.55, y: 0.4 },
+    { x: 0.5, y: 0.5 },
+  ];
+  // Every frame is a sample of the pulse; the face's position changes slowly. So frames are
+  // emitted at the camera rate while the face finder runs at most every FACE_DETECT_EVERY_MS.
+  test('runs the face finder at most every FACE_DETECT_EVERY_MS of video time, emitting every frame', () => {
+    const restore = setupCanvasMock(200, 100);
+    const video = new FakeVideo(200, 100) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30);
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    for (let i = 0; i < 10; i++) (src as any).detectAndEmit(1000 + i * 33.3, { mediaTime: (i * 33.3) / 1000 + 0.001 });
+    expect(frames).toHaveLength(10);
+    expect(frames.every((f) => f.roi != null)).toBe(true);
+    expect(landmarker.detectForVideo).toHaveBeenCalledTimes(5);
+    restore();
+  });
+
+  test('a face that leaves is reported at the next face-finder run', () => {
+    const restore = setupCanvasMock(200, 100);
+    const video = new FakeVideo(200, 100) as unknown as HTMLVideoElement;
+    const src = new MediaPipeFaceFrameSource(video, fakeLandmarker([{ landmarks: lm }, {}]), 30);
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    for (let i = 0; i < 4; i++) (src as any).detectAndEmit(1000 + i * 33.3, { mediaTime: (i * 33.3) / 1000 + 0.001 });
+    expect(frames.map((f) => f.roi != null)).toEqual([true, true, false, false]);
+    restore();
+  });
+});
+
+describe('MediaPipeFaceFrameSource face finder interval switch', () => {
+  test('off: the face finder runs on every frame, as published', () => {
+    const restore = setupCanvasMock(200, 100);
+    const video = new FakeVideo(200, 100) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: [{ x: 0.45, y: 0.4 }, { x: 0.55, y: 0.4 }, { x: 0.5, y: 0.5 }] }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { faceFinderInterval: false });
+    for (let i = 0; i < 10; i++) (src as any).detectAndEmit(1000 + i * 33.3, { mediaTime: (i * 33.3) / 1000 + 0.001 });
+    expect(landmarker.detectForVideo).toHaveBeenCalledTimes(10);
+    restore();
+  });
+});
