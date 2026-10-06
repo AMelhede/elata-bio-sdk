@@ -2,13 +2,14 @@ import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
 import { PulseCheck } from "./pulseCheck.js";
-import { resolveFixSwitches } from "./fixSwitches.js";
+import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
 import { RppgProcessor, } from "./rppgProcessor.js";
 import { loadWasmBackend, createUnavailableBackend, } from "./wasmBackend.js";
 import { DemoRunner, FACE_GONE_RESET_MS, } from "./demoRunner.js";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow.js";
 import { WaveformReconstructionController } from "./waveformReconstructionController.js";
+import { createWorkerRppgProcessor, WorkerRppgProcessor, } from "./workerRppgProcessor.js";
 export class RppgSession {
     constructor(source, processor, runner, backendMode, faceTrackingMode, internals = {}) {
         this.source = source;
@@ -73,11 +74,17 @@ export class RppgSession {
             resolveFixSwitches();
         const procFixes = this.processor
             .fixes;
+        const srcFixes = this.source
+            ?.fixes;
         return {
             fixes: {
                 ...fixes,
                 colourProjectionFix: procFixes?.colourProjectionFix ?? fixes.colourProjectionFix,
                 noRateDoubling: procFixes?.noRateDoubling ?? fixes.noRateDoubling,
+                analysisSchedule: procFixes?.analysisSchedule ?? fixes.analysisSchedule,
+                analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
+                faceFinderInterval: srcFixes?.faceFinderInterval ?? fixes.faceFinderInterval,
+                analysisWorker: this.processor instanceof WorkerRppgProcessor,
             },
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
@@ -236,18 +243,34 @@ export async function createRppgSession(options) {
         ? "face_mesh"
         : "video_frame";
     const source = faceMeshResult.faceMesh
-        ? new MediaPipeFaceFrameSource(options.video, faceMeshResult.faceMesh, sampleRate, options.roiGeometryProfile)
+        ? new MediaPipeFaceFrameSource(options.video, faceMeshResult.faceMesh, sampleRate, options.roiGeometryProfile, options.fixes)
         : new MediaPipeFrameSource(options.video, { fps: sampleRate });
-    const backendResult = await resolveBackend(backendPreference, {
-        wasmJsUrl: options.wasmJsUrl,
-        wasmBinaryUrl: options.wasmBinaryUrl,
-        wasmImporter: options.wasmImporter,
-    });
-    const processor = new RppgProcessor(backendResult.backend, sampleRate, windowSec, {
-        bpmTrackerConfig: options.bpmTrackerConfig,
-        bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
-        fixes: options.fixes,
-    });
+    const workerProcessor = (options.analysisWorker ??
+        resolveFixSwitches(options.fixes).analysisWorker) &&
+        !options.wasmImporter &&
+        !options.bpmEvidenceQualityProvider
+        ? await createWorkerRppgProcessor({
+            sampleRate,
+            windowSec,
+            wasmJsUrl: options.wasmJsUrl,
+            wasmBinaryUrl: options.wasmBinaryUrl,
+            bpmTrackerConfig: options.bpmTrackerConfig,
+            fixes: options.fixes,
+        })
+        : null;
+    const backendResult = workerProcessor
+        ? { mode: "wasm" }
+        : await resolveBackend(backendPreference, {
+            wasmJsUrl: options.wasmJsUrl,
+            wasmBinaryUrl: options.wasmBinaryUrl,
+            wasmImporter: options.wasmImporter,
+        });
+    const processor = workerProcessor ??
+        new RppgProcessor(backendResult.backend, sampleRate, windowSec, {
+            bpmTrackerConfig: options.bpmTrackerConfig,
+            bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+            fixes: options.fixes,
+        });
     applyTrackerConfiguration(processor, enableTracker);
     let session = null;
     const waveformBuilder = options.experimental

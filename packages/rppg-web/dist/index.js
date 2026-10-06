@@ -45,3 +45,4 @@ export { aggregateComparisons, maeOf, summarizeReplaySession, } from "./replayBe
 export { PulseCheck } from "./pulseCheck.js";
 export { FIX_SWITCH_NAMES, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
+export { createWorkerRppgProcessor, WorkerRppgProcessor, } from "./workerRppgProcessor.js";

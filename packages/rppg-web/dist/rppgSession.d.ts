@@ -2,12 +2,13 @@ import type { FrameSource } from "./frameSource.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { PulseCheck, type PulseCheckState } from "./pulseCheck.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
-import { RppgProcessor, type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
+import { type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
 import { type WasmImporter } from "./wasmBackend.js";
 import { DemoRunner, type DemoRunnerDiagnostics, type DemoRunnerOptions } from "./demoRunner.js";
 import type { BpmEvidenceQualityProvider, BpmTrackerConfigV1 } from "./bpmBayesTracker.js";
 import type { RppgModelDiagnosticsV1, WaveformReconstructionV1, WaveformReconstructor } from "./waveformModel.js";
 import { WaveformReconstructionController } from "./waveformReconstructionController.js";
+import { type RppgProcessorLike } from "./workerRppgProcessor.js";
 export type RppgSessionBackendPreference = "auto" | "wasm";
 export type RppgSessionBackendMode = "wasm" | "unavailable";
 export type RppgSessionFaceTrackingMode = "face_mesh" | "video_frame";
@@ -76,6 +77,14 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
         /** Reserved for later validation; reconstructed BPM evidence is disabled. */
         useReconstructedBpmEvidence?: false;
     };
+    /**
+     * Run the heart-rate analysis in a Web Worker, so it never blocks the camera frames (see
+     * workerRppgProcessor.ts). Defaults to the `analysisWorker` fix switch. Falls back to the main thread, exactly as
+     * without the option, when workers are unavailable, the worker cannot load the WASM core,
+     * or a function option is set that cannot cross to a worker (wasmImporter,
+     * bpmEvidenceQualityProvider).
+     */
+    analysisWorker?: boolean;
     sampleRate?: number;
     windowSec?: number;
     backend?: RppgSessionBackendPreference;
@@ -144,13 +153,13 @@ type SessionInternals = {
 };
 export declare class RppgSession {
     readonly source: FrameSource;
-    readonly processor: RppgProcessor;
+    readonly processor: RppgProcessorLike;
     readonly runner: DemoRunner;
     readonly backendMode: RppgSessionBackendMode;
     readonly faceTrackingMode: RppgSessionFaceTrackingMode;
     private readonly internals;
     private lastErrorValue;
-    constructor(source: FrameSource, processor: RppgProcessor, runner: DemoRunner, backendMode: RppgSessionBackendMode, faceTrackingMode: RppgSessionFaceTrackingMode, internals?: SessionInternals);
+    constructor(source: FrameSource, processor: RppgProcessorLike, runner: DemoRunner, backendMode: RppgSessionBackendMode, faceTrackingMode: RppgSessionFaceTrackingMode, internals?: SessionInternals);
     get lastError(): RppgSessionError | null;
     get state(): RppgSessionState;
     getMetrics(): Metrics;

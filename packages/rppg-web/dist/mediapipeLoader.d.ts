@@ -14,7 +14,7 @@ export type FaceLandmarkerResult = {
 };
 /** Minimal surface of MediaPipe's FaceLandmarker used by the frame source (mockable in tests). */
 export type FaceLandmarkerLike = {
-    detectForVideo(video: HTMLVideoElement, timestampMs: number): FaceLandmarkerResult;
+    detectForVideo(image: HTMLVideoElement | HTMLCanvasElement, timestampMs: number): FaceLandmarkerResult;
     close?: () => void;
 };
 export type LoadFaceLandmarkerOptions = {

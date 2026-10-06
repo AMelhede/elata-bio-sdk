@@ -1,3 +1,4 @@
+import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, FUSION_ROI_NAMES, } from "./roiProfile.js";
 /**
  * Frame source backed by MediaPipe FaceLandmarker (tasks-vision). Each frame
@@ -7,8 +8,36 @@ import { ELATA_FACE_YCBCR_V1_PROFILE, FUSION_ROI_NAMES, } from "./roiProfile.js"
  * Unlike the legacy FaceMesh (async send/onResults), FaceLandmarker.detectForVideo
  * is synchronous, so detection happens inline in the capture loop.
  */
+/**
+ * Widest frame the pipeline reads, in pixels. The pulse is the mean colour of a skin patch,
+ * and camera noise in that mean falls with the square root of the pixel count, so past a few
+ * thousand pixels per patch more resolution buys nothing: at 640 wide a cheek patch still
+ * averages thousands of pixels, putting sensor noise far under a 0.5% pulse. Every later step
+ * (skin mask, region means, fusion, the pulse check) costs time in proportion to pixels, so
+ * reading a 1280x960 camera at full size cut the analysed frame rate to ~7 per second
+ * (measured 2026-10-02, owner's laptop and a 1280x960 test feed alike).
+ */
+export const MAX_ANALYSIS_WIDTH = 640;
+/**
+ * The face finder runs at most once per this much VIDEO time; frames in between are sampled
+ * at the last landmarks. Every frame's colour is a sample of the pulse, so dropping frames
+ * costs signal; the face's position changes far more slowly (a head turning steadily moves a
+ * few percent of a face-width per 33 ms frame), so ~16 position updates a second keep the
+ * regions on the face. Before this the face finder ran on every frame and was the costliest
+ * step: on the owner's laptop 30 frames a second arrived and ~23 were analysed (2026-10-02).
+ * Video time, not wall time, so a slowed replay sees the same head motion per update as live.
+ */
+export const FACE_DETECT_EVERY_MS = 60;
+/** Analysis frame size for a video size: same aspect, at most MAX_ANALYSIS_WIDTH wide. */
+export function analysisSize(videoWidth, videoHeight) {
+    const scale = Math.min(1, MAX_ANALYSIS_WIDTH / videoWidth);
+    return {
+        width: Math.max(1, Math.round(videoWidth * scale)),
+        height: Math.max(1, Math.round(videoHeight * scale)),
+    };
+}
 export class MediaPipeFaceFrameSource {
-    constructor(video, faceLandmarker, fps = 30, roiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE) {
+    constructor(video, faceLandmarker, fps = 30, roiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE, fixes) {
         this.video = video;
         this.faceLandmarker = faceLandmarker;
         this.fps = fps;
@@ -19,9 +48,13 @@ export class MediaPipeFaceFrameSource {
         this.vfcHandle = null;
         this.smoothedFaceRoi = null;
         this.lastError = null;
+        /** The last face-finder result and the video time it was found at (FACE_DETECT_EVERY_MS). */
+        this.lastDetect = null;
+        this.fixes = resolveFixSwitches(fixes);
         this.canvas = document.createElement("canvas");
-        this.canvas.width = video.videoWidth || video.width || 320;
-        this.canvas.height = video.videoHeight || video.height || 240;
+        const size = this.frameSize(video.videoWidth || video.width || 320, video.videoHeight || video.height || 240);
+        this.canvas.width = size.width;
+        this.canvas.height = size.height;
         const ctx = this.canvas.getContext("2d");
         if (!ctx)
             throw new Error("2D context unavailable");
@@ -31,6 +64,7 @@ export class MediaPipeFaceFrameSource {
         if (this.running)
             return;
         this.running = true;
+        this.lastDetect = null;
         const interval = 1000 / this.fps;
         const vfc = this.video.requestVideoFrameCallback;
         if (typeof vfc === "function") {
@@ -64,30 +98,65 @@ export class MediaPipeFaceFrameSource {
     getLastError() {
         return this.lastError;
     }
+    /** Canvas size for a video size: capped at MAX_ANALYSIS_WIDTH with analysisWidth on, else full size as published. */
+    frameSize(w, h) {
+        return this.fixes.analysisWidth
+            ? analysisSize(w, h)
+            : { width: w, height: h };
+    }
     detectAndEmit(now, metadata) {
         // Resize canvas if the video dimensions became known after construction.
-        if (this.video.videoWidth && this.canvas.width !== this.video.videoWidth) {
-            this.canvas.width = this.video.videoWidth;
-            this.canvas.height = this.video.videoHeight;
+        if (this.video.videoWidth) {
+            const size = this.frameSize(this.video.videoWidth, this.video.videoHeight);
+            if (this.canvas.width !== size.width ||
+                this.canvas.height !== size.height) {
+                this.canvas.width = size.width;
+                this.canvas.height = size.height;
+            }
+        }
+        // Draw the frame once at analysis size, then find the face in THAT image: the face
+        // finder scales its input to ~256 px internally, so the full camera frame only cost it
+        // a larger copy (measured 2026-10-02: ~62 ms of a ~77 ms frame at 1280x960), and the
+        // landmarks now come from exactly the pixels the regions are sampled from, not from a
+        // live video frame that may have advanced in between.
+        try {
+            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+        }
+        catch (error) {
+            this.reportError("capture_failed", "capture", error);
+            return;
         }
         let landmarks = null;
         let blendshapes;
-        try {
-            const result = this.faceLandmarker.detectForVideo(this.video, now);
-            landmarks = result?.faceLandmarks?.[0] ?? null;
-            const categories = result?.faceBlendshapes?.[0]?.categories;
-            if (categories && categories.length) {
-                blendshapes = categories.map((c) => ({
-                    categoryName: c.categoryName,
-                    score: c.score,
-                }));
+        const videoMs = typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0
+            ? metadata.mediaTime * 1000
+            : now;
+        const last = this.fixes.faceFinderInterval ? this.lastDetect : null;
+        if (last &&
+            videoMs >= last.atMs &&
+            videoMs - last.atMs < FACE_DETECT_EVERY_MS) {
+            landmarks = last.landmarks;
+            blendshapes = last.blendshapes;
+        }
+        else {
+            try {
+                const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
+                landmarks = result?.faceLandmarks?.[0] ?? null;
+                const categories = result?.faceBlendshapes?.[0]?.categories;
+                if (categories && categories.length) {
+                    blendshapes = categories.map((c) => ({
+                        categoryName: c.categoryName,
+                        score: c.score,
+                    }));
+                }
+                this.lastDetect = { atMs: videoMs, landmarks, blendshapes };
+            }
+            catch (error) {
+                this.lastDetect = null;
+                this.reportError("face_mesh_failed", "face_mesh", error);
             }
         }
-        catch (error) {
-            this.reportError("face_mesh_failed", "face_mesh", error);
-        }
         try {
-            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
             const img = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
             const ts = typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0
                 ? metadata.mediaTime * 1000

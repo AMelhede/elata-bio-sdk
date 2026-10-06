@@ -24,7 +24,8 @@ export async function loadFaceLandmarker(options = {}) {
     const modelAssetPath = options.modelAssetPath ?? DEFAULT_MODEL_ASSET;
     // Runtime ESM import of the CDN bundle. The dynamic URL keeps bundlers from
     // trying to resolve tasks-vision at build time (the package stays dep-free).
-    const mod = await import(/* @vite-ignore */ /* webpackIgnore: true */ `${cdn}/vision_bundle.mjs`);
+    const mod = await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ `${cdn}/vision_bundle.mjs`);
     const FilesetResolver = mod.FilesetResolver;
     const FaceLandmarker = mod.FaceLandmarker;
     if (!FilesetResolver || !FaceLandmarker)

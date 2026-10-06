@@ -3,9 +3,9 @@ import { type FaceBox } from "./faceFraming.js";
 import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitches.js";
 import { type FusionProjection, type FusionRoiName } from "./multiRoiFusion.js";
 import { type PulseCheck } from "./pulseCheck.js";
-import { RppgProcessor } from "./rppgProcessor.js";
 import { type RoiPixelSampler, type RppgRoiSampleV1 } from "./roiPixelSampler.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
+import type { RppgProcessorLike } from "./workerRppgProcessor.js";
 export type LastBlendshapes = {
     blendshapes: FrameBlendshape[];
     atMs: number;
@@ -143,7 +143,7 @@ export declare class DemoRunner {
     /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
     private wallTracker;
     private lastOpinionMs;
-    constructor(source: FrameSource, processor: RppgProcessor, opts?: DemoRunnerOptions);
+    constructor(source: FrameSource, processor: RppgProcessorLike, opts?: DemoRunnerOptions);
     /** How long no face has been in view as of `nowMs` (0 while a face is in view). */
     faceAbsentMs(nowMs?: number): number;
     /** Latest face blendshapes (for affect estimation), with capture timestamp. */

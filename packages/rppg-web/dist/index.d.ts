@@ -78,4 +78,5 @@ export type { AbsErrorAccumulator, CorpusComparison, SessionComparison, } from "
 export { PulseCheck, type PulseCheckState } from "./pulseCheck.js";
 export { FIX_SWITCH_NAMES, type ResolvedRppgFixSwitches, type RppgFixesOption, type RppgFixSwitches, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
+export { createWorkerRppgProcessor, type RppgProcessorLike, WorkerRppgProcessor, } from "./workerRppgProcessor.js";
 //# sourceMappingURL=index.d.ts.map
