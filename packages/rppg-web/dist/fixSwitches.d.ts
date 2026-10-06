@@ -11,7 +11,7 @@ export type RppgFixSwitches = {
     /**
      * Fix 1. With face tracking on, a frame with no face is dropped (drop reason `no_face`), and
      * after one second with no face the session reports no heart rate, HRV or breathing; the
-     * analysis starts afresh when the face returns. Off: the published behaviour, which reads a
+     * multi-region fuser starts afresh when the face returns. Off: the published behaviour, which reads a
      * 100x100 square in the middle of the frame when no face is found and keeps reporting a
      * heart rate from whatever is there (a wall, a chair).
      */
