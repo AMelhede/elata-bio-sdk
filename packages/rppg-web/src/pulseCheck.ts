@@ -60,6 +60,8 @@ export type PulseCheckState = {
 	/** That window's colour-damage measure, and whether the wall was seen through the whole window. */
 	windowColourDamage?: number | null;
 	windowWallSeen?: boolean;
+	/** Diagnostic: the wall's strongest brightness line in this window (wallLine), or null. */
+	wallLine?: { bpm: number; snrDb: number } | null;
 	/**
 	 * Frames in the last one-second step: with the wall seen, and without it because the face
 	 * left no room beside it or because every patch beside it looked like skin (wallMissReason).
@@ -175,21 +177,14 @@ const WALL_MIN_SAMPLES = 60;
  */
 const WALL_MIN_SNR_DB = 12;
 
-/**
- * Whether the wall carries `bpm` the way a light would: the strongest line (band floor up) of its
- * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate and WALL_MIN_SNR_DB above its
- * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
- * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
- */
-export function wallCarries(
+export function wallLine(
 	wall: [number, number, number, number][],
 	atMs: number,
-	bpm: number,
-): boolean {
+): { bpm: number; snrDb: number } | null {
 	const win = wall.filter(
 		(w) => w[0] > atMs - OWN_PULSE_WINDOW_S * 1000 && w[0] <= atMs,
 	);
-	if (win.length < WALL_MIN_SAMPLES) return false;
+	if (win.length < WALL_MIN_SAMPLES) return null;
 	const t = win.map((w) => w[0] / 1000);
 	const brightness = resample(
 		t,
@@ -206,7 +201,7 @@ export function wallCarries(
 	const range = spectrum(detrend(brightness, OWN_PULSE_DETREND_S)).filter(
 		([f]) => f >= OWN_PULSE_BAND_HZ[0],
 	);
-	if (!range.length) return false;
+	if (!range.length) return null;
 	const f0 = range.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
 	const inLine = (f: number) =>
 		Math.abs(f - f0) <= 0.1 || Math.abs(f - 2 * f0) <= 0.1;
@@ -214,9 +209,25 @@ export function wallCarries(
 	let rest = 0;
 	for (const [f, p] of range) if (inLine(f)) sig += p;
 	else rest += p;
-	const snrDb = 10 * Math.log10(sig / Math.max(rest, 1e-12));
+	return { bpm: f0 * 60, snrDb: 10 * Math.log10(sig / Math.max(rest, 1e-12)) };
+}
+
+/**
+ * Whether the wall carries `bpm` the way a light would: the strongest line (band floor up) of its
+ * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate and WALL_MIN_SNR_DB above its
+ * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
+ * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
+ */
+export function wallCarries(
+	wall: [number, number, number, number][],
+	atMs: number,
+	bpm: number,
+): boolean {
+	const line = wallLine(wall, atMs);
 	return (
-		Math.abs(f0 * 60 - bpm) <= OWN_PULSE_AGREE_BPM && snrDb >= WALL_MIN_SNR_DB
+		line != null &&
+		Math.abs(line.bpm - bpm) <= OWN_PULSE_AGREE_BPM &&
+		line.snrDb >= WALL_MIN_SNR_DB
 	);
 }
 
@@ -344,6 +355,7 @@ export class PulseCheck {
 					windowMethod: est?.method ?? null,
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
+					wallLine: wallLine(this.wall, timestampMs),
 					wallFrames,
 					faceFlicker,
 				}
@@ -359,6 +371,7 @@ export class PulseCheck {
 					windowMethod: est?.method ?? null,
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
+					wallLine: wallLine(this.wall, timestampMs),
 					wallFrames,
 					faceFlicker,
 				};
