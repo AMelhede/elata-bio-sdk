@@ -56,12 +56,6 @@ export type RppgFixSwitches = {
 	 */
 	analysisWidth?: boolean;
 	/**
-	 * Speed 3. The face finder runs at most every 60 ms of video time and the frames between
-	 * are sampled at the last landmarks, so every camera frame becomes a pulse sample. Off: the
-	 * face finder runs on every frame, as published.
-	 */
-	faceFinderInterval?: boolean;
-	/**
 	 * Speed 4. The heart-rate analysis runs in a Web Worker so it never blocks camera frames,
 	 * falling back to the main thread when a worker or the WASM core in it cannot start. Off:
 	 * the analysis runs on the main thread, as published. The session option `analysisWorker`,
@@ -83,7 +77,6 @@ export const FIX_SWITCH_NAMES = [
 	"noRateDoubling",
 	"analysisSchedule",
 	"analysisWidth",
-	"faceFinderInterval",
 	"analysisWorker",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 

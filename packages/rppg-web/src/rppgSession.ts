@@ -299,8 +299,6 @@ export class RppgSession {
 				noRateDoubling: procFixes?.noRateDoubling ?? fixes.noRateDoubling,
 				analysisSchedule: procFixes?.analysisSchedule ?? fixes.analysisSchedule,
 				analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
-				faceFinderInterval:
-					srcFixes?.faceFinderInterval ?? fixes.faceFinderInterval,
 				analysisWorker: this.processor instanceof WorkerRppgProcessor,
 			},
 			pulseCheck: this.internals.pulseCheck != null,
