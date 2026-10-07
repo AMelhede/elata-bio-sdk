@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkin } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_STRONG_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, agreementRate, AGREE_SECONDS, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_STRONG_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, agreementRate, AGREE_SECONDS, ownPulseVerdict, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -102,23 +102,53 @@ const WALL_MIN_SAMPLES = 60;
  * Value chosen by measurement on recorded captures against a reference pulse.
  */
 const WALL_MIN_SNR_DB = 12;
+export function wallLine(wall, atMs) {
+    const win = wall.filter((w) => w[0] > atMs - OWN_PULSE_WINDOW_S * 1000 && w[0] <= atMs);
+    if (win.length < WALL_MIN_SAMPLES)
+        return null;
+    const t = win.map((w) => w[0] / 1000);
+    const brightness = resample(t, win.map((w) => w[1] + w[2] + w[3]), t[0], t[t.length - 1]);
+    // The wall's strongest line is searched from the band's floor to the top of the computed
+    // spectrum, with no local-maximum rule: that rule is right for choosing a pulse and wrong for
+    // spotting a light. A light on the band's edge puts its maximum just outside the band, so no
+    // in-band maximum exists and the wall would read as carrying nothing (120 Hz mains filmed at
+    // 9 fps folds to exactly 3.0 Hz, 180 a minute). Line power: bins within 0.1 Hz of the line
+    // and of twice it, as peakOfSpectrum counts it.
+    const range = spectrum(detrend(brightness, OWN_PULSE_DETREND_S)).filter(([f]) => f >= OWN_PULSE_BAND_HZ[0]);
+    if (!range.length)
+        return null;
+    const f0 = range.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+    const inLine = (f) => Math.abs(f - f0) <= 0.1 || Math.abs(f - 2 * f0) <= 0.1;
+    let sig = 0;
+    let rest = 0;
+    for (const [f, p] of range)
+        if (inLine(f))
+            sig += p;
+        else
+            rest += p;
+    return { bpm: f0 * 60, snrDb: 10 * Math.log10(sig / Math.max(rest, 1e-12)) };
+}
 /**
- * Whether the wall carries `bpm` the way a light would: the strongest in-band line of its
- * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate and WALL_MIN_SNR_DB above its
+ * Whether the wall carries `bpm` the way a light would: the strongest line (band floor up) of its
+ * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate or of a LIGHT_FAMILY multiple of it,
+ * and WALL_MIN_SNR_DB above its
  * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
-function wallCarries(wall, atMs, bpm) {
-    const win = wall.filter((w) => w[0] > atMs - OWN_PULSE_WINDOW_S * 1000 && w[0] <= atMs);
-    if (win.length < WALL_MIN_SAMPLES)
-        return false;
-    const t = win.map((w) => w[0] / 1000);
-    const brightness = resample(t, win.map((w) => w[1] + w[2] + w[3]), t[0], t[t.length - 1]);
-    const pk = peakOfSpectrum(spectrum(detrend(brightness, OWN_PULSE_DETREND_S)));
-    return (Number.isFinite(pk.bpm) &&
-        Math.abs(pk.bpm - bpm) <= OWN_PULSE_AGREE_BPM &&
-        pk.snrDb >= WALL_MIN_SNR_DB);
+export function wallCarries(wall, atMs, bpm) {
+    const line = wallLine(wall, atMs);
+    return (line != null &&
+        line.snrDb >= WALL_MIN_SNR_DB &&
+        LIGHT_FAMILY.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM));
 }
+/**
+ * The rates a light at the wall's rate also makes on the face: its whole and half multiples.
+ * A light sampled through a camera's exposure and rolling shutter is not a sine, so its harmonics
+ * fold to whole multiples of its own fold; half multiples cover a rate picked one octave below a
+ * harmonic. Measured on test.3 in the browser (120 Hz mains filmed at 11 fps): wall at 60 a minute,
+ * 25 dB above its noise; face at 180 and 90; 180 shown for 7 s before this.
+ */
+const LIGHT_FAMILY = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 const EVAL_EVERY_MS = 1000;
 const KEEP_MS = (OWN_PULSE_WINDOW_S + 2) * 1000;
 /** The wall check looks back over OWN_PULSE_STRONG_STREAK windows, so it keeps that much more. */
@@ -245,6 +275,7 @@ export class PulseCheck {
                 windowMethod: est?.method ?? null,
                 windowColourDamage: est?.colourDamage ?? null,
                 windowWallSeen: est?.wallSeen ?? false,
+                wallLine: wallLine(this.wall, timestampMs),
                 wallFrames,
                 faceFlicker,
             }
@@ -260,6 +291,7 @@ export class PulseCheck {
                 windowMethod: est?.method ?? null,
                 windowColourDamage: est?.colourDamage ?? null,
                 windowWallSeen: est?.wallSeen ?? false,
+                wallLine: wallLine(this.wall, timestampMs),
                 wallFrames,
                 faceFlicker,
             };

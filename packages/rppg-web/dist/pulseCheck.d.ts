@@ -42,6 +42,11 @@ export type PulseCheckState = {
     /** That window's colour-damage measure, and whether the wall was seen through the whole window. */
     windowColourDamage?: number | null;
     windowWallSeen?: boolean;
+    /** Diagnostic: the wall's strongest brightness line in this window (wallLine), or null. */
+    wallLine?: {
+        bpm: number;
+        snrDb: number;
+    } | null;
     /**
      * Frames in the last one-second step: with the wall seen, and without it because the face
      * left no room beside it or because every patch beside it looked like skin (wallMissReason).
@@ -97,6 +102,18 @@ type Rgb = {
     g: number;
     b: number;
 };
+export declare function wallLine(wall: [number, number, number, number][], atMs: number): {
+    bpm: number;
+    snrDb: number;
+} | null;
+/**
+ * Whether the wall carries `bpm` the way a light would: the strongest line (band floor up) of its
+ * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate or of a LIGHT_FAMILY multiple of it,
+ * and WALL_MIN_SNR_DB above its
+ * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
+ * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
+ */
+export declare function wallCarries(wall: [number, number, number, number][], atMs: number, bpm: number): boolean;
 export declare class PulseCheck {
     constructor(opts?: {
         agreement?: boolean;
