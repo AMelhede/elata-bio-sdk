@@ -1,5 +1,5 @@
 import { averageRgbInROINonSkin } from "../frameSource";
-import { PulseCheck, WALL_GAPS, WallTracker, wallBesideFace, wallMissReason, wallPatchFromLandmarks } from "../pulseCheck";
+import { PulseCheck, WALL_GAPS, WallTracker, wallBesideFace, wallCarries, wallMissReason, wallPatchFromLandmarks } from "../pulseCheck";
 
 // Face regions with a rhythm at `bpm` (a real pulse is chromatic: green drops most), plus a
 // patch of grey wall beside the face. `wall`: "same" is a pulsing lamp, which scales a grey
@@ -44,6 +44,22 @@ function feedStates(bpm: number, wall: "same" | "leak" | "quiet", seconds: numbe
 }
 
 describe("PulseCheck wall check", () => {
+	it("sees a light at the edge of the band: 120 Hz mains filmed at 9 fps folds to 180", () => {
+		// A lamp's line on the band's top edge (3.0 Hz) straddles it, so no in-band local maximum
+		// exists; the wall must still be seen to carry it. Peak committed 180 on a face with no
+		// pulse under exactly this light before the same fix (2026-10-07).
+		for (const bpm of [180, 179, 42]) {
+			let s = 7;
+			const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.4;
+			const wall: [number, number, number, number][] = [];
+			for (let t = 0; t <= 30000; t += 1000 / 30) {
+				const g = 1 + 0.03 * Math.sin((2 * Math.PI * bpm * t) / 60000);
+				wall.push([t, 120 * g + noise(), 120 * g + noise(), 120 * g + noise()]);
+			}
+			expect(wallCarries(wall, 30000, bpm)).toBe(true);
+		}
+	});
+
 	it("never lets the wall's rate out, not even for the first seconds", () => {
 		const shown = feedStates(72, "same", 45).filter((st) => st.bpm != null);
 		expect(shown).toHaveLength(0);

@@ -22,6 +22,7 @@
 import { type Frame, averageRgbInROINonSkin } from "./frameSource";
 import {
 	OWN_PULSE_AGREE_BPM,
+	OWN_PULSE_BAND_HZ,
 	OWN_PULSE_DETREND_S,
 	OWN_PULSE_FS,
 	OWN_PULSE_STRONG_STREAK,
@@ -34,7 +35,6 @@ import {
 	type AgreementSecond,
 	AGREE_SECONDS,
 	ownPulseVerdict,
-	peakOfSpectrum,
 	resample,
 	spectrum,
 } from "./pulseCheckCore";
@@ -176,12 +176,12 @@ const WALL_MIN_SAMPLES = 60;
 const WALL_MIN_SNR_DB = 12;
 
 /**
- * Whether the wall carries `bpm` the way a light would: the strongest in-band line of its
+ * Whether the wall carries `bpm` the way a light would: the strongest line (band floor up) of its
  * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate and WALL_MIN_SNR_DB above its
  * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
-function wallCarries(
+export function wallCarries(
 	wall: [number, number, number, number][],
 	atMs: number,
 	bpm: number,
@@ -197,11 +197,26 @@ function wallCarries(
 		t[0],
 		t[t.length - 1],
 	);
-	const pk = peakOfSpectrum(spectrum(detrend(brightness, OWN_PULSE_DETREND_S)));
+	// The wall's strongest line is searched from the band's floor to the top of the computed
+	// spectrum, with no local-maximum rule: that rule is right for choosing a pulse and wrong for
+	// spotting a light. A light on the band's edge puts its maximum just outside the band, so no
+	// in-band maximum exists and the wall would read as carrying nothing (120 Hz mains filmed at
+	// 9 fps folds to exactly 3.0 Hz, 180 a minute). Line power: bins within 0.1 Hz of the line
+	// and of twice it, as peakOfSpectrum counts it.
+	const range = spectrum(detrend(brightness, OWN_PULSE_DETREND_S)).filter(
+		([f]) => f >= OWN_PULSE_BAND_HZ[0],
+	);
+	if (!range.length) return false;
+	const f0 = range.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+	const inLine = (f: number) =>
+		Math.abs(f - f0) <= 0.1 || Math.abs(f - 2 * f0) <= 0.1;
+	let sig = 0;
+	let rest = 0;
+	for (const [f, p] of range) if (inLine(f)) sig += p;
+	else rest += p;
+	const snrDb = 10 * Math.log10(sig / Math.max(rest, 1e-12));
 	return (
-		Number.isFinite(pk.bpm) &&
-		Math.abs(pk.bpm - bpm) <= OWN_PULSE_AGREE_BPM &&
-		pk.snrDb >= WALL_MIN_SNR_DB
+		Math.abs(f0 * 60 - bpm) <= OWN_PULSE_AGREE_BPM && snrDb >= WALL_MIN_SNR_DB
 	);
 }
 
