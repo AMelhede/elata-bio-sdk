@@ -214,7 +214,8 @@ export function wallLine(
 
 /**
  * Whether the wall carries `bpm` the way a light would: the strongest line (band floor up) of its
- * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate and WALL_MIN_SNR_DB above its
+ * BRIGHTNESS (R + G + B), within OWN_PULSE_AGREE_BPM of the rate or of a LIGHT_FAMILY multiple of it,
+ * and WALL_MIN_SNR_DB above its
  * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
@@ -226,10 +227,19 @@ export function wallCarries(
 	const line = wallLine(wall, atMs);
 	return (
 		line != null &&
-		Math.abs(line.bpm - bpm) <= OWN_PULSE_AGREE_BPM &&
-		line.snrDb >= WALL_MIN_SNR_DB
+		line.snrDb >= WALL_MIN_SNR_DB &&
+		LIGHT_FAMILY.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM)
 	);
 }
+
+/**
+ * The rates a light at the wall's rate also makes on the face: its whole and half multiples.
+ * A light sampled through a camera's exposure and rolling shutter is not a sine, so its harmonics
+ * fold to whole multiples of its own fold; half multiples cover a rate picked one octave below a
+ * harmonic. Measured on test.3 in the browser (120 Hz mains filmed at 11 fps): wall at 60 a minute,
+ * 25 dB above its noise; face at 180 and 90; 180 shown for 7 s before this.
+ */
+const LIGHT_FAMILY = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
 
 const EVAL_EVERY_MS = 1000;
 const KEEP_MS = (OWN_PULSE_WINDOW_S + 2) * 1000;

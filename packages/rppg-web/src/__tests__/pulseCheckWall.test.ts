@@ -65,6 +65,30 @@ describe("PulseCheck wall check", () => {
 		expect(shown).toHaveLength(0);
 	});
 
+	it("refuses a rate on the light's harmonic family: wall at 60, face at 180 (120 Hz filmed at 11 fps)", () => {
+		// Seen in the browser harness on test.3: the wall carried the folded light at 60 a minute,
+		// about 25 dB above its noise, while the face's colour method picked the light's third
+		// harmonic, 180, and showed it for 7 s (wallMatch false throughout). A light sampled by a
+		// rolling shutter is not a sine, so its harmonics fold to whole multiples of its fold.
+		const check = new PulseCheck();
+		let s = 5;
+		const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.4;
+		const shown: number[] = [];
+		let next = 1000;
+		for (let t = 0; t <= 60000; t += 1000 / 30) {
+			const face = 0.01 * Math.sin((2 * Math.PI * 180 * t) / 60000);
+			const light = 0.03 * Math.sin((2 * Math.PI * 60 * t) / 60000);
+			const region = () => ({ r: 150 * (1 - 0.3 * face) + noise(), g: 120 * (1 - face) + noise(), b: 100 * (1 - 0.6 * face) + noise() });
+			const g = 100 * (1 + light);
+			check.push(t, [region(), region(), region()], { r: g + noise(), g: g + noise(), b: g + noise() });
+			if (t >= next) {
+				if (check.getState().bpm != null) shown.push(Math.round(t / 1000));
+				next += 1000;
+			}
+		}
+		expect(shown).toEqual([]);
+	});
+
 	it("refuses a rate the wall beside the face also carries", () => {
 		const check = new PulseCheck();
 		feed(check, 72, "same", 45);
