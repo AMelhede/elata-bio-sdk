@@ -14,7 +14,8 @@ import type {
 	ProcessorWorkerRequest,
 	ProcessorWorkerResponse,
 } from "./processorWorkerProtocol";
-import { ANALYSIS_EVERY_MS, RppgProcessor } from "./rppgProcessor";
+import { ANALYSIS_EVERY_MS } from "./processorWorkerProtocol";
+import { RppgProcessor } from "./rppgProcessor";
 import { createUnavailableBackend, loadWasmBackend } from "./wasmBackend";
 
 const scope = self as unknown as {

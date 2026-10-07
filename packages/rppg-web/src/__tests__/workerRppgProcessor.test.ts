@@ -26,7 +26,8 @@ jest.mock("../wasmBackend", () => ({
 	createUnavailableBackend: jest.fn(),
 }));
 
-import { ANALYSIS_EVERY_MS, RppgProcessor } from "../rppgProcessor";
+import { ANALYSIS_EVERY_MS } from "../processorWorkerProtocol";
+import { RppgProcessor } from "../rppgProcessor";
 import {
 	createWorkerRppgProcessor,
 	type WorkerLike,
@@ -72,9 +73,10 @@ describe("WorkerRppgProcessor", () => {
 		const direct = new RppgProcessor(fakeBackend() as never, 30, 10);
 		direct.enableTracker(55, 150, 200);
 		viaWorker!.enableTracker(55, 150, 200);
-		// Metrics change only when the processor analyses (at most every ANALYSIS_EVERY_MS),
-		// so they must match after every sample. Sample-level status (sample count, last
-		// sample) is refreshed with each analysis, so it must match at each refresh.
+		// The worker analyses at most every ANALYSIS_EVERY_MS of sample time and answers every
+		// read in between from that analysis. Each read of a main-thread processor is an
+		// analysis, so the reference is read exactly when the worker analyses, and the two
+		// must then agree on metrics, debug state and trace.
 		let compared = 0;
 		let refreshedAt: number | null = null;
 		for (let i = 0; i < 300; i++) {
@@ -82,19 +84,21 @@ describe("WorkerRppgProcessor", () => {
 			const [r, g, b] = rgbAt(t);
 			direct.pushSampleRgb(t, r, g, b, 1);
 			viaWorker!.pushSampleRgb(t, r, g, b, 1);
-			expect(viaWorker!.getMetrics()).toEqual(direct.getMetrics());
+			const viaWorkerMetrics = viaWorker!.getMetrics();
 			if (refreshedAt == null || t - refreshedAt >= ANALYSIS_EVERY_MS) {
 				refreshedAt = t;
+				expect(viaWorkerMetrics).toEqual(direct.getMetrics());
 				expect(viaWorker!.getDebugSnapshot(t + 5)).toEqual(
 					direct.getDebugSnapshot(t + 5),
 				);
 				expect(viaWorker!.getTraceSnapshot(300)).toEqual(
 					direct.getTraceSnapshot(300),
 				);
+				compared++;
 			}
-			compared++;
 		}
-		expect(compared).toBe(300);
+		// 300 samples 33.3 ms apart: the 250 ms mark is crossed every 8 samples (266 ms), 38 times.
+		expect(compared).toBe(38);
 		viaWorker!.dispose();
 	});
 

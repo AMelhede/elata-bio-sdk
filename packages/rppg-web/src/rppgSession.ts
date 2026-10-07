@@ -297,7 +297,6 @@ export class RppgSession {
 				colourProjectionFix:
 					procFixes?.colourProjectionFix ?? fixes.colourProjectionFix,
 				noRateDoubling: procFixes?.noRateDoubling ?? fixes.noRateDoubling,
-				analysisSchedule: procFixes?.analysisSchedule ?? fixes.analysisSchedule,
 				analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
 				analysisWorker: this.processor instanceof WorkerRppgProcessor,
 			},

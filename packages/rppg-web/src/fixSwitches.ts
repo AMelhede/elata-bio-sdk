@@ -44,12 +44,6 @@ export type RppgFixSwitches = {
 	 */
 	noRateDoubling?: boolean;
 	/**
-	 * Speed 1. The heart-rate analysis runs at most once per 250 ms of sample time and reads in
-	 * between return that result, so the estimate no longer depends on how often an app reads
-	 * it. Off: every read runs the analysis, as published.
-	 */
-	analysisSchedule?: boolean;
-	/**
 	 * Speed 2. Frames are read at most 640 wide (same aspect), and the face finder reads that
 	 * same image, so landmarks and pixels come from one frame. Off: the full camera frame, and
 	 * the face finder reads the live video, as published.
@@ -75,7 +69,6 @@ export const FIX_SWITCH_NAMES = [
 	"realFrameRate",
 	"posFusion",
 	"noRateDoubling",
-	"analysisSchedule",
 	"analysisWidth",
 	"analysisWorker",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
