@@ -1,7 +1,7 @@
 import { type BpmEvidenceQualityProvider, type BpmTrackerConfigV1 } from "./bpmBayesTracker.js";
+import { type HarmonicRelation } from "./pulseAnalysis.js";
 import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitches.js";
 import { type CaptureConfidenceConfig, type CaptureConfidenceResult, type CaptureFrameSample } from "./captureConfidence.js";
-import { type HarmonicRelation } from "./pulseAnalysis.js";
 export type Backend = {
     newPipeline: (sampleRate: number, windowSec: number) => any;
 };
@@ -148,16 +148,6 @@ export type RppgTraceSnapshot = {
     lastSample: RppgDebugSnapshot["lastSample"];
     backendFailure: RppgProcessorBackendFailure | null;
 };
-/**
- * The heart-rate analysis (spectral estimate, beat tracker, breathing) runs at most once per
- * this much SAMPLE time; every read in between returns that result. A heartbeat is ~1 s and a
- * display updates about once a second, so 4 analyses a second lose nothing. Before this, every
- * read ran the analysis, and the runner's per-frame diagnostics read it twice a frame: on a
- * 1280x960 test feed that held the analysed frame rate to ~7 per second (measured
- * 2026-10-02), and since each run is one more Bayesian update on the same evidence, the
- * tracker's own estimate depended on how often an app happened to read it.
- */
-export declare const ANALYSIS_EVERY_MS = 250;
 export declare function museStyleFilter(samples: number[], sampleRate: number): number[];
 export declare class MuseCalibrationModel {
     private weights;
@@ -213,8 +203,6 @@ export declare class RppgProcessor {
     private readonly channelGain;
     private readonly chromPulse;
     private fusedQuality;
-    /** Last analysis result and the sample time it was computed at (see ANALYSIS_EVERY_MS). */
-    private analysed;
     private captureScorer;
     private lastCapture;
     private baselineBpm;
@@ -283,8 +271,6 @@ export declare class RppgProcessor {
     };
     loadStateSnapshot(snapshot: unknown): void;
     getMetrics(): Metrics;
-    /** The analysis, run at most once per ANALYSIS_EVERY_MS of sample time. */
-    private analyse;
     getDebugSnapshot(nowMs?: number): RppgDebugSnapshot;
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;
     private readBackendMetrics;

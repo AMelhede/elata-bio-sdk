@@ -4,9 +4,7 @@ export const FIX_SWITCH_NAMES = [
     "realFrameRate",
     "posFusion",
     "noRateDoubling",
-    "analysisSchedule",
     "analysisWidth",
-    "faceFinderInterval",
     "analysisWorker",
 ];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */

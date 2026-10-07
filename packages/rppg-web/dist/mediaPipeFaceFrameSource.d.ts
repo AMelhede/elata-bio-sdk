@@ -20,16 +20,6 @@ import { type RoiGeometryProfile } from "./roiProfile.js";
  * (measured 2026-10-02, owner's laptop and a 1280x960 test feed alike).
  */
 export declare const MAX_ANALYSIS_WIDTH = 640;
-/**
- * The face finder runs at most once per this much VIDEO time; frames in between are sampled
- * at the last landmarks. Every frame's colour is a sample of the pulse, so dropping frames
- * costs signal; the face's position changes far more slowly (a head turning steadily moves a
- * few percent of a face-width per 33 ms frame), so ~16 position updates a second keep the
- * regions on the face. Before this the face finder ran on every frame and was the costliest
- * step: on the owner's laptop 30 frames a second arrived and ~23 were analysed (2026-10-02).
- * Video time, not wall time, so a slowed replay sees the same head motion per update as live.
- */
-export declare const FACE_DETECT_EVERY_MS = 60;
 /** Analysis frame size for a video size: same aspect, at most MAX_ANALYSIS_WIDTH wide. */
 export declare function analysisSize(videoWidth: number, videoHeight: number): {
     width: number;
@@ -52,9 +42,7 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     start(): Promise<void>;
     stop(): Promise<void>;
     getLastError(): FrameSourceError | null;
-    /** The last face-finder result and the video time it was found at (FACE_DETECT_EVERY_MS). */
-    private lastDetect;
-    /** Switches this source honours (analysisWidth, faceFinderInterval). */
+    /** Switches this source honours (analysisWidth). */
     readonly fixes: ResolvedRppgFixSwitches;
     /** Canvas size for a video size: capped at MAX_ANALYSIS_WIDTH with analysisWidth on, else full size as published. */
     private frameSize;

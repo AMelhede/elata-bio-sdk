@@ -1,4 +1,5 @@
-import { ANALYSIS_EVERY_MS, RppgProcessor } from "./rppgProcessor.js";
+import { ANALYSIS_EVERY_MS } from "./processorWorkerProtocol.js";
+import { RppgProcessor } from "./rppgProcessor.js";
 import { createUnavailableBackend, loadWasmBackend } from "./wasmBackend.js";
 const scope = self;
 const PUSHES = [
