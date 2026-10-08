@@ -42,6 +42,8 @@ export type PulseCheckState = {
     /** That window's colour-damage measure, and whether the wall was seen through the whole window. */
     windowColourDamage?: number | null;
     windowWallSeen?: boolean;
+    /** The head's own movement carried the rate in each of the last OWN_PULSE_STRONG_STREAK windows (rule headMotion). */
+    headMatch?: boolean;
     /** Diagnostic: the wall's strongest brightness line in this window (wallLine), or null. */
     wallLine?: {
         bpm: number;
@@ -115,11 +117,33 @@ export type PulseCheckRules = {
     faceFlicker?: boolean;
     /** A window whose rate the wall carries is not evidence of a pulse: it is not counted toward the proof. Off: it counts, and the rate shows the moment the wall line dips. */
     lightTaint?: boolean;
+    /** A rate the head's own movement keeps time with (a nod, a rock) is the movement's: not evidence, and withheld once it holds for 4 windows. Needs the head position (`push`'s `head`); off or without it: movement is not checked. */
+    headMotion?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "headMotion"];
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
+/**
+ * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
+ * chin, outer eye corners, cheekbones (MediaPipe face mesh indices; the same set Peak records).
+ */
+export declare const HEAD_LANDMARKS: readonly number[];
+/** The head's position this frame: the centre of HEAD_LANDMARKS in pixels, or null if the mesh lacks one. */
+export declare function headCentre(points: readonly {
+    x: number;
+    y: number;
+}[], width: number, height: number): {
+    x: number;
+    y: number;
+} | null;
+/** The head's movement lines (x and y) in the window ending at `atMs`, found like the wall's line. */
+export declare function headLines(head: readonly [number, number, number][], atMs: number): Array<{
+    bpm: number;
+    snrDb: number;
+}> | null;
+/** Whether the head's movement carries `bpm`: a movement line at the rate, HEAD_MIN_SNR_DB above the rest. */
+export declare function headCarries(head: readonly [number, number, number][], atMs: number, bpm: number): boolean;
 export declare function wallLine(wall: [number, number, number, number][], atMs: number, bandEdge?: boolean): {
     bpm: number;
     snrDb: number;
@@ -145,6 +169,7 @@ export declare class PulseCheck {
     secondOpinion(bpm: number | null): void;
     private samples;
     private wall;
+    private head;
     private history;
     private held;
     /** Opt-in: also show the SDK's rate when it agrees with this check's window rate (agreementRate). */
@@ -159,7 +184,12 @@ export declare class PulseCheck {
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
      * and optionally the mean RGB of a patch of wall beside the face (see the wall check).
      */
-    push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss): void;
+    push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss, 
+    /** The head's position this frame in pixels (headCentre), for the headMotion rule. */
+    head?: {
+        x: number;
+        y: number;
+    } | null): void;
     /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
     private unsupported;
     /**

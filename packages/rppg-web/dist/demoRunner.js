@@ -2,7 +2,7 @@ import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSourc
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FUSION_ROIS, MultiRoiRppgFuser, } from "./multiRoiFusion.js";
-import { WallTracker, wallMissReason } from "./pulseCheck.js";
+import { WallTracker, headCentre, wallMissReason } from "./pulseCheck.js";
 import { ELATA_YCBCR_V1_PIXEL_SAMPLER, sampleRppgRoi, } from "./roiPixelSampler.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, } from "./roiProfile.js";
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
@@ -232,7 +232,10 @@ export class DemoRunner {
                     return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
                 }), wall?.rgb, frame.landmarks && !wall
                     ? wallMissReason(frame.landmarks, frame.width, frame.height)
-                    : undefined);
+                    : undefined, 
+                // The head's position, for the headMotion rule: a rate the head's own
+                // movement keeps time with (a nod) is the movement's, not a pulse.
+                frame.landmarks ? headCentre(frame.landmarks, frame.width, frame.height) : null);
             }
             if (frame.roi) {
                 motion = computeMotion(frame.roi, this.lastCenter);
