@@ -355,8 +355,14 @@ export {
 	resolvePulseCheckRules,
 	HEAD_LANDMARKS,
 	headCentre,
+	type HeadPosition,
+	type HeadRow,
+	headAtRate,
+	type HeadAtRate,
+	type HeadBlind,
+	headJudge,
+	type HeadJudgement,
 	headCarries,
-	headLines,
 	headMatches,
 } from "./pulseCheck";
 export {
