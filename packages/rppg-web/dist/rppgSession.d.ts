@@ -1,6 +1,6 @@
 import type { FrameSource } from "./frameSource.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
-import { PulseCheck, type PulseCheckState } from "./pulseCheck.js";
+import { PulseCheck, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
 import { type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
 import { type WasmImporter } from "./wasmBackend.js";
@@ -63,6 +63,11 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * finder failed to load) there are no face regions to check, so no heart rate is reported.
      */
     pulseCheck?: boolean;
+    /**
+     * With `pulseCheck`, the light rules it runs, each on unless set to false (PulseCheckRules in
+     * pulseCheck.ts). For testing one rule at a time; leave out in an app.
+     */
+    pulseCheckRules?: PulseCheckRules;
     /**
      * With `pulseCheck`, also report the SDK's own rate when it agrees with the check's window
      * rate for 8 seconds running (agreementRate in pulseCheckCore.ts). Off by default: a small
@@ -170,6 +175,7 @@ export declare class RppgSession {
         fixes: ResolvedRppgFixSwitches;
         pulseCheck: boolean;
         pulseCheckAgreement: boolean;
+        pulseCheckRules: ResolvedPulseCheckRules | null;
     };
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
     getLastBlendshapes(): import("./demoRunner.js").LastBlendshapes | null;

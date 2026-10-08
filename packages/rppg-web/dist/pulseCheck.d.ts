@@ -102,7 +102,25 @@ type Rgb = {
     g: number;
     b: number;
 };
-export declare function wallLine(wall: [number, number, number, number][], atMs: number): {
+/**
+ * The pulse check's light rules, each behind its own switch so each can be tested alone (on unless
+ * set to false). A switch turned off restores the behaviour from before that rule, nothing more.
+ */
+export type PulseCheckRules = {
+    /** The wall's line is searched past the band's edge (a light folded to 180 a minute). Off: the strongest in-band local maximum, as in 0.15.0-test.2. */
+    wallBandEdge?: boolean;
+    /** A light's whole and half multiples are the light's too (LIGHT_FAMILY). Off: only the light's own rate. */
+    lightFamily?: boolean;
+    /** A rate the face flickers at in brightness far more than in colour is withheld (faceFlickerRatio). */
+    faceFlicker?: boolean;
+    /** A window whose rate the wall carries is not evidence of a pulse: it is not counted toward the proof. Off: it counts, and the rate shows the moment the wall line dips. */
+    lightTaint?: boolean;
+};
+export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint"];
+/** Every rule resolved to true or false; left out means on. */
+export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
+export declare function wallLine(wall: [number, number, number, number][], atMs: number, bandEdge?: boolean): {
     bpm: number;
     snrDb: number;
 } | null;
@@ -113,11 +131,14 @@ export declare function wallLine(wall: [number, number, number, number][], atMs:
  * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
-export declare function wallCarries(wall: [number, number, number, number][], atMs: number, bpm: number): boolean;
+export declare function wallCarries(wall: [number, number, number, number][], atMs: number, bpm: number, rules?: ResolvedPulseCheckRules): boolean;
 export declare class PulseCheck {
     constructor(opts?: {
         agreement?: boolean;
+        rules?: PulseCheckRules;
     });
+    /** Which light rules this check runs (see PulseCheckRules). */
+    readonly rules: ResolvedPulseCheckRules;
     /** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
     get agreementOn(): boolean;
     /** The SDK's own current rate, given once a second; used only with `agreement` on. */

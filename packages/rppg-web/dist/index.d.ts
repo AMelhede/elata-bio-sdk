@@ -75,7 +75,7 @@ export { RppgSessionRecorder } from "./rppgSessionRecorder.js";
 export type { RppgRecorderOptions, RecordMetricsContext, } from "./rppgSessionRecorder.js";
 export { aggregateComparisons, maeOf, summarizeReplaySession, } from "./replayBenchmark.js";
 export type { AbsErrorAccumulator, CorpusComparison, SessionComparison, } from "./replayBenchmark.js";
-export { PulseCheck, type PulseCheckState } from "./pulseCheck.js";
+export { PulseCheck, type PulseCheckState, type PulseCheckRules, type ResolvedPulseCheckRules, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, } from "./pulseCheck.js";
 export { FIX_SWITCH_NAMES, type ResolvedRppgFixSwitches, type RppgFixesOption, type RppgFixSwitches, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
 export { createWorkerRppgProcessor, type RppgProcessorLike, WorkerRppgProcessor, } from "./workerRppgProcessor.js";

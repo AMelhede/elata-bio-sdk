@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkin } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_STRONG_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, agreementRate, AGREE_SECONDS, ownPulseVerdict, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_STRONG_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, agreementRate, AGREE_SECONDS, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -102,12 +102,28 @@ const WALL_MIN_SAMPLES = 60;
  * Value chosen by measurement on recorded captures against a reference pulse.
  */
 const WALL_MIN_SNR_DB = 12;
-export function wallLine(wall, atMs) {
+export const PULSE_CHECK_RULE_NAMES = ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint"];
+/** Every rule resolved to true or false; left out means on. */
+export function resolvePulseCheckRules(rules) {
+    return {
+        wallBandEdge: rules?.wallBandEdge !== false,
+        lightFamily: rules?.lightFamily !== false,
+        faceFlicker: rules?.faceFlicker !== false,
+        lightTaint: rules?.lightTaint !== false,
+    };
+}
+const ALL_RULES_ON = resolvePulseCheckRules();
+export function wallLine(wall, atMs, bandEdge = true) {
     const win = wall.filter((w) => w[0] > atMs - OWN_PULSE_WINDOW_S * 1000 && w[0] <= atMs);
     if (win.length < WALL_MIN_SAMPLES)
         return null;
     const t = win.map((w) => w[0] / 1000);
     const brightness = resample(t, win.map((w) => w[1] + w[2] + w[3]), t[0], t[t.length - 1]);
+    if (!bandEdge) {
+        // Switched off: the in-band local maximum this check used before (blind at the band's edge).
+        const pk = peakOfSpectrum(spectrum(detrend(brightness, OWN_PULSE_DETREND_S)));
+        return Number.isFinite(pk.bpm) ? { bpm: pk.bpm, snrDb: pk.snrDb } : null;
+    }
     // The wall's strongest line is searched from the band's floor to the top of the computed
     // spectrum, with no local-maximum rule: that rule is right for choosing a pulse and wrong for
     // spotting a light. A light on the band's edge puts its maximum just outside the band, so no
@@ -135,11 +151,12 @@ export function wallLine(wall, atMs) {
  * noise. Brightness, not colour: a lamp scales a grey wall's R, G and B alike, which is exactly
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
-export function wallCarries(wall, atMs, bpm) {
-    const line = wallLine(wall, atMs);
+export function wallCarries(wall, atMs, bpm, rules = ALL_RULES_ON) {
+    const line = wallLine(wall, atMs, rules.wallBandEdge);
+    const family = rules.lightFamily ? LIGHT_FAMILY : [1];
     return (line != null &&
         line.snrDb >= WALL_MIN_SNR_DB &&
-        LIGHT_FAMILY.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM));
+        family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM));
 }
 /**
  * The rates a light at the wall's rate also makes on the face: its whole and half multiples.
@@ -183,6 +200,7 @@ export class PulseCheck {
         /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
         this.unsupported = 0;
         this.agreement = opts.agreement === true;
+        this.rules = resolvePulseCheckRules(opts.rules);
     }
     /** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
     get agreementOn() {
@@ -243,7 +261,13 @@ export class PulseCheck {
         const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs);
         if (est && est.skip)
             return;
-        this.history.push(est);
+        // A window whose rate the wall carries is the light's, not evidence of a pulse (lightTaint):
+        // counted, it builds a streak under the light, and the rate shows the first second the wall
+        // line dips. Peak 570365a; measured there to cost 8 of 9,087 real seconds and 0 readings.
+        const tainted = this.rules.lightTaint &&
+            est?.bpm != null &&
+            wallCarries(this.wall, timestampMs, est.bpm, this.rules);
+        this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
         const v = ownPulseVerdict(this.history, this.held);
@@ -257,8 +281,9 @@ export class PulseCheck {
         // moment of proof, so a lamp's rate is withheld from its first second.
         const held = this.held ?? agreed;
         const wallMatch = held != null &&
-            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => wallCarries(this.wall, timestampMs - k * EVAL_EVERY_MS, held));
-        const faceFlicker = held != null &&
+            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => wallCarries(this.wall, timestampMs - k * EVAL_EVERY_MS, held, this.rules));
+        const faceFlicker = this.rules.faceFlicker &&
+            held != null &&
             Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => {
                 const q = faceFlickerRatio(this.samples, timestampMs - k * EVAL_EVERY_MS, held);
                 return q != null && q > FACE_FLICKER_RATIO;
@@ -275,7 +300,7 @@ export class PulseCheck {
                 windowMethod: est?.method ?? null,
                 windowColourDamage: est?.colourDamage ?? null,
                 windowWallSeen: est?.wallSeen ?? false,
-                wallLine: wallLine(this.wall, timestampMs),
+                wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
                 wallFrames,
                 faceFlicker,
             }
@@ -291,7 +316,7 @@ export class PulseCheck {
                 windowMethod: est?.method ?? null,
                 windowColourDamage: est?.colourDamage ?? null,
                 windowWallSeen: est?.wallSeen ?? false,
-                wallLine: wallLine(this.wall, timestampMs),
+                wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
                 wallFrames,
                 faceFlicker,
             };

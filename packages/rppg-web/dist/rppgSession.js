@@ -1,7 +1,7 @@
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
-import { PulseCheck } from "./pulseCheck.js";
+import { PulseCheck, } from "./pulseCheck.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
 import { RppgProcessor, } from "./rppgProcessor.js";
@@ -86,6 +86,7 @@ export class RppgSession {
             },
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
+            pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
         };
     }
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -278,7 +279,10 @@ export async function createRppgSession(options) {
         ? new WaveformReconstructionController(options.experimental.waveformReconstructor, options.experimental.inferenceIntervalMs)
         : undefined;
     const pulseCheck = options.pulseCheck !== false
-        ? new PulseCheck({ agreement: options.pulseCheckAgreement === true })
+        ? new PulseCheck({
+            agreement: options.pulseCheckAgreement === true,
+            rules: options.pulseCheckRules,
+        })
         : null;
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
