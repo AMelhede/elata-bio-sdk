@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkin } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, agreementRate, AGREE_SECONDS, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, agreementRate, AGREE_SECONDS, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -410,9 +410,9 @@ export class PulseCheck {
         this.agreement = opts.agreement === true;
         this.rules = resolvePulseCheckRules(opts.rules);
     }
-    /** The least wall level for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
+    /** The least wall against the face for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
     get swapMinWall() {
-        return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL : 0;
+        return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL_TO_FACE : 0;
     }
     /** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
     get agreementOn() {
@@ -545,6 +545,7 @@ export class PulseCheck {
                 windowColourDamage: est?.colourDamage ?? null,
                 windowWallSeen: est?.wallSeen ?? false,
                 windowWallLevel: est?.wallLevel ?? null,
+                windowWallToFace: est?.wallToFace ?? null,
                 wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
                 wallFrames,
                 faceFlicker,
@@ -564,6 +565,7 @@ export class PulseCheck {
                 windowColourDamage: est?.colourDamage ?? null,
                 windowWallSeen: est?.wallSeen ?? false,
                 windowWallLevel: est?.wallLevel ?? null,
+                windowWallToFace: est?.wallToFace ?? null,
                 wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
                 wallFrames,
                 faceFlicker,

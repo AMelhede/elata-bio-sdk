@@ -77,10 +77,18 @@ export interface OwnPulseEstimate {
     wallSeen?: boolean;
     /**
      * The wall's mean level over the window as the camera saw it: R + G + B of the patch or patches
-     * read, each on 0..1, before any rescaling between patches (OWN_PULSE_SWAP_MIN_WALL). Null when
+     * read, each on the scale handed over, before any rescaling between patches (a diagnostic; rule
+     * darkWall judges wallToFace). Null when
      * the wall was not seen through the whole window.
      */
     wallLevel?: number | null;
+    /**
+     * The wall against the face, as rule darkWall judges it: per sample, the wall's R + G + B as the
+     * camera saw it over the three regions' mean R + G + B, at the window's
+     * OWN_PULSE_SWAP_WALL_QUANTILE (its darkest tenth). Independent of the colour scale and of the
+     * camera's exposure. Null when the wall was not seen through the whole window.
+     */
+    wallToFace?: number | null;
 }
 export declare function resample(t: number[], v: number[], from: number, to: number): number[];
 /**
@@ -172,22 +180,23 @@ export declare const OWN_PULSE_COLOUR_DAMAGE = 50;
  */
 export declare const OWN_PULSE_COLOUR_SWITCH = 20;
 /**
- * Green minus the wall replaces POS only over a wall bright enough to show the room's light: its
- * mean level over the window as the camera saw it (R + G + B of the patch or patches read, each on
- * 0..1; wallLevelSeen) at least this. The swap assumes the light that falls on the face falls on
- * the wall too. A dark wall shows almost none of it, so a light that falls on the face and not on
- * the wall (a screen) stays in green minus the wall and is read as the pulse. A generated video
- * with no person (a chromatic pulse at 70 a minute under a screen light at 90 on the face, the
- * wall at a level of about 0.06) showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
- * The level is judged on each patch as read, not on the wall the runner carries on across patches
- * (WallTracker): a darker patch carried on at a brighter one's level still shows almost none of
- * the light.
+ * Green minus the wall replaces POS only over a wall that shows the light falling on the face: the
+ * wall's level as the camera saw it (wallLevelSeen) over the face's (the three regions' mean
+ * R + G + B), per sample, at least this through the darkest OWN_PULSE_SWAP_WALL_QUANTILE of the
+ * window. A light that falls on the face and not on the wall (a screen) makes the face far brighter
+ * than the wall. The ratio does not depend on the scale the colours are handed over on (0..1 or
+ * 0..255) or on the camera's exposure, and its low quantile asks for a lit wall through nearly the
+ * whole window, so a lit patch seen earlier in it cannot lift a dark one over the bar. A generated
+ * video with no person (a chromatic pulse at 70 a minute under a screen light at 90 on the face, the
+ * wall at 0.036 of the face) showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
  *
- * Value chosen by measurement on recorded captures against a reference pulse. The wall levels of
- * real windows where the swap fired leave no clean gap below it, so the bar is set where the
- * outcome on real people does not change and the known failure is excluded. Rule darkWall.
+ * Value chosen by measurement on recorded captures against a reference pulse: real windows where the
+ * swap fires leave no clean gap below it, so the bar is set where the outcome on real people does not
+ * change and the known failure is excluded with the widest margin. Rule darkWall.
  */
-export declare const OWN_PULSE_SWAP_MIN_WALL = 0.15;
+export declare const OWN_PULSE_SWAP_MIN_WALL_TO_FACE = 0.1;
+/** The window's quantile rule darkWall judges the wall against the face on (its darkest tenth). */
+export declare const OWN_PULSE_SWAP_WALL_QUANTILE = 0.1;
 /** Green minus the share of it the wall's brightness explains (least squares), sign as POS. */
 export declare function greenMinusWall(G: number[], wall: number[]): number[];
 /**
@@ -200,8 +209,8 @@ export declare function estimateOwnPulse(samples: readonly RawRoiSample[], windo
 atMs?: number, 
 /** Colour damage at which green minus the wall replaces POS (OWN_PULSE_COLOUR_SWITCH). */
 colourSwitch?: number, 
-/** The least wall level at which it does (OWN_PULSE_SWAP_MIN_WALL); 0 swaps over any wall seen. */
-swapMinWall?: number): OwnPulseEstimate | null;
+/** The least wall against the face at which it does (OWN_PULSE_SWAP_MIN_WALL_TO_FACE); 0 swaps over any wall seen. */
+swapMinWallToFace?: number): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.
