@@ -5,7 +5,7 @@ import type {
 } from "./frameSource";
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
-import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
+import { loadFaceLandmarker, loadTrialFaceFinder, type FaceLandmarkerLike } from "./mediapipeLoader";
 import {
 	PulseCheck,
 	type PulseCheckRules,
@@ -13,6 +13,7 @@ import {
 	type ResolvedPulseCheckRules,
 } from "./pulseCheck";
 import { ChestMotion, type ChestSample } from "./chestBreathing";
+import { TrialFaceFinder } from "./faceFinderTrial";
 import {
 	type ResolvedRppgFixSwitches,
 	resolveFixSwitches,
@@ -311,6 +312,15 @@ export class RppgSession {
 		return this.internals.chestMotion?.getSamples() ?? [];
 	}
 
+	/**
+	 * The face finder's delegate and its trial (faceFinderTrial): which one this device runs on and the
+	 * mean call time of each tried. Null when the session did not build the finder itself that way.
+	 */
+	getFaceFinder(): { delegate: string; trial: readonly { delegate: string; meanMs: number }[] } | null {
+		const f = (this.source as { faceLandmarker?: unknown } | null)?.faceLandmarker;
+		return f instanceof TrialFaceFinder ? { delegate: f.delegate, trial: f.trialResults } : null;
+	}
+
 	/** Which fixes and checks this session runs, for logging results against a build. */
 	getBuildSwitches(): {
 		fixes: ResolvedRppgFixSwitches;
@@ -510,7 +520,10 @@ export async function createRppgSession(
 	const enableTracker = options.enableTracker ?? true;
 	const pendingErrors: RppgSessionError[] = [];
 
-	const faceMeshResult = await resolveFaceMesh(options.faceMesh);
+	const faceMeshResult = await resolveFaceMesh(
+		options.faceMesh,
+		resolveFixSwitches(options.fixes).faceFinderTrial,
+	);
 	if (faceMeshResult.error) pendingErrors.push(faceMeshResult.error);
 
 	const faceTrackingMode: RppgSessionFaceTrackingMode = faceMeshResult.faceMesh
@@ -669,6 +682,7 @@ export async function createRppgSession(
 
 async function resolveFaceMesh(
 	faceMeshOption: CreateRppgSessionOptions["faceMesh"],
+	delegateTrial = false,
 ): Promise<{
 	faceMesh: FaceLandmarkerLike | null;
 	error: RppgSessionError | null;
@@ -681,7 +695,8 @@ async function resolveFaceMesh(
 	}
 
 	try {
-		const faceMesh = await loadFaceLandmarker();
+		// faceFinderTrial: the faster delegate for this device, timed on the live video (faceFinderTrial.ts).
+		const faceMesh = delegateTrial ? await loadTrialFaceFinder() : await loadFaceLandmarker();
 		return { faceMesh, error: null };
 	} catch (cause) {
 		return {

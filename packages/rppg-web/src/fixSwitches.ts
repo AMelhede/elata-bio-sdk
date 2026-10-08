@@ -61,6 +61,13 @@ export type RppgFixSwitches = {
 	 * between are read with the last face it found. Off: the finder runs on every frame, as published.
 	 */
 	sparseFaceFinder?: boolean;
+	/**
+	 * Speed 6. With `faceMesh: "auto"`, the face finder is built on every delegate that exists (GPU first,
+	 * then CPU), each is timed on the live video for a few calls, and the faster is kept; a finder whose GPU
+	 * context dies, or that finds no face for 2 s after the page returns from hidden, is rebuilt
+	 * (faceFinderTrial.ts). Off: the CPU delegate only, as published.
+	 */
+	faceFinderTrial?: boolean;
 };
 
 /** `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless `false`. */
@@ -77,6 +84,7 @@ export const FIX_SWITCH_NAMES = [
 	"analysisWidth",
 	"analysisWorker",
 	"sparseFaceFinder",
+	"faceFinderTrial",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
