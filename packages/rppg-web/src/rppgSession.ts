@@ -592,7 +592,9 @@ export async function createRppgSession(
 		requireFace: faceTrackingMode === "face_mesh" && options.roi === undefined,
 		fusionProjection: options.fusionProjection,
 		roiPixelSampler: options.roiPixelSampler,
-		onRoiSamples: (samples) => {
+		// The five named regions are sampled only when something reads them (an app's onRoiSamples, or
+		// the experimental waveform model): otherwise it was pixel work every frame for no reader.
+		onRoiSamples: !options.onRoiSamples && !options.experimental ? undefined : (samples) => {
 			options.onRoiSamples?.(samples);
 			if (!waveformBuilder || !waveformController || !options.experimental)
 				return;
