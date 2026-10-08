@@ -26,6 +26,15 @@ export function analysisSize(videoWidth, videoHeight) {
         height: Math.max(1, Math.round(videoHeight * scale)),
     };
 }
+/**
+ * With `sparseFaceFinder` on, the face finder is asked at most this often; the frames in between are
+ * read with the last face it found. The finder is the costliest step per frame: an app built on this
+ * package measured it at about 20 ms of a 33 ms frame on a laptop, where finding the face on every
+ * frame let a 30 fps camera arrive as 8 to 19 frames a second, and asks it at this interval. A still
+ * face does not move in a tenth of a second, a moving head is followed within one, and a nod (one or
+ * two a second) is still seen five or more times per cycle by the movement rule.
+ */
+export const FACE_FINDER_EVERY_MS = 100;
 export class MediaPipeFaceFrameSource {
     constructor(video, faceLandmarker, fps = 30, roiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE, fixes) {
         this.video = video;
@@ -38,6 +47,8 @@ export class MediaPipeFaceFrameSource {
         this.vfcHandle = null;
         this.smoothedFaceRoi = null;
         this.lastError = null;
+        /** The last answer from the face finder and when it was asked (sparseFaceFinder). */
+        this.lastFace = null;
         this.fixes = resolveFixSwitches(fixes);
         this.canvas = document.createElement("canvas");
         const size = this.frameSize(video.videoWidth || video.width || 320, video.videoHeight || video.height || 240);
@@ -76,6 +87,7 @@ export class MediaPipeFaceFrameSource {
     async stop() {
         this.running = false;
         this.smoothedFaceRoi = null;
+        this.lastFace = null;
         const cancel = this.video.cancelVideoFrameCallback;
         if (this.vfcHandle !== null && typeof cancel === "function") {
             cancel.call(this.video, this.vfcHandle);
@@ -115,19 +127,32 @@ export class MediaPipeFaceFrameSource {
         }
         let landmarks = null;
         let blendshapes;
-        try {
-            const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
-            landmarks = result?.faceLandmarks?.[0] ?? null;
-            const categories = result?.faceBlendshapes?.[0]?.categories;
-            if (categories && categories.length) {
-                blendshapes = categories.map((c) => ({
-                    categoryName: c.categoryName,
-                    score: c.score,
-                }));
-            }
+        const last = this.lastFace;
+        const reuse = this.fixes.sparseFaceFinder &&
+            last != null &&
+            now >= last.atMs &&
+            now - last.atMs < FACE_FINDER_EVERY_MS;
+        if (reuse) {
+            landmarks = last.landmarks;
+            blendshapes = last.blendshapes;
         }
-        catch (error) {
-            this.reportError("face_mesh_failed", "face_mesh", error);
+        else {
+            try {
+                const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
+                landmarks = result?.faceLandmarks?.[0] ?? null;
+                const categories = result?.faceBlendshapes?.[0]?.categories;
+                if (categories && categories.length) {
+                    blendshapes = categories.map((c) => ({
+                        categoryName: c.categoryName,
+                        score: c.score,
+                    }));
+                }
+                this.lastFace = { atMs: now, landmarks, blendshapes };
+            }
+            catch (error) {
+                this.lastFace = null;
+                this.reportError("face_mesh_failed", "face_mesh", error);
+            }
         }
         try {
             const img = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);

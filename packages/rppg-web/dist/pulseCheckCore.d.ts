@@ -105,7 +105,11 @@ export declare function resample(t: number[], v: number[], from: number, to: num
  */
 export declare const OWN_PULSE_DETREND_S = 1.5;
 export declare function detrend(x: number[], seconds?: number): number[];
-/** Hann-windowed power spectrum over the band and a little either side. */
+/**
+ * Hann-windowed power spectrum over the band and a little either side. The values of the textbook
+ * transform (a cosine and a sine per bin per sample), read from tables made once per window length:
+ * those sines and cosines were half the check's time, measured on recorded input.
+ */
 export declare function spectrum(x: number[]): Array<[number, number]>;
 /**
  * Weight of a line's second harmonic when choosing the line (harmonic

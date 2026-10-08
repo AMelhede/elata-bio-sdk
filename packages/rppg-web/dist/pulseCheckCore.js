@@ -56,21 +56,58 @@ export function detrend(x, seconds = 2) {
     const trend = movingMean(movingMean(x, w), w);
     return x.map((v, k) => v - trend[k]);
 }
-/** Hann-windowed power spectrum over the band and a little either side. */
+/**
+ * A window length's Hann window and its N cosines and sines (of 2 pi k / N), made once per length:
+ * bin fi at sample k reads entry (fi k) mod N. The check sees a handful of lengths (its windows at
+ * the camera's rates), so the cache stays small; it is cleared past SPECTRUM_TABLES_MAX lengths.
+ */
+const spectrumTables = new Map();
+const SPECTRUM_TABLES_MAX = 32;
+function tablesFor(N) {
+    let t = spectrumTables.get(N);
+    if (!t) {
+        if (spectrumTables.size >= SPECTRUM_TABLES_MAX)
+            spectrumTables.clear();
+        const han = new Float64Array(N);
+        const cos = new Float64Array(N);
+        const sin = new Float64Array(N);
+        for (let k = 0; k < N; k++) {
+            han[k] = 0.5 - 0.5 * Math.cos((2 * Math.PI * k) / (N - 1));
+            cos[k] = Math.cos((2 * Math.PI * k) / N);
+            sin[k] = Math.sin((2 * Math.PI * k) / N);
+        }
+        t = { han, cos, sin };
+        spectrumTables.set(N, t);
+    }
+    return t;
+}
+/**
+ * Hann-windowed power spectrum over the band and a little either side. The values of the textbook
+ * transform (a cosine and a sine per bin per sample), read from tables made once per window length:
+ * those sines and cosines were half the check's time, measured on recorded input.
+ */
 export function spectrum(x) {
     const N = x.length;
-    const han = x.map((v, k) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * k) / (N - 1))));
     const out = [];
+    if (N < 2)
+        return out;
+    const { han: w, cos, sin } = tablesFor(N);
+    const han = new Float64Array(N);
+    for (let k = 0; k < N; k++)
+        han[k] = x[k] * w[k];
     for (let fi = 1; fi < N / 2; fi++) {
         const f = (fi * OWN_PULSE_FS) / N;
         if (f > 4)
             break;
         let re = 0;
         let im = 0;
+        let j = 0;
         for (let k = 0; k < N; k++) {
-            const ang = (-2 * Math.PI * fi * k) / N;
-            re += han[k] * Math.cos(ang);
-            im += han[k] * Math.sin(ang);
+            re += han[k] * cos[j];
+            im -= han[k] * sin[j];
+            j += fi;
+            if (j >= N)
+                j -= N;
         }
         out.push([f, re * re + im * im]);
     }
@@ -199,9 +236,19 @@ export function whitenedSpectrum(P) {
 export function pos(R, G, B) {
     const win = Math.round(1.6 * OWN_PULSE_FS);
     const h = new Array(R.length).fill(0);
+    // One buffer per signal for every window, and every operation in the order first written, so
+    // the output is the same to the bit (a test pins it) without an allocation per window.
+    const s1 = new Float64Array(win);
+    const s2 = new Float64Array(win);
     const sd = (a) => {
-        const m = a.reduce((s, v) => s + v, 0) / a.length;
-        return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length) || 1;
+        let m = 0;
+        for (let i = 0; i < win; i++)
+            m += a[i];
+        m /= win;
+        let v = 0;
+        for (let i = 0; i < win; i++)
+            v += (a[i] - m) ** 2;
+        return Math.sqrt(v / win) || 1;
     };
     for (let n = win; n <= R.length; n++) {
         const m = n - win;
@@ -216,25 +263,20 @@ export function pos(R, G, B) {
         mr /= win;
         mg /= win;
         mb /= win;
-        const s1 = [];
-        const s2 = [];
         for (let k = m; k < n; k++) {
             const r = R[k] / mr;
             const g = G[k] / mg;
             const b = B[k] / mb;
-            s1.push(g - b);
-            s2.push(g + b - 2 * r);
+            s1[k - m] = g - b;
+            s2[k - m] = g + b - 2 * r;
         }
         const alpha = sd(s1) / sd(s2);
         let mean = 0;
-        const seg = s1.map((v, i) => {
-            const y = v + alpha * s2[i];
-            mean += y;
-            return y;
-        });
+        for (let i = 0; i < win; i++)
+            mean += s1[i] + alpha * s2[i];
         mean /= win;
         for (let k = 0; k < win; k++)
-            h[m + k] += seg[k] - mean;
+            h[m + k] += s1[k] + alpha * s2[k] - mean;
     }
     return h;
 }

@@ -1,1 +1,1 @@
-{"version":3,"file":"buildInfo.d.ts","sourceRoot":"","sources":["../src/buildInfo.ts"],"names":[],"mappings":"AAAA;;;GAGG;AACH,eAAO,MAAM,sBAAsB,kBAAkB,CAAC"}
+{"version":3,"file":"buildInfo.d.ts","sourceRoot":"","sources":["../src/buildInfo.ts"],"names":[],"mappings":"AAAA;;;GAGG;AACH,eAAO,MAAM,sBAAsB,mBAAmB,CAAC"}

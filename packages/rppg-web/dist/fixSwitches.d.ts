@@ -56,11 +56,16 @@ export type RppgFixSwitches = {
      * when given, wins over this switch.
      */
     analysisWorker?: boolean;
+    /**
+     * Speed 5. The face finder is asked at most once per FACE_FINDER_EVERY_MS (100 ms); frames in
+     * between are read with the last face it found. Off: the finder runs on every frame, as published.
+     */
+    sparseFaceFinder?: boolean;
 };
 /** `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless `false`. */
 export type RppgFixesOption = boolean | RppgFixSwitches;
 export type ResolvedRppgFixSwitches = Required<RppgFixSwitches>;
-export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "analysisWidth", "analysisWorker"];
+export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "analysisWidth", "analysisWorker", "sparseFaceFinder"];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
 export declare function resolveFixSwitches(option?: RppgFixesOption | null): ResolvedRppgFixSwitches;
 //# sourceMappingURL=fixSwitches.d.ts.map

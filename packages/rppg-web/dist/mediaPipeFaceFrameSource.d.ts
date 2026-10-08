@@ -25,6 +25,15 @@ export declare function analysisSize(videoWidth: number, videoHeight: number): {
     width: number;
     height: number;
 };
+/**
+ * With `sparseFaceFinder` on, the face finder is asked at most this often; the frames in between are
+ * read with the last face it found. The finder is the costliest step per frame: an app built on this
+ * package measured it at about 20 ms of a 33 ms frame on a laptop, where finding the face on every
+ * frame let a 30 fps camera arrive as 8 to 19 frames a second, and asks it at this interval. A still
+ * face does not move in a tenth of a second, a moving head is followed within one, and a nod (one or
+ * two a second) is still seen five or more times per cycle by the movement rule.
+ */
+export declare const FACE_FINDER_EVERY_MS = 100;
 export declare class MediaPipeFaceFrameSource implements FrameSource {
     private video;
     private faceLandmarker;
@@ -38,6 +47,8 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     private vfcHandle;
     private smoothedFaceRoi;
     private lastError;
+    /** The last answer from the face finder and when it was asked (sparseFaceFinder). */
+    private lastFace;
     constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
     start(): Promise<void>;
     stop(): Promise<void>;
