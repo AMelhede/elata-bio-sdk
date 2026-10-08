@@ -42,6 +42,8 @@ export type PulseCheckState = {
     /** That window's colour-damage measure, and whether the wall was seen through the whole window. */
     windowColourDamage?: number | null;
     windowWallSeen?: boolean;
+    /** That window's wall level (R + G + B, each on 0..1), which rule darkWall judges; null when the wall was not seen throughout. */
+    windowWallLevel?: number | null;
     /** The head's own movement carried the rate in each of the last OWN_PULSE_STRONG_STREAK windows (rule headMotion). */
     headMatch?: boolean;
     /**
@@ -130,9 +132,16 @@ export type PulseCheckRules = {
      * or with `head` always left out: movement is not checked.
      */
     headMotion?: boolean;
+    /**
+     * Damaged colour is read as green minus the wall only over a wall bright enough to show the
+     * room's light (OWN_PULSE_SWAP_MIN_WALL); over a darker wall it is read by colour (POS), so a
+     * light on the face that the wall does not show is not read as the pulse. Off: green minus the
+     * wall over any wall seen, as in 0.15.0-test.6.
+     */
+    darkWall?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "headMotion"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "headMotion", "darkWall"];
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
@@ -161,22 +170,20 @@ export type HeadRow = [number, number, number, number];
 /**
  * How far the head's movement AT THE RATE must stand above the rest of its movement (dB), with the
  * strongest other rhythm taken out of the rest, for the rate to count as the movement's. Set
- * together with HEAD_MIN_SIZE, on the same measurement (recorded captures against a reference
- * pulse, against generated faces with no pulse nodding, with and without a second sway): every
- * real-pulse window whose movement at the rate was 0.3% of the face's width or more stood at most
- * 2.4 dB above the rest (fidgeting), and the weakest nod 5.4 dB (8.5 dB with a sway). 3.9 dB is the
- * middle. Re-measured with headAtRate itself on the same rows, handed over as headCentre gives
- * them: every window judged exactly as where the bar was set, and the same gap. The 5 dB it
- * replaced was set on the statistic before (the strongest line against every other rhythm, which a
- * second sway could hide a nod under). Pinned in pulseCheckHead.test.ts.
+ * together with HEAD_MIN_SIZE, between still heads with a pulse and generated faces with no pulse
+ * nodding, with and without a second sway. The 5 dB it replaced was set on the statistic before
+ * (the strongest line against every other rhythm, which a second sway could hide a nod under).
+ * Pinned in pulseCheckHead.test.ts.
+ *
+ * Value chosen by measurement on recorded captures against a reference pulse.
  */
 export declare const HEAD_MIN_SNR_DB = 3.9;
 /**
  * The smallest movement at the rate that can be a nod: the line's amplitude over the face's width.
  * A heartbeat shakes the head too, and in a still person that shake can be the head's strongest
- * rhythm, but it is tiny: every real-pulse window whose movement at the rate dominated (2.5 dB and
- * up) moved at most 0.13% of the face's width; the nods moved 0.69% and more. 0.3% is the middle of
- * the two on a ratio scale. At both bars no real-pulse window was carried and every nod window was.
+ * rhythm, but it is tiny next to a nod. A clean 3 px nod on a 190 px face is 1.6% of its width.
+ *
+ * Value chosen by measurement on recorded captures against a reference pulse.
  */
 export declare const HEAD_MIN_SIZE = 0.003;
 /** Why a window's head movement cannot be judged (headAtRate). */
@@ -235,6 +242,8 @@ export declare class PulseCheck {
     });
     /** Which light rules this check runs (see PulseCheckRules). */
     readonly rules: ResolvedPulseCheckRules;
+    /** The least wall level for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
+    private get swapMinWall();
     /** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
     get agreementOn(): boolean;
     /** The SDK's own current rate, given once a second; used only with `agreement` on. */

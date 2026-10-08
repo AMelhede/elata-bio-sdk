@@ -72,6 +72,11 @@ export interface OwnPulseEstimate {
     colourDamage?: number | null;
     /** Whether the wall beside the face was seen through the whole window. */
     wallSeen?: boolean;
+    /**
+     * The wall's mean level over the window: its R + G + B, each on 0..1 as the runner hands it over
+     * (OWN_PULSE_SWAP_MIN_WALL). Null when the wall was not seen through the whole window.
+     */
+    wallLevel?: number | null;
 }
 export declare function resample(t: number[], v: number[], from: number, to: number): number[];
 /**
@@ -162,6 +167,20 @@ export declare const OWN_PULSE_COLOUR_DAMAGE = 50;
  * Value chosen by measurement on recorded captures against a reference pulse.
  */
 export declare const OWN_PULSE_COLOUR_SWITCH = 20;
+/**
+ * Green minus the wall replaces POS only over a wall bright enough to show the room's light: its
+ * mean level over the window (R + G + B, each on 0..1, as the runner hands the wall over) at least
+ * this. The swap assumes the light that falls on the face falls on the wall too. A dark wall shows
+ * almost none of it, so a light that falls on the face and not on the wall (a screen) stays in
+ * green minus the wall and is read as the pulse. A generated video with no person (a chromatic
+ * pulse at 70 a minute under a screen light at 90 on the face, the wall at a level of about 0.06)
+ * showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
+ *
+ * Value chosen by measurement on recorded captures against a reference pulse. The wall levels of
+ * real windows where the swap fired leave no clean gap below it, so the bar is set where the
+ * outcome on real people does not change and the known failure is excluded. Rule darkWall.
+ */
+export declare const OWN_PULSE_SWAP_MIN_WALL = 0.15;
 /** Green minus the share of it the wall's brightness explains (least squares), sign as POS. */
 export declare function greenMinusWall(G: number[], wall: number[]): number[];
 /**
@@ -173,7 +192,9 @@ export declare function estimateOwnPulse(samples: readonly RawRoiSample[], windo
 /** The instant to judge at; defaults to the last sample. A window whose newest sample is older than 1 s is stale and yields null. */
 atMs?: number, 
 /** Colour damage at which green minus the wall replaces POS (OWN_PULSE_COLOUR_SWITCH). */
-colourSwitch?: number): OwnPulseEstimate | null;
+colourSwitch?: number, 
+/** The least wall level at which it does (OWN_PULSE_SWAP_MIN_WALL); 0 swaps over any wall seen. */
+swapMinWall?: number): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.
