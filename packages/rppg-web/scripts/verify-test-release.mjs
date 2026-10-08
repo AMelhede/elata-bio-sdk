@@ -72,7 +72,12 @@ const pipe = new glue.WasmRppgPipeline(30, 10);
 assert.equal(pipe.colour_projection_fix(), true, "fix on by default in the core");
 pipe.set_colour_projection_fix(false);
 assert.equal(pipe.colour_projection_fix(), false, "switch reaches the core");
-assert.deepEqual(Object.values(sdk.resolveFixSwitches()), [true, true, true, true, true]);
+// Every fix switch, and every pulse-check light rule, on by default (read from the package's own
+// lists so a new switch cannot be missed the way the count of five once went stale).
+assert.deepEqual(Object.keys(sdk.resolveFixSwitches()).sort(), [...sdk.FIX_SWITCH_NAMES].sort());
+assert.ok(Object.values(sdk.resolveFixSwitches()).every((v) => v === true), "every fix on by default");
+assert.deepEqual(Object.keys(sdk.resolvePulseCheckRules()).sort(), [...sdk.PULSE_CHECK_RULE_NAMES].sort());
+assert.ok(Object.values(sdk.resolvePulseCheckRules()).every((v) => v === true), "every light rule on by default");
 function read(bpm, fixes) {
   const p = new sdk.RppgProcessor(backend, 30, 10, fixes === undefined ? {} : { fixes });
   let seed = 7; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) - 0.5;

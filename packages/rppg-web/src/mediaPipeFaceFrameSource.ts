@@ -33,7 +33,7 @@ import {
  * averages thousands of pixels, putting sensor noise far under a 0.5% pulse. Every later step
  * (skin mask, region means, fusion, the pulse check) costs time in proportion to pixels, so
  * reading a 1280x960 camera at full size cut the analysed frame rate to ~7 per second
- * (measured 2026-10-02, owner's laptop and a 1280x960 test feed alike).
+ * (measured 2026-10-02, a laptop webcam and a 1280x960 test feed alike).
  */
 export const MAX_ANALYSIS_WIDTH = 640;
 
