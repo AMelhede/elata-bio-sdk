@@ -12,7 +12,10 @@
  */
 /**
  * [timestampMs, foreheadR, G, B, leftCheekR, G, B, rightCheekR, G, B], optionally followed by
- * the wall beside the face [wallR, G, B] (NaN when it was not visible in that frame).
+ * the wall beside the face [wallR, G, B] (NaN when it was not visible in that frame), and after
+ * that optionally the same wall as the camera read it [R, G, B]: the patch's own colour, before
+ * the runner rescales a new patch to carry on from the last one (WallTracker in pulseCheck.ts).
+ * Without that reading the wall columns are taken as read.
  */
 export type RawRoiSample = [
     number,
@@ -73,8 +76,9 @@ export interface OwnPulseEstimate {
     /** Whether the wall beside the face was seen through the whole window. */
     wallSeen?: boolean;
     /**
-     * The wall's mean level over the window: its R + G + B, each on 0..1 as the runner hands it over
-     * (OWN_PULSE_SWAP_MIN_WALL). Null when the wall was not seen through the whole window.
+     * The wall's mean level over the window as the camera saw it: R + G + B of the patch or patches
+     * read, each on 0..1, before any rescaling between patches (OWN_PULSE_SWAP_MIN_WALL). Null when
+     * the wall was not seen through the whole window.
      */
     wallLevel?: number | null;
 }
@@ -169,12 +173,15 @@ export declare const OWN_PULSE_COLOUR_DAMAGE = 50;
 export declare const OWN_PULSE_COLOUR_SWITCH = 20;
 /**
  * Green minus the wall replaces POS only over a wall bright enough to show the room's light: its
- * mean level over the window (R + G + B, each on 0..1, as the runner hands the wall over) at least
- * this. The swap assumes the light that falls on the face falls on the wall too. A dark wall shows
- * almost none of it, so a light that falls on the face and not on the wall (a screen) stays in
- * green minus the wall and is read as the pulse. A generated video with no person (a chromatic
- * pulse at 70 a minute under a screen light at 90 on the face, the wall at a level of about 0.06)
- * showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
+ * mean level over the window as the camera saw it (R + G + B of the patch or patches read, each on
+ * 0..1; wallLevelSeen) at least this. The swap assumes the light that falls on the face falls on
+ * the wall too. A dark wall shows almost none of it, so a light that falls on the face and not on
+ * the wall (a screen) stays in green minus the wall and is read as the pulse. A generated video
+ * with no person (a chromatic pulse at 70 a minute under a screen light at 90 on the face, the
+ * wall at a level of about 0.06) showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
+ * The level is judged on each patch as read, not on the wall the runner carries on across patches
+ * (WallTracker): a darker patch carried on at a brighter one's level still shows almost none of
+ * the light.
  *
  * Value chosen by measurement on recorded captures against a reference pulse. The wall levels of
  * real windows where the swap fired leave no clean gap below it, so the bar is set where the

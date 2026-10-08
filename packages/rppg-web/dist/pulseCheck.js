@@ -424,7 +424,8 @@ export class PulseCheck {
     }
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
-     * and optionally the mean RGB of a patch of wall beside the face (see the wall check).
+     * and optionally the mean RGB of a patch of wall beside the face (see the wall check), on one
+     * continuous scale across patches (WallTracker).
      */
     push(timestampMs, regions, wall, wallMiss, 
     /**
@@ -432,7 +433,13 @@ export class PulseCheck {
      * head this frame (a window it leaves uncovered is then not evidence). Leave it out on every
      * frame when the frames carry no face mesh: the movement is then not checked.
      */
-    head) {
+    head, 
+    /**
+     * The same wall as the camera read it this frame, before WallTracker's rescaling (its `raw`):
+     * rule darkWall judges the wall's brightness on it. Leave it out when `wall` is read from one
+     * patch and never rescaled; `wall` is then taken as read.
+     */
+    wallRaw) {
         if (regions.length < 3 || !Number.isFinite(timestampMs))
             return;
         if (wall)
@@ -462,6 +469,10 @@ export class PulseCheck {
             wall?.r ?? Number.NaN,
             wall?.g ?? Number.NaN,
             wall?.b ?? Number.NaN,
+            // And as the camera read it, for its brightness (rule darkWall, wallLevelSeen).
+            wall ? (wallRaw ?? wall).r : Number.NaN,
+            wall ? (wallRaw ?? wall).g : Number.NaN,
+            wall ? (wallRaw ?? wall).b : Number.NaN,
         ]);
         while (this.samples.length && this.samples[0][0] < timestampMs - KEEP_MS)
             this.samples.shift();
@@ -653,9 +664,11 @@ export function wallBesideFace(points, frame, preferIndex) {
  * brightness, and a step puts power at every rate: it hides a lamp's rhythm from the wall check
  * and corrupts green minus the wall. So when the patch changes, the new patch is scaled to start
  * exactly where the old one left off, and that scale is kept while it stays: a lamp's swing,
- * shared by every patch, passes through unchanged. Both users of the wall are blind to its
+ * shared by every patch, passes through unchanged. The wall's rhythm checks are blind to its
  * absolute level (the wall check judges a signal-to-noise ratio, green minus the wall a least-
- * squares share of normalised signals).
+ * squares share of normalised signals), so the rescaled wall serves them. Its brightness is not
+ * kept: after a switch the carried-on level is the old patch's, not what the camera sees, so the
+ * tracker also hands back each patch as read (`raw`), which rule darkWall judges.
  */
 export class WallTracker {
     constructor() {
@@ -664,13 +677,20 @@ export class WallTracker {
         this.gain = { r: 1, g: 1, b: 1 };
         this.last = null;
     }
-    /** The wall this frame on one continuous scale, or null when none was found. */
+    /** The wall this frame on one continuous scale, and as read (see track), or null when none was found. */
     next(points, frame) {
         const w = wallBesideFace(points, frame, this.gapIndex);
         if (!w)
             return null;
         this.gapIndex = w.gapIndex;
-        return { rgb: this.continuous(w.gapIndex, w.rgb), gapIndex: w.gapIndex };
+        return this.track(w.gapIndex, w.rgb);
+    }
+    /**
+     * Patch `gapIndex` read as `rgb`: `rgb` on one continuous scale (continuous), for the wall's
+     * rhythm, and `raw`, the patch as read, for its brightness. PulseCheck.push takes both.
+     */
+    track(gapIndex, rgb) {
+        return { rgb: this.continuous(gapIndex, rgb), raw: rgb, gapIndex };
     }
     /** `rgb` from patch `gapIndex`, rescaled at a change of patch so the signal does not step. */
     continuous(gapIndex, rgb) {

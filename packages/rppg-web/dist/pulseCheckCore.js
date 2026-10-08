@@ -260,18 +260,29 @@ export const OWN_PULSE_COLOUR_DAMAGE = 50;
 export const OWN_PULSE_COLOUR_SWITCH = 20;
 /**
  * Green minus the wall replaces POS only over a wall bright enough to show the room's light: its
- * mean level over the window (R + G + B, each on 0..1, as the runner hands the wall over) at least
- * this. The swap assumes the light that falls on the face falls on the wall too. A dark wall shows
- * almost none of it, so a light that falls on the face and not on the wall (a screen) stays in
- * green minus the wall and is read as the pulse. A generated video with no person (a chromatic
- * pulse at 70 a minute under a screen light at 90 on the face, the wall at a level of about 0.06)
- * showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
+ * mean level over the window as the camera saw it (R + G + B of the patch or patches read, each on
+ * 0..1; wallLevelSeen) at least this. The swap assumes the light that falls on the face falls on
+ * the wall too. A dark wall shows almost none of it, so a light that falls on the face and not on
+ * the wall (a screen) stays in green minus the wall and is read as the pulse. A generated video
+ * with no person (a chromatic pulse at 70 a minute under a screen light at 90 on the face, the
+ * wall at a level of about 0.06) showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
+ * The level is judged on each patch as read, not on the wall the runner carries on across patches
+ * (WallTracker): a darker patch carried on at a brighter one's level still shows almost none of
+ * the light.
  *
  * Value chosen by measurement on recorded captures against a reference pulse. The wall levels of
  * real windows where the swap fired leave no clean gap below it, so the bar is set where the
  * outcome on real people does not change and the known failure is excluded. Rule darkWall.
  */
 export const OWN_PULSE_SWAP_MIN_WALL = 0.15;
+/**
+ * The wall's level in one sample as the camera saw it: R + G + B of the patch as read (the reading
+ * after the wall columns, see RawRoiSample), or of the wall columns when the sample has no reading.
+ */
+function wallLevelSeen(s) {
+    const at = s.length >= 16 && Number.isFinite(s[13]) ? 13 : 10;
+    return s[at] + s[at + 1] + s[at + 2];
+}
 const zeroMeanNorm = (x) => {
     const m = x.reduce((a, v) => a + v, 0) / x.length || 1;
     return x.map((v) => v / m - 1);
@@ -328,7 +339,9 @@ swapMinWall = OWN_PULSE_SWAP_MIN_WALL) {
         .map(([R, G, B]) => fastNoise(pos(R, G, B)) / fastNoise(zeroMeanNorm(G)))
         .sort((a, b) => a - b);
     const colourDamage = Math.round(damages[1] * 10) / 10;
-    const wallLevel = wall ? wall.reduce((a, v) => a + v, 0) / wall.length : null;
+    // The level as the camera saw it (wallLevelSeen); `wall` is carried on across patches.
+    const seen = wallSeen ? resample(t, win.map(wallLevelSeen), from, to) : null;
+    const wallLevel = seen ? seen.reduce((a, v) => a + v, 0) / seen.length : null;
     // Rule darkWall: a wall too dark to show the room's light cannot take it out of green.
     const wallLit = swapMinWall <= 0 || (wallLevel != null && wallLevel >= swapMinWall);
     const method = wall && wallLit && colourDamage >= colourSwitch ? "greenMinusWall" : "pos";
