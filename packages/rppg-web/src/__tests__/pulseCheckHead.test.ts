@@ -212,7 +212,8 @@ describe("PulseCheck rule headMotion", () => {
 
 	// The finding this statistic fixes: the one before counted every other rhythm of the head as
 	// noise, so a smaller second rhythm hid a nod. A 1.5 px sway at 50 a minute added to the nod
-	// fixture's rows brought its false 60 back (19 seconds of 59 to 60 shown by 0.15.0-test.5).
+	// fixture's rows brought its false 60 back: 0.15.0-test.5 (c6be006) showed it for 17 seconds,
+	// 58.8 to 60.6, replaying exactly this sway (reproduced 2026-10-08; an earlier note said 19).
 	it("nothing either when a smaller sway rides along with the nod", () => {
 		const swayed = nod.motion.map((r) =>
 			r.map((v, i) => (i > 0 && i % 2 === 0 ? v + 1.5 * Math.sin((2 * Math.PI * 50 * r[0]) / 60000) : v)),
@@ -543,6 +544,16 @@ describe("headCentre", () => {
 	it("reads the 468-point mesh (no iris points) as well as the 478-point one", () => {
 		expect(headCentre(mesh(468), 640, 480)).not.toBeNull();
 		expect(headCentre(mesh(455), 640, 480)).not.toBeNull(); // the highest index used is 454
+	});
+
+	// The README's "Things to know": the rule needs MediaPipe's mesh. A 68-point face detector's
+	// landmarks give no head, so a check handed them sees every window blind and shows no rate.
+	it("gives a 68-point face detector's landmarks no head: every window is blind and no rate shows", () => {
+		const points68 = mesh(68);
+		expect(headCentre(points68, 640, 480)).toBeNull();
+		const states = pushPulse(new PulseCheck(), { seconds: 40, bpm: 70 }, () => headCentre(points68, 640, 480));
+		expect(states.slice(16).every((s) => s.windowHead === "blind")).toBe(true);
+		expect(states.every((s) => s.bpm == null)).toBe(true);
 	});
 
 	it("is null for a mesh without every bone landmark, or a frame with no size", () => {

@@ -1,5 +1,5 @@
 import { FIX_SWITCH_NAMES } from "../fixSwitches";
-import { PULSE_CHECK_RULE_NAMES } from "../pulseCheck";
+import { HEAD_LANDMARKS, PULSE_CHECK_RULE_NAMES, headCentre } from "../pulseCheck";
 
 // Testers log every result against the switches the README lists. In 0.15.0-test.5 the README
 // still listed five fix switches ("`fixes: false` turns all five off") while the build had seven
@@ -34,6 +34,25 @@ describe("README Switches section", () => {
 
 	it("does not count the switches in words a new one would make wrong", () => {
 		expect(switches).not.toMatch(/\ball (two|three|four|five|six|seven|eight|nine|ten)\b/);
+	});
+});
+
+// The movement rule reads the head's bone landmarks by MediaPipe face-mesh index. 0.15.0-test.6's
+// README said only that frames need "face landmarks", but a 68-point detector's landmarks give
+// headCentre no head (it needs every index up to the highest in HEAD_LANDMARKS), so every window is
+// blind and no rate shows. The README names the mesh and the cut-off, and the cut-off is the code's.
+describe("README Things to know", () => {
+	const things = readme.slice(readme.indexOf("Things to know"), readme.indexOf("## What the original package is"));
+	const highest = Math.max(...HEAD_LANDMARKS);
+	const mesh = (n: number) => Array.from({ length: n }, () => ({ x: 0.5, y: 0.5 }));
+
+	it("names the face mesh the movement rule needs, and the point count at which there is no head", () => {
+		expect(things).toContain("MediaPipe's face mesh (468 points, or 478 with the irises)");
+		expect(things).toContain(`${highest} points or fewer`);
+		expect(things).toContain("68-point");
+		expect(headCentre(mesh(highest), 640, 480)).toBeNull();
+		expect(headCentre(mesh(highest + 1), 640, 480)).not.toBeNull();
+		expect(headCentre(mesh(468), 640, 480)).not.toBeNull();
 	});
 });
 

@@ -84,10 +84,13 @@ Things to know while testing:
   a number. A number that never comes is worth reporting, with the light and the camera used.
 - **None of the fixes alone stops a number from a face with no pulse** (a photo, a lamp on a
   face). Only the pulse check does that.
-- **The movement rule needs the face mesh on every frame.** With `headMotion` on, a frame
-  source that gives face regions without face landmarks shows no heart rate (the head cannot
-  be seen, so a nod cannot be ruled out). `getPulseCheck().windowHead` says how the latest
-  second was judged: `"carried"`, `"clear"` or `"blind"`.
+- **The movement rule needs MediaPipe's face mesh (468 points, or 478 with the irises) on
+  every frame.** It reads the head's bone landmarks by that mesh's own numbering. With
+  `headMotion` on, a frame source that gives face regions without landmarks, or with too few
+  of them (454 points or fewer, such as a 68-point face detector), shows no heart rate:
+  `headCentre` finds no head, every second is judged `"blind"`, and a nod cannot be ruled
+  out. `getPulseCheck().windowHead` says how the latest second was judged: `"carried"`,
+  `"clear"` or `"blind"`.
 - Every result worth keeping should be logged with `RPPG_WEB_BUILD_VERSION` and
   `session.getBuildSwitches()`.
 
