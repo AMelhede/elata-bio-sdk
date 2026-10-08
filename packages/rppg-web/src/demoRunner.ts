@@ -432,6 +432,9 @@ export class DemoRunner {
 					// The head's position, for the headMotion rule: a rate the head's own
 					// movement keeps time with (a nod) is the movement's, not a pulse.
 					frame.landmarks ? headCentre(frame.landmarks, frame.width, frame.height) : null,
+					// The wall as the camera read it, for its brightness (rule darkWall): the
+					// continuous wall above carries a darker patch on at a brighter one's level.
+					wall?.raw,
 				);
 			}
 			if (frame.roi) {
