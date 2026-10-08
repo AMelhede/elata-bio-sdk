@@ -357,6 +357,7 @@ export {
 	headCentre,
 	headCarries,
 	headLines,
+	headMatches,
 } from "./pulseCheck";
 export {
 	FIX_SWITCH_NAMES,

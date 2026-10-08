@@ -2,8 +2,9 @@
 
 **This is a test build, not the official package.** It is Elata's rPPG web SDK
 (`@elata-biosciences/rppg-web` 0.14.0, MIT licence) with five fixes to the heart-rate
-pipeline and a real-pulse check added. Every fix and the check has its own on/off switch, so
-an app can compare each one against the published behaviour. It exists so the team can try
+pipeline, two speed changes and a real-pulse check added. Every fix, speed change and rule of
+the check has its own on/off switch, so an app can compare each one against the published
+behaviour. It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
@@ -36,15 +37,25 @@ the published 0.14.0 does for that part, so "off" is the comparison. Set them on
 const session = await createRppgSession({
   video,
   faceMesh: "auto",
-  // every fix on (the default); `fixes: false` turns all five off
+  // every fix and speed change on (the default); `fixes: false` turns every one of them off
   fixes: {
     noFaceNoReading: true,
     colourProjectionFix: true,
     realFrameRate: true,
     posFusion: true,
     noRateDoubling: true,
+    analysisWidth: true,
+    analysisWorker: true,
   },
   pulseCheck: true, // the default in this build
+  // every rule of the check on (the default); each one can be set to false on its own
+  pulseCheckRules: {
+    wallBandEdge: true,
+    lightFamily: true,
+    faceFlicker: true,
+    lightTaint: true,
+    headMotion: true,
+  },
 });
 console.log(session.getBuildSwitches()); // what this session actually runs
 ```
@@ -56,8 +67,10 @@ console.log(session.getBuildSwitches()); // what this session actually runs
 | `fixes.realFrameRate` | Frames are placed on the even 30-per-second time grid the analysis assumes, filling between frames, so a camera that delivers 15 to 25 frames a second (common indoors) does not scale every rate it reports. Gaps over 250 ms count as a stall and are not bridged. | Each frame is used as it arrives, as published; on a slow camera every rate comes out scaled. |
 | `fixes.posFusion` | The step that blends forehead and both cheeks reads each region with POS (Wang et al. 2017), the method designed for its short windows (about 1.6 s). | CHROM, as published. An explicit `fusionProjection: "pos" \| "chrom"` option wins over this switch. |
 | `fixes.noRateDoubling` | The rate estimator keeps the strongest rhythm it finds. | The published rule that, below 85 bpm, replaces the strongest rate with twice that rate whenever a pulse wave's own second harmonic is strong, so a resting 65 can read 130. |
+| `fixes.analysisWidth` | Speed. Each camera frame is read at most 640 pixels wide (same shape), and the face finder reads that same smaller picture, so the face points and the colours come from one frame. A cheek patch still averages thousands of pixels at that size, far more than the pulse needs. | The full camera frame, with the face finder reading the live video, as published. On a 1280x960 camera that cut the frames analysed to about 7 a second. |
+| `fixes.analysisWorker` | Speed. The heart-rate analysis runs in a Web Worker, so it never holds up the camera frames. It runs on the main thread instead when a worker or the WASM core inside it cannot start, or when `wasmImporter` or `bpmEvidenceQualityProvider` is set (a function cannot be sent to a worker). The session option `analysisWorker`, when given, wins over this switch. | The analysis runs on the main thread, as published, and camera frames that arrive while it runs are skipped. |
 | `pulseCheck` | A heart rate is reported only while a real pulse is proven: forehead and both cheeks agree on one rate, clearly above the noise, over 8 one-second windows, and the newest 8 seconds still back it. The reported rate is the one the check measured. A patch of wall beside the face is checked too: a light that flickers at the same rhythm is refused. HRV and breathing are always withheld while it is on, because neither yet passes a known-answer test. `session.getPulseCheck()` shows the check's state. | The SDK's own rate (with the fixes chosen above), HRV and breathing, as published. |
-| `pulseCheckRules` | Each of the check's light rules can be turned off on its own, for testing one at a time: `wallBandEdge` (the wall's line is found even at the band's edge, a light folded to 180 a minute), `lightFamily` (a light's whole and half multiples are the light's too), `faceFlicker` (a rate the face flickers at in brightness far more than in colour is refused), `lightTaint` (a second the wall carries does not count toward proving a pulse), `headMotion` (a rate the head's own movement keeps time with, such as a nod, is the movement's: not evidence, and withheld once it holds for 4 seconds). All on unless set to false; `getBuildSwitches()` reports them. | Each rule off: the behaviour before it existed. |
+| `pulseCheckRules` | Each of the check's rules can be turned off on its own, for testing one at a time: `wallBandEdge` (the wall's line is found even at the band's edge, a light folded to 180 a minute), `lightFamily` (a light's whole and half multiples are the light's too), `faceFlicker` (a rate the face flickers at in brightness far more than in colour is refused), `lightTaint` (a second the wall carries does not count toward proving a pulse), `headMotion` (a rate the head's own movement keeps time with, such as a nod, is the movement's: not evidence, and withheld once it holds for 4 seconds). All on unless set to false; `getBuildSwitches()` reports them. | Each rule off: the behaviour before it existed. |
 | `pulseCheckAgreement` | Off by default. With the check on, also report the SDK's own rate when it agrees with the check's latest window for 8 seconds running. | (default) |
 
 Things to know while testing:

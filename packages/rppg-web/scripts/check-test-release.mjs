@@ -7,6 +7,9 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import releaseScrub from "./release-scrub.cjs";
+
+const { scrub, ownFileNames } = releaseScrub;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
@@ -58,16 +61,9 @@ if (existsSync(glue) && !readFileSync(glue, "utf8").includes("set_colour_project
 	problems.push("pkg/ WASM has no set_colour_projection_fix: rebuild the WASM from this branch");
 
 // Scrub: nothing that would ship may name a dataset used in testing, a person's own
-// readings or captures, or a local path.
-const banned = [
-	// Dataset names (the upstream API's own MCD_* identifiers are not mentions: no word boundary).
-	[/\bMCD\b(?!_)|MCD-rPPG|mcd_rppg/, "dataset name (MCD)"],
-	[/UBFC/i, "dataset name (UBFC)"],
-	[/\bMPU\b|MPU-rPPG/, "dataset name (MPU)"],
-	[/\bOura\b/i, "personal reference (Oura)"],
-	[/\b[Oo]wner'?s\b|\bsandbox\b|\bBrave\b/, "personal reference"],
-	[/\/home\/|\/tmp\/|\/root\/|\/Users\/|[A-Za-z]:\\{1,2}Users/, "absolute path"],
-];
+// readings or captures, a private app or its files and commits, or a local path (the rules,
+// and the sentences each was written for, are in release-scrub.cjs and releaseScrub.test.ts).
+const ownFiles = ownFileNames(root);
 const shipped = [];
 const walk = (d) => {
 	for (const e of readdirSync(d)) {
@@ -85,9 +81,11 @@ for (const f of pkg.files) {
 for (const p of shipped) {
 	if (p.endsWith(".wasm")) continue;
 	const text = readFileSync(p, "utf8");
-	for (const [re, what] of banned) {
-		if (re.test(text)) problems.push(`${path.relative(root, p)}: ${what}`);
-	}
+	// The file rule reads code comments only: source maps are generated, and the README rightly
+	// names an app's own files.
+	const opts = /\.[cm]?[jt]s$/.test(p) ? { code: true, ownFiles } : {};
+	for (const what of scrub(text, opts))
+		problems.push(`${path.relative(root, p)}: ${what}`);
 }
 
 if (process.argv.includes("--publish")) {

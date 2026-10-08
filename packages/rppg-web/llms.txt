@@ -1,6 +1,6 @@
 # @amelhede/rppg-web (test build of @elata-biosciences/rppg-web 0.14.0): context for tools and agents
 
-Test build: five heart-rate fixes and a real-pulse check, each behind a switch, all ON by default (`fixes`, `pulseCheck` on `createRppgSession`). Install with an npm alias so imports stay `@elata-biosciences/rppg-web`. See README "Switches".
+Test build: five heart-rate fixes, two speed changes and a real-pulse check, each behind a switch, all ON by default (`fixes`, `pulseCheck`, `pulseCheckRules` on `createRppgSession`). Install with an npm alias so imports stay `@elata-biosciences/rppg-web`. See README "Switches".
 
 ## Role
 Browser **rPPG** (camera photoplethysmography): WASM backend, optional MediaPipe face ROI, BPM / metrics. **Primary entrypoint: `createRppgSession()`**. Higher-level UI/gating: **`createRppgAppAdapter()`**, **`createRppgAppMonitor()`**; auto-retry failures: **`createManagedRppgSession()`**. Lower-level: **`RppgProcessor`**, **`DemoRunner`**, frame sources.
