@@ -12,8 +12,12 @@ const fx = require("./fixtures/mains-120hz-9fps-wall.json") as {
 	background: number[][];
 };
 
-describe("PulseCheck: a second the wall carries is not evidence of a pulse", () => {
-	it("never shows a rate under mains flicker, through the seconds the wall line dips", () => {
+// Measured 2026-10-08 with each rule switched off in turn (pulseCheckRules.test.ts): the rule that
+// keeps this green is faceFlicker; the wall rules (band edge, light family, light taint) are backups
+// that cut the false display from 19 s to 4 s without it. Before the switches existed this test was
+// labelled as the light-taint guard, which it never was: the taint did not exist in this package yet.
+describe("PulseCheck under mains flicker, every light rule on", () => {
+	it("never shows a rate, through the seconds the wall line dips", () => {
 		const wallAt = new Map(fx.background.map((w) => [w[0], w]));
 		const check = new PulseCheck();
 		const shown: number[] = [];

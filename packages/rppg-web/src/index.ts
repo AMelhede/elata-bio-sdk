@@ -346,7 +346,14 @@ export type {
 	CorpusComparison,
 	SessionComparison,
 } from "./replayBenchmark";
-export { PulseCheck, type PulseCheckState } from "./pulseCheck";
+export {
+	PulseCheck,
+	type PulseCheckState,
+	type PulseCheckRules,
+	type ResolvedPulseCheckRules,
+	PULSE_CHECK_RULE_NAMES,
+	resolvePulseCheckRules,
+} from "./pulseCheck";
 export {
 	FIX_SWITCH_NAMES,
 	type ResolvedRppgFixSwitches,

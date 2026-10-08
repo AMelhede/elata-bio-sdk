@@ -1,6 +1,6 @@
 {
 	"name": "@amelhede/rppg-web",
-	"version": "0.15.0-test.3",
+	"version": "0.15.0-test.4",
 	"description": "Test build of the Elata rPPG web SDK (rppg-web 0.14.0) with five heart-rate fixes and a real-pulse check, each behind an on/off switch. For testing in apps only.",
 	"license": "MIT",
 	"author": "Andreas Melhede",
@@ -9,7 +9,7 @@
 		"url": "git+https://github.com/AMelhede/elata-bio-sdk.git",
 		"directory": "packages/rppg-web"
 	},
-	"homepage": "https://github.com/AMelhede/elata-bio-sdk/tree/release/test-0/packages/rppg-web#readme",
+	"homepage": "https://github.com/AMelhede/elata-bio-sdk/tree/release/test-1/packages/rppg-web#readme",
 	"bugs": "https://github.com/AMelhede/elata-bio-sdk/issues",
 	"keywords": [
 		"rppg",

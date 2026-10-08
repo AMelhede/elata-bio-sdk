@@ -6,7 +6,12 @@ import type {
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
-import { PulseCheck, type PulseCheckState } from "./pulseCheck";
+import {
+	PulseCheck,
+	type PulseCheckRules,
+	type PulseCheckState,
+	type ResolvedPulseCheckRules,
+} from "./pulseCheck";
 import {
 	type ResolvedRppgFixSwitches,
 	resolveFixSwitches,
@@ -123,6 +128,11 @@ export type CreateRppgSessionOptions = Omit<
 	 * finder failed to load) there are no face regions to check, so no heart rate is reported.
 	 */
 	pulseCheck?: boolean;
+	/**
+	 * With `pulseCheck`, the light rules it runs, each on unless set to false (PulseCheckRules in
+	 * pulseCheck.ts). For testing one rule at a time; leave out in an app.
+	 */
+	pulseCheckRules?: PulseCheckRules;
 	/**
 	 * With `pulseCheck`, also report the SDK's own rate when it agrees with the check's window
 	 * rate for 8 seconds running (agreementRate in pulseCheckCore.ts). Off by default: a small
@@ -283,6 +293,7 @@ export class RppgSession {
 		fixes: ResolvedRppgFixSwitches;
 		pulseCheck: boolean;
 		pulseCheckAgreement: boolean;
+		pulseCheckRules: ResolvedPulseCheckRules | null;
 	} {
 		const fixes =
 			(this.runner as { fixes?: ResolvedRppgFixSwitches }).fixes ??
@@ -302,6 +313,7 @@ export class RppgSession {
 			},
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
+			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
 		};
 	}
 
@@ -536,7 +548,10 @@ export async function createRppgSession(
 
 	const pulseCheck =
 		options.pulseCheck !== false
-			? new PulseCheck({ agreement: options.pulseCheckAgreement === true })
+			? new PulseCheck({
+					agreement: options.pulseCheckAgreement === true,
+					rules: options.pulseCheckRules,
+				})
 			: null;
 	const runner = new DemoRunner(source, processor, {
 		fixes: options.fixes,
