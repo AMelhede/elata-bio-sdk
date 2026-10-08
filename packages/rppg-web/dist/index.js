@@ -42,7 +42,7 @@ export { RppgGatingController } from "./rppgGating.js";
 export { replayBayesSession } from "./rppgReplay.js";
 export { RppgSessionRecorder } from "./rppgSessionRecorder.js";
 export { aggregateComparisons, maeOf, summarizeReplaySession, } from "./replayBenchmark.js";
-export { PulseCheck, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, HEAD_LANDMARKS, headCentre, headCarries, headLines, headMatches, } from "./pulseCheck.js";
+export { PulseCheck, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, HEAD_LANDMARKS, headCentre, headAtRate, headJudge, headCarries, headMatches, } from "./pulseCheck.js";
 export { FIX_SWITCH_NAMES, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
 export { createWorkerRppgProcessor, WorkerRppgProcessor, } from "./workerRppgProcessor.js";

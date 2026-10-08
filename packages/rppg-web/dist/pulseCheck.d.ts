@@ -44,6 +44,12 @@ export type PulseCheckState = {
     windowWallSeen?: boolean;
     /** The head's own movement carried the rate in each of the last OWN_PULSE_STRONG_STREAK windows (rule headMotion). */
     headMatch?: boolean;
+    /**
+     * How rule headMotion judged the latest window at its rate (headJudge): 'blind' when the head's
+     * rows do not cover it, which counts as no evidence. Null when the rule is off, the window has no
+     * rate, or no head has been handed to the check since it was last reset.
+     */
+    windowHead?: HeadJudgement | null;
     /** Diagnostic: the wall's strongest brightness line in this window (wallLine), or null. */
     wallLine?: {
         bpm: number;
@@ -117,7 +123,12 @@ export type PulseCheckRules = {
     faceFlicker?: boolean;
     /** A window whose rate the wall carries is not evidence of a pulse: it is not counted toward the proof. Off: it counts, and the rate shows the moment the wall line dips. */
     lightTaint?: boolean;
-    /** A rate the head's own movement keeps time with (a nod, a rock) is the movement's: not evidence, and withheld once it holds for 4 windows. Needs the head position (`push`'s `head`); off or without it: movement is not checked. */
+    /**
+     * A rate the head's own movement keeps time with (a nod, a rock) is the movement's: not evidence,
+     * and withheld once it holds for 4 windows. Needs the head (`push`'s `head`, headCentre); once a
+     * head has been handed over, a window the head's rows do not cover is not evidence either. Off,
+     * or with `head` always left out: movement is not checked.
+     */
     headMotion?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -129,27 +140,82 @@ export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): 
  * chin, outer eye corners, cheekbones (MediaPipe face mesh indices).
  */
 export declare const HEAD_LANDMARKS: readonly number[];
-/** The head's position this frame: the centre of HEAD_LANDMARKS in pixels, or null if the mesh lacks one. */
+/** The head this frame, as the headMotion rule reads it (headCentre). */
+export type HeadPosition = {
+    /** The centre of HEAD_LANDMARKS, in pixels. */
+    x: number;
+    y: number;
+    /** The face's width in pixels, cheekbone to cheekbone: a movement is judged by its size against it. */
+    faceWidth: number;
+};
+/**
+ * The head's position this frame: the centre of HEAD_LANDMARKS in pixels, and the face's width
+ * (cheekbone to cheekbone, in pixels), or null if the mesh lacks a landmark or the frame has no size.
+ */
 export declare function headCentre(points: readonly {
     x: number;
     y: number;
-}[], width: number, height: number): {
-    x: number;
-    y: number;
-} | null;
-/** The head's movement lines (x and y) in the window ending at `atMs`, found like the wall's line. */
-export declare function headLines(head: readonly [number, number, number][], atMs: number): Array<{
-    bpm: number;
+}[], width: number, height: number): HeadPosition | null;
+/** One frame of the head as the check keeps it: [time ms, x, y, face width], pixels (headCentre). */
+export type HeadRow = [number, number, number, number];
+/**
+ * How far the head's movement AT THE RATE must stand above the rest of its movement (dB), with the
+ * strongest other rhythm taken out of the rest, for the rate to count as the movement's. Set
+ * together with HEAD_MIN_SIZE, on the same measurement (recorded captures against a reference
+ * pulse, against generated faces with no pulse nodding, with and without a second sway): every
+ * real-pulse window whose movement at the rate was 0.3% of the face's width or more stood at most
+ * 2.4 dB above the rest (fidgeting), and the weakest nod 5.4 dB (8.5 dB with a sway). 3.9 dB is the
+ * middle. Re-measured with headAtRate itself on the same rows, handed over as headCentre gives
+ * them: every window judged exactly as where the bar was set, and the same gap. The 5 dB it
+ * replaced was set on the statistic before (the strongest line against every other rhythm, which a
+ * second sway could hide a nod under). Pinned in pulseCheckHead.test.ts.
+ */
+export declare const HEAD_MIN_SNR_DB = 3.9;
+/**
+ * The smallest movement at the rate that can be a nod: the line's amplitude over the face's width.
+ * A heartbeat shakes the head too, and in a still person that shake can be the head's strongest
+ * rhythm, but it is tiny: every real-pulse window whose movement at the rate dominated (2.5 dB and
+ * up) moved at most 0.13% of the face's width; the nods moved 0.69% and more. 0.3% is the middle of
+ * the two on a ratio scale. At both bars no real-pulse window was carried and every nod window was.
+ */
+export declare const HEAD_MIN_SIZE = 0.003;
+/** Why a window's head movement cannot be judged (headAtRate). */
+export type HeadBlind = "rows" | "start" | "end" | "gap" | "rate";
+/** The head's movement at a rate on one axis (headAtRate). */
+export type HeadAtRate = {
+    /** The movement at the rate (its line and second harmonic) over the rest, the strongest other rhythm left out (dB). */
     snrDb: number;
-}> | null;
-/** Whether the head's movement carries `bpm`: a movement line at the rate, HEAD_MIN_SNR_DB above the rest. */
-export declare function headCarries(head: readonly [number, number, number][], atMs: number, bpm: number): boolean;
+    /** The line's amplitude over the face's width. */
+    size: number;
+};
+/**
+ * The head's movement at `bpm` in the 16 s window ending at `atMs`, one entry per axis that has a
+ * line there (side to side, then up and down), or why the window cannot be judged ('blind'): fewer
+ * than HEAD_MIN_ROWS rows, rows starting or ending more than 1 s from the window's edges, a gap over
+ * 1 s, or fewer than HEAD_MIN_ROWS_PER_CYCLE rows per cycle of the rate. Judged at the rate claimed,
+ * on a fixed grid (bins of 0.0625 Hz whatever span the rows have).
+ */
+export declare function headAtRate(head: readonly HeadRow[], atMs: number, bpm: number): {
+    axes: HeadAtRate[];
+} | {
+    blind: HeadBlind;
+};
+/** Whether the head's movement carries a rate in a window ('carried'), does not ('clear'), or cannot be judged ('blind'). */
+export type HeadJudgement = "carried" | "clear" | "blind";
+/**
+ * Whether the head's movement carries `bpm` in the window ending at `atMs`: on either axis, both
+ * HEAD_MIN_SNR_DB above the rest of its movement and HEAD_MIN_SIZE of the face's width. A window the
+ * head's rows do not cover is 'blind', never 'clear'.
+ */
+export declare function headJudge(head: readonly HeadRow[], atMs: number, bpm: number): HeadJudgement;
+/** Whether the head's movement carries `bpm` in the window ending at `atMs` (headJudge is 'carried'). */
+export declare function headCarries(head: readonly HeadRow[], atMs: number, bpm: number): boolean;
 /**
  * Whether the head's movement carried `bpm` in each of the last OWN_PULSE_STRONG_STREAK one-second
  * windows ending at `atMs` (headCarries in each): rule headMotion's withhold, the state's headMatch.
  * Judged over the windows at once, like the wall check, so one window's coincidence withholds nothing.
  */
-export declare function headMatches(head: readonly [number, number, number][], atMs: number, bpm: number): boolean;
+export declare function headMatches(head: readonly HeadRow[], atMs: number, bpm: number): boolean;
 export declare function wallLine(wall: [number, number, number, number][], atMs: number, bandEdge?: boolean): {
     bpm: number;
     snrDb: number;
@@ -176,6 +242,8 @@ export declare class PulseCheck {
     private samples;
     private wall;
     private head;
+    /** A head argument (a position or null) has reached push since the last reset: the movement is judged. */
+    private headHandedOver;
     private history;
     private held;
     /** Opt-in: also show the SDK's rate when it agrees with this check's window rate (agreementRate). */
@@ -191,11 +259,12 @@ export declare class PulseCheck {
      * and optionally the mean RGB of a patch of wall beside the face (see the wall check).
      */
     push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss, 
-    /** The head's position this frame in pixels (headCentre), for the headMotion rule. */
-    head?: {
-        x: number;
-        y: number;
-    } | null): void;
+    /**
+     * The head this frame (headCentre), for the headMotion rule; null when the face mesh found no
+     * head this frame (a window it leaves uncovered is then not evidence). Leave it out on every
+     * frame when the frames carry no face mesh: the movement is then not checked.
+     */
+    head?: HeadPosition | null): void;
     /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
     private unsupported;
     /**
