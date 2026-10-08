@@ -147,22 +147,54 @@ export function detrend(x: number[], seconds = 2): number[] {
 	return x.map((v, k) => v - trend[k]);
 }
 
-/** Hann-windowed power spectrum over the band and a little either side. */
+/**
+ * A window length's Hann window and its N cosines and sines (of 2 pi k / N), made once per length:
+ * bin fi at sample k reads entry (fi k) mod N. The check sees a handful of lengths (its windows at
+ * the camera's rates), so the cache stays small; it is cleared past SPECTRUM_TABLES_MAX lengths.
+ */
+const spectrumTables = new Map<number, { han: Float64Array; cos: Float64Array; sin: Float64Array }>();
+const SPECTRUM_TABLES_MAX = 32;
+function tablesFor(N: number) {
+	let t = spectrumTables.get(N);
+	if (!t) {
+		if (spectrumTables.size >= SPECTRUM_TABLES_MAX) spectrumTables.clear();
+		const han = new Float64Array(N);
+		const cos = new Float64Array(N);
+		const sin = new Float64Array(N);
+		for (let k = 0; k < N; k++) {
+			han[k] = 0.5 - 0.5 * Math.cos((2 * Math.PI * k) / (N - 1));
+			cos[k] = Math.cos((2 * Math.PI * k) / N);
+			sin[k] = Math.sin((2 * Math.PI * k) / N);
+		}
+		t = { han, cos, sin };
+		spectrumTables.set(N, t);
+	}
+	return t;
+}
+
+/**
+ * Hann-windowed power spectrum over the band and a little either side. The values of the textbook
+ * transform (a cosine and a sine per bin per sample), read from tables made once per window length:
+ * those sines and cosines were half the check's time, measured on recorded input.
+ */
 export function spectrum(x: number[]): Array<[number, number]> {
 	const N = x.length;
-	const han = x.map(
-		(v, k) => v * (0.5 - 0.5 * Math.cos((2 * Math.PI * k) / (N - 1))),
-	);
 	const out: Array<[number, number]> = [];
+	if (N < 2) return out;
+	const { han: w, cos, sin } = tablesFor(N);
+	const han = new Float64Array(N);
+	for (let k = 0; k < N; k++) han[k] = x[k] * w[k];
 	for (let fi = 1; fi < N / 2; fi++) {
 		const f = (fi * OWN_PULSE_FS) / N;
 		if (f > 4) break;
 		let re = 0;
 		let im = 0;
+		let j = 0;
 		for (let k = 0; k < N; k++) {
-			const ang = (-2 * Math.PI * fi * k) / N;
-			re += han[k] * Math.cos(ang);
-			im += han[k] * Math.sin(ang);
+			re += han[k] * cos[j];
+			im -= han[k] * sin[j];
+			j += fi;
+			if (j >= N) j -= N;
 		}
 		out.push([f, re * re + im * im]);
 	}
