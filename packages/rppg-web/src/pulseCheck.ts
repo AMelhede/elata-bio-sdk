@@ -534,7 +534,15 @@ export function wallCarries(
 	bpm: number,
 	rules: ResolvedPulseCheckRules = ALL_RULES_ON,
 ): boolean {
-	const line = wallLine(wall, atMs, rules.wallBandEdge);
+	return lineCarries(wallLine(wall, atMs, rules.wallBandEdge), bpm, rules);
+}
+
+/** wallCarries on a wall line already found (one evaluation reads the same line up to three times). */
+function lineCarries(
+	line: { bpm: number; snrDb: number } | null,
+	bpm: number,
+	rules: ResolvedPulseCheckRules,
+): boolean {
 	const family = rules.lightFamily ? LIGHT_FAMILY : ([1] as const);
 	return (
 		line != null &&
@@ -684,6 +692,13 @@ export class PulseCheck {
 		this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
 		const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall);
 		if (est && (est as { skip?: boolean }).skip) return;
+		// The wall's line for a window end, found once per evaluation: the taint, the wall check and
+		// the state read the newest one, and the wall rows do not change while this runs.
+		const lines = new Map<number, ReturnType<typeof wallLine>>();
+		const lineAt = (ms: number) => {
+			if (!lines.has(ms)) lines.set(ms, wallLine(this.wall, ms, this.rules.wallBandEdge));
+			return lines.get(ms) ?? null;
+		};
 		// A window whose rate the wall carries is the light's, not evidence of a pulse (lightTaint):
 		// counted, it builds a streak under the light, and the rate shows the first second the wall
 		// line dips. Its cost on real pulses was measured on recorded captures against a reference
@@ -696,7 +711,7 @@ export class PulseCheck {
 				: null;
 		const tainted =
 			est?.bpm != null &&
-			((this.rules.lightTaint && wallCarries(this.wall, timestampMs, est.bpm, this.rules)) ||
+			((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
@@ -712,7 +727,7 @@ export class PulseCheck {
 		const wallMatch =
 			held != null &&
 			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
-				wallCarries(this.wall, timestampMs - k * EVAL_EVERY_MS, held, this.rules),
+				lineCarries(lineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules),
 			);
 		const faceFlicker =
 			this.rules.faceFlicker &&
@@ -739,7 +754,7 @@ export class PulseCheck {
 					windowWallSeen: est?.wallSeen ?? false,
 					windowWallLevel: est?.wallLevel ?? null,
 					windowWallToFace: est?.wallToFace ?? null,
-					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
+					wallLine: lineAt(timestampMs),
 					wallFrames,
 					faceFlicker,
 					headMatch,
@@ -759,7 +774,7 @@ export class PulseCheck {
 					windowWallSeen: est?.wallSeen ?? false,
 					windowWallLevel: est?.wallLevel ?? null,
 					windowWallToFace: est?.wallToFace ?? null,
-					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
+					wallLine: lineAt(timestampMs),
 					wallFrames,
 					faceFlicker,
 					headMatch,
