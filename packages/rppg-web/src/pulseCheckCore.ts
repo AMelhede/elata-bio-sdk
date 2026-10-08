@@ -335,9 +335,17 @@ export function whitenedSpectrum(
 export function pos(R: number[], G: number[], B: number[]): number[] {
 	const win = Math.round(1.6 * OWN_PULSE_FS);
 	const h = new Array<number>(R.length).fill(0);
-	const sd = (a: number[]) => {
-		const m = a.reduce((s, v) => s + v, 0) / a.length;
-		return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length) || 1;
+	// One buffer per signal for every window, and every operation in the order first written, so
+	// the output is the same to the bit (a test pins it) without an allocation per window.
+	const s1 = new Float64Array(win);
+	const s2 = new Float64Array(win);
+	const sd = (a: Float64Array) => {
+		let m = 0;
+		for (let i = 0; i < win; i++) m += a[i];
+		m /= win;
+		let v = 0;
+		for (let i = 0; i < win; i++) v += (a[i] - m) ** 2;
+		return Math.sqrt(v / win) || 1;
 	};
 	for (let n = win; n <= R.length; n++) {
 		const m = n - win;
@@ -352,24 +360,18 @@ export function pos(R: number[], G: number[], B: number[]): number[] {
 		mr /= win;
 		mg /= win;
 		mb /= win;
-		const s1: number[] = [];
-		const s2: number[] = [];
 		for (let k = m; k < n; k++) {
 			const r = R[k] / mr;
 			const g = G[k] / mg;
 			const b = B[k] / mb;
-			s1.push(g - b);
-			s2.push(g + b - 2 * r);
+			s1[k - m] = g - b;
+			s2[k - m] = g + b - 2 * r;
 		}
 		const alpha = sd(s1) / sd(s2);
 		let mean = 0;
-		const seg = s1.map((v, i) => {
-			const y = v + alpha * s2[i];
-			mean += y;
-			return y;
-		});
+		for (let i = 0; i < win; i++) mean += s1[i] + alpha * s2[i];
 		mean /= win;
-		for (let k = 0; k < win; k++) h[m + k] += seg[k] - mean;
+		for (let k = 0; k < win; k++) h[m + k] += s1[k] + alpha * s2[k] - mean;
 	}
 	return h;
 }
