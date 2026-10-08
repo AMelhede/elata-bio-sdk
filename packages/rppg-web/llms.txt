@@ -16,7 +16,7 @@ Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**, 
 
 ## Pulse check
 - `pulseCheck` (on by default): a rate is reported only while forehead and both cheeks prove one pulse; `session.getPulseCheck()` shows its state.
-- `pulseCheckRules`, each on unless set to false (`getBuildSwitches()` reports them): `wallBandEdge`, `lightFamily`, `faceFlicker`, `lightTaint`, `headMotion` (needs MediaPipe's face mesh, 468 or 478 points, on every frame; without it no rate is shown), `darkWall` (damaged colour is read as green minus the wall only over a wall bright enough to show the room's light).
+- `pulseCheckRules`, each on unless set to false (`getBuildSwitches()` reports them): `wallBandEdge`, `lightFamily`, `faceFlicker`, `lightTaint`, `headMotion` (needs MediaPipe's face mesh, 468 or 478 points, on every frame; without it no rate is shown), `darkWall` (damaged colour is read as green minus the wall only over a wall that shows the light on the face: at least a tenth as bright as the face through nearly the whole window, on any colour scale).
 
 ## Session behavior
 - Roughly **~10 s warmup** before first BPM; during warmup diagnostics often include **`insufficient_window`**.

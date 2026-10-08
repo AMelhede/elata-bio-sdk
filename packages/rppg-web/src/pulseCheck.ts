@@ -27,7 +27,7 @@ import {
 	OWN_PULSE_FS,
 	OWN_PULSE_COLOUR_SWITCH,
 	OWN_PULSE_STRONG_STREAK,
-	OWN_PULSE_SWAP_MIN_WALL,
+	OWN_PULSE_SWAP_MIN_WALL_TO_FACE,
 	OWN_PULSE_WINDOW_S,
 	type OwnPulseEstimate,
 	type RawRoiSample,
@@ -69,6 +69,8 @@ export type PulseCheckState = {
 	 * seen throughout.
 	 */
 	windowWallLevel?: number | null;
+	/** That window's wall against the face (OwnPulseEstimate.wallToFace), which rule darkWall judges; null when the wall was not seen throughout. */
+	windowWallToFace?: number | null;
 	/** The head's own movement carried the rate in each of the last OWN_PULSE_STRONG_STREAK windows (rule headMotion). */
 	headMatch?: boolean;
 	/**
@@ -215,10 +217,11 @@ export type PulseCheckRules = {
 	 */
 	headMotion?: boolean;
 	/**
-	 * Damaged colour is read as green minus the wall only over a wall bright enough to show the
-	 * room's light (OWN_PULSE_SWAP_MIN_WALL), judged on the wall as the camera reads it (push's
-	 * `wallRaw`); over a darker wall it is read by colour (POS), so a light on the face that the
-	 * wall does not show is not read as the pulse. Off: green minus the wall over any wall seen,
+	 * Damaged colour is read as green minus the wall only over a wall that shows the light on the
+	 * face: the wall as the camera reads it (push's `wallRaw`) against the face, through the darkest
+	 * tenth of the window (OWN_PULSE_SWAP_MIN_WALL_TO_FACE), whatever the colour scale or the
+	 * camera's exposure. Over a darker wall it is read by colour (POS), so a light on the face that
+	 * the wall does not show is not read as the pulse. Off: green minus the wall over any wall seen,
 	 * as in 0.15.0-test.6.
 	 */
 	darkWall?: boolean;
@@ -575,9 +578,9 @@ export class PulseCheck {
 	/** Which light rules this check runs (see PulseCheckRules). */
 	readonly rules: ResolvedPulseCheckRules;
 
-	/** The least wall level for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
+	/** The least wall against the face for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
 	private get swapMinWall(): number {
-		return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL : 0;
+		return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL_TO_FACE : 0;
 	}
 
 	/** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
@@ -735,6 +738,7 @@ export class PulseCheck {
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
 					windowWallLevel: est?.wallLevel ?? null,
+					windowWallToFace: est?.wallToFace ?? null,
 					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
 					wallFrames,
 					faceFlicker,
@@ -754,6 +758,7 @@ export class PulseCheck {
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
 					windowWallLevel: est?.wallLevel ?? null,
+					windowWallToFace: est?.wallToFace ?? null,
 					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
 					wallFrames,
 					faceFlicker,

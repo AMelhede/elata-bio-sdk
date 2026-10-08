@@ -10,13 +10,39 @@ import {
 } from "../pulseCheck";
 import {
 	OWN_PULSE_COLOUR_SWITCH,
-	OWN_PULSE_SWAP_MIN_WALL,
+	OWN_PULSE_SWAP_MIN_WALL_TO_FACE,
+	OWN_PULSE_SWAP_WALL_QUANTILE,
 	type RawRoiSample,
 	estimateOwnPulse,
 } from "../pulseCheckCore";
 
 // Jest provides require; this package's tests carry no Node type declarations.
 declare const require: (id: string) => unknown;
+
+// 0.15.0-test.9: the rule judges the wall AGAINST THE FACE, on the darkest tenth of the window.
+// test.7 and test.8 judged the wall's own level (R + G + B, mean over the window, bar 0.15), which
+// failed two ways, both measured on this fixture (2026-10-09, scratch copy of the check):
+// - a caller handing the check colours on 0..255 instead of 0..1 was never under the bar: the
+//   screen's 90 showed for all 22 seconds with the rule on;
+// - a lit patch of wall seen for 5 or 8 s before the dark one lifted the window's mean over the
+//   bar: the 90 showed for 1 and 2 seconds (the residual test.8 left).
+// The wall's level over the face's (wall R + G + B over the three regions' mean R + G + B, per
+// sample) does not depend on the scale or on the camera's exposure, and its tenth percentile asks
+// for a lit wall through nearly the whole window. This fixture's ratio is 0.036. Real windows where
+// the swap would fire (rule off): 55 held-out recordings min 0.015, 1st percentile 0.022, 5th 0.065,
+// median 1.42; the test lead's 35 recordings min 0.158, 1st percentile 0.223, median 1.08. No clean
+// gap on the held-out side, so the bar was chosen on outcomes (shown seconds against the reference):
+//   rule                         fixture 5 s / 8 s bright   0..255   held-out people, wrong s   test lead right/wrong
+//   level, mean, 0.15 (test.8)   1 / 2 s at 90              22 s     22, 28 of 322              366 / 17
+//   ratio, mean, 0.10            0 / 2 s                    as 0..1  20, 26 of 317              366 / 17
+//   ratio, mean, 0.15            0 / 1 s                    as 0..1  22, 28 of 322              366 / 17
+//   ratio, 10th pct, 0.10        0 / 0                      as 0..1  21, 28 of 321              366 / 17
+//   ratio, 10th pct, 0.07        0 / 0                      as 0..1  20, 26 of 329              366 / 17
+//   ratio, 10th pct, 0.05        0 / 0                      as 0..1  20, 26 of 333              366 / 17
+//   level, 10th pct, 0.15        0 / 0                      22 s     22, 28 of 322              365 / 17
+// Every 10th-percentile ratio closes both failures; on real people the bars differ by a person or
+// two seconds either way. 0.10 keeps the widest margin from the known failure (0.036, 2.8 times)
+// while staying under the test lead's darkest real window (0.158).
 
 // Rule darkWall. Damaged colour (OWN_PULSE_COLOUR_SWITCH) is read as green minus the wall, which
 // assumes the light on the face is on the wall too. The fixture breaks that: a generated video with
@@ -82,6 +108,46 @@ describe("PulseCheck rule darkWall: a screen light on the face, a dark wall besi
 		// Damaged colour all the same: it is the wall's level, not the damage, that keeps POS.
 		expect(judged.every((s) => (s.windowColourDamage ?? 0) >= OWN_PULSE_COLOUR_SWITCH)).toBe(true);
 		expect(judged.every((s) => s.windowWallLevel != null && s.windowWallLevel > 0.05 && s.windowWallLevel < 0.07)).toBe(true);
+		// Against the face (about 1.67) the wall reads 0.036: under the bar.
+		expect(judged.every((s) => s.windowWallToFace != null && s.windowWallToFace > 0.03 && s.windowWallToFace < 0.045)).toBe(true);
+	});
+});
+
+/** The fixture with every colour scaled by `k` (a caller on 0..255, or a camera exposing darker or brighter). */
+function replayScaled(k: number, rules: PulseCheckRules = {}): PulseCheckState[] {
+	const check = new PulseCheck({ rules });
+	const out: PulseCheckState[] = [];
+	let next = fx.rows[0][0] + 1000;
+	for (const r of fx.rows) {
+		const c = (i: number) => ({ r: r[i] * k, g: r[i + 1] * k, b: r[i + 2] * k });
+		check.push(r[0], [c(1), c(4), c(7)], c(10));
+		if (r[0] >= next) {
+			out.push(check.getState());
+			next += 1000;
+		}
+	}
+	return out;
+}
+
+describe("rule darkWall does not depend on the colour scale or the camera's exposure", () => {
+	it("with the rule off, the 0..255 handover shows the screen's 90 (the case is the failure)", () => {
+		const bpm = shown(replayScaled(255, { darkWall: false }));
+		expect(bpm.length).toBeGreaterThanOrEqual(15);
+		expect(bpm.every((b) => b >= 88 && b <= 91)).toBe(true);
+	});
+
+	it.each([
+		["on 0..255", 255],
+		["at 40% exposure", 0.4],
+		["at 150% exposure", 1.5],
+	])("%s, the rule shows the pulse's 70, read by colour", (_, k) => {
+		const states = replayScaled(k);
+		const bpm = shown(states);
+		expect(bpm.length).toBeGreaterThanOrEqual(15);
+		expect(bpm.every((b) => b >= 67 && b <= 73)).toBe(true);
+		const judged = states.filter((s) => s.windowMethod != null);
+		expect(judged.every((s) => s.windowMethod === "pos")).toBe(true);
+		expect(judged.every((s) => (s.windowWallToFace ?? 1) < OWN_PULSE_SWAP_MIN_WALL_TO_FACE)).toBe(true);
 	});
 });
 
@@ -108,23 +174,41 @@ function darkCamera(
 	return rows;
 }
 
-describe("estimateOwnPulse: green minus the wall only over a wall at OWN_PULSE_SWAP_MIN_WALL or brighter", () => {
-	it("the bar is 0.15 (between the screen-light video's wall at 0.06 and where real captures change)", () => {
-		expect(OWN_PULSE_SWAP_MIN_WALL).toBe(0.15);
+// darkCamera's face, R + G + B averaged over the three regions: (150 + 110 + 4) / 255.
+const FACE_LEVEL = 264 / 255;
+
+describe("estimateOwnPulse: green minus the wall only over a wall at least OWN_PULSE_SWAP_MIN_WALL_TO_FACE of the face", () => {
+	it("the bar is 0.10 of the face, on the darkest tenth of the window", () => {
+		expect(OWN_PULSE_SWAP_MIN_WALL_TO_FACE).toBe(0.1);
+		expect(OWN_PULSE_SWAP_WALL_QUANTILE).toBe(0.1);
 	});
 
 	it("keeps POS just under the bar, however damaged the colour", () => {
-		const e = estimateOwnPulse(darkCamera(OWN_PULSE_SWAP_MIN_WALL * 0.95), 16);
+		const e = estimateOwnPulse(darkCamera(OWN_PULSE_SWAP_MIN_WALL_TO_FACE * FACE_LEVEL * 0.95), 16);
 		expect(e?.colourDamage ?? 0).toBeGreaterThanOrEqual(OWN_PULSE_COLOUR_SWITCH);
-		expect(e?.wallLevel ?? 0).toBeCloseTo(OWN_PULSE_SWAP_MIN_WALL * 0.95, 2);
+		expect(e?.wallToFace ?? 0).toBeCloseTo(OWN_PULSE_SWAP_MIN_WALL_TO_FACE * 0.95, 2);
 		expect(e?.method).toBe("pos");
 	});
 
 	it("swaps just over it, and finds the pulse", () => {
-		const e = estimateOwnPulse(darkCamera(OWN_PULSE_SWAP_MIN_WALL * 1.05), 16);
+		const e = estimateOwnPulse(darkCamera(OWN_PULSE_SWAP_MIN_WALL_TO_FACE * FACE_LEVEL * 1.05), 16);
 		expect(e?.colourDamage ?? 0).toBeGreaterThanOrEqual(OWN_PULSE_COLOUR_SWITCH);
 		expect(e?.method).toBe("greenMinusWall");
 		expect(Math.abs((e?.bpm ?? 0) - 66)).toBeLessThanOrEqual(4);
+	});
+
+	it("judges the wall against all three regions, not the brightest: a forehead in glare does not hide a lit wall", () => {
+		// Forehead three times as bright as the cheeks: the face averages (3 + 1 + 1) / 3 of FACE_LEVEL.
+		const glare = darkCamera(0.207).map((r) => {
+			const x = [...(r as unknown as number[])];
+			for (const i of [1, 2, 3]) x[i] *= 3;
+			return x as unknown as RawRoiSample;
+		});
+		const e = estimateOwnPulse(glare, 16);
+		// 0.207 over (5 / 3) x FACE_LEVEL is 0.12, over the bar; over the forehead alone it would be 0.067.
+		expect(e?.wallToFace ?? 0).toBeCloseTo(0.12, 2);
+		expect(e?.colourDamage ?? 0).toBeGreaterThanOrEqual(OWN_PULSE_COLOUR_SWITCH);
+		expect(e?.method).toBe("greenMinusWall");
 	});
 
 	it("swaps over any wall seen with the bar at 0 (the rule off)", () => {
@@ -137,6 +221,7 @@ describe("estimateOwnPulse: green minus the wall only over a wall at OWN_PULSE_S
 		const e = estimateOwnPulse(rows, 16);
 		expect(e?.wallSeen).toBe(false);
 		expect(e?.wallLevel).toBeNull();
+		expect(e?.wallToFace).toBeNull();
 		expect(e?.method).toBe("pos");
 	});
 });
@@ -206,8 +291,16 @@ describe("rule darkWall judges the wall the camera sees, not the tracker's resca
 		const judged = states.filter((s) => s.windowMethod != null);
 		expect(judged.length).toBeGreaterThan(20);
 		expect(judged.every((s) => s.windowMethod === "pos")).toBe(true);
-		// A 16 s window holding the bright second: (0.6 + 15 x 0.06) / 16 = 0.094, still under the bar.
-		expect(judged.every((s) => (s.windowWallLevel ?? 1) < OWN_PULSE_SWAP_MIN_WALL)).toBe(true);
+		// The darkest tenth of a window holding the bright second is the dark wall: under the bar.
+		expect(judged.every((s) => (s.windowWallToFace ?? 1) < OWN_PULSE_SWAP_MIN_WALL_TO_FACE)).toBe(true);
+	});
+
+	it.each([5, 8])("a bright patch for %p s, then the dark wall: the screen's 90 never shows", (brightS) => {
+		const bright = (r: readonly number[]) =>
+			r[0] < t0 + brightS * 1000 ? { gap: 1, rgb: { r: 0.2, g: 0.2, b: 0.2 } } : { gap: 0, rgb: fixtureWall(r) };
+		const bpm = shown(throughTracker(fx.rows, bright));
+		expect(bpm.length).toBeGreaterThanOrEqual(15);
+		expect(bpm.every((b) => b >= 67 && b <= 73)).toBe(true);
 	});
 
 	it("the same case with the rule off shows the screen's 90 (the case is the failure)", () => {
@@ -246,17 +339,18 @@ describe("rule darkWall keeps the swap for a normally lit wall", () => {
 });
 
 // A wall is rarely grey: a warm wall under warm light has far more red than blue. Its level is R + G + B,
-// so these two sit either side of the bar while three times any one channel lands on the wrong side
-// of it (3 x red or green lifts the first over; 3 x green or blue drops the second under).
+// so these two sit either side of the bar (against darkCamera's face) while three times any one
+// channel lands on the wrong side of it.
 describe("rule darkWall reads a coloured wall's level as R + G + B", () => {
-	const under: Rgb = { r: 0.08, g: 0.055, b: 0.005 }; // 0.14
-	const over: Rgb = { r: 0.12, g: 0.045, b: 0.005 }; // 0.17
+	const under: Rgb = { r: 0.06, g: 0.035, b: 0.003 }; // 0.098, 0.095 of the face
+	const over: Rgb = { r: 0.075, g: 0.035, b: 0.004 }; // 0.114, 0.110 of the face
+	const bar = OWN_PULSE_SWAP_MIN_WALL_TO_FACE * FACE_LEVEL;
 
 	it("the two walls sit either side of the bar", () => {
-		expect(level(under)).toBeLessThan(OWN_PULSE_SWAP_MIN_WALL);
-		expect(level(over)).toBeGreaterThan(OWN_PULSE_SWAP_MIN_WALL);
+		expect(level(under)).toBeLessThan(bar);
+		expect(level(over)).toBeGreaterThan(bar);
 		for (const k of ["r", "g", "b"] as const) {
-			expect(3 * under[k] >= OWN_PULSE_SWAP_MIN_WALL || 3 * over[k] < OWN_PULSE_SWAP_MIN_WALL).toBe(true);
+			expect(3 * under[k] >= bar || 3 * over[k] < bar).toBe(true);
 		}
 	});
 
@@ -270,6 +364,7 @@ describe("rule darkWall reads a coloured wall's level as R + G + B", () => {
 		expect(judged.length).toBeGreaterThanOrEqual(4);
 		expect(judged.every((x) => x.windowMethod === method)).toBe(true);
 		expect(judged.every((x) => Math.abs((x.windowWallLevel ?? 0) - level(wall)) < 0.005)).toBe(true);
+		expect(judged.every((x) => Math.abs((x.windowWallToFace ?? 0) - level(wall) / FACE_LEVEL) < 0.006)).toBe(true);
 	});
 
 	it.each([
