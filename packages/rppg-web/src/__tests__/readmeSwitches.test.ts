@@ -79,6 +79,32 @@ describe("README and llms.txt name this build", () => {
 	});
 });
 
+// PUBLISHING.md is what the person publishing follows, from a fresh window. In 0.15.0-test.7 it still
+// named release/test-0 in its first line and its checkout command, and 0.15.0-test.0 in its examples,
+// so the command checked out the wrong branch. Every branch and version it names is this build's.
+describe("PUBLISHING.md names this branch and this build", () => {
+	const pkg = require("../../package.json") as { version: string; homepage: string };
+	const branch = pkg.homepage.match(/\/tree\/([^/]+\/[^/]+)\//)?.[1];
+	const publishing = fs.readFileSync(path.join(__dirname, "..", "..", "PUBLISHING.md"), "utf8");
+
+	it("checks out the branch package.json's homepage names, and names no other", () => {
+		expect(publishing).toContain(`git checkout -B ${branch} origin/${branch}`);
+		const named = publishing.match(/release\/test-\d+/g) ?? [];
+		expect(named.length).toBeGreaterThan(0);
+		expect(named.every((b) => b === branch)).toBe(true);
+	});
+
+	it("gives package.json's version wherever it names a version, and the alias line installs it", () => {
+		const named = publishing.match(/\d+\.\d+\.\d+-test\.\d+/g) ?? [];
+		expect(named.every((v) => v === pkg.version)).toBe(true);
+		expect(publishing).toContain(`"npm:@amelhede/rppg-web@${pkg.version}"`);
+	});
+
+	it("reads the version it publishes from package.json", () => {
+		expect(publishing).toContain(`node -p "require('./package.json').version"`);
+	});
+});
+
 // npm shows the package.json description beside the name, so it is the first thing a tester reads.
 // 0.15.0-test.5's said "five heart-rate fixes and a real-pulse check" while the build had seven
 // switches (five fixes, two speed changes) and a check with five rules. Its counts are read from the
