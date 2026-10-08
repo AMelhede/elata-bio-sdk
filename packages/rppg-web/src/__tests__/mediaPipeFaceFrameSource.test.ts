@@ -331,3 +331,71 @@ describe('MediaPipeFaceFrameSource analysis width switch', () => {
     restore();
   });
 });
+
+describe('MediaPipeFaceFrameSource sparse face finder switch', () => {
+  // Peak asks its face finder at most once per 100 ms and reads the frames in between with the last face
+  // (its faceLandmarker.ts, FRAME_MS): on the owner's laptop the finder took about 20 ms of every 33 ms frame.
+  const lm = [
+    { x: 0.45, y: 0.4 },
+    { x: 0.55, y: 0.4 },
+    { x: 0.5, y: 0.5 },
+  ];
+  const drive = (src: MediaPipeFaceFrameSource, frames: number, stepMs: number, startMs = 1000) => {
+    for (let i = 0; i < frames; i++) (src as any).detectAndEmit(startMs + i * stepMs, { mediaTime: (startMs + i * stepMs) / 1000 });
+  };
+
+  test('on: the finder is asked at most once per 100 ms, and every frame between carries the last face', () => {
+    const restore = setupCanvasMock(640, 480);
+    const video = new FakeVideo(640, 480) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm, blendshapes: [{ categoryName: 'mouthSmileLeft', score: 0.3 }] }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { sparseFaceFinder: true });
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    drive(src, 30, 1000 / 30); // one second of a 30 fps camera: frames at 0 to 967 ms
+    expect(landmarker.detectForVideo).toHaveBeenCalledTimes(10);
+    expect(frames).toHaveLength(30);
+    for (const f of frames) {
+      expect(f.rois?.length).toBe(3);
+      expect(f.landmarks).toBe(lm);
+      expect(f.blendshapes?.[0].categoryName).toBe('mouthSmileLeft');
+    }
+    // The finder's own clock only moves forward: each call is at least 100 ms after the one before.
+    const stamps = landmarker.detectForVideo.mock.calls.map((c: any[]) => c[1] as number);
+    stamps.slice(1).forEach((t: number, i: number) => expect(t - stamps[i]).toBeGreaterThanOrEqual(100));
+    restore();
+  });
+
+  test('on: a lost face is reported as lost until the finder is next asked, never longer than 100 ms', () => {
+    const restore = setupCanvasMock(640, 480);
+    const video = new FakeVideo(640, 480) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }, {}, { landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { sparseFaceFinder: true });
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    drive(src, 10, 25); // 0..225 ms: asked at 0 (face), 100 (none), 200 (face)
+    expect(landmarker.detectForVideo).toHaveBeenCalledTimes(3);
+    expect(frames.map((f) => (f.rois ? 1 : 0))).toEqual([1, 1, 1, 1, 0, 0, 0, 0, 1, 1]);
+    restore();
+  });
+
+  test('on: a clock that steps back (a new video) asks the finder again at once', () => {
+    const restore = setupCanvasMock(640, 480);
+    const video = new FakeVideo(640, 480) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { sparseFaceFinder: true });
+    (src as any).detectAndEmit(5000, { mediaTime: 5 });
+    (src as any).detectAndEmit(1000, { mediaTime: 1 });
+    expect(landmarker.detectForVideo).toHaveBeenCalledTimes(2);
+    restore();
+  });
+
+  test('off: the finder is asked on every frame, as published', () => {
+    const restore = setupCanvasMock(640, 480);
+    const video = new FakeVideo(640, 480) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { sparseFaceFinder: false });
+    drive(src, 30, 1000 / 30);
+    expect(landmarker.detectForVideo).toHaveBeenCalledTimes(30);
+    restore();
+  });
+});
