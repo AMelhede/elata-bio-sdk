@@ -1,6 +1,6 @@
 {
 	"name": "@amelhede/rppg-web",
-	"version": "0.15.0-test.10",
+	"version": "0.15.0-test.11",
 	"description": "Test build of the Elata rPPG web SDK (rppg-web 0.14.0) with nine fix switches (five heart-rate fixes and four speed changes) and a real-pulse check with six rules, each on by default and each able to be turned off, for testing in apps only.",
 	"license": "MIT",
 	"author": "Andreas Melhede",

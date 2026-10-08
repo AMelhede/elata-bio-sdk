@@ -13,7 +13,10 @@
 //   6. the packed PulseCheck on generated scenes with known answers: a pulse at 72 shows 72; no
 //      pulse, a light on the face and the wall, and a nod with no pulse show nothing (the nod shows
 //      its 60 with headMotion off, which proves the scene tests the rule); a pulse at 70 under a
-//      nod at 90, and under a light at 96, shows 70.
+//      nod at 90, and under a light at 96, shows 70;
+//   7. the packed ChestMotion (chestBreathing) on generated frames: a chest moving 15 times a minute
+//      reads 15 within 1, a still one gives no clear line.
+// BREAK=3 makes check 7 expect 20 breaths a minute instead of 15.
 // BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red; BREAK=2 makes check 6
 // expect the nod's 60 to show with headMotion on.
 import { spawnSync } from "node:child_process";
@@ -126,9 +129,27 @@ assert.equal(nodOn.length, 0, "a nod with no pulse should show nothing");
 assert.ok(near(scene({ nod: 60, rules: { headMotion: false } }), 60), "with headMotion off the nod should show its 60 (else the scene tests nothing)");
 assert.ok(near(scene({ pulse: 70, nod: 90 }), 70), "pulse 70 under a nod at 90 should show 70");
 assert.ok(near(scene({ pulse: 70, light: 96 }), 70), "pulse 70 under a light at 96 should show 70");
+// Check 7: the packed ChestMotion (chestBreathing) on generated frames: a textured chest under a face,
+// moving half a pixel up and down 15 times a minute at 15 frames a second, reads 15; a still one gives
+// no clear line.
+function chestRate(bpm, ampPx) {
+  const FW = 160, FH = 120; const face = [{ x: 0.4, y: 0.1 }, { x: 0.6, y: 0.1 }, { x: 0.5, y: 0.4 }];
+  const m = new sdk.ChestMotion();
+  for (let i = 0; i < 15 * 36; i++) {
+    const t = i / 15; const d = ampPx * Math.sin(2 * Math.PI * (bpm / 60) * t); const data = new Uint8ClampedArray(FW * FH * 4);
+    for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) { const v = 120 + 50 * Math.sin(0.19 * (y - d) + 0.07 * x) + 20 * Math.cos(0.11 * (y - d)); const k = (y * FW + x) * 4; data[k] = data[k + 1] = data[k + 2] = v; data[k + 3] = 255; }
+    m.push({ data, width: FW, height: FH, timestampMs: t * 1000 }, face);
+  }
+  return m.rate();
+}
+const breathWant = process.env.BREAK === "3" ? 20 : 15;
+const breathing = chestRate(15, 0.5);
+assert.ok(breathing && Math.abs(breathing.rate - breathWant) <= 1, "chest moving 15 a minute should read " + breathWant + ", read " + JSON.stringify(breathing));
+const stillChest = chestRate(15, 0);
+assert.ok(stillChest == null || stillChest.share < 0.5, "a still chest should give no clear line, gave " + JSON.stringify(stillChest));
 const off = read(120, { colourProjectionFix: false });
 assert.ok(off == null || Math.abs(off - 120) > 2, "colourProjectionFix:false should give the published core's answer, read " + off);
-console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light.");
+console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line.");
 `,
 	);
 	console.log(run(process.execPath, ["app.mjs"], app).trim());
