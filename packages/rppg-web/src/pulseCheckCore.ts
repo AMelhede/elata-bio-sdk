@@ -80,6 +80,11 @@ export interface OwnPulseEstimate {
 	colourDamage?: number | null;
 	/** Whether the wall beside the face was seen through the whole window. */
 	wallSeen?: boolean;
+	/**
+	 * The wall's mean level over the window: its R + G + B, each on 0..1 as the runner hands it over
+	 * (OWN_PULSE_SWAP_MIN_WALL). Null when the wall was not seen through the whole window.
+	 */
+	wallLevel?: number | null;
 }
 
 export function resample(
@@ -346,6 +351,21 @@ export const OWN_PULSE_COLOUR_DAMAGE = 50;
  */
 export const OWN_PULSE_COLOUR_SWITCH = 20;
 
+/**
+ * Green minus the wall replaces POS only over a wall bright enough to show the room's light: its
+ * mean level over the window (R + G + B, each on 0..1, as the runner hands the wall over) at least
+ * this. The swap assumes the light that falls on the face falls on the wall too. A dark wall shows
+ * almost none of it, so a light that falls on the face and not on the wall (a screen) stays in
+ * green minus the wall and is read as the pulse. A generated video with no person (a chromatic
+ * pulse at 70 a minute under a screen light at 90 on the face, the wall at a level of about 0.06)
+ * showed 88 to 91 with the swap and reads 67 to 73 by colour (POS).
+ *
+ * Value chosen by measurement on recorded captures against a reference pulse. The wall levels of
+ * real windows where the swap fired leave no clean gap below it, so the bar is set where the
+ * outcome on real people does not change and the known failure is excluded. Rule darkWall.
+ */
+export const OWN_PULSE_SWAP_MIN_WALL = 0.15;
+
 const zeroMeanNorm = (x: number[]): number[] => {
 	const m = x.reduce((a, v) => a + v, 0) / x.length || 1;
 	return x.map((v) => v / m - 1);
@@ -377,6 +397,8 @@ export function estimateOwnPulse(
 	atMs: number = samples.length ? samples[samples.length - 1][0] : 0,
 	/** Colour damage at which green minus the wall replaces POS (OWN_PULSE_COLOUR_SWITCH). */
 	colourSwitch: number = OWN_PULSE_COLOUR_SWITCH,
+	/** The least wall level at which it does (OWN_PULSE_SWAP_MIN_WALL); 0 swaps over any wall seen. */
+	swapMinWall: number = OWN_PULSE_SWAP_MIN_WALL,
 ): OwnPulseEstimate | null {
 	if (samples.length < 8) return null;
 	const end = atMs;
@@ -419,8 +441,11 @@ export function estimateOwnPulse(
 		.map(([R, G, B]) => fastNoise(pos(R, G, B)) / fastNoise(zeroMeanNorm(G)))
 		.sort((a, b) => a - b);
 	const colourDamage = Math.round(damages[1] * 10) / 10;
+	const wallLevel = wall ? wall.reduce((a, v) => a + v, 0) / wall.length : null;
+	// Rule darkWall: a wall too dark to show the room's light cannot take it out of green.
+	const wallLit = swapMinWall <= 0 || (wallLevel != null && wallLevel >= swapMinWall);
 	const method =
-		wall && colourDamage >= colourSwitch ? "greenMinusWall" : "pos";
+		wall && wallLit && colourDamage >= colourSwitch ? "greenMinusWall" : "pos";
 	const regions: RegionEstimate[] = REGIONS.map((region, ri) => {
 		const [R, G, B] = channels[ri];
 		const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
@@ -458,6 +483,7 @@ export function estimateOwnPulse(
 		method,
 		colourDamage,
 		wallSeen,
+		wallLevel: wallLevel == null ? null : Math.round(wallLevel * 1000) / 1000,
 	};
 }
 

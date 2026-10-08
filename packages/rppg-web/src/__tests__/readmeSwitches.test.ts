@@ -13,6 +13,7 @@ const fs = require("fs") as { readFileSync: (p: string, enc: string) => string }
 const path = require("path") as { join: (...p: string[]) => string };
 
 const readme = fs.readFileSync(path.join(__dirname, "..", "..", "README.md"), "utf8");
+const llms = fs.readFileSync(path.join(__dirname, "..", "..", "llms.txt"), "utf8");
 const switches = readme.slice(readme.indexOf("## Switches"), readme.indexOf("## What the original package is"));
 const example = switches.slice(switches.indexOf("```ts"), switches.indexOf("```", switches.indexOf("```ts") + 5));
 
@@ -30,6 +31,10 @@ describe("README Switches section", () => {
 	it.each([...PULSE_CHECK_RULE_NAMES])("names pulse-check rule %s in the table and the example", (name) => {
 		expect(switches).toMatch(new RegExp(`^\\| \`pulseCheckRules\` \\|.*\`${name}\``, "m"));
 		expect(example).toMatch(new RegExp(`\\b${name}: true,`));
+	});
+
+	it.each([...PULSE_CHECK_RULE_NAMES])("llms.txt, read by tools and agents, names pulse-check rule %s", (name) => {
+		expect(llms).toMatch(new RegExp(`\`${name}\``));
 	});
 
 	it("does not count the switches in words a new one would make wrong", () => {

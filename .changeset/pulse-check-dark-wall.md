@@ -1,0 +1,5 @@
+---
+"@elata-biosciences/rppg-web": patch
+---
+
+New pulse-check rule `darkWall` (on by default, `pulseCheckRules.darkWall: false` turns it off). When the camera's colour is too damaged to read by colour (colour damage at `OWN_PULSE_COLOUR_SWITCH` or more), the check reads the pulse from green minus the wall beside the face, which assumes the light on the face is on the wall too. Over a dark wall that is not so: a generated video with no person in it (a pulse at 70 a minute on a face lit by a screen flickering at 90, the wall beside it dark) showed 88 to 91 for 100 s in 0.15.0-test.5. Now green minus the wall is used only over a wall whose mean level over the window (R + G + B, each on 0..1) is at least `OWN_PULSE_SWAP_MIN_WALL` (0.15); over a darker wall the pulse is read by colour (POS) as usual, and the same video reads 69 to 71. `estimateOwnPulse` takes the bar as a new last argument (0 swaps over any wall, as before) and reports `wallLevel`; `PulseCheckState.windowWallLevel` shows it.

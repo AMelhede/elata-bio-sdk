@@ -14,6 +14,10 @@ Default loader fetches **`/pkg/rppg_wasm.js`** and **`.wasm`**. If the backend n
 
 Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**, or use **`wasmImporter`** with a static import of `pkg/rppg_wasm.js`, or **`wasmJsUrl` / `wasmBinaryUrl`** with Vite **`?url`** imports. Vite 7 may block dynamic imports from `/public`: do not assume copying to `public/` is enough without the README patterns.
 
+## Pulse check
+- `pulseCheck` (on by default): a rate is reported only while forehead and both cheeks prove one pulse; `session.getPulseCheck()` shows its state.
+- `pulseCheckRules`, each on unless set to false (`getBuildSwitches()` reports them): `wallBandEdge`, `lightFamily`, `faceFlicker`, `lightTaint`, `headMotion` (needs MediaPipe's face mesh, 468 or 478 points, on every frame; without it no rate is shown), `darkWall` (damaged colour is read as green minus the wall only over a wall bright enough to show the room's light).
+
 ## Session behavior
 - Roughly **~10 s warmup** before first BPM; during warmup diagnostics often include **`insufficient_window`**.
 - Check **`diagnostics.state`**, **`backendMode`**, and **`faceTrackingMode`** (`face_mesh` vs `video_frame` when `faceMesh: "auto"`).

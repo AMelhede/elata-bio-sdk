@@ -25,7 +25,9 @@ import {
 	OWN_PULSE_BAND_HZ,
 	OWN_PULSE_DETREND_S,
 	OWN_PULSE_FS,
+	OWN_PULSE_COLOUR_SWITCH,
 	OWN_PULSE_STRONG_STREAK,
+	OWN_PULSE_SWAP_MIN_WALL,
 	OWN_PULSE_WINDOW_S,
 	type OwnPulseEstimate,
 	type RawRoiSample,
@@ -61,6 +63,8 @@ export type PulseCheckState = {
 	/** That window's colour-damage measure, and whether the wall was seen through the whole window. */
 	windowColourDamage?: number | null;
 	windowWallSeen?: boolean;
+	/** That window's wall level (R + G + B, each on 0..1), which rule darkWall judges; null when the wall was not seen throughout. */
+	windowWallLevel?: number | null;
 	/** The head's own movement carried the rate in each of the last OWN_PULSE_STRONG_STREAK windows (rule headMotion). */
 	headMatch?: boolean;
 	/**
@@ -206,11 +210,18 @@ export type PulseCheckRules = {
 	 * or with `head` always left out: movement is not checked.
 	 */
 	headMotion?: boolean;
+	/**
+	 * Damaged colour is read as green minus the wall only over a wall bright enough to show the
+	 * room's light (OWN_PULSE_SWAP_MIN_WALL); over a darker wall it is read by colour (POS), so a
+	 * light on the face that the wall does not show is not read as the pulse. Off: green minus the
+	 * wall over any wall seen, as in 0.15.0-test.6.
+	 */
+	darkWall?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
 
-export const PULSE_CHECK_RULE_NAMES = ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "headMotion"] as const;
+export const PULSE_CHECK_RULE_NAMES = ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "headMotion", "darkWall"] as const;
 
 /** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules {
@@ -220,6 +231,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		faceFlicker: rules?.faceFlicker !== false,
 		lightTaint: rules?.lightTaint !== false,
 		headMotion: rules?.headMotion !== false,
+		darkWall: rules?.darkWall !== false,
 	};
 }
 
@@ -558,6 +570,11 @@ export class PulseCheck {
 	/** Which light rules this check runs (see PulseCheckRules). */
 	readonly rules: ResolvedPulseCheckRules;
 
+	/** The least wall level for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
+	private get swapMinWall(): number {
+		return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL : 0;
+	}
+
 	/** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
 	get agreementOn(): boolean {
 		return this.agreement;
@@ -646,7 +663,7 @@ export class PulseCheck {
 		this.lastEvalMs = timestampMs;
 		const wallFrames = this.wallTally;
 		this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
-		const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs);
+		const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// A window whose rate the wall carries is the light's, not evidence of a pulse (lightTaint):
 		// counted, it builds a streak under the light, and the rate shows the first second the wall
@@ -701,6 +718,7 @@ export class PulseCheck {
 					windowMethod: est?.method ?? null,
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
+					windowWallLevel: est?.wallLevel ?? null,
 					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
 					wallFrames,
 					faceFlicker,
@@ -719,6 +737,7 @@ export class PulseCheck {
 					windowMethod: est?.method ?? null,
 					windowColourDamage: est?.colourDamage ?? null,
 					windowWallSeen: est?.wallSeen ?? false,
+					windowWallLevel: est?.wallLevel ?? null,
 					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
 					wallFrames,
 					faceFlicker,
@@ -745,6 +764,8 @@ export class PulseCheck {
 			this.samples,
 			OWN_PULSE_SUPPORT_S,
 			timestampMs,
+			OWN_PULSE_COLOUR_SWITCH,
+			this.swapMinWall,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
