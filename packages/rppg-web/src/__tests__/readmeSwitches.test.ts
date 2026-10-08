@@ -36,3 +36,26 @@ describe("README Switches section", () => {
 		expect(switches).not.toMatch(/\ball (two|three|four|five|six|seven|eight|nine|ten)\b/);
 	});
 });
+
+// npm shows the package.json description beside the name, so it is the first thing a tester reads.
+// 0.15.0-test.5's said "five heart-rate fixes and a real-pulse check" while the build had seven
+// switches (five fixes, two speed changes) and a check with five rules. Its counts are read from the
+// same lists, and the speed changes from the README rows that say "Speed.".
+describe("package.json description", () => {
+	const pkg = require("../../package.json") as { description: string };
+	const words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+	const speed = FIX_SWITCH_NAMES.filter((name) =>
+		new RegExp(`^\\| \`fixes\\.${name}\` \\| Speed\\.`, "m").test(switches),
+	).length;
+
+	it("counts the fix switches, the speed changes among them and the check's rules the build has", () => {
+		expect(speed).toBeGreaterThan(0);
+		expect(pkg.description).toContain(`${words[FIX_SWITCH_NAMES.length]} fix switches`);
+		expect(pkg.description).toContain(`${words[speed]} speed changes`);
+		expect(pkg.description).toContain(`real-pulse check with ${words[PULSE_CHECK_RULE_NAMES.length]} rules`);
+	});
+
+	it("is one sentence", () => {
+		expect(pkg.description.trim().split(/[.!?](\s|$)/).filter((s) => s.trim()).length).toBe(1);
+	});
+});

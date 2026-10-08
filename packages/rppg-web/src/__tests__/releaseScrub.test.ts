@@ -44,6 +44,12 @@ describe("release scrub", () => {
 		expect(said("points.filter((point) => point.ts >= event.ts)")).toEqual([]);
 	});
 
+	it("reads line comments for file names as well as block comments", () => {
+		const said = (text: string) => scrub(text, { code: true, ownFiles: own });
+		expect(said("const keep = 22; // see otherApp.ts").join(" | ")).toContain("file not in this package (otherApp.ts)");
+		expect(said("const keep = 22; // see pulseCheckCore.ts")).toEqual([]);
+	});
+
 	it.each([
 		"SDNN and mean NN. Peak times are already sub-sample refined by",
 		"level API when you want full lifecycle ownership.",
