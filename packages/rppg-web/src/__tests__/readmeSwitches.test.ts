@@ -61,6 +61,24 @@ describe("README Things to know", () => {
 	});
 });
 
+// Testers install the exact version the README's install line names and log results against it, and
+// tools follow llms.txt's source link. Bumping package.json alone left both naming the build before.
+describe("README and llms.txt name this build", () => {
+	const pkg = require("../../package.json") as { version: string; homepage: string };
+	const branch = pkg.homepage.match(/\/tree\/([^/]+\/[^/]+)\//)?.[1];
+
+	it("the README's version line and install line give package.json's version", () => {
+		expect(readme).toContain(`- Version: \`${pkg.version}\``);
+		expect(readme).toContain(`"npm:@amelhede/rppg-web@${pkg.version}"`);
+	});
+
+	it("the README and llms.txt point at the branch package.json's homepage names", () => {
+		expect(branch).toMatch(/^release\//);
+		expect(readme).toContain(`branch \`${branch}\``);
+		expect(llms).toContain(`/tree/${branch}/packages/rppg-web`);
+	});
+});
+
 // npm shows the package.json description beside the name, so it is the first thing a tester reads.
 // 0.15.0-test.5's said "five heart-rate fixes and a real-pulse check" while the build had seven
 // switches (five fixes, two speed changes) and a check with five rules. Its counts are read from the

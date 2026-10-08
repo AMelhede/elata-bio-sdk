@@ -33,4 +33,4 @@ Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**, 
 If a project uses both **`rppg-web`** and **`eeg-web`**, prefer **matching published versions** unless release notes say otherwise.
 
 ## Source of truth
-https://github.com/AMelhede/elata-bio-sdk/tree/release/test-0/packages/rppg-web (upstream: https://github.com/Elata-Biosciences/elata-bio-sdk)
+https://github.com/AMelhede/elata-bio-sdk/tree/release/test-1/packages/rppg-web (upstream: https://github.com/Elata-Biosciences/elata-bio-sdk)
