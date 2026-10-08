@@ -61,6 +61,8 @@ export type PulseCheckState = {
 	/** That window's colour-damage measure, and whether the wall was seen through the whole window. */
 	windowColourDamage?: number | null;
 	windowWallSeen?: boolean;
+	/** The head's own movement carried the rate in each of the last OWN_PULSE_STRONG_STREAK windows (rule headMotion). */
+	headMatch?: boolean;
 	/** Diagnostic: the wall's strongest brightness line in this window (wallLine), or null. */
 	wallLine?: { bpm: number; snrDb: number } | null;
 	/**
@@ -191,11 +193,13 @@ export type PulseCheckRules = {
 	faceFlicker?: boolean;
 	/** A window whose rate the wall carries is not evidence of a pulse: it is not counted toward the proof. Off: it counts, and the rate shows the moment the wall line dips. */
 	lightTaint?: boolean;
+	/** A rate the head's own movement keeps time with (a nod, a rock) is the movement's: not evidence, and withheld once it holds for 4 windows. Needs the head position (`push`'s `head`); off or without it: movement is not checked. */
+	headMotion?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
 
-export const PULSE_CHECK_RULE_NAMES = ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint"] as const;
+export const PULSE_CHECK_RULE_NAMES = ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "headMotion"] as const;
 
 /** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules {
@@ -204,7 +208,73 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		lightFamily: rules?.lightFamily !== false,
 		faceFlicker: rules?.faceFlicker !== false,
 		lightTaint: rules?.lightTaint !== false,
+		headMotion: rules?.headMotion !== false,
 	};
+}
+
+/**
+ * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
+ * chin, outer eye corners, cheekbones (MediaPipe face mesh indices; the same set Peak records).
+ */
+export const HEAD_LANDMARKS: readonly number[] = [168, 6, 4, 10, 152, 33, 263, 234, 454];
+
+/** The head's position this frame: the centre of HEAD_LANDMARKS in pixels, or null if the mesh lacks one. */
+export function headCentre(
+	points: readonly { x: number; y: number }[],
+	width: number,
+	height: number,
+): { x: number; y: number } | null {
+	if (points.length <= Math.max(...HEAD_LANDMARKS) || width <= 0 || height <= 0) return null;
+	let x = 0;
+	let y = 0;
+	for (const i of HEAD_LANDMARKS) {
+		x += points[i].x * width;
+		y += points[i].y * height;
+	}
+	return { x: x / HEAD_LANDMARKS.length, y: y / HEAD_LANDMARKS.length };
+}
+
+/**
+ * How far the head's movement line must stand above the rest of its movement (dB) for a rate on it
+ * to count as the movement's. Set in Peak (motionVeto.ts, 2026-10-08) on 2,196 real-pulse seconds
+ * (owner recordings plus a public dataset, within 5 bpm of truth): at most 2.6 dB (p99 2.2);
+ * synthetic no-pulse nods at 60, 72 and 90 a minute: 7.4 to 8.9 dB. Not yet re-measured on this
+ * check's own landmark path.
+ */
+const HEAD_MIN_SNR_DB = 5;
+const HEAD_MIN_ROWS = 40;
+
+/** The head's movement lines (x and y) in the window ending at `atMs`, found like the wall's line. */
+export function headLines(
+	head: readonly [number, number, number][],
+	atMs: number,
+): Array<{ bpm: number; snrDb: number }> | null {
+	const win = head.filter((h) => h[0] > atMs - OWN_PULSE_WINDOW_S * 1000 && h[0] <= atMs);
+	if (win.length < HEAD_MIN_ROWS) return null;
+	const t = win.map((h) => h[0] / 1000);
+	const out: Array<{ bpm: number; snrDb: number }> = [];
+	for (const axis of [1, 2] as const) {
+		const series = resample(t, win.map((h) => h[axis]), t[0], t[t.length - 1]);
+		const range = spectrum(detrend(series, OWN_PULSE_DETREND_S)).filter(([f]) => f >= OWN_PULSE_BAND_HZ[0]);
+		if (!range.length) continue;
+		const f0 = range.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+		const inLine = (f: number) => Math.abs(f - f0) <= 0.1 || Math.abs(f - 2 * f0) <= 0.1;
+		let sig = 0;
+		let rest = 0;
+		for (const [f, p] of range) if (inLine(f)) sig += p;
+		else rest += p;
+		out.push({ bpm: f0 * 60, snrDb: 10 * Math.log10(sig / Math.max(rest, 1e-12)) });
+	}
+	return out;
+}
+
+/** Whether the head's movement carries `bpm`: a movement line at the rate, HEAD_MIN_SNR_DB above the rest. */
+export function headCarries(head: readonly [number, number, number][], atMs: number, bpm: number): boolean {
+	const lines = headLines(head, atMs);
+	return (
+		lines != null &&
+		lines.some((l) => l.snrDb >= HEAD_MIN_SNR_DB && Math.abs(l.bpm - bpm) <= OWN_PULSE_AGREE_BPM)
+	);
 }
 
 const ALL_RULES_ON = resolvePulseCheckRules();
@@ -316,6 +386,7 @@ export class PulseCheck {
 
 	private samples: RawRoiSample[] = [];
 	private wall: [number, number, number, number][] = [];
+	private head: [number, number, number][] = [];
 	private history: (OwnPulseEstimate | null)[] = [];
 	private held: number | null = null;
 	/** Opt-in: also show the SDK's rate when it agrees with this check's window rate (agreementRate). */
@@ -337,7 +408,14 @@ export class PulseCheck {
 	 * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
 	 * and optionally the mean RGB of a patch of wall beside the face (see the wall check).
 	 */
-	push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss): void {
+	push(
+		timestampMs: number,
+		regions: readonly Rgb[],
+		wall?: Rgb,
+		wallMiss?: WallMiss,
+		/** The head's position this frame in pixels (headCentre), for the headMotion rule. */
+		head?: { x: number; y: number } | null,
+	): void {
 		if (regions.length < 3 || !Number.isFinite(timestampMs)) return;
 		if (wall) this.wallTally.seen++;
 		else if (wallMiss === "no-room") this.wallTally.noRoom++;
@@ -368,6 +446,9 @@ export class PulseCheck {
 		if (wall) this.wall.push([timestampMs, wall.r, wall.g, wall.b]);
 		while (this.wall.length && this.wall[0][0] < timestampMs - WALL_KEEP_MS)
 			this.wall.shift();
+		if (head && Number.isFinite(head.x) && Number.isFinite(head.y)) this.head.push([timestampMs, head.x, head.y]);
+		while (this.head.length && this.head[0][0] < timestampMs - WALL_KEEP_MS)
+			this.head.shift();
 		if (this.lastEvalMs == null) this.lastEvalMs = timestampMs;
 		if (timestampMs - this.lastEvalMs < EVAL_EVERY_MS) return;
 		this.lastEvalMs = timestampMs;
@@ -379,9 +460,9 @@ export class PulseCheck {
 		// counted, it builds a streak under the light, and the rate shows the first second the wall
 		// line dips. Peak 570365a; measured there to cost 8 of 9,087 real seconds and 0 readings.
 		const tainted =
-			this.rules.lightTaint &&
 			est?.bpm != null &&
-			wallCarries(this.wall, timestampMs, est.bpm, this.rules);
+			((this.rules.lightTaint && wallCarries(this.wall, timestampMs, est.bpm, this.rules)) ||
+				(this.rules.headMotion && headCarries(this.head, timestampMs, est.bpm)));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
 		const v = ownPulseVerdict(this.history, this.held);
@@ -405,7 +486,13 @@ export class PulseCheck {
 				const q = faceFlickerRatio(this.samples, timestampMs - k * EVAL_EVERY_MS, held);
 				return q != null && q > FACE_FLICKER_RATIO;
 			});
-		this.state = wallMatch || faceFlicker
+		const headMatch =
+			this.rules.headMotion &&
+			held != null &&
+			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
+				headCarries(this.head, timestampMs - k * EVAL_EVERY_MS, held),
+			);
+		this.state = wallMatch || faceFlicker || headMatch
 			? {
 					verdict: "not-measured",
 					bpm: null,
@@ -420,6 +507,7 @@ export class PulseCheck {
 					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
 					wallFrames,
 					faceFlicker,
+					headMatch,
 				}
 			: {
 					verdict: agreed != null ? "measured" : v.verdict,
@@ -436,6 +524,7 @@ export class PulseCheck {
 					wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
 					wallFrames,
 					faceFlicker,
+					headMatch,
 				};
 	}
 
@@ -481,6 +570,7 @@ export class PulseCheck {
 	reset(): void {
 		this.samples = [];
 		this.wall = [];
+		this.head = [];
 		this.history = [];
 		this.held = null;
 		this.seconds = [];

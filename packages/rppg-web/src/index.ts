@@ -353,6 +353,10 @@ export {
 	type ResolvedPulseCheckRules,
 	PULSE_CHECK_RULE_NAMES,
 	resolvePulseCheckRules,
+	HEAD_LANDMARKS,
+	headCentre,
+	headCarries,
+	headLines,
 } from "./pulseCheck";
 export {
 	FIX_SWITCH_NAMES,

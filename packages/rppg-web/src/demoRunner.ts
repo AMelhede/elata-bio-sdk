@@ -25,7 +25,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, WallTracker, wallMissReason } from "./pulseCheck";
+import { type PulseCheck, WallTracker, headCentre, wallMissReason } from "./pulseCheck";
 import { RppgProcessor } from "./rppgProcessor";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
@@ -429,6 +429,9 @@ export class DemoRunner {
 					frame.landmarks && !wall
 						? wallMissReason(frame.landmarks, frame.width, frame.height)
 						: undefined,
+					// The head's position, for the headMotion rule: a rate the head's own
+					// movement keeps time with (a nod) is the movement's, not a pulse.
+					frame.landmarks ? headCentre(frame.landmarks, frame.width, frame.height) : null,
 				);
 			}
 			if (frame.roi) {
