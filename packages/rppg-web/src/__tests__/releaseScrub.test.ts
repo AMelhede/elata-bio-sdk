@@ -36,6 +36,38 @@ describe("release scrub", () => {
 		expect(scrub(text).join(" | ")).toContain(label);
 	});
 
+	// 0.15.0-test.6's dist carried measurements of recorded people in the head rule's comments
+	// (pulseCheck.js and pulseCheck.d.ts: HEAD_MIN_SNR_DB, HEAD_MIN_SIZE, HEAD_MAX_GAP_MS) and the
+	// scrub said "ready": no rule knew a "real-pulse window", or a real pulse said to stand at some
+	// dB or per cent. Each of the first four is a sentence as it shipped, line wraps included; the
+	// fifth is the same measurement as pulseCheckHead.test.ts words it ("a real head"); the last
+	// puts the number first.
+	it.each([
+		[
+			"a real-pulse window's dominance (HEAD_MIN_SNR_DB)",
+			"every\n * real-pulse window whose movement at the rate was 0.3% of the face's width or more stood at most\n * 2.4 dB above the rest (fidgeting), and the weakest nod 5.4 dB (8.5 dB with a sway).",
+		],
+		[
+			"a real-pulse window's size (HEAD_MIN_SIZE)",
+			"rhythm, but it is tiny: every real-pulse window whose movement at the rate dominated (2.5 dB and\n * up) moved at most 0.13% of the face's width; the nods moved 0.69% and more.",
+		],
+		[
+			"what the bars did to real-pulse windows (HEAD_MIN_SIZE)",
+			"At both bars no real-pulse window was carried and every nod window was.",
+		],
+		[
+			"real-pulse windows with gaps (HEAD_MAX_GAP_MS)",
+			"Measured on nod and real-pulse\n * windows with rows cut out: with a 1 s gap the statistic still finds 99.7% of nod windows (2 s:\n * 92.4%, 3 s: 78.9%), and no real-pulse window was carried with gaps up to 3 s.",
+		],
+		[
+			"a real head at some dB and per cent, with no 'real-pulse window' in it",
+			"// - a real head that moved 0.3% or more at the rate was at most 2.4 dB dominant (fidgeting); the\n//   nods stood 5.4 dB and more above the rest, 8.5 dB with a sway.",
+		],
+		["a real pulse at some dB, the number first", "the bar is 2.4 dB, which every real pulse stayed under."],
+	])("catches a measurement of recorded people: %s", (_what, text) => {
+		expect(scrub(text).join(" | ")).toContain("measurement of recorded people");
+	});
+
 	it("catches a file from another codebase named in a comment, not this package's own files", () => {
 		const said = (text: string) => scrub(text, { code: true, ownFiles: own });
 		expect(said("/** Set in Peak (motionVeto.ts, 2026-10-08) */").join(" | ")).toContain("file not in this package");
@@ -59,6 +91,11 @@ describe("release scrub", () => {
 		"(27 of 41 seconds on real wall footage, demo settings)",
 		"breathing read 14 to 21 in 42 of 42 seconds",
 		"a light folded to 180 a minute, 25 dB above its noise",
+		// The check's own name, a claim with no number, and a number only in the next sentence.
+		" * Real-pulse check (`createRppgSession({ pulseCheck })`, ON by default in this test build;",
+		"line dips. Its cost on real pulses was measured on recorded captures against a reference\n\t\t// pulse before it was added. A light 25 dB above its noise is withheld.",
+		"with seven fix switches (five heart-rate fixes and two speed changes) and a real-pulse check with six rules",
+		"a pulse at 70 under a nod at 90 still shows 70",
 	])("leaves the package's own words alone: %s", (text) => {
 		expect(scrub(text, { code: true, ownFiles: own })).toEqual([]);
 	});

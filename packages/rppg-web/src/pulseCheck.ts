@@ -271,32 +271,30 @@ export type HeadRow = [number, number, number, number];
 /**
  * How far the head's movement AT THE RATE must stand above the rest of its movement (dB), with the
  * strongest other rhythm taken out of the rest, for the rate to count as the movement's. Set
- * together with HEAD_MIN_SIZE, on the same measurement (recorded captures against a reference
- * pulse, against generated faces with no pulse nodding, with and without a second sway): every
- * real-pulse window whose movement at the rate was 0.3% of the face's width or more stood at most
- * 2.4 dB above the rest (fidgeting), and the weakest nod 5.4 dB (8.5 dB with a sway). 3.9 dB is the
- * middle. Re-measured with headAtRate itself on the same rows, handed over as headCentre gives
- * them: every window judged exactly as where the bar was set, and the same gap. The 5 dB it
- * replaced was set on the statistic before (the strongest line against every other rhythm, which a
- * second sway could hide a nod under). Pinned in pulseCheckHead.test.ts.
+ * together with HEAD_MIN_SIZE, between still heads with a pulse and generated faces with no pulse
+ * nodding, with and without a second sway. The 5 dB it replaced was set on the statistic before
+ * (the strongest line against every other rhythm, which a second sway could hide a nod under).
+ * Pinned in pulseCheckHead.test.ts.
+ *
+ * Value chosen by measurement on recorded captures against a reference pulse.
  */
 export const HEAD_MIN_SNR_DB = 3.9;
 
 /**
  * The smallest movement at the rate that can be a nod: the line's amplitude over the face's width.
  * A heartbeat shakes the head too, and in a still person that shake can be the head's strongest
- * rhythm, but it is tiny: every real-pulse window whose movement at the rate dominated (2.5 dB and
- * up) moved at most 0.13% of the face's width; the nods moved 0.69% and more. 0.3% is the middle of
- * the two on a ratio scale. At both bars no real-pulse window was carried and every nod window was.
+ * rhythm, but it is tiny next to a nod. A clean 3 px nod on a 190 px face is 1.6% of its width.
+ *
+ * Value chosen by measurement on recorded captures against a reference pulse.
  */
 export const HEAD_MIN_SIZE = 0.003;
 
 /** A window is judged only where the head's rows cover it as the colour must (estimateOwnPulse): ends within 1 s. */
 const HEAD_EDGE_MS = 1000;
 /**
- * And no gap inside it longer than the colour tolerates at its edges. Measured on nod and real-pulse
- * windows with rows cut out: with a 1 s gap the statistic still finds 99.7% of nod windows (2 s:
- * 92.4%, 3 s: 78.9%), and no real-pulse window was carried with gaps up to 3 s.
+ * And no gap inside it longer than the colour tolerates at its edges (1 s, as estimateOwnPulse).
+ *
+ * Value chosen by measurement on recorded captures against a reference pulse, with rows cut out.
  */
 const HEAD_MAX_GAP_MS = 1000;
 /** Fewest head rows a window needs to be judged: 2.5 a second over the 16 s window (a face mesh runs at roughly 10 to 30). */

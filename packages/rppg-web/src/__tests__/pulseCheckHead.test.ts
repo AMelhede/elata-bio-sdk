@@ -287,6 +287,12 @@ describe("PulseCheck rule headMotion", () => {
 // Re-measured 2026-10-08 through this package's headAtRate on the same rows, each handed over as
 // headCentre gives it (centre and cheekbone distance): every window judged exactly as by Peak's
 // statistic, the same gap (2.37 to 5.36 dB, 0.13% to 0.69%), so the same bars, 3.9 dB and 0.3%.
+// At both bars no real-pulse window was carried and every nod window was.
+// The gap bar (HEAD_MAX_GAP_MS, 1 s), measured on the same nod and real-pulse windows with rows cut
+// out: with a 1 s gap the statistic still finds 99.7% of nod windows (2 s: 92.4%, 3 s: 78.9%), and
+// no real-pulse window was carried with gaps up to 3 s.
+// Until 0.15.0-test.7 these numbers were also in the constants' comments in pulseCheck.ts, which
+// ship in dist; they are kept here, where nothing ships (releaseScrub.test.ts).
 describe("headAtRate: the movement at the rate, by dominance and size", () => {
 	it("sees a steady nod at its own rate, and only there", () => {
 		const r = headRows(20, [{ px: 2, bpm: 60 }], 0.3);

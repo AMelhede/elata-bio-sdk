@@ -92,4 +92,16 @@ describe("check-test-release.mjs applies the release scrub to what ships", () =>
 		expect(r.status).toBe(1);
 		expect(r.stderr).toContain("dist/index.js: file not in this package (otherApp.ts)");
 	});
+
+	// 0.15.0-test.6 shipped this sentence in dist/pulseCheck.d.ts and the script said "ready".
+	it("refuses a measurement of recorded people in a shipped type declaration", () => {
+		made = throwawayPackage();
+		fs.appendFileSync(
+			path.join(made.root, "dist", "index.d.ts"),
+			"/**\n * At both bars no real-pulse window was carried and every nod window was.\n */\nexport {};\n",
+		);
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("dist/index.d.ts: measurement of recorded people");
+	});
 });

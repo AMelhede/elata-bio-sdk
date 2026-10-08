@@ -8,6 +8,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+/** A real pulse, head, face or person: what a recorded capture has and a generated one does not. */
+const REAL_SUBJECT = String.raw`\breal[- ](?:pulses?|heads?|faces?|people|persons?)\b`;
+/** Up to 240 characters that do not end the sentence (a full stop then a space or line break). */
+const SAME_SENTENCE = String.raw`(?:(?!\.\s)[\s\S]){0,240}?`;
+/** A number in dB or per cent: "2.4 dB", "0.13%". */
+const MEASURED_LEVEL = String.raw`\d(?:\.\d+)?\s?(?:dB\b|%)`;
+
 const BANNED = [
 	// Dataset names (the upstream API's own MCD_* identifiers are not mentions: no word boundary).
 	[/\bMCD\b(?!_)|MCD-rPPG|mcd_rppg/, "dataset name (MCD)"],
@@ -37,6 +44,26 @@ const BANNED = [
 	[
 		/\bp(?:50|9[059])\b/,
 		"percentile of a measured set (a dataset-derived number)",
+	],
+	// What recorded people measured: 0.15.0-test.6 shipped "every real-pulse window whose movement at
+	// the rate was 0.3% of the face's width or more stood at most 2.4 dB above the rest" and "no
+	// real-pulse window was carried with gaps up to 3 s". "Real-pulse check", the check's own name,
+	// is not a measurement.
+	[
+		/\breal[- ]pulse\s+(?:windows?|seconds?|captures?|recordings?|readings?)\b/i,
+		"measurement of recorded people (real-pulse windows)",
+	],
+	// A real pulse, head, face or person said to stand at some dB or per cent, in one sentence (it
+	// may wrap across comment lines; it ends at a full stop followed by a space or a line break).
+	[
+		new RegExp(
+			[
+				`${REAL_SUBJECT}${SAME_SENTENCE}${MEASURED_LEVEL}`,
+				`${MEASURED_LEVEL}${SAME_SENTENCE}${REAL_SUBJECT}`,
+			].join("|"),
+			"i",
+		),
+		"measurement of recorded people (a level in dB or %)",
 	],
 ];
 
