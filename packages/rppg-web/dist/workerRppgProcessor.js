@@ -1,6 +1,7 @@
 /**
  * RppgProcessor's interface on the main thread, with the processor itself in a worker
- * (createRppgSession({ analysisWorker: true }), off by default).
+ * (the `analysisWorker` fix switch, on by default in this test build, or createRppgSession's
+ * `analysisWorker` option, which wins over it).
  *
  * Every push and setting is forwarded; every read answers from the worker's latest state,
  * which it sends at most once per ANALYSIS_EVERY_MS of sample time. That is the same answer a

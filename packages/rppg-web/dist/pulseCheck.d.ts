@@ -126,7 +126,7 @@ export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFam
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
  * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
- * chin, outer eye corners, cheekbones (MediaPipe face mesh indices; the same set Peak records).
+ * chin, outer eye corners, cheekbones (MediaPipe face mesh indices).
  */
 export declare const HEAD_LANDMARKS: readonly number[];
 /** The head's position this frame: the centre of HEAD_LANDMARKS in pixels, or null if the mesh lacks one. */
@@ -144,6 +144,12 @@ export declare function headLines(head: readonly [number, number, number][], atM
 }> | null;
 /** Whether the head's movement carries `bpm`: a movement line at the rate, HEAD_MIN_SNR_DB above the rest. */
 export declare function headCarries(head: readonly [number, number, number][], atMs: number, bpm: number): boolean;
+/**
+ * Whether the head's movement carried `bpm` in each of the last OWN_PULSE_STRONG_STREAK one-second
+ * windows ending at `atMs` (headCarries in each): rule headMotion's withhold, the state's headMatch.
+ * Judged over the windows at once, like the wall check, so one window's coincidence withholds nothing.
+ */
+export declare function headMatches(head: readonly [number, number, number][], atMs: number, bpm: number): boolean;
 export declare function wallLine(wall: [number, number, number, number][], atMs: number, bandEdge?: boolean): {
     bpm: number;
     snrDb: number;

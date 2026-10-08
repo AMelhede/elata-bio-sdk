@@ -115,7 +115,7 @@ export function resolvePulseCheckRules(rules) {
 }
 /**
  * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
- * chin, outer eye corners, cheekbones (MediaPipe face mesh indices; the same set Peak records).
+ * chin, outer eye corners, cheekbones (MediaPipe face mesh indices).
  */
 export const HEAD_LANDMARKS = [168, 6, 4, 10, 152, 33, 263, 234, 454];
 /** The head's position this frame: the centre of HEAD_LANDMARKS in pixels, or null if the mesh lacks one. */
@@ -132,9 +132,9 @@ export function headCentre(points, width, height) {
 }
 /**
  * How far the head's movement line must stand above the rest of its movement (dB) for a rate on it
- * to count as the movement's. Set in Peak (motionVeto.ts, 2026-10-08) on 2,196 real-pulse seconds
- * (owner recordings plus a public dataset, within 5 bpm of truth): at most 2.6 dB (p99 2.2);
- * synthetic no-pulse nods at 60, 72 and 90 a minute: 7.4 to 8.9 dB. Not yet re-measured on this
+ * to count as the movement's. Value chosen by measurement on recorded captures against a reference
+ * pulse, and below the lines of generated faces with no pulse nodding at 60, 72 and 90 a minute
+ * (7.4 to 8.9 dB); both sides are pinned in pulseCheckHead.test.ts. Not yet re-measured on this
  * check's own landmark path.
  */
 const HEAD_MIN_SNR_DB = 5;
@@ -169,6 +169,14 @@ export function headCarries(head, atMs, bpm) {
     const lines = headLines(head, atMs);
     return (lines != null &&
         lines.some((l) => l.snrDb >= HEAD_MIN_SNR_DB && Math.abs(l.bpm - bpm) <= OWN_PULSE_AGREE_BPM));
+}
+/**
+ * Whether the head's movement carried `bpm` in each of the last OWN_PULSE_STRONG_STREAK one-second
+ * windows ending at `atMs` (headCarries in each): rule headMotion's withhold, the state's headMatch.
+ * Judged over the windows at once, like the wall check, so one window's coincidence withholds nothing.
+ */
+export function headMatches(head, atMs, bpm) {
+    return Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => headCarries(head, atMs - k * EVAL_EVERY_MS, bpm));
 }
 const ALL_RULES_ON = resolvePulseCheckRules();
 export function wallLine(wall, atMs, bandEdge = true) {
@@ -328,7 +336,8 @@ export class PulseCheck {
             return;
         // A window whose rate the wall carries is the light's, not evidence of a pulse (lightTaint):
         // counted, it builds a streak under the light, and the rate shows the first second the wall
-        // line dips. Peak 570365a; measured there to cost 8 of 9,087 real seconds and 0 readings.
+        // line dips. Its cost on real pulses was measured on recorded captures against a reference
+        // pulse before it was added. The head's movement is judged the same way (headMotion).
         const tainted = est?.bpm != null &&
             ((this.rules.lightTaint && wallCarries(this.wall, timestampMs, est.bpm, this.rules)) ||
                 (this.rules.headMotion && headCarries(this.head, timestampMs, est.bpm)));
@@ -355,7 +364,7 @@ export class PulseCheck {
             });
         const headMatch = this.rules.headMotion &&
             held != null &&
-            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => headCarries(this.head, timestampMs - k * EVAL_EVERY_MS, held));
+            headMatches(this.head, timestampMs, held);
         this.state = wallMatch || faceFlicker || headMatch
             ? {
                 verdict: "not-measured",
