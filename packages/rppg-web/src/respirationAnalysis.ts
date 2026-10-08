@@ -113,13 +113,16 @@ export function dominantInBand(
 	const slope = sxx > 0 ? sxy / sxx : 0;
 	const centered = values.map((v, i) => v - (meanY + slope * (i - meanX)));
 
+	// The windowed signal once per call, not once per frequency (same expression, same values).
+	const windowed = new Float64Array(n);
+	for (let i = 0; i < n; i++)
+		windowed[i] = centered[i] * (0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (n - 1)));
 	const magAt = (hz: number): number => {
 		const omega = (2 * Math.PI * hz) / sampleRate;
 		let sinAcc = 0;
 		let cosAcc = 0;
 		for (let i = 0; i < n; i++) {
-			const w = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (n - 1));
-			const val = centered[i] * w;
+			const val = windowed[i];
 			const phase = omega * i;
 			sinAcc += val * Math.sin(phase);
 			cosAcc += val * Math.cos(phase);

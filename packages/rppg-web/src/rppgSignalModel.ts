@@ -336,6 +336,38 @@ export function zeroPhaseBandpass(
  * grid. ~1 means no usable pulse peak; higher means a clean periodic signal.
  * Used to weight ROIs by quality and to gate HR/HRV display.
  */
+/**
+ * spectralSnr's Hann window and its per-frequency cosines and sines, made with the same expressions
+ * once per (length, rate, band) and kept (the fuser asks with the same few every half second).
+ */
+const SNR_TABLES = new Map<string, { w: Float64Array; cos: Float64Array[]; sin: Float64Array[] }>();
+const SNR_TABLES_MAX = 8;
+function snrTables(n: number, sampleRate: number, minHz: number, maxHz: number) {
+	const key = `${n}|${sampleRate}|${minHz}|${maxHz}`;
+	let t = SNR_TABLES.get(key);
+	if (t) return t;
+	if (SNR_TABLES.size >= SNR_TABLES_MAX) SNR_TABLES.clear();
+	const w = new Float64Array(n);
+	for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)); // Hann
+	const cos: Float64Array[] = [];
+	const sin: Float64Array[] = [];
+	const step = 0.05; // ~3 bpm resolution
+	for (let hz = minHz; hz <= maxHz; hz += step) {
+		const omega = (2 * Math.PI * hz) / sampleRate;
+		const c = new Float64Array(n);
+		const s = new Float64Array(n);
+		for (let i = 0; i < n; i++) {
+			c[i] = Math.cos(omega * i);
+			s[i] = Math.sin(omega * i);
+		}
+		cos.push(c);
+		sin.push(s);
+	}
+	t = { w, cos, sin };
+	SNR_TABLES.set(key, t);
+	return t;
+}
+
 export function spectralSnr(
 	signal: number[],
 	sampleRate: number,
@@ -346,19 +378,19 @@ export function spectralSnr(
 	if (n < 30 || sampleRate <= 0) return 0;
 	const avg = mean(signal);
 	const x = signal.map((v) => v - avg);
-	const step = 0.05; // ~3 bpm resolution
+	const { w, cos, sin } = snrTables(n, sampleRate, minHz, maxHz);
 	let peak = 0;
 	let sum = 0;
 	let count = 0;
-	for (let hz = minHz; hz <= maxHz; hz += step) {
-		const omega = (2 * Math.PI * hz) / sampleRate;
+	for (let j = 0; j < cos.length; j++) {
+		const cj = cos[j];
+		const sj = sin[j];
 		let re = 0;
 		let im = 0;
 		for (let i = 0; i < n; i++) {
-			const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)); // Hann
-			const val = x[i] * w;
-			re += val * Math.cos(omega * i);
-			im += val * Math.sin(omega * i);
+			const val = x[i] * w[i];
+			re += val * cj[i];
+			im += val * sj[i];
 		}
 		const p = re * re + im * im;
 		if (p > peak) peak = p;
