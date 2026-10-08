@@ -9,8 +9,13 @@
 //      fix on; with `colourProjectionFix: false` the 120 does not (the published core), which
 //      proves the switch changes what the WASM does;
 //   5. the packed file list holds only dist/, pkg/, README.md, llms.txt, LICENSE and package.json,
-//      and LICENSE is the repo root's MIT notice, byte for byte.
-// BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red.
+//      and LICENSE is the repo root's MIT notice, byte for byte;
+//   6. the packed PulseCheck on generated scenes with known answers: a pulse at 72 shows 72; no
+//      pulse, a light on the face and the wall, and a nod with no pulse show nothing (the nod shows
+//      its 60 with headMotion off, which proves the scene tests the rule); a pulse at 70 under a
+//      nod at 90, and under a light at 96, shows 70.
+// BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red; BREAK=2 makes check 6
+// expect the nod's 60 to show with headMotion on.
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -90,9 +95,40 @@ for (const [bpm, want] of [[60, 60], [72, expect72], [120, 120]]) {
   const got = read(bpm);
   assert.ok(got != null && Math.abs(got - want) <= 2, "true " + bpm + " read " + got + " (fixes on)");
 }
+// Check 6: the packed PulseCheck on generated scenes. Three regions and the wall, each channel on
+// 0..1, 30 frames a second; the head at 190 px between the cheekbones. A pulse and the light both
+// carry blood's colour pattern (green dips most), so colour alone cannot tell them apart; a nod
+// changes the face's shading in time with it, the same way.
+function scene(o) {
+  let s = 7; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5);
+  const c = new sdk.PulseCheck({ rules: o.rules ?? {} }); const shown = [];
+  for (let i = 0; i <= 60 * 30; i++) {
+    const t = (i * 1000) / 30;
+    const w = (bpm) => (bpm ? Math.sin((2 * Math.PI * bpm * t) / 60000) : 0);
+    const n = w(o.nod);
+    const q = 0.01 * w(o.pulse) + (o.nod ? 0.008 * n : 0) + 0.005 * w(o.light);
+    const reg = () => ({ r: 0.59 * (1 - 0.3 * q) + 0.0008 * rnd(), g: 0.47 * (1 - q) + 0.0008 * rnd(), b: 0.39 * (1 - 0.6 * q) + 0.0008 * rnd() });
+    const l = 0.01 * w(o.light);
+    const wall = { r: 0.5 * (1 - 0.15 * l) + 0.0008 * rnd(), g: 0.5 * (1 - 0.5 * l) + 0.0008 * rnd(), b: 0.5 * (1 - 0.3 * l) + 0.0008 * rnd() };
+    const head = { x: 320 + 0.6 * n + 0.05 * rnd(), y: 240 + 3 * n + 0.05 * rnd(), faceWidth: 190 };
+    c.push(t, [reg(), reg(), reg()], wall, undefined, head);
+    if (i % 30 === 0 && i > 0) { const st = c.getState(); if (st.verdict === "measured" && st.bpm != null) shown.push(st.bpm); }
+  }
+  return shown;
+}
+const near = (a, bpm) => a.length >= 20 && a.every((b) => Math.abs(b - bpm) <= 2);
+assert.ok(near(scene({ pulse: 72 }), 72), "pulse 72 should show 72");
+assert.equal(scene({}).length, 0, "no pulse should show nothing");
+assert.equal(scene({ light: 72 }).length, 0, "a light on the face and the wall should show nothing");
+const nodOn = scene({ nod: 60 });
+if (process.env.BREAK === "2") assert.ok(near(nodOn, 60), "BREAK=2: the nod's 60 expected to show");
+assert.equal(nodOn.length, 0, "a nod with no pulse should show nothing");
+assert.ok(near(scene({ nod: 60, rules: { headMotion: false } }), 60), "with headMotion off the nod should show its 60 (else the scene tests nothing)");
+assert.ok(near(scene({ pulse: 70, nod: 90 }), 70), "pulse 70 under a nod at 90 should show 70");
+assert.ok(near(scene({ pulse: 70, light: 96 }), 70), "pulse 70 under a light at 96 should show 70");
 const off = read(120, { colourProjectionFix: false });
 assert.ok(off == null || Math.abs(off - 120) > 2, "colourProjectionFix:false should give the published core's answer, read " + off);
-console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + ").");
+console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light.");
 `,
 	);
 	console.log(run(process.execPath, ["app.mjs"], app).trim());
