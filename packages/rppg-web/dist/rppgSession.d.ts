@@ -1,6 +1,7 @@
 import type { FrameSource } from "./frameSource.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { PulseCheck, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
+import { ChestMotion, type ChestSample } from "./chestBreathing.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
 import { type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
 import { type WasmImporter } from "./wasmBackend.js";
@@ -51,7 +52,7 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
     lastError: RppgSessionError | null;
     modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
-export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker"> & {
+export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker" | "chestMotion"> & {
     video: HTMLVideoElement;
     /**
      * The real-pulse check (see pulseCheck.ts). ON by default in this test build. A heart rate
@@ -74,6 +75,13 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * gain on new recordings, kept opt-in.
      */
     pulseCheckAgreement?: boolean;
+    /**
+     * Experimental, off by default. Also read the breathing rate from the motion of the chest and
+     * shoulders in a box below the chin (chestBreathing.ts), shown by `getChestBreathing()`. It is
+     * separate from the metrics' `respiration_rate`, which stays withheld with the pulse check on.
+     * Measured so far only on recorded captures against a finger-sensor breathing reference.
+     */
+    chestBreathing?: boolean;
     bpmTrackerConfig?: BpmTrackerConfigV1;
     bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
     experimental?: {
@@ -155,6 +163,7 @@ type SessionInternals = {
     beforeStart?: () => Promise<void>;
     waveformController?: WaveformReconstructionController;
     pulseCheck?: PulseCheck | null;
+    chestMotion?: ChestMotion | null;
 };
 export declare class RppgSession {
     readonly source: FrameSource;
@@ -170,12 +179,35 @@ export declare class RppgSession {
     getMetrics(): Metrics;
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
+    /**
+     * Breathing from chest motion (`chestBreathing`), over the latest 32 s: the rate in breaths a
+     * minute and its line's share of the band's power (1 a pure rhythm, near 0 noise). Null when the
+     * option is off or the window is not covered yet.
+     */
+    getChestBreathing(): {
+        rate: number;
+        share: number;
+    } | null;
+    /** The chest motion kept (`chestBreathing`), for recording and replay; empty when off. */
+    getChestMotionSamples(): readonly ChestSample[];
+    /**
+     * The face finder's delegate and its trial (faceFinderTrial): which one this device runs on and the
+     * mean call time of each tried. Null when the session did not build the finder itself that way.
+     */
+    getFaceFinder(): {
+        delegate: string;
+        trial: readonly {
+            delegate: string;
+            meanMs: number;
+        }[];
+    } | null;
     /** Which fixes and checks this session runs, for logging results against a build. */
     getBuildSwitches(): {
         fixes: ResolvedRppgFixSwitches;
         pulseCheck: boolean;
         pulseCheckAgreement: boolean;
         pulseCheckRules: ResolvedPulseCheckRules | null;
+        chestBreathing: boolean;
     };
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
     getLastBlendshapes(): import("./demoRunner.js").LastBlendshapes | null;

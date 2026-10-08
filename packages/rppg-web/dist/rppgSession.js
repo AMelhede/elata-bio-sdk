@@ -1,7 +1,9 @@
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
-import { loadFaceLandmarker } from "./mediapipeLoader.js";
+import { loadFaceLandmarker, loadTrialFaceFinder } from "./mediapipeLoader.js";
 import { PulseCheck, } from "./pulseCheck.js";
+import { ChestMotion } from "./chestBreathing.js";
+import { TrialFaceFinder } from "./faceFinderTrial.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
 import { RppgProcessor, } from "./rppgProcessor.js";
@@ -68,6 +70,26 @@ export class RppgSession {
     getPulseCheck() {
         return this.internals.pulseCheck?.getState() ?? null;
     }
+    /**
+     * Breathing from chest motion (`chestBreathing`), over the latest 32 s: the rate in breaths a
+     * minute and its line's share of the band's power (1 a pure rhythm, near 0 noise). Null when the
+     * option is off or the window is not covered yet.
+     */
+    getChestBreathing() {
+        return this.internals.chestMotion?.rate() ?? null;
+    }
+    /** The chest motion kept (`chestBreathing`), for recording and replay; empty when off. */
+    getChestMotionSamples() {
+        return this.internals.chestMotion?.getSamples() ?? [];
+    }
+    /**
+     * The face finder's delegate and its trial (faceFinderTrial): which one this device runs on and the
+     * mean call time of each tried. Null when the session did not build the finder itself that way.
+     */
+    getFaceFinder() {
+        const f = this.source?.faceLandmarker;
+        return f instanceof TrialFaceFinder ? { delegate: f.delegate, trial: f.trialResults } : null;
+    }
     /** Which fixes and checks this session runs, for logging results against a build. */
     getBuildSwitches() {
         const fixes = this.runner.fixes ??
@@ -87,6 +109,7 @@ export class RppgSession {
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
+            chestBreathing: this.internals.chestMotion != null,
         };
     }
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -235,7 +258,7 @@ export async function createRppgSession(options) {
     const backendPreference = options.backend ?? "auto";
     const enableTracker = options.enableTracker ?? true;
     const pendingErrors = [];
-    const faceMeshResult = await resolveFaceMesh(options.faceMesh);
+    const faceMeshResult = await resolveFaceMesh(options.faceMesh, resolveFixSwitches(options.fixes).faceFinderTrial);
     if (faceMeshResult.error)
         pendingErrors.push(faceMeshResult.error);
     const faceTrackingMode = faceMeshResult.faceMesh
@@ -284,9 +307,11 @@ export async function createRppgSession(options) {
             rules: options.pulseCheckRules,
         })
         : null;
+    const chestMotion = options.chestBreathing === true ? new ChestMotion() : null;
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
+        chestMotion,
         roi: options.roi,
         roiGeometryProfile: options.roiGeometryProfile,
         sampleRate,
@@ -296,7 +321,9 @@ export async function createRppgSession(options) {
         requireFace: faceTrackingMode === "face_mesh" && options.roi === undefined,
         fusionProjection: options.fusionProjection,
         roiPixelSampler: options.roiPixelSampler,
-        onRoiSamples: (samples) => {
+        // The five named regions are sampled only when something reads them (an app's onRoiSamples, or
+        // the experimental waveform model): otherwise it was pixel work every frame for no reader.
+        onRoiSamples: !options.onRoiSamples && !options.experimental ? undefined : (samples) => {
             options.onRoiSamples?.(samples);
             if (!waveformBuilder || !waveformController || !options.experimental)
                 return;
@@ -334,6 +361,7 @@ export async function createRppgSession(options) {
         onDiagnostics: options.onDiagnostics,
         onError: options.onError,
         pulseCheck,
+        chestMotion,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
         waveformController,
@@ -355,7 +383,7 @@ export async function createRppgSession(options) {
     }
     return session;
 }
-async function resolveFaceMesh(faceMeshOption) {
+async function resolveFaceMesh(faceMeshOption, delegateTrial = false) {
     if (faceMeshOption && faceMeshOption !== "auto" && faceMeshOption !== "off") {
         return { faceMesh: faceMeshOption, error: null };
     }
@@ -363,7 +391,8 @@ async function resolveFaceMesh(faceMeshOption) {
         return { faceMesh: null, error: null };
     }
     try {
-        const faceMesh = await loadFaceLandmarker();
+        // faceFinderTrial: the faster delegate for this device, timed on the live video (faceFinderTrial.ts).
+        const faceMesh = delegateTrial ? await loadTrialFaceFinder() : await loadFaceLandmarker();
         return { faceMesh, error: null };
     }
     catch (cause) {

@@ -1,3 +1,4 @@
+import { type FinderCandidate, type FinderDelegate, TrialFaceFinder } from "./faceFinderTrial.js";
 export type FaceLandmarkerPoint = {
     x: number;
     y: number;
@@ -31,4 +32,21 @@ export type LoadFaceLandmarkerOptions = {
  * plain video-frame source.
  */
 export declare function loadFaceLandmarker(options?: LoadFaceLandmarkerOptions): Promise<FaceLandmarkerLike | null>;
+/**
+ * Every delegate that builds, in `order` (GPU first, then CPU), each with what TrialFaceFinder needs:
+ * the GPU one draws on a canvas made here, so its context loss can be seen (MediaPipe draws on its own
+ * OffscreenCanvas unless handed one, and does not rebuild after losing it). A delegate that throws is
+ * simply absent; none at all is empty. `delegates` restricts the order (for tests and diagnostics).
+ */
+export declare function loadFaceFinderCandidates(options?: LoadFaceLandmarkerOptions, delegates?: readonly FinderDelegate[]): Promise<FinderCandidate[]>;
+/** One finder on `delegate`, with its own canvas on the GPU (Safari: MediaPipe's own choice). */
+export declare function buildFinder(mod: any, fileset: unknown, modelAssetPath: string, delegate: FinderDelegate): Promise<FinderCandidate | null>;
+/**
+ * The face finder on the faster delegate for this device, chosen on the live video, and rebuilt when it
+ * dies (TrialFaceFinder). Null when no delegate builds or face tracking is disabled.
+ */
+export declare function loadTrialFaceFinder(options?: LoadFaceLandmarkerOptions, onEvent?: (event: {
+    type: string;
+    [k: string]: unknown;
+}) => void): Promise<TrialFaceFinder | null>;
 //# sourceMappingURL=mediapipeLoader.d.ts.map
