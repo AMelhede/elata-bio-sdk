@@ -366,6 +366,18 @@ export {
 	headMatches,
 } from "./pulseCheck";
 export {
+	breathingFromMotion,
+	ChestMotion,
+	type ChestSample,
+	chestBox,
+	CHEST_BOX_BOTTOM,
+	CHEST_BOX_TOP,
+	CHEST_BOX_WIDTH,
+	CHEST_BREATH_BAND_HZ,
+	CHEST_BREATH_WINDOW_S,
+	verticalShift,
+} from "./chestBreathing";
+export {
 	FIX_SWITCH_NAMES,
 	type ResolvedRppgFixSwitches,
 	type RppgFixesOption,

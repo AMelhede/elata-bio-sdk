@@ -12,6 +12,7 @@ import {
 	type PulseCheckState,
 	type ResolvedPulseCheckRules,
 } from "./pulseCheck";
+import { ChestMotion, type ChestSample } from "./chestBreathing";
 import {
 	type ResolvedRppgFixSwitches,
 	resolveFixSwitches,
@@ -115,7 +116,7 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 
 export type CreateRppgSessionOptions = Omit<
 	DemoRunnerOptions,
-	"onDiagnostics" | "onError" | "pulseChecker"
+	"onDiagnostics" | "onError" | "pulseChecker" | "chestMotion"
 > & {
 	video: HTMLVideoElement;
 	/**
@@ -139,6 +140,13 @@ export type CreateRppgSessionOptions = Omit<
 	 * gain on new recordings, kept opt-in.
 	 */
 	pulseCheckAgreement?: boolean;
+	/**
+	 * Experimental, off by default. Also read the breathing rate from the motion of the chest and
+	 * shoulders in a box below the chin (chestBreathing.ts), shown by `getChestBreathing()`. It is
+	 * separate from the metrics' `respiration_rate`, which stays withheld with the pulse check on.
+	 * Measured so far only on recorded captures against a finger-sensor breathing reference.
+	 */
+	chestBreathing?: boolean;
 	bpmTrackerConfig?: BpmTrackerConfigV1;
 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 	experimental?: {
@@ -223,6 +231,7 @@ type SessionInternals = {
 	beforeStart?: () => Promise<void>;
 	waveformController?: WaveformReconstructionController;
 	pulseCheck?: PulseCheck | null;
+	chestMotion?: ChestMotion | null;
 };
 
 export class RppgSession {
@@ -288,12 +297,27 @@ export class RppgSession {
 		return this.internals.pulseCheck?.getState() ?? null;
 	}
 
+	/**
+	 * Breathing from chest motion (`chestBreathing`), over the latest 32 s: the rate in breaths a
+	 * minute and its line's share of the band's power (1 a pure rhythm, near 0 noise). Null when the
+	 * option is off or the window is not covered yet.
+	 */
+	getChestBreathing(): { rate: number; share: number } | null {
+		return this.internals.chestMotion?.rate() ?? null;
+	}
+
+	/** The chest motion kept (`chestBreathing`), for recording and replay; empty when off. */
+	getChestMotionSamples(): readonly ChestSample[] {
+		return this.internals.chestMotion?.getSamples() ?? [];
+	}
+
 	/** Which fixes and checks this session runs, for logging results against a build. */
 	getBuildSwitches(): {
 		fixes: ResolvedRppgFixSwitches;
 		pulseCheck: boolean;
 		pulseCheckAgreement: boolean;
 		pulseCheckRules: ResolvedPulseCheckRules | null;
+		chestBreathing: boolean;
 	} {
 		const fixes =
 			(this.runner as { fixes?: ResolvedRppgFixSwitches }).fixes ??
@@ -314,6 +338,7 @@ export class RppgSession {
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
 			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
+			chestBreathing: this.internals.chestMotion != null,
 		};
 	}
 
@@ -553,9 +578,11 @@ export async function createRppgSession(
 					rules: options.pulseCheckRules,
 				})
 			: null;
+	const chestMotion = options.chestBreathing === true ? new ChestMotion() : null;
 	const runner = new DemoRunner(source, processor, {
 		fixes: options.fixes,
 		pulseChecker: pulseCheck,
+		chestMotion,
 		roi: options.roi,
 		roiGeometryProfile: options.roiGeometryProfile,
 		sampleRate,
@@ -611,6 +638,7 @@ export async function createRppgSession(
 			onDiagnostics: options.onDiagnostics,
 			onError: options.onError,
 			pulseCheck,
+			chestMotion,
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,

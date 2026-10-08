@@ -26,6 +26,7 @@ import {
 	type RoiRgbSample,
 } from "./multiRoiFusion";
 import { type PulseCheck, WallTracker, headCentre, wallMissReason } from "./pulseCheck";
+import type { ChestMotion } from "./chestBreathing";
 import { RppgProcessor } from "./rppgProcessor";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
@@ -62,6 +63,11 @@ export type DemoRunnerOptions = {
 	 * null or left out: no check.
 	 */
 	pulseChecker?: PulseCheck | null;
+	/**
+	 * Breathing from chest motion (see chestBreathing.ts), fed every analysed frame with its face
+	 * landmarks. The session creates it (`chestBreathing`); null or left out: not read.
+	 */
+	chestMotion?: ChestMotion | null;
 	roi?: { x: number; y: number; w: number; h: number } | null;
 	/** Face-mesh ROI geometry profile. */
 	roiGeometryProfile?: RoiGeometryProfile;
@@ -318,6 +324,10 @@ export class DemoRunner {
 				atMs: frame.timestampMs ?? Date.now(),
 			};
 		}
+		// The box below the chin, for breathing from chest motion (opt-in): every analysed frame,
+		// with or without a face (a face gone for over a second drops the motion).
+		if (this.opts.chestMotion && frame.data && frame.timestampMs != null)
+			this.opts.chestMotion.push(frame, frame.landmarks ?? null);
 		// Capture the head box for framing guidance. Wall-clock `atMs` (not the
 		// frame's media time) so consumers can age it against Date.now().
 		if (frame.landmarks && frame.landmarks.length) {
