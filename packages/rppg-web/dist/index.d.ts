@@ -25,7 +25,7 @@ export { loadWasmBackend } from "./wasmBackend.js";
 export { createUnavailableBackend } from "./wasmBackend.js";
 export type { LoadWasmBackendOptions, WasmImporter } from "./wasmBackend.js";
 export { createRppgSession, RppgSession, } from "./rppgSession.js";
-export type { CreateRppgSessionOptions, RppgSessionBackendMode, RppgSessionBackendPreference, RppgSessionDiagnostics, RppgSessionError, RppgSessionErrorCode, RppgSessionFaceTrackingMode, RppgSessionIssueCode, RppgSessionState, RppgSessionStatePhase, RppgSessionStateReason, RppgSessionStateStatus, } from "./rppgSession.js";
+export type { CreateRppgSessionOptions, ExperimentalVitals, RppgSessionBackendMode, RppgSessionBackendPreference, RppgSessionDiagnostics, RppgSessionError, RppgSessionErrorCode, RppgSessionFaceTrackingMode, RppgSessionIssueCode, RppgSessionState, RppgSessionStatePhase, RppgSessionStateReason, RppgSessionStateStatus, } from "./rppgSession.js";
 export { createManagedRppgSession, ManagedRppgSession, } from "./managedRppgSession.js";
 export type { CreateManagedRppgSessionOptions, ManagedRppgSessionState, ManagedRppgSessionStatus, } from "./managedRppgSession.js";
 export { computeWaveformPeriodicityProfile } from "./rppgDiagnostics.js";

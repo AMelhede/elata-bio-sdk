@@ -148,6 +148,8 @@ export type RppgTraceSnapshot = {
     lastSample: RppgDebugSnapshot["lastSample"];
     backendFailure: RppgProcessorBackendFailure | null;
 };
+/** The samples the processor keeps for its window analysis (heart rate, HRV, breathing), in ms. */
+export declare const SAMPLE_HISTORY_MS = 45000;
 export declare function museStyleFilter(samples: number[], sampleRate: number): number[];
 export declare class MuseCalibrationModel {
     private weights;

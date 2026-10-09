@@ -141,6 +141,8 @@ export declare class DemoRunner {
     /** Timestamp of the first frame of the current run without a face; null while a face is in view. */
     private noFaceSinceMs;
     private noFaceLastMs;
+    /** When the face last came back after an absence long enough to restart the analysis; null if never. */
+    private analysisRestartMs;
     /** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
     private gridPrev;
     private gridNextT;
@@ -152,6 +154,11 @@ export declare class DemoRunner {
     constructor(source: FrameSource, processor: RppgProcessorLike, opts?: DemoRunnerOptions);
     /** How long no face has been in view as of `nowMs` (0 while a face is in view). */
     faceAbsentMs(nowMs?: number): number;
+    /**
+     * Time on the frame clock since the face came back after an absence of FACE_GONE_RESET_MS or more
+     * (when the analysis is asked to start afresh), up to the latest analysed frame; null if it never has.
+     */
+    msSinceAnalysisRestart(): number | null;
     /** Latest face blendshapes (for affect estimation), with capture timestamp. */
     getLastBlendshapes(): LastBlendshapes | null;
     /**

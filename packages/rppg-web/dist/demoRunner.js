@@ -83,6 +83,8 @@ export class DemoRunner {
         /** Timestamp of the first frame of the current run without a face; null while a face is in view. */
         this.noFaceSinceMs = null;
         this.noFaceLastMs = null;
+        /** When the face last came back after an absence long enough to restart the analysis; null if never. */
+        this.analysisRestartMs = null;
         /** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
         this.gridPrev = null;
         this.gridNextT = 0;
@@ -105,6 +107,16 @@ export class DemoRunner {
             ? 0
             : Math.max(0, nowMs - this.noFaceSinceMs);
     }
+    /**
+     * Time on the frame clock since the face came back after an absence of FACE_GONE_RESET_MS or more
+     * (when the analysis is asked to start afresh), up to the latest analysed frame; null if it never has.
+     */
+    msSinceAnalysisRestart() {
+        const last = this.diagnostics.lastTimestampMs;
+        if (this.analysisRestartMs == null || last == null)
+            return null;
+        return Math.max(0, last - this.analysisRestartMs);
+    }
     /** Latest face blendshapes (for affect estimation), with capture timestamp. */
     getLastBlendshapes() {
         return this.lastBlendshapes;
@@ -125,6 +137,7 @@ export class DemoRunner {
         this.running = false;
         this.fuser?.reset();
         this.noFaceSinceMs = null;
+        this.analysisRestartMs = null;
         this.gridPrev = null;
         await this.source.stop();
     }
@@ -199,17 +212,14 @@ export class DemoRunner {
             if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
                 this.fuser?.reset();
                 this.processor.reset?.();
+                this.analysisRestartMs = frame.timestampMs ?? Date.now();
             }
             this.noFaceSinceMs = null;
         }
-        // One skin-masked mean per region box and sampler per frame: the aggregate, the fuser and the
-        // pulse check read the same boxes (the same pure function on the same pixels gave three equal
-        // results, three times the pixel work).
-        const sample = frameSampleMemo(frame);
         if (rois) {
             roiSource = "multi_roi";
             this.diagnostics.framesWithMultiRoi += 1;
-            const agg = aggregateRgbFromRois(frame, rois, useSkinMask, this.opts.roiPixelSampler, sample);
+            const agg = aggregateRgbFromRois(frame, rois, useSkinMask, this.opts.roiPixelSampler);
             rgb = { r: agg.r, g: agg.g, b: agg.b };
             skinRatio = agg.skinRatio;
             clipRatio = agg.clipRatio;
@@ -218,7 +228,7 @@ export class DemoRunner {
             // aggregate above is still computed for diagnostics/onStats and as the
             // fallback if the fuser can't produce a valid frame this tick.
             if (this.fuser && useSkinMask) {
-                fusionSamples = this.sampleFusionRegions(frame, rois, sample);
+                fusionSamples = this.sampleFusionRegions(frame, rois);
                 if (fusionSamples && !this.fixes.realFrameRate) {
                     // Switch off: the published path, one fuser step per camera frame, here.
                     fusionResult = this.fuser.pushFrame(fusionSamples);
@@ -237,7 +247,7 @@ export class DemoRunner {
                     : null;
                 this.opts.pulseChecker.push(frame.timestampMs, rois.slice(0, 3).map((roi) => {
                     const c = clampRoiToFrame(roi, frame.width, frame.height);
-                    return sample(c, undefined);
+                    return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
                 }), wall?.rgb, frame.landmarks && !wall
                     ? wallMissReason(frame.landmarks, frame.width, frame.height)
                     : undefined, 
@@ -437,14 +447,14 @@ export class DemoRunner {
      * {@link FUSION_ROIS} (forehead, leftCheek, rightCheek) from
      * `computeFusionSubRois`; a region with too little skin is skipped by the fuser.
      */
-    sampleFusionRegions(frame, rois, sample = (c, sampler) => sampleRgbWithSkinMask(frame, c, sampler)) {
+    sampleFusionRegions(frame, rois) {
         if (!this.fuser)
             return null;
         const samples = {};
         const n = Math.min(FUSION_ROIS.length, rois.length);
         for (let i = 0; i < n; i++) {
             const c = clampRoiToFrame(rois[i], frame.width, frame.height);
-            const s = sample(c, this.opts.roiPixelSampler);
+            const s = sampleRgbWithSkinMask(frame, c, this.opts.roiPixelSampler);
             samples[FUSION_ROIS[i]] = {
                 r: s.r,
                 g: s.g,
@@ -507,26 +517,7 @@ function smoothRoi(prev, next, alpha = 0.2) {
         h: prev.h + (next.h - prev.h) * a,
     };
 }
-/**
- * sampleRgbWithSkinMask for one frame, each (box, sampler) computed once. Samplers are told apart by identity
- * (the default is `undefined`), never by their ids, so no custom sampler can stand in for another.
- */
-function frameSampleMemo(frame) {
-    const bySampler = new Map();
-    return (c, sampler) => {
-        let memo = bySampler.get(sampler);
-        if (!memo)
-            bySampler.set(sampler, (memo = new Map()));
-        const key = `${c.x},${c.y},${c.w},${c.h}`;
-        let v = memo.get(key);
-        if (v === undefined) {
-            v = sampleRgbWithSkinMask(frame, c, sampler);
-            memo.set(key, v);
-        }
-        return v;
-    };
-}
-function aggregateRgbFromRois(frame, rois, useSkinMask, pixelSampler, sample = (c, sampler) => sampleRgbWithSkinMask(frame, c, sampler)) {
+function aggregateRgbFromRois(frame, rois, useSkinMask, pixelSampler) {
     let sumR = 0;
     let sumG = 0;
     let sumB = 0;
@@ -539,7 +530,7 @@ function aggregateRgbFromRois(frame, rois, useSkinMask, pixelSampler, sample = (
         const area = clamped.w * clamped.h;
         sumArea += area;
         if (useSkinMask) {
-            const rgbRes = sample(clamped, pixelSampler);
+            const rgbRes = sampleRgbWithSkinMask(frame, clamped, pixelSampler);
             // Keep ROI contribution from collapsing to near-zero on transient skin-mask misses.
             const weight = area * Math.max(0.15, rgbRes.skinRatio);
             sumR += rgbRes.r * weight;

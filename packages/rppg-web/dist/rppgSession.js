@@ -6,12 +6,21 @@ import { ChestMotion } from "./chestBreathing.js";
 import { TrialFaceFinder } from "./faceFinderTrial.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
-import { RppgProcessor, } from "./rppgProcessor.js";
+import { RppgProcessor, SAMPLE_HISTORY_MS, } from "./rppgProcessor.js";
 import { loadWasmBackend, createUnavailableBackend, } from "./wasmBackend.js";
 import { DemoRunner, FACE_GONE_RESET_MS, } from "./demoRunner.js";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow.js";
 import { WaveformReconstructionController } from "./waveformReconstructionController.js";
 import { createWorkerRppgProcessor, WorkerRppgProcessor, } from "./workerRppgProcessor.js";
+/** Whether a session reads chest motion: for `chestBreathing`, and for `experimentalVitals`' breathing. */
+export function wantsChestMotion(options) {
+    return options.chestBreathing === true || options.experimentalVitals === true;
+}
+const WITHHELD_VITALS = {
+    hrv_rmssd: null,
+    respiration_rate: null,
+    respiration_confidence: null,
+};
 export class RppgSession {
     constructor(source, processor, runner, backendMode, faceTrackingMode, internals = {}) {
         this.source = source;
@@ -21,6 +30,8 @@ export class RppgSession {
         this.faceTrackingMode = faceTrackingMode;
         this.internals = internals;
         this.lastErrorValue = null;
+        /** The engine read behind the latest getMetrics(), before any withholding (for getExperimentalVitals). */
+        this.lastEngineMetrics = null;
     }
     get lastError() {
         return this.lastErrorValue;
@@ -30,6 +41,7 @@ export class RppgSession {
     }
     getMetrics() {
         const metrics = this.processor.getMetrics();
+        this.lastEngineMetrics = metrics;
         // No face for a second (face tracking on): nothing to report, not the last number.
         // One second rides out a brief face-finder miss without dropping a real reading.
         if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
@@ -76,11 +88,43 @@ export class RppgSession {
      * option is off or the window is not covered yet.
      */
     getChestBreathing() {
+        if (this.internals.chestBreathing === false)
+            return null;
         return this.internals.chestMotion?.rate() ?? null;
     }
     /** The chest motion kept (`chestBreathing`), for recording and replay; empty when off. */
     getChestMotionSamples() {
         return this.internals.chestMotion?.getSamples() ?? [];
+    }
+    /**
+     * HRV and breathing for research and testing (`experimentalVitals`), labelled experimental; null
+     * when the option is off. Neither is a measurement yet (see the option).
+     *
+     * HRV is the engine's, from the session's latest `getMetrics()` read (reading the engine again here
+     * would run another analysis when steadyAnalysis is off, and move the engine's own rate). It is
+     * given only while all of these hold: a face is in view; the pulse check (when on) has proven a
+     * pulse and still shows its rate, as `getMetrics()` does (an HRV of something that is not a pulse
+     * means nothing); and the engine's window holds no samples from before the face last came back.
+     * The runner asks the engine to start afresh then, but neither processor has a `reset()`, so its
+     * window keeps the previous face's samples until SAMPLE_HISTORY_MS have passed.
+     */
+    getExperimentalVitals() {
+        if (!this.internals.experimentalVitals)
+            return null;
+        const faceGone = (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
+        const state = this.internals.pulseCheck?.getState();
+        const proven = !state || (state.verdict === "measured" && state.bpm != null);
+        const sinceRestart = this.runner.msSinceAnalysisRestart?.() ?? null;
+        const engineResets = typeof this.processor.reset === "function";
+        const windowFresh = sinceRestart == null || engineResets || sinceRestart >= SAMPLE_HISTORY_MS;
+        const hrv = this.lastEngineMetrics?.hrv_rmssd;
+        return {
+            experimental: true,
+            hrvRmssd: !faceGone && proven && windowFresh && Number.isFinite(hrv)
+                ? hrv
+                : null,
+            breathing: this.internals.chestMotion?.rate() ?? null,
+        };
     }
     /**
      * The face finder's delegate and its trial (faceFinderTrial): which one this device runs on and the
@@ -109,7 +153,8 @@ export class RppgSession {
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
-            chestBreathing: this.internals.chestMotion != null,
+            chestBreathing: this.internals.chestBreathing ?? this.internals.chestMotion != null,
+            experimentalVitals: this.internals.experimentalVitals === true,
         };
     }
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -121,7 +166,16 @@ export class RppgSession {
         return this.runner.getLastFaceBox();
     }
     getDebugSnapshot(nowMs = Date.now()) {
-        return this.processor.getDebugSnapshot(nowMs);
+        const snapshot = this.processor.getDebugSnapshot(nowMs);
+        // With the pulse check on, HRV and breathing are withheld here too, as in getMetrics: a debug
+        // feed an app displays is a screen like any other. Of the session's reads, experimentalVitals is
+        // their one way out.
+        if (!this.internals.pulseCheck)
+            return snapshot;
+        return {
+            ...snapshot,
+            backendMetrics: { ...snapshot.backendMetrics, ...WITHHELD_VITALS },
+        };
     }
     getTraceSnapshot(maxPoints = 300) {
         return this.processor.getTraceSnapshot(maxPoints);
@@ -307,7 +361,7 @@ export async function createRppgSession(options) {
             rules: options.pulseCheckRules,
         })
         : null;
-    const chestMotion = options.chestBreathing === true ? new ChestMotion() : null;
+    const chestMotion = wantsChestMotion(options) ? new ChestMotion() : null;
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
@@ -321,9 +375,7 @@ export async function createRppgSession(options) {
         requireFace: faceTrackingMode === "face_mesh" && options.roi === undefined,
         fusionProjection: options.fusionProjection,
         roiPixelSampler: options.roiPixelSampler,
-        // The five named regions are sampled only when something reads them (an app's onRoiSamples, or
-        // the experimental waveform model): otherwise it was pixel work every frame for no reader.
-        onRoiSamples: !options.onRoiSamples && !options.experimental ? undefined : (samples) => {
+        onRoiSamples: (samples) => {
             options.onRoiSamples?.(samples);
             if (!waveformBuilder || !waveformController || !options.experimental)
                 return;
@@ -362,6 +414,8 @@ export async function createRppgSession(options) {
         onError: options.onError,
         pulseCheck,
         chestMotion,
+        chestBreathing: options.chestBreathing === true,
+        experimentalVitals: options.experimentalVitals === true,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
         waveformController,
