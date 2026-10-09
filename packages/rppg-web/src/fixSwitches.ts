@@ -44,6 +44,14 @@ export type RppgFixSwitches = {
 	 */
 	noRateDoubling?: boolean;
 	/**
+	 * Fix 6. The heart-rate analysis runs at most once per ANALYSIS_EVERY_MS (250 ms) of sample time, and reads
+	 * in between are answered from it, so the rate does not depend on how often anything reads it. Off: every
+	 * read analyses again, as published, and the rate tracker takes the same window once per read; a managed
+	 * session's diagnostics read on every camera frame, so on the main thread the whole analysis ran on every
+	 * frame, and the analysis worker read twice per answer.
+	 */
+	steadyAnalysis?: boolean;
+	/**
 	 * Speed 2. Frames are read at most 640 wide (same aspect), and the face finder reads that
 	 * same image, so landmarks and pixels come from one frame. Off: the full camera frame, and
 	 * the face finder reads the live video, as published.
@@ -81,6 +89,7 @@ export const FIX_SWITCH_NAMES = [
 	"realFrameRate",
 	"posFusion",
 	"noRateDoubling",
+	"steadyAnalysis",
 	"analysisWidth",
 	"analysisWorker",
 	"sparseFaceFinder",

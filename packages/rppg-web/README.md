@@ -1,7 +1,7 @@
 # @amelhede/rppg-web (test build)
 
 **This is a test build, not the official package.** It is Elata's rPPG web SDK
-(`@elata-biosciences/rppg-web` 0.14.0, MIT licence) with five fixes to the heart-rate
+(`@elata-biosciences/rppg-web` 0.14.0, MIT licence) with six fixes to the heart-rate
 pipeline, four speed changes and a real-pulse check added. Every fix, speed change and rule of
 the check has its own on/off switch, so an app can compare each one against the published
 behaviour. It exists so the team can try
@@ -44,6 +44,7 @@ const session = await createRppgSession({
     realFrameRate: true,
     posFusion: true,
     noRateDoubling: true,
+    steadyAnalysis: true,
     analysisWidth: true,
     analysisWorker: true,
     sparseFaceFinder: true,
@@ -71,6 +72,7 @@ console.log(session.getBuildSwitches()); // what this session actually runs
 | `fixes.realFrameRate` | Frames are placed on the even 30-per-second time grid the analysis assumes, filling between frames, so a camera that delivers 15 to 25 frames a second (common indoors) does not scale every rate it reports. Gaps over 250 ms count as a stall and are not bridged. | Each frame is used as it arrives, as published; on a slow camera every rate comes out scaled. |
 | `fixes.posFusion` | The step that blends forehead and both cheeks reads each region with POS (Wang et al. 2017), the method designed for its short windows (about 1.6 s). | CHROM, as published. An explicit `fusionProjection: "pos" \| "chrom"` option wins over this switch. |
 | `fixes.noRateDoubling` | The rate estimator keeps the strongest rhythm it finds. | The published rule that, below 85 bpm, replaces the strongest rate with twice that rate whenever a pulse wave's own second harmonic is strong, so a resting 65 can read 130. |
+| `fixes.steadyAnalysis` | The heart-rate analysis runs at most once per 250 ms of signal, and every read in between gets that answer, so the rate does not depend on how often an app (or the SDK's own diagnostics) asks for it. It also removes work: a managed session's diagnostics read on every camera frame. | As published, every read runs the whole analysis again, and the rate tracker takes the same stretch of signal once per read: a managed session on the main thread analyses on every camera frame, and the analysis worker reads twice per answer, so the reported rate depends on how often it is read. |
 | `fixes.analysisWidth` | Speed. Each camera frame is read at most 640 pixels wide (same shape), and the face finder reads that same smaller picture, so the face points and the colours come from one frame. A cheek patch still averages thousands of pixels at that size, far more than the pulse needs. | The full camera frame, with the face finder reading the live video, as published. On a 1280x960 camera that cut the frames analysed to about 7 a second. |
 | `fixes.analysisWorker` | Speed. The heart-rate analysis runs in a Web Worker, so it never holds up the camera frames. It runs on the main thread instead when a worker or the WASM core inside it cannot start, or when `wasmImporter` or `bpmEvidenceQualityProvider` is set (a function cannot be sent to a worker). The session option `analysisWorker`, when given, wins over this switch. | The analysis runs on the main thread, as published, and camera frames that arrive while it runs are skipped. |
 | `fixes.sparseFaceFinder` | Speed. The face finder is asked at most every 100 ms (ten times a second); the frames in between are read with the last face it found. The finder is the costliest step per frame, so on a busy machine more of the camera's frames are read, and each pulse reading rests on more of them. | The face finder runs on every frame, as published. |
