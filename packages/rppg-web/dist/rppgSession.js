@@ -12,9 +12,9 @@ import { DemoRunner, FACE_GONE_RESET_MS, } from "./demoRunner.js";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow.js";
 import { WaveformReconstructionController } from "./waveformReconstructionController.js";
 import { createWorkerRppgProcessor, WorkerRppgProcessor, } from "./workerRppgProcessor.js";
-/** Whether a session reads chest motion: for `chestBreathing`, and for `experimentalVitals`' breathing. */
+/** Whether a session reads chest motion: only for `experimentalVitals`' breathing. */
 export function wantsChestMotion(options) {
-    return options.chestBreathing === true || options.experimentalVitals === true;
+    return options.experimentalVitals === true;
 }
 const WITHHELD_VITALS = {
     hrv_rmssd: null,
@@ -82,17 +82,7 @@ export class RppgSession {
     getPulseCheck() {
         return this.internals.pulseCheck?.getState() ?? null;
     }
-    /**
-     * Breathing from chest motion (`chestBreathing`), over the latest 32 s: the rate in breaths a
-     * minute and its line's share of the band's power (1 a pure rhythm, near 0 noise). Null when the
-     * option is off or the window is not covered yet.
-     */
-    getChestBreathing() {
-        if (this.internals.chestBreathing === false)
-            return null;
-        return this.internals.chestMotion?.rate() ?? null;
-    }
-    /** The chest motion kept (`chestBreathing`), for recording and replay; empty when off. */
+    /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */
     getChestMotionSamples() {
         return this.internals.chestMotion?.getSamples() ?? [];
     }
@@ -153,7 +143,6 @@ export class RppgSession {
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
-            chestBreathing: this.internals.chestBreathing ?? this.internals.chestMotion != null,
             experimentalVitals: this.internals.experimentalVitals === true,
         };
     }
@@ -341,6 +330,8 @@ export async function createRppgSession(options) {
             wasmBinaryUrl: options.wasmBinaryUrl,
             wasmImporter: options.wasmImporter,
         });
+    if ("error" in backendResult && backendResult.error)
+        pendingErrors.push(backendResult.error);
     const processor = workerProcessor ??
         new RppgProcessor(backendResult.backend, sampleRate, windowSec, {
             bpmTrackerConfig: options.bpmTrackerConfig,
@@ -414,7 +405,6 @@ export async function createRppgSession(options) {
         onError: options.onError,
         pulseCheck,
         chestMotion,
-        chestBreathing: options.chestBreathing === true,
         experimentalVitals: options.experimentalVitals === true,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
@@ -465,15 +455,36 @@ async function resolveFaceMesh(faceMeshOption, delegateTrial = false) {
     }
 }
 async function resolveBackend(backendPreference, options) {
-    const backend = await loadWasmBackend(options.wasmImporter, {
-        strict: backendPreference === "wasm",
-        jsUrl: options.wasmJsUrl,
-        binaryUrl: options.wasmBinaryUrl,
-    });
-    if (backend) {
-        return { backend, mode: "wasm" };
+    // Always load strictly, so the reason it failed is kept. "auto" still falls back to a backend
+    // that reads nothing, but now says why through onError: before, a bundler that could not serve
+    // the WASM gave a session that ran, found a face and never produced a number, with no error.
+    try {
+        const backend = await loadWasmBackend(options.wasmImporter, {
+            strict: true,
+            jsUrl: options.wasmJsUrl,
+            binaryUrl: options.wasmBinaryUrl,
+        });
+        if (backend)
+            return { backend, mode: "wasm" };
+        throw new Error("rPPG WASM backend loaded no pipeline.");
     }
-    return { backend: createUnavailableBackend(), mode: "unavailable" };
+    catch (cause) {
+        if (backendPreference === "wasm")
+            throw cause;
+        return {
+            backend: createUnavailableBackend(),
+            mode: "unavailable",
+            error: {
+                code: "backend_init_failed",
+                stage: "backend",
+                message: cause instanceof Error
+                    ? cause.message
+                    : "rPPG WASM backend failed to load.",
+                timestampMs: Date.now(),
+                cause,
+            },
+        };
+    }
 }
 function applyTrackerConfiguration(processor, enableTracker) {
     if (!enableTracker)

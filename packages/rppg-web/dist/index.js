@@ -44,6 +44,6 @@ export { RppgSessionRecorder } from "./rppgSessionRecorder.js";
 export { aggregateComparisons, maeOf, summarizeReplaySession, } from "./replayBenchmark.js";
 export { PulseCheck, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, HEAD_LANDMARKS, headCentre, headAtRate, headJudge, headCarries, headMatches, } from "./pulseCheck.js";
 export { breathingFromMotion, ChestMotion, chestBox, CHEST_BOX_BOTTOM, CHEST_BOX_TOP, CHEST_BOX_WIDTH, CHEST_BREATH_BAND_HZ, CHEST_BREATH_WINDOW_S, verticalShift, } from "./chestBreathing.js";
-export { FIX_SWITCH_NAMES, FIX_SWITCHES_OFF_BY_DEFAULT, resolveFixSwitches, } from "./fixSwitches.js";
+export { FIX_SWITCH_NAMES, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
 export { createWorkerRppgProcessor, WorkerRppgProcessor, } from "./workerRppgProcessor.js";

@@ -76,18 +76,12 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      */
     pulseCheckAgreement?: boolean;
     /**
-     * Experimental, off by default. Also read the breathing rate from the motion of the chest and
-     * shoulders in a box below the chin (chestBreathing.ts), shown by `getChestBreathing()`. It is
-     * separate from the metrics' `respiration_rate`, which stays withheld with the pulse check on.
-     * Measured so far only on recorded captures against a finger-sensor breathing reference.
-     */
-    chestBreathing?: boolean;
-    /**
      * Experimental, off by default. Hands over HRV and breathing in their own box,
      * `getExperimentalVitals()`, labelled experimental, for research and testing, not for showing a
      * person as a measurement. HRV has not passed a check against a reference: against an ECG it read
-     * several times too high. Breathing comes from chest motion (as `chestBreathing`, which this
-     * option does not turn on); it has so far been checked only on still people against a reference
+     * several times too high. Breathing comes from the up-and-down motion of the chest and shoulders
+     * in a box below the chin (chestBreathing.ts), not from the metrics' `respiration_rate`; it has so
+     * far been checked only on still people against a reference
      * worked out from a finger sensor, not a breathing belt. HRV comes only while the session reports
      * a heart rate the pulse check proved, from the session's latest `getMetrics()` read, and not
      * while the analysis may still hold samples from before the face last came back. With the pulse
@@ -177,8 +171,6 @@ type SessionInternals = {
     waveformController?: WaveformReconstructionController;
     pulseCheck?: PulseCheck | null;
     chestMotion?: ChestMotion | null;
-    /** The `chestBreathing` option itself (chest motion may also be read for `experimentalVitals`). */
-    chestBreathing?: boolean;
     experimentalVitals?: boolean;
 };
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
@@ -186,15 +178,17 @@ export type ExperimentalVitals = {
     experimental: true;
     /** RMSSD in ms, while the session reports a proven heart rate (see the option); else null. */
     hrvRmssd: number | null;
-    /** Breathing from chest motion, `{ rate, share }` as `getChestBreathing()` gives it; null until its window is covered. */
+    /**
+     * Breathing from chest motion over the latest 32 s: `rate` in breaths a minute, and `share`, its
+     * line's share of the band's power (1 a pure rhythm, near 0 noise). Null until the window is covered.
+     */
     breathing: {
         rate: number;
         share: number;
     } | null;
 };
-/** Whether a session reads chest motion: for `chestBreathing`, and for `experimentalVitals`' breathing. */
+/** Whether a session reads chest motion: only for `experimentalVitals`' breathing. */
 export declare function wantsChestMotion(options: {
-    chestBreathing?: boolean;
     experimentalVitals?: boolean;
 }): boolean;
 export declare class RppgSession {
@@ -213,16 +207,7 @@ export declare class RppgSession {
     getMetrics(): Metrics;
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
-    /**
-     * Breathing from chest motion (`chestBreathing`), over the latest 32 s: the rate in breaths a
-     * minute and its line's share of the band's power (1 a pure rhythm, near 0 noise). Null when the
-     * option is off or the window is not covered yet.
-     */
-    getChestBreathing(): {
-        rate: number;
-        share: number;
-    } | null;
-    /** The chest motion kept (`chestBreathing`), for recording and replay; empty when off. */
+    /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */
     getChestMotionSamples(): readonly ChestSample[];
     /**
      * HRV and breathing for research and testing (`experimentalVitals`), labelled experimental; null
@@ -254,7 +239,6 @@ export declare class RppgSession {
         pulseCheck: boolean;
         pulseCheckAgreement: boolean;
         pulseCheckRules: ResolvedPulseCheckRules | null;
-        chestBreathing: boolean;
         experimentalVitals: boolean;
     };
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */

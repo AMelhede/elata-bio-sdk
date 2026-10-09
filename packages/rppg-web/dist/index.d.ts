@@ -77,7 +77,7 @@ export { aggregateComparisons, maeOf, summarizeReplaySession, } from "./replayBe
 export type { AbsErrorAccumulator, CorpusComparison, SessionComparison, } from "./replayBenchmark.js";
 export { PulseCheck, type PulseCheckState, type PulseCheckRules, type ResolvedPulseCheckRules, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, HEAD_LANDMARKS, headCentre, type HeadPosition, type HeadRow, headAtRate, type HeadAtRate, type HeadBlind, headJudge, type HeadJudgement, headCarries, headMatches, } from "./pulseCheck.js";
 export { breathingFromMotion, ChestMotion, type ChestSample, chestBox, CHEST_BOX_BOTTOM, CHEST_BOX_TOP, CHEST_BOX_WIDTH, CHEST_BREATH_BAND_HZ, CHEST_BREATH_WINDOW_S, verticalShift, } from "./chestBreathing.js";
-export { FIX_SWITCH_NAMES, FIX_SWITCHES_OFF_BY_DEFAULT, type ResolvedRppgFixSwitches, type RppgFixesOption, type RppgFixSwitches, resolveFixSwitches, } from "./fixSwitches.js";
+export { FIX_SWITCH_NAMES, type ResolvedRppgFixSwitches, type RppgFixesOption, type RppgFixSwitches, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
 export { createWorkerRppgProcessor, type RppgProcessorLike, WorkerRppgProcessor, } from "./workerRppgProcessor.js";
 //# sourceMappingURL=index.d.ts.map

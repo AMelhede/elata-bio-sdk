@@ -222,8 +222,12 @@ export class RppgAppMonitor {
         this.adapter = new RppgAppAdapter(options);
         this.intervalMs = options.intervalMs ?? DEFAULT_APP_MONITOR_INTERVAL_MS;
         this.emitImmediately = options.emitImmediately !== false;
-        this.setIntervalFn = internals.setIntervalFn ?? setInterval;
-        this.clearIntervalFn = internals.clearIntervalFn ?? clearInterval;
+        // Wrapped, not stored: a browser's own timers throw "Illegal invocation" when called as a
+        // method of any object but the window, which `this.setIntervalFn(...)` would be.
+        this.setIntervalFn =
+            internals.setIntervalFn ?? ((handler, ms) => setInterval(handler, ms));
+        this.clearIntervalFn =
+            internals.clearIntervalFn ?? ((id) => clearInterval(id));
     }
     getSnapshot() {
         return this.adapter.getSnapshot(this.source);
