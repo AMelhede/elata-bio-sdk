@@ -243,6 +243,8 @@ export class DemoRunner {
 	/** Timestamp of the first frame of the current run without a face; null while a face is in view. */
 	private noFaceSinceMs: number | null = null;
 	private noFaceLastMs: number | null = null;
+	/** When the face last came back after an absence long enough to restart the analysis; null if never. */
+	private analysisRestartMs: number | null = null;
 	/** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
 	private gridPrev: GridSample | null = null;
 	private gridNextT = 0;
@@ -280,6 +282,16 @@ export class DemoRunner {
 			: Math.max(0, nowMs - this.noFaceSinceMs);
 	}
 
+	/**
+	 * Time on the frame clock since the face came back after an absence of FACE_GONE_RESET_MS or more
+	 * (when the analysis is asked to start afresh), up to the latest analysed frame; null if it never has.
+	 */
+	msSinceAnalysisRestart(): number | null {
+		const last = this.diagnostics.lastTimestampMs;
+		if (this.analysisRestartMs == null || last == null) return null;
+		return Math.max(0, last - this.analysisRestartMs);
+	}
+
 	/** Latest face blendshapes (for affect estimation), with capture timestamp. */
 	getLastBlendshapes(): LastBlendshapes | null {
 		return this.lastBlendshapes;
@@ -303,6 +315,7 @@ export class DemoRunner {
 		this.running = false;
 		this.fuser?.reset();
 		this.noFaceSinceMs = null;
+		this.analysisRestartMs = null;
 		this.gridPrev = null;
 		await this.source.stop();
 	}
@@ -390,6 +403,7 @@ export class DemoRunner {
 			if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
 				this.fuser?.reset();
 				(this.processor as { reset?: () => void }).reset?.();
+				this.analysisRestartMs = frame.timestampMs ?? Date.now();
 			}
 			this.noFaceSinceMs = null;
 		}

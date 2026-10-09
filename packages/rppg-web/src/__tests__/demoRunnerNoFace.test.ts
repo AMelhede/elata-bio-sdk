@@ -55,6 +55,27 @@ describe('DemoRunner with no face in view', () => {
     expect(runner.faceAbsentMs()).toBe(0);
   });
 
+  test('keeps the time since the analysis restarted, on the frame clock, until stopped', async () => {
+    const { runner } = await feedWall(true);
+    expect(runner.msSinceAnalysisRestart()).toBeNull();
+    const back = 1000 + 60 * 33.3;
+    for (let i = 0; i < 30; i++)
+      (runner as any).source.onFrame?.({ ...wallFrame(back + i * 100), roi: { x: 0, y: 0, w: 30, h: 30 } });
+    expect(runner.msSinceAnalysisRestart()).toBeCloseTo(2900, 6);
+    await runner.stop();
+    expect(runner.msSinceAnalysisRestart()).toBeNull();
+  });
+
+  test('a brief face-finder miss does not count as a restart', async () => {
+    const src = new MockFrameSource();
+    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), reset: jest.fn() };
+    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
+    await runner.start();
+    for (let i = 0; i < 10; i++) src.emit(wallFrame(1000 + i * 33.3));
+    src.emit({ ...wallFrame(1400), roi: { x: 0, y: 0, w: 30, h: 30 } });
+    expect(runner.msSinceAnalysisRestart()).toBeNull();
+  });
+
   test('a brief face-finder miss does not restart the analysis', async () => {
     const src = new MockFrameSource();
     const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), reset: jest.fn() };

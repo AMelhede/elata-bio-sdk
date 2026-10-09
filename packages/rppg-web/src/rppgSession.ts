@@ -21,6 +21,7 @@ import {
 import { ensureVideoPlaying } from "./videoPlayback";
 import {
 	RppgProcessor,
+	SAMPLE_HISTORY_MS,
 	type Metrics,
 	type RppgDebugIssueCode,
 	type RppgDebugSnapshot,
@@ -148,6 +149,19 @@ export type CreateRppgSessionOptions = Omit<
 	 * Measured so far only on recorded captures against a finger-sensor breathing reference.
 	 */
 	chestBreathing?: boolean;
+	/**
+	 * Experimental, off by default. Hands over HRV and breathing in their own box,
+	 * `getExperimentalVitals()`, labelled experimental, for research and testing, not for showing a
+	 * person as a measurement. HRV has not passed a check against a reference: against an ECG it read
+	 * several times too high. Breathing comes from chest motion (as `chestBreathing`, which this
+	 * option does not turn on); it has so far been checked only on still people against a reference
+	 * worked out from a finger sensor, not a breathing belt. HRV comes only while the session reports
+	 * a heart rate the pulse check proved, from the session's latest `getMetrics()` read, and not
+	 * while the analysis may still hold samples from before the face last came back. With the pulse
+	 * check on, the session's own reads (`getMetrics()`, `getDebugSnapshot()`) withhold HRV and
+	 * breathing whether this option is on or off; `session.processor`, the raw engine, is not filtered.
+	 */
+	experimentalVitals?: boolean;
 	bpmTrackerConfig?: BpmTrackerConfigV1;
 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 	experimental?: {
@@ -233,10 +247,38 @@ type SessionInternals = {
 	waveformController?: WaveformReconstructionController;
 	pulseCheck?: PulseCheck | null;
 	chestMotion?: ChestMotion | null;
+	/** The `chestBreathing` option itself (chest motion may also be read for `experimentalVitals`). */
+	chestBreathing?: boolean;
+	experimentalVitals?: boolean;
 };
+
+/** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
+export type ExperimentalVitals = {
+	experimental: true;
+	/** RMSSD in ms, while the session reports a proven heart rate (see the option); else null. */
+	hrvRmssd: number | null;
+	/** Breathing from chest motion, `{ rate, share }` as `getChestBreathing()` gives it; null until its window is covered. */
+	breathing: { rate: number; share: number } | null;
+};
+
+/** Whether a session reads chest motion: for `chestBreathing`, and for `experimentalVitals`' breathing. */
+export function wantsChestMotion(options: {
+	chestBreathing?: boolean;
+	experimentalVitals?: boolean;
+}): boolean {
+	return options.chestBreathing === true || options.experimentalVitals === true;
+}
+
+const WITHHELD_VITALS = {
+	hrv_rmssd: null,
+	respiration_rate: null,
+	respiration_confidence: null,
+} as const;
 
 export class RppgSession {
 	private lastErrorValue: RppgSessionError | null = null;
+	/** The engine read behind the latest getMetrics(), before any withholding (for getExperimentalVitals). */
+	private lastEngineMetrics: Metrics | null = null;
 
 	constructor(
 		public readonly source: FrameSource,
@@ -257,6 +299,7 @@ export class RppgSession {
 
 	getMetrics(): Metrics {
 		const metrics = this.processor.getMetrics();
+		this.lastEngineMetrics = metrics;
 		// No face for a second (face tracking on): nothing to report, not the last number.
 		// One second rides out a brief face-finder miss without dropping a real reading.
 		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
@@ -304,12 +347,46 @@ export class RppgSession {
 	 * option is off or the window is not covered yet.
 	 */
 	getChestBreathing(): { rate: number; share: number } | null {
+		if (this.internals.chestBreathing === false) return null;
 		return this.internals.chestMotion?.rate() ?? null;
 	}
 
 	/** The chest motion kept (`chestBreathing`), for recording and replay; empty when off. */
 	getChestMotionSamples(): readonly ChestSample[] {
 		return this.internals.chestMotion?.getSamples() ?? [];
+	}
+
+	/**
+	 * HRV and breathing for research and testing (`experimentalVitals`), labelled experimental; null
+	 * when the option is off. Neither is a measurement yet (see the option).
+	 *
+	 * HRV is the engine's, from the session's latest `getMetrics()` read (reading the engine again here
+	 * would run another analysis when steadyAnalysis is off, and move the engine's own rate). It is
+	 * given only while all of these hold: a face is in view; the pulse check (when on) has proven a
+	 * pulse and still shows its rate, as `getMetrics()` does (an HRV of something that is not a pulse
+	 * means nothing); and the engine's window holds no samples from before the face last came back.
+	 * The runner asks the engine to start afresh then, but neither processor has a `reset()`, so its
+	 * window keeps the previous face's samples until SAMPLE_HISTORY_MS have passed.
+	 */
+	getExperimentalVitals(): ExperimentalVitals | null {
+		if (!this.internals.experimentalVitals) return null;
+		const faceGone = (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
+		const state = this.internals.pulseCheck?.getState();
+		const proven = !state || (state.verdict === "measured" && state.bpm != null);
+		const sinceRestart = this.runner.msSinceAnalysisRestart?.() ?? null;
+		const engineResets =
+			typeof (this.processor as { reset?: unknown }).reset === "function";
+		const windowFresh =
+			sinceRestart == null || engineResets || sinceRestart >= SAMPLE_HISTORY_MS;
+		const hrv = this.lastEngineMetrics?.hrv_rmssd;
+		return {
+			experimental: true,
+			hrvRmssd:
+				!faceGone && proven && windowFresh && Number.isFinite(hrv)
+					? (hrv as number)
+					: null,
+			breathing: this.internals.chestMotion?.rate() ?? null,
+		};
 	}
 
 	/**
@@ -328,6 +405,7 @@ export class RppgSession {
 		pulseCheckAgreement: boolean;
 		pulseCheckRules: ResolvedPulseCheckRules | null;
 		chestBreathing: boolean;
+		experimentalVitals: boolean;
 	} {
 		const fixes =
 			(this.runner as { fixes?: ResolvedRppgFixSwitches }).fixes ??
@@ -348,7 +426,9 @@ export class RppgSession {
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
 			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
-			chestBreathing: this.internals.chestMotion != null,
+			chestBreathing:
+				this.internals.chestBreathing ?? this.internals.chestMotion != null,
+			experimentalVitals: this.internals.experimentalVitals === true,
 		};
 	}
 
@@ -363,7 +443,15 @@ export class RppgSession {
 	}
 
 	getDebugSnapshot(nowMs = Date.now()): RppgDebugSnapshot {
-		return this.processor.getDebugSnapshot(nowMs);
+		const snapshot = this.processor.getDebugSnapshot(nowMs);
+		// With the pulse check on, HRV and breathing are withheld here too, as in getMetrics: a debug
+		// feed an app displays is a screen like any other. Of the session's reads, experimentalVitals is
+		// their one way out.
+		if (!this.internals.pulseCheck) return snapshot;
+		return {
+			...snapshot,
+			backendMetrics: { ...snapshot.backendMetrics, ...WITHHELD_VITALS },
+		};
 	}
 
 	getTraceSnapshot(maxPoints = 300): RppgTraceSnapshot {
@@ -591,7 +679,7 @@ export async function createRppgSession(
 					rules: options.pulseCheckRules,
 				})
 			: null;
-	const chestMotion = options.chestBreathing === true ? new ChestMotion() : null;
+	const chestMotion = wantsChestMotion(options) ? new ChestMotion() : null;
 	const runner = new DemoRunner(source, processor, {
 		fixes: options.fixes,
 		pulseChecker: pulseCheck,
@@ -654,6 +742,8 @@ export async function createRppgSession(
 			onError: options.onError,
 			pulseCheck,
 			chestMotion,
+			chestBreathing: options.chestBreathing === true,
+			experimentalVitals: options.experimentalVitals === true,
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,

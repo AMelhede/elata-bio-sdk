@@ -221,6 +221,8 @@ type Sample = {
 	clipRatio: number;
 };
 
+/** The samples the processor keeps for its window analysis (heart rate, HRV, breathing), in ms. */
+export const SAMPLE_HISTORY_MS = 45000;
 const BPM_MIN = 40;
 const BPM_MAX = 180;
 const BPM_TOLERANCE = 6;
@@ -1082,12 +1084,11 @@ export class RppgProcessor {
 			motion: Number.isFinite(motion) ? motion : 0,
 			clipRatio: Number.isFinite(clipRatio) ? clipRatio : 0,
 		});
-		const maxHistoryMs = 45000;
 		while (
 			this.samples.length > 2 &&
 			this.samples[this.samples.length - 1].timestampMs -
 				this.samples[0].timestampMs >
-				maxHistoryMs
+				SAMPLE_HISTORY_MS
 		) {
 			this.samples.shift();
 		}

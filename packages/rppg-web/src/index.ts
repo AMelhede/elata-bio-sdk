@@ -96,6 +96,7 @@ export {
 } from "./rppgSession";
 export type {
 	CreateRppgSessionOptions,
+	ExperimentalVitals,
 	RppgSessionBackendMode,
 	RppgSessionBackendPreference,
 	RppgSessionDiagnostics,
