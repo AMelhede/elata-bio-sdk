@@ -8,6 +8,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import releaseScrub from "./release-scrub.cjs";
+import sourceStamp from "./source-stamp.cjs";
 
 const { scrub, ownFileNames } = releaseScrub;
 
@@ -38,6 +39,16 @@ if (existsSync(built)) {
 	const m = readFileSync(built, "utf8").match(/RPPG_WEB_BUILD_VERSION = "([^"]+)"/);
 	if (m?.[1] !== pkg.version)
 		problems.push(`dist says ${m?.[1]}, package.json says ${pkg.version}: rebuild dist`);
+}
+// The version alone cannot tell a dist built from this checkout from one built before its source
+// or README moved on (a README describing an option the built code lacked said "ready").
+const stampFile = path.join(root, sourceStamp.STAMP_FILE);
+if (!existsSync(stampFile)) {
+	problems.push("dist has no record of the source it was built from: rebuild dist (pnpm run build)");
+} else if (JSON.parse(readFileSync(stampFile, "utf8")).sha256 !== sourceStamp.sourceStamp(root)) {
+	problems.push(
+		"dist was built from other source or another README than this checkout: rebuild dist (pnpm run build)",
+	);
 }
 // Licence: the SDK is Elata's, under MIT, and MIT lets a copy be shared only with its
 // copyright and permission notice. npm always packs a top-level LICENSE, so the notice ships

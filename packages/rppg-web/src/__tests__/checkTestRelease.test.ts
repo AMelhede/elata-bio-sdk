@@ -33,8 +33,8 @@ const VERSION = "0.0.0-test.1";
 function throwawayPackage(): { root: string; top: string } {
 	const top = fs.mkdtempSync(path.join(os.tmpdir(), "rppg-web-check-"));
 	const root = path.join(top, "packages", "rppg-web");
-	for (const d of ["scripts", "dist", "pkg"]) fs.mkdirSync(path.join(root, d), { recursive: true });
-	for (const f of ["check-test-release.mjs", "release-scrub.cjs"])
+	for (const d of ["scripts", "dist", "pkg", "src/__tests__"]) fs.mkdirSync(path.join(root, d), { recursive: true });
+	for (const f of ["check-test-release.mjs", "release-scrub.cjs", "source-stamp.cjs", "stamp-source.mjs"])
 		fs.copyFileSync(path.join(pkgRoot, "scripts", f), path.join(root, "scripts", f));
 	fs.copyFileSync(path.join(pkgRoot, "LICENSE"), path.join(root, "LICENSE"));
 	fs.copyFileSync(path.join(pkgRoot, "LICENSE"), path.join(top, "LICENSE"));
@@ -55,8 +55,15 @@ function throwawayPackage(): { root: string; top: string } {
 	fs.writeFileSync(path.join(root, "dist", "buildInfo.js"), `export const RPPG_WEB_BUILD_VERSION = "${VERSION}";\n`);
 	fs.writeFileSync(path.join(root, "pkg", "rppg_wasm.js"), "export function set_colour_projection_fix() {}\n");
 	fs.writeFileSync(path.join(root, "pkg", "rppg_wasm_bg.wasm"), "\0asm");
+	fs.writeFileSync(path.join(root, "src", "index.ts"), "export const a = 1;\n");
+	fs.writeFileSync(path.join(root, "src", "__tests__", "a.test.ts"), "test.todo('a');\n");
+	stamp(root);
 	return { root, top };
 }
+
+/** What the build does last: record which source and README dist was built from. */
+const stamp = (root: string) =>
+	spawnSync(process.execPath, [path.join(root, "scripts", "stamp-source.mjs")], { cwd: root, encoding: "utf8" });
 
 const check = (root: string) =>
 	spawnSync(process.execPath, [path.join(root, "scripts", "check-test-release.mjs")], { cwd: root, encoding: "utf8" });
@@ -103,5 +110,46 @@ describe("check-test-release.mjs applies the release scrub to what ships", () =>
 		const r = check(made.root);
 		expect(r.status).toBe(1);
 		expect(r.stderr).toContain("dist/index.d.ts: measurement of recorded people");
+	});
+});
+
+// The check compared version strings only, so a checkout whose source or README had moved on
+// since dist was built (the README describing an option the built code lacks) said "ready".
+describe("check-test-release.mjs refuses a dist built from other source", () => {
+	let made: { root: string; top: string } | null = null;
+	afterEach(() => {
+		if (made) fs.rmSync(made.top, { recursive: true, force: true });
+		made = null;
+	});
+
+	it("refuses when a source file changed after dist was built", () => {
+		made = throwawayPackage();
+		fs.appendFileSync(path.join(made.root, "src", "index.ts"), "export const b = 2;\n");
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("dist was built from other source");
+	});
+
+	it("refuses when the README changed after dist was built", () => {
+		made = throwawayPackage();
+		fs.appendFileSync(path.join(made.root, "README.md"), "A new option.\n");
+		expect(check(made.root).stderr).toContain("dist was built from other source");
+	});
+
+	it("refuses a dist with no record of its source", () => {
+		made = throwawayPackage();
+		fs.rmSync(path.join(made.root, "dist", "source-stamp.json"), { recursive: true, force: true });
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("dist has no record of the source it was built from");
+	});
+
+	it("ignores test files, and Windows line endings (a checkout there has them)", () => {
+		made = throwawayPackage();
+		fs.appendFileSync(path.join(made.root, "src", "__tests__", "a.test.ts"), "test.todo('b');\n");
+		fs.writeFileSync(path.join(made.root, "src", "index.ts"), "export const a = 1;\r\n");
+		const r = check(made.root);
+		expect(r.stderr).toBe("");
+		expect(r.status).toBe(0);
 	});
 });
