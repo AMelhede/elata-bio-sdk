@@ -167,8 +167,10 @@ test('the heart-rate template shows only the checked heart rate, nothing unprove
   const app = readFileSync(join(__dirname, 'templates', 'rppg-demo', 'src', 'App.tsx'), 'utf8');
   // Mood (face + HRV), breathing and HRV have not passed a check against a reference; the engine's own
   // confidence and signal quality describe the camera picture, not the number shown (signal quality
-  // read 100% while the rate was invented), and the tracker no longer moves the checked rate.
-  assert.doesNotMatch(app, /AffectTracker|classifyAffectLabel|hrv_rmssd|respiration_rate|enableTracker/);
+  // read 100% while the rate was invented). The session runs the engine's rate tracker unless told
+  // not to, and it no longer moves the checked rate, so the template turns it off.
+  assert.doesNotMatch(app, /AffectTracker|classifyAffectLabel|hrv_rmssd|respiration_rate/);
+  assert.match(app, /enableTracker: false/);
   assert.doesNotMatch(app, /metrics\.confidence|metrics\.signal_quality|confidencePct|qualityPct/);
   assert.match(app, /session\.getMetrics\(\)/);
   assert.match(app, /Looking for a pulse/);

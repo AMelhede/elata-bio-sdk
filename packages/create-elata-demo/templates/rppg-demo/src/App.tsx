@@ -140,6 +140,8 @@ export default function App() {
           wasmBinaryUrl: rppgWasmBinaryUrl,
           roiSmoothingAlpha: 0.25,
           useSkinMask: true,
+          // The rate shown is the pulse check's, which the engine's rate tracker does not move.
+          enableTracker: false,
           onDiagnostics: () => {
             syncFromSession();
           },
