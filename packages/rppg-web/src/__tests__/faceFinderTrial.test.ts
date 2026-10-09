@@ -236,3 +236,143 @@ describe("lifetime", () => {
 		expect(f.delegate).toBe("GPU");
 	});
 });
+
+describe("failures the finder must recover from", () => {
+	/** A fake that counts closes, can take a per-call time, and can throw on every call. */
+	function finder(delegate: "GPU" | "CPU", ms: number | ((n: number) => number), clock: { t: number }, opts: { result?: () => FaceLandmarkerResult; throws?: boolean | (() => boolean) } = {}) {
+		const calls: number[] = [];
+		let closes = 0;
+		let lost = false;
+		const c = {
+			delegate,
+			finder: {
+				detectForVideo: (_: unknown, ts: number) => {
+					calls.push(ts);
+					clock.t += typeof ms === "number" ? ms : ms(calls.length);
+					if (typeof opts.throws === "function" ? opts.throws() : opts.throws) throw new Error("inference failed");
+					return (opts.result ?? (() => FACE))();
+				},
+				close: () => {
+					closes++;
+				},
+			} as never,
+			isLost: () => lost,
+			calls,
+			closes: () => closes,
+			lose: () => {
+				lost = true;
+			},
+		};
+		return c as FinderCandidate & typeof c;
+	}
+	const flush = async () => {
+		for (let i = 0; i < 5; i++) await Promise.resolve();
+	};
+	const step = (f: TrialFaceFinder, clock: { t: number }) => {
+		clock.t += 33;
+		f.detectForVideo({} as never, clock.t);
+	};
+
+	test("a lost GPU that cannot be rebuilt is retried with growing pauses, not on every frame", async () => {
+		const clock = { t: 0 };
+		const gpu = finder("GPU", 15, clock, { result: () => NONE });
+		let attempts = 0;
+		const f = new TrialFaceFinder([gpu], { now: () => clock.t, rebuild: async () => (attempts++, null) });
+		gpu.lose();
+		for (let i = 0; i < 300; i++) {
+			step(f, clock);
+			await flush();
+		}
+		expect(attempts).toBeGreaterThanOrEqual(2);
+		expect(attempts).toBeLessThanOrEqual(4);
+	});
+
+	test("after a GPU rebuild fails, the next try builds the CPU, and the CPU takes over", async () => {
+		const clock = { t: 0 };
+		const gpu = finder("GPU", 15, clock, { result: () => NONE });
+		const cpu = finder("CPU", 40, clock);
+		const asked: string[] = [];
+		const f = new TrialFaceFinder([gpu], { now: () => clock.t, rebuild: async (d) => (asked.push(d), d === "CPU" ? cpu : null) });
+		gpu.lose();
+		for (let i = 0; i < 300 && f.delegate !== "CPU"; i++) {
+			step(f, clock);
+			await flush();
+		}
+		expect(asked.slice(0, 2)).toEqual(["GPU", "CPU"]);
+		expect(f.delegate).toBe("CPU");
+		expect(gpu.closes()).toBe(1);
+		step(f, clock);
+		expect(cpu.calls.length).toBeGreaterThan(0);
+	});
+
+	test("a candidate that throws during the trial is dropped from it, and its error still reaches the caller", () => {
+		const clock = { t: 0 };
+		const gpu = finder("GPU", 15, clock, { throws: true });
+		const cpu = finder("CPU", 40, clock);
+		const f = new TrialFaceFinder([gpu, cpu], { now: () => clock.t });
+		let errors = 0;
+		for (let i = 0; i < 3 * PER; i++) {
+			try {
+				step(f, clock);
+			} catch {
+				errors++;
+			}
+		}
+		expect(errors).toBe(1);
+		expect(f.delegate).toBe("CPU");
+		expect(gpu.closes()).toBe(1);
+		expect(cpu.calls.length).toBe(3 * PER - 1);
+	});
+
+	test("after the trial, a finder that throws on 3 calls in a row is rebuilt", async () => {
+		const clock = { t: 0 };
+		let broken = false;
+		const cpu = finder("CPU", 10, clock, { throws: () => broken });
+		const fresh = finder("CPU", 10, clock);
+		const rebuild = jest.fn(async () => fresh);
+		const f = new TrialFaceFinder([cpu], { now: () => clock.t, rebuild });
+		drive(f, 3, clock);
+		broken = true;
+		for (let i = 0; i < 2; i++) expect(() => step(f, clock)).toThrow("inference failed");
+		expect(rebuild).not.toHaveBeenCalled();
+		expect(() => step(f, clock)).toThrow("inference failed");
+		expect(rebuild).toHaveBeenCalledWith("CPU");
+		await flush();
+		step(f, clock);
+		expect(fresh.calls).toHaveLength(1);
+	});
+
+	test("a rebuild that lands after the trial closed its finder is closed, never used, and the old finder is closed once", async () => {
+		const clock = { t: 0 };
+		const gpu = finder("GPU", 290, clock);
+		const cpu = finder("CPU", 60, clock);
+		const fresh = finder("GPU", 290, clock);
+		let land: (c: FinderCandidate) => void = () => undefined;
+		const f = new TrialFaceFinder([gpu, cpu], { now: () => clock.t, rebuild: () => new Promise((r) => (land = r)) });
+		for (let i = 0; i < 5; i++) step(f, clock);
+		gpu.lose();
+		step(f, clock);
+		for (let i = 0; i < 2 * PER; i++) step(f, clock);
+		expect(f.delegate).toBe("CPU");
+		land(fresh);
+		await flush();
+		expect(fresh.closes()).toBe(1);
+		expect(fresh.calls).toHaveLength(0);
+		expect(gpu.closes()).toBe(1);
+	});
+
+	test("a rebuild during the trial restarts that candidate's warm-up, so the fresh finder's first calls are not timed", async () => {
+		const clock = { t: 0 };
+		const gpu = finder("GPU", 15, clock);
+		const cpu = finder("CPU", 40, clock);
+		const fresh = finder("GPU", (n) => (n <= FINDER_TRIAL_WARMUP_CALLS ? 300 : 15), clock);
+		const f = new TrialFaceFinder([gpu, cpu], { now: () => clock.t, rebuild: async () => fresh });
+		for (let i = 0; i < FINDER_TRIAL_WARMUP_CALLS + 2; i++) step(f, clock);
+		gpu.lose();
+		step(f, clock);
+		await flush();
+		for (let i = 0; i < 2 * PER; i++) step(f, clock);
+		expect(f.trialResults[0].meanMs).toBeCloseTo(15, 6);
+		expect(f.delegate).toBe("GPU");
+	});
+});

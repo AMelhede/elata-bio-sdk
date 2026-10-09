@@ -99,14 +99,19 @@ export async function loadFaceFinderCandidates(
 	if (!mod.FilesetResolver || !mod.FaceLandmarker) return [];
 	const fileset = await mod.FilesetResolver.forVisionTasks(wasmBase);
 	const out: FinderCandidate[] = [];
+	let lastError: unknown = null;
 	for (const delegate of delegates) {
 		try {
 			const built = await buildFinder(mod, fileset, modelAssetPath, delegate);
 			if (built) out.push(built);
-		} catch {
-			// This delegate does not exist here; the trial runs over the rest.
+		} catch (error) {
+			// This delegate does not build here; the trial runs over the rest.
+			lastError = error;
 		}
 	}
+	// None built: fail as loudly as the published loader (the session reports face_mesh_init_failed), never
+	// fall back in silence to reading the middle of the picture.
+	if (!out.length && lastError != null) throw lastError;
 	return out;
 }
 
