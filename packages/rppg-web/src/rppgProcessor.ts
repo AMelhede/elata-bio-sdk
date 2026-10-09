@@ -15,6 +15,7 @@ import {
 import {
 	analyzePulseWindow,
 	type HarmonicRelation,
+	type PulseWindowAnalysis,
 } from "./pulseAnalysis";
 import {
 	type ResolvedRppgFixSwitches,
@@ -526,6 +527,13 @@ export class RppgProcessor {
 	private lastBayesUpdateMs: number | null = null;
 	/** The last analysis and the sample time it ran at (switch steadyAnalysis); null forces the next read to analyse. */
 	private analysed: { atMs: number; core: Metrics } | null = null;
+	/**
+	 * The window analysis of the samples as they stand. It is a pure function of them, so a second analysis of the
+	 * same samples (steadyAnalysis' second pass, or two reads with no sample between) reuses it; any change to the
+	 * samples bumps samplesVersion and the next analysis computes afresh.
+	 */
+	private windowAnalysis: { version: number; result: PulseWindowAnalysis | null } | null = null;
+	private samplesVersion = 0;
 	private totalSamplesReceived = 0;
 	private failedBackendError: Error | null = null;
 	private failedOperation: string | null = null;
@@ -625,6 +633,7 @@ export class RppgProcessor {
 		this.disposed = true;
 		this.releasePipeline();
 		this.samples.length = 0;
+		this.samplesVersion += 1;
 		this.bpmHistory.length = 0;
 		this.resetCalibration();
 	}
@@ -1062,6 +1071,7 @@ export class RppgProcessor {
 	) {
 		if (!Number.isFinite(timestampMs) || !Number.isFinite(intensity)) return;
 		this.totalSamplesReceived += 1;
+		this.samplesVersion += 1;
 		this.samples.push({
 			timestampMs,
 			intensity,
@@ -1095,6 +1105,17 @@ export class RppgProcessor {
 		return chrom;
 	}
 
+	/** analyzePulseWindow over the samples, computed once per set of samples (see windowAnalysis). */
+	private analyseWindow(): PulseWindowAnalysis | null {
+		const kept = this.windowAnalysis;
+		if (kept != null && kept.version === this.samplesVersion) return kept.result;
+		const result = analyzePulseWindow(this.samples, {
+			doublingRule: !this.fixes.noRateDoubling,
+		});
+		this.windowAnalysis = { version: this.samplesVersion, result };
+		return result;
+	}
+
 	private computeAdvancedMetrics(base: Metrics): Partial<Metrics> {
 		if (this.samples.length < 24) {
 			return {
@@ -1108,9 +1129,7 @@ export class RppgProcessor {
 			};
 		}
 
-		const analysis = analyzePulseWindow(this.samples, {
-			doublingRule: !this.fixes.noRateDoubling,
-		});
+		const analysis = this.analyseWindow();
 		if (!analysis) {
 			return {
 				calibrated_bpm: base.bpm ?? null,
