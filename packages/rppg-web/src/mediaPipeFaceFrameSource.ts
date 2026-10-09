@@ -49,6 +49,9 @@ export function analysisSize(
 	};
 }
 
+/** smallFinderInput: the widest picture the face finder is given (same aspect as the analysed frame). */
+export const FINDER_INPUT_WIDTH = 320;
+
 export class MediaPipeFaceFrameSource implements FrameSource {
 	public onFrame: ((frame: Frame) => void) | null = null;
 	public onError: ((error: FrameSourceError) => void) | null = null;
@@ -58,6 +61,9 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 	private vfcHandle: number | null = null;
 	private smoothedFaceRoi: ROI | null = null;
 	private lastError: FrameSourceError | null = null;
+	/** smallFinderInput: the finder's smaller copy of the analysed frame (made on first use). */
+	private finderCanvas: HTMLCanvasElement | null = null;
+	private finderCtx: CanvasRenderingContext2D | null = null;
 
 	constructor(
 		private video: HTMLVideoElement,
@@ -125,6 +131,27 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 			: { width: w, height: h };
 	}
 
+	/** What the face finder reads: the live video (analysisWidth off, as published), the analysed frame, or with
+	 *  smallFinderInput a copy of it at most FINDER_INPUT_WIDTH wide. Landmarks are proportions of the picture, so
+	 *  they place the regions on the analysed frame the same way whichever picture the finder read. */
+	private finderInput(): HTMLVideoElement | HTMLCanvasElement {
+		if (!this.fixes.analysisWidth) return this.video;
+		if (!this.fixes.smallFinderInput || this.canvas.width <= FINDER_INPUT_WIDTH) return this.canvas;
+		if (!this.finderCanvas) {
+			this.finderCanvas = document.createElement("canvas");
+			this.finderCtx = this.finderCanvas.getContext("2d");
+		}
+		const w = FINDER_INPUT_WIDTH;
+		const h = Math.max(1, Math.round((this.canvas.height * w) / this.canvas.width));
+		if (this.finderCanvas.width !== w || this.finderCanvas.height !== h) {
+			this.finderCanvas.width = w;
+			this.finderCanvas.height = h;
+		}
+		if (!this.finderCtx) return this.canvas;
+		this.finderCtx.drawImage(this.canvas, 0, 0, w, h);
+		return this.finderCanvas;
+	}
+
 	private detectAndEmit(now: number, metadata: any) {
 		// Resize canvas if the video dimensions became known after construction.
 		if (this.video.videoWidth) {
@@ -162,10 +189,7 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		let landmarks: FaceLandmarkPoint[] | null = null;
 		let blendshapes: FrameBlendshape[] | undefined;
 		try {
-			const result = this.faceLandmarker.detectForVideo(
-				this.fixes.analysisWidth ? this.canvas : this.video,
-				now,
-			);
+			const result = this.faceLandmarker.detectForVideo(this.finderInput(), now);
 			landmarks = result?.faceLandmarks?.[0] ?? null;
 			const categories = result?.faceBlendshapes?.[0]?.categories;
 			if (categories && categories.length) {

@@ -25,6 +25,8 @@ export declare function analysisSize(videoWidth: number, videoHeight: number): {
     width: number;
     height: number;
 };
+/** smallFinderInput: the widest picture the face finder is given (same aspect as the analysed frame). */
+export declare const FINDER_INPUT_WIDTH = 320;
 export declare class MediaPipeFaceFrameSource implements FrameSource {
     private video;
     private faceLandmarker;
@@ -38,6 +40,9 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     private vfcHandle;
     private smoothedFaceRoi;
     private lastError;
+    /** smallFinderInput: the finder's smaller copy of the analysed frame (made on first use). */
+    private finderCanvas;
+    private finderCtx;
     constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
     start(): Promise<void>;
     stop(): Promise<void>;
@@ -46,6 +51,10 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     readonly fixes: ResolvedRppgFixSwitches;
     /** Canvas size for a video size: capped at MAX_ANALYSIS_WIDTH with analysisWidth on, else full size as published. */
     private frameSize;
+    /** What the face finder reads: the live video (analysisWidth off, as published), the analysed frame, or with
+     *  smallFinderInput a copy of it at most FINDER_INPUT_WIDTH wide. Landmarks are proportions of the picture, so
+     *  they place the regions on the analysed frame the same way whichever picture the finder read. */
+    private finderInput;
     private detectAndEmit;
     private landmarksToROI;
     private smoothRoi;

@@ -311,7 +311,7 @@ describe('MediaPipeFaceFrameSource analysis width switch', () => {
     const restore = setupCanvasMock(1280, 960);
     const video = new FakeVideo(1280, 960) as unknown as HTMLVideoElement;
     const landmarker = fakeLandmarker([{ landmarks: lm }]);
-    const src = new MediaPipeFaceFrameSource(video, landmarker, 30);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { smallFinderInput: false });
     (src as any).detectAndEmit(1000, { mediaTime: 0.001 });
     const canvas = (src as any).canvas;
     expect([canvas.width, canvas.height]).toEqual([640, 480]);
@@ -328,6 +328,44 @@ describe('MediaPipeFaceFrameSource analysis width switch', () => {
     const canvas = (src as any).canvas;
     expect([canvas.width, canvas.height]).toEqual([1280, 960]);
     expect(landmarker.detectForVideo.mock.calls[0][0]).toBe(video);
+    restore();
+  });
+});
+
+describe('MediaPipeFaceFrameSource small finder input switch', () => {
+  // The face finder's cost follows its input size (1280x960 to 640x480 took it from ~62 to ~24 ms a frame, 2026-10-02);
+  // its mesh model reads a fixed ~256 px crop, so a 320-wide copy is enough for a face that fills a webcam frame.
+  // The regions are still read from the 640-wide frame; landmarks are proportions, so they map back unchanged.
+  const lm = [
+    { x: 0.45, y: 0.4 },
+    { x: 0.55, y: 0.4 },
+    { x: 0.5, y: 0.5 },
+  ];
+  test('on: the finder reads a 320-wide copy of the 640-wide frame, and the frame carries its landmarks', () => {
+    const restore = setupCanvasMock(640, 480);
+    const video = new FakeVideo(640, 480) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { smallFinderInput: true });
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    (src as any).detectAndEmit(1000, { mediaTime: 0.001 });
+    const canvas = (src as any).canvas;
+    const input = landmarker.detectForVideo.mock.calls[0][0];
+    expect([canvas.width, canvas.height]).toEqual([640, 480]);
+    expect(input).not.toBe(canvas);
+    expect([input.width, input.height]).toEqual([320, 240]);
+    expect(frames[0].landmarks).toBe(lm);
+    expect(frames[0].width).toBe(640);
+    restore();
+  });
+
+  test('off: the finder reads the 640-wide frame itself', () => {
+    const restore = setupCanvasMock(640, 480);
+    const video = new FakeVideo(640, 480) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{ landmarks: lm }]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { smallFinderInput: false });
+    (src as any).detectAndEmit(1000, { mediaTime: 0.001 });
+    expect(landmarker.detectForVideo.mock.calls[0][0]).toBe((src as any).canvas);
     restore();
   });
 });

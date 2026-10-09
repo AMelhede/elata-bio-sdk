@@ -8,6 +8,7 @@ export const FIX_SWITCH_NAMES = [
     "analysisWidth",
     "analysisWorker",
     "faceFinderTrial",
+    "smallFinderInput",
 ];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
 export function resolveFixSwitches(option) {

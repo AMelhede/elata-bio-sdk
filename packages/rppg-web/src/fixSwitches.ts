@@ -72,6 +72,12 @@ export type RppgFixSwitches = {
 	 * (faceFinderTrial.ts). Off: the CPU delegate only, as published.
 	 */
 	faceFinderTrial?: boolean;
+	/**
+	 * Speed 7 (EXPERIMENT, branch feat/small-finder-input): the face finder reads a copy of the analysed frame at
+	 * most FINDER_INPUT_WIDTH (320) wide; the regions are still read from the analysed frame. Its cost follows its
+	 * input size, and its mesh model reads a fixed ~256 px crop. Off: the finder reads the analysed frame itself.
+	 */
+	smallFinderInput?: boolean;
 };
 
 /**
@@ -92,6 +98,7 @@ export const FIX_SWITCH_NAMES = [
 	"analysisWidth",
 	"analysisWorker",
 	"faceFinderTrial",
+	"smallFinderInput",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
