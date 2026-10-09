@@ -15,8 +15,13 @@
 //      its 60 with headMotion off, which proves the scene tests the rule); a pulse at 70 under a
 //      nod at 90, and under a light at 96, shows 70;
 //   7. the packed ChestMotion (chestBreathing) on generated frames: a chest moving 15 times a minute
-//      reads 15 within 1, a still one gives no clear line.
-// BREAK=3 makes check 7 expect 20 breaths a minute instead of 15.
+//      reads 15 within 1, a still one gives no clear line;
+//   8. the packed processor with the real WASM core, read on every frame for 60 s at 30 fps: the
+//      analysis runs at most once per 250 ms of samples (at 30 fps the first frame 250 ms on is the 8th,
+//      so 225 times) with steadyAnalysis on, and on every read (1,800 times) with it off, and the known
+//      72 still reads 72.
+// BREAK=3 makes check 7 expect 20 breaths a minute instead of 15; BREAK=4 makes check 8 expect 1,800
+// analyses with the switch on.
 // BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red; BREAK=2 makes check 6
 // expect the nod's 60 to show with headMotion on.
 import { spawnSync } from "node:child_process";
@@ -80,10 +85,12 @@ const pipe = new glue.WasmRppgPipeline(30, 10);
 assert.equal(pipe.colour_projection_fix(), true, "fix on by default in the core");
 pipe.set_colour_projection_fix(false);
 assert.equal(pipe.colour_projection_fix(), false, "switch reaches the core");
-// Every fix switch, and every pulse-check light rule, on by default (read from the package's own
-// lists so a new switch cannot be missed the way the count of five once went stale).
+// Every fix switch on by default except those the package lists as off by default, and every
+// pulse-check light rule on by default (read from the package's own lists so a new switch cannot be
+// missed the way the count of five once went stale).
 assert.deepEqual(Object.keys(sdk.resolveFixSwitches()).sort(), [...sdk.FIX_SWITCH_NAMES].sort());
-assert.ok(Object.values(sdk.resolveFixSwitches()).every((v) => v === true), "every fix on by default");
+for (const [name, on] of Object.entries(sdk.resolveFixSwitches()))
+  assert.equal(on, !sdk.FIX_SWITCHES_OFF_BY_DEFAULT.includes(name), "default of fix " + name);
 assert.deepEqual(Object.keys(sdk.resolvePulseCheckRules()).sort(), [...sdk.PULSE_CHECK_RULE_NAMES].sort());
 assert.ok(Object.values(sdk.resolvePulseCheckRules()).every((v) => v === true), "every light rule on by default");
 function read(bpm, fixes) {
@@ -147,9 +154,27 @@ const breathing = chestRate(15, 0.5);
 assert.ok(breathing && Math.abs(breathing.rate - breathWant) <= 1, "chest moving 15 a minute should read " + breathWant + ", read " + JSON.stringify(breathing));
 const stillChest = chestRate(15, 0);
 assert.ok(stillChest == null || stillChest.share < 0.5, "a still chest should give no clear line, gave " + JSON.stringify(stillChest));
+// Check 8: steadyAnalysis on the packed processor and the real core. Every analysis is a call to the
+// core's get_metrics; reading on every frame must not multiply them.
+function analysesWhenReadEveryFrame(fixes) {
+  let calls = 0;
+  const counted = { newPipeline: (sr, ws) => { const p = backend.newPipeline(sr, ws); const g = p.get_metrics.bind(p); p.get_metrics = () => { calls++; return g(); }; return p; } };
+  const p = new sdk.RppgProcessor(counted, 30, 10, { fixes });
+  let last = null;
+  for (let i = 0; i < 1800; i++) { const t = (i * 1000) / 30; const s = Math.sin((2 * Math.PI * 72 * t) / 60000);
+    p.pushSampleRgbMeta(t, 0.62 * (1 - 0.003 * s), 0.45 * (1 - 0.01 * s), 0.38 * (1 - 0.002 * s), 1, 0, 0); last = p.getMetrics().bpm; }
+  return { calls, last };
+}
+const steadyOn = analysesWhenReadEveryFrame({});
+const steadyOff = analysesWhenReadEveryFrame({ steadyAnalysis: false });
+// At 30 fps the first frame at least 250 ms after an analysis is the 8th (267 ms): 1,800 / 8 = 225.
+const steadyWant = process.env.BREAK === "4" ? 1800 : Math.ceil(1800 / Math.ceil(250 / (1000 / 30)));
+assert.ok(Math.abs(steadyOn.calls - steadyWant) <= 1, "steadyAnalysis on: " + steadyWant + " analyses expected, ran " + steadyOn.calls);
+assert.equal(steadyOff.calls, 1800, "steadyAnalysis off: one analysis per read");
+assert.ok(steadyOn.last != null && Math.abs(steadyOn.last - 72) <= 2, "steadyAnalysis on: 72 should read 72, read " + steadyOn.last);
 const off = read(120, { colourProjectionFix: false });
 assert.ok(off == null || Math.abs(off - 120) > 2, "colourProjectionFix:false should give the published core's answer, read " + off);
-console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line.");
+console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line; steady analysis: " + steadyOn.calls + " analyses read on every frame (off: " + steadyOff.calls + "), 72 read " + steadyOn.last + ".");
 `,
 	);
 	console.log(run(process.execPath, ["app.mjs"], app).trim());
