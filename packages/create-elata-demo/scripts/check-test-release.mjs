@@ -18,6 +18,11 @@ if (pkg.name !== "@amelhede/create-elata-demo") problems.push(`name is ${pkg.nam
 if (!/-test\.\d+$/.test(pkg.version)) problems.push(`version ${pkg.version} is not a -test.N version`);
 if (pkg.publishConfig?.tag !== "test") problems.push("publishConfig.tag is not 'test'");
 if (pkg.license !== "MIT") problems.push(`license field is ${pkg.license}, not MIT`);
+// The npm page's Repository, Homepage and Issues links: the fork this build comes from, so its bugs
+// are not filed on Elata's tracker.
+const fork = /github\.com\/AMelhede\/elata-bio-sdk/;
+for (const [field, value] of [["repository", pkg.repository?.url], ["homepage", pkg.homepage], ["bugs", typeof pkg.bugs === "string" ? pkg.bugs : pkg.bugs?.url]])
+	if (!fork.test(value ?? "")) problems.push(`${field} is ${value}, not the AMelhede/elata-bio-sdk fork`);
 
 // Licence: the starter maker is Elata's, under MIT, which lets a copy be shared only with its copyright and
 // permission notice; npm packs a top-level LICENSE whenever the file is there.

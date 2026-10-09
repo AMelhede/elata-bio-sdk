@@ -228,7 +228,10 @@ test('the heart-rate template shows only the checked heart rate, nothing unprove
   assert.match(app, /session\.getMetrics\(\)/);
   assert.match(app, /Looking for a pulse/);
   // A camera on a wall is told why nothing comes, not to keep waiting.
-  assert.match(app, /lastDropReason === 'no_face'/);
+  assert.match(app, /diagnostics\.faceGone/);
+  assert.doesNotMatch(app, /lastDropReason === 'no_face'/);
+  // The label follows the number shown: a proven rate can come while the WASM engine is unavailable.
+  assert.match(app, /const readinessLabel = metrics\.bpm != null \? 'Pulse found' : 'Looking for a pulse';/);
   assert.doesNotMatch(app, /'Warm-up'/);
   // Its README says what it shows, and how an app turns on the readings it leaves out, labelled as experimental.
   const readme = readFileSync(join(__dirname, 'templates', 'rppg-demo', 'README.md'), 'utf8');
@@ -279,6 +282,16 @@ test('scaffolds the default template', () => {
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("the test build's npm links point at the fork it is built from, not Elata's repo", () => {
+  // Testers who hit a bug in the fork's starters would otherwise file it on Elata's tracker,
+  // against code Elata never shipped.
+  const r = spawnSync(process.execPath, [join(__dirname, 'scripts', 'check-test-release.mjs')], { encoding: 'utf8' });
+  assert.doesNotMatch(r.stderr, /repository|homepage|bugs/, r.stderr);
+  assert.match(scaffolderPackage.repository.url, /github\.com\/AMelhede\/elata-bio-sdk/);
+  assert.match(scaffolderPackage.homepage, /github\.com\/AMelhede\/elata-bio-sdk/);
+  assert.match(scaffolderPackage.bugs, /github\.com\/AMelhede\/elata-bio-sdk/);
 });
 
 test('npm pack runs the release check and ships the licence and every starter file', () => {

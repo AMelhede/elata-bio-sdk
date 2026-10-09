@@ -51,7 +51,9 @@ function getStatusMessage(diagnostics: RppgSessionDiagnostics | null): string {
     return 'WASM backend not active — check bundled asset URLs.';
   }
 
-  if (diagnostics.lastDropReason === 'no_face') {
+  // Only once the face has been gone long enough that no rate is reported: one missed frame is not
+  // "no face", and the rate stays on screen through it.
+  if (diagnostics.faceGone) {
     return 'No face in view. Face the camera.';
   }
 
@@ -186,8 +188,9 @@ export default function App() {
     statusTone === 'error' ? 'status-dot error' : statusTone === 'warn' ? 'status-dot warn' : 'status-dot';
   // A heart rate is shown only once the SDK's pulse check has proven a real pulse (forehead and both
   // cheeks agreeing); a wall, a photo or a flickering lamp never gets one.
-  const readinessLabel =
-    diagnostics?.estimationAvailable && metrics.bpm != null ? 'Pulse found' : 'Looking for a pulse';
+  // The pulse check runs without the WASM engine, so a proven rate can come while the engine is
+  // unavailable; the label follows the number shown, never contradicts it.
+  const readinessLabel = metrics.bpm != null ? 'Pulse found' : 'Looking for a pulse';
 
   return (
     <div className="app">

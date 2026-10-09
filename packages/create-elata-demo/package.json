@@ -6,11 +6,11 @@
   "author": "Elata",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Elata-Biosciences/elata-bio-sdk.git",
+    "url": "git+https://github.com/AMelhede/elata-bio-sdk.git",
     "directory": "packages/create-elata-demo"
   },
-  "homepage": "https://github.com/Elata-Biosciences/elata-bio-sdk#readme",
-  "bugs": "https://github.com/Elata-Biosciences/elata-bio-sdk/issues",
+  "homepage": "https://github.com/AMelhede/elata-bio-sdk/tree/release/test-1/packages/create-elata-demo#readme",
+  "bugs": "https://github.com/AMelhede/elata-bio-sdk/issues",
   "keywords": [
     "elata",
     "create",
@@ -27,7 +27,7 @@
   "elataSdkVersions": {
     "eegWeb": "0.12.0",
     "eegWebBle": "0.12.0",
-    "rppgWeb": "npm:@amelhede/rppg-web@0.15.0-test.15",
+    "rppgWeb": "npm:@amelhede/rppg-web@0.15.0-test.16",
     "ppgWeb": "0.12.0",
     "appMetrics": "0.5.0"
   },
