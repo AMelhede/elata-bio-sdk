@@ -253,7 +253,7 @@ await video.play();
 const session = await createRppgSession({
   video,
   backend: "auto",
-  faceMesh: "off",
+  faceMesh: "auto",
 });
 
 // 3. Poll for BPM
@@ -269,12 +269,14 @@ const interval = setInterval(() => {
 // await session.stop();
 ```
 
-Expect a ~10 second warmup before the first BPM estimate.
+Expect 20 to 40 seconds of a still, lit face before the first BPM: the pulse
+check shows a rate only once the face regions agree on it.
 
 > **If BPM is always null:** check `session.backendMode` before assuming bad
-> signal. If it is `"unavailable"`, the WASM assets did not load: the session
-> runs gracefully but metrics will always be null. This looks identical to the
-> warmup period. See the [Vite Config](#vite-config) section above.
+> signal. If it is `"unavailable"`, the WASM assets did not load and metrics
+> will always be null; `onError` receives `backend_init_failed` with the URLs
+> that were tried, and `session.getState()` reads `degraded`. See the
+> [Vite Config](#vite-config) section above.
 
 If you need a single boolean for UI gating (e.g. "show the BPM display"),
 use `createRppgAppAdapter().canPublish` instead of polling `getMetrics()`
@@ -288,7 +290,7 @@ const session = await createRppgSession({
   video: videoEl,
   sampleRate: 30,
   backend: "auto",
-  faceMesh: "off",
+  faceMesh: "auto",
   onDiagnostics: (diagnostics) => {
     console.log(diagnostics.state.status, diagnostics.faceTrackingMode);
     console.log(diagnostics.framesSeen, diagnostics.totalSamplesReceived);
@@ -543,7 +545,9 @@ clinical measurement; use `affect.ts` separately when face-derived affect is
 actually intended.
 
 Intentional `faceMesh: "off"` sessions use `video_frame` mode without being
-reported as a FaceMesh failure. If a fatal processor exception occurs,
+reported as a FaceMesh failure. With the pulse check on (the default) they show
+no heart rate, since there are no face regions to check: set `pulseCheck: false`
+as well if you turn the face finder off. If a fatal processor exception occurs,
 `session.state` switches to terminal `failed`, later metrics reads return safe
 null/zero values, and the runner stops instead of continuing to reuse the same
 backend instance.
@@ -569,7 +573,7 @@ import { createManagedRppgSession } from "@elata-biosciences/rppg-web";
 
 const managed = await createManagedRppgSession({
   video: videoEl,
-  faceMesh: "off",
+  faceMesh: "auto",
   maxRetries: 3,
   retryDelayMs: 1500,
   onStateChange: (state) => {
@@ -650,7 +654,7 @@ import {
 
 const managed = await createManagedRppgSession({
   video: videoEl,
-  faceMesh: "off",
+  faceMesh: "auto",
 });
 
 const adapter = createRppgAppAdapter();
@@ -675,7 +679,7 @@ import {
   createRppgAppMonitor,
 } from "@elata-biosciences/rppg-web";
 
-const managed = await createManagedRppgSession({ video: videoEl, faceMesh: "off" });
+const managed = await createManagedRppgSession({ video: videoEl, faceMesh: "auto" });
 const monitor = createRppgAppMonitor(managed, { intervalMs: 500 });
 
 const unsubscribe = monitor.subscribe((snapshot) => {

@@ -53,7 +53,7 @@ const session = await createRppgSession({
   video: videoEl,
   sampleRate: 30,
   backend: "auto",
-  faceMesh: "off",
+  faceMesh: "auto",
   onDiagnostics: (diagnostics) => {
     console.log(diagnostics.state.status, diagnostics.faceTrackingMode);
     console.log(diagnostics.framesSeen, diagnostics.totalSamplesReceived);
@@ -85,7 +85,9 @@ Use `session.state` or `diagnostics.state` to distinguish:
 - terminal runtime processor failure via `failed`
 
 If you intentionally choose `faceMesh: "off"`, the session stays in supported
-`video_frame` mode and is not reported as a FaceMesh failure by default.
+`video_frame` mode and is not reported as a FaceMesh failure by default. With
+the pulse check on (the default) it then shows no heart rate, since there are no
+face regions to check: set `pulseCheck: false` as well.
 
 If your app needs explicit asset paths instead of the default `/pkg/*` lookup,
 pass one or more of:
@@ -110,7 +112,7 @@ import { createManagedRppgSession } from "@elata-biosciences/rppg-web";
 
 const managed = await createManagedRppgSession({
   video: videoEl,
-  faceMesh: "off",
+  faceMesh: "auto",
   maxRetries: 3,
   retryDelayMs: 1500,
   onStateChange: (state) => {
@@ -186,7 +188,7 @@ import {
 
 const managed = await createManagedRppgSession({
   video,
-  faceMesh: "off",
+  faceMesh: "auto",
 });
 
 const adapter = createRppgAppAdapter();
@@ -213,7 +215,7 @@ import {
 
 const managed = await createManagedRppgSession({
   video,
-  faceMesh: "off",
+  faceMesh: "auto",
 });
 
 const monitor = createRppgAppMonitor(managed, { intervalMs: 500 });
