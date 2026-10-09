@@ -99,10 +99,11 @@ test('no template builds through vite-plugin-top-level-await (its production bui
   }
 });
 
-test('every template lets current pnpm build esbuild (pnpm 10+ refuses unlisted build scripts)', () => {
+test('every template installs under pnpm 9 and current pnpm alike (pnpm 9 needs a packages field; pnpm 10+ refuses unlisted build scripts)', () => {
   for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
     const ws = readFileSync(join(__dirname, 'templates', t, 'pnpm-workspace.yaml'), 'utf8');
     const pkg = JSON.parse(readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8'));
+    assert.match(ws, /^packages:\s*\n\s+- \.\s*$/m, t);
     assert.match(ws, /allowBuilds:\s*\n\s+esbuild: true/, t);
     assert.deepEqual(pkg.pnpm?.onlyBuiltDependencies, ['esbuild'], t);
   }
