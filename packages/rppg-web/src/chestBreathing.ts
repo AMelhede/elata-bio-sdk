@@ -94,6 +94,11 @@ export function breathingFromMotion(
 	if (win.length < CHEST_BREATH_COVERAGE * windowS * CHEST_BREATH_MIN_RATE) return null;
 	const t = win.map((s) => s[0] / 1000);
 	if (t[t.length - 1] - t[0] < CHEST_BREATH_COVERAGE * windowS) return null;
+	// No large holes inside: the same share of the window's 1 s stretches must each hold a sample, so a
+	// window that is mostly missing is not read through a straight line drawn across the gap.
+	const bins = new Uint8Array(Math.ceil(windowS));
+	for (const s of win) bins[Math.min(bins.length - 1, Math.floor((s[0] - from) / 1000))] = 1;
+	if (bins.reduce((n, b) => n + b, 0) < CHEST_BREATH_COVERAGE * bins.length) return null;
 	const z: number[] = [];
 	let acc = 0;
 	for (const s of win) {
@@ -233,34 +238,51 @@ export function greyHalf(frame: Pick<Frame, "data" | "width">, box: { x0: number
 /** How long the motion keeps: the rate window and a little more. */
 const CHEST_KEEP_MS = (CHEST_BREATH_WINDOW_S + 4) * 1000;
 
+/** No chest box, or no frames at all, for longer than this: the motion so far is dropped. */
+const CHEST_GAP_MS = 1000;
+
 /**
  * Follows the box below the chin frame by frame. The box is anchored on the first face and kept still
  * (a box that followed every small head movement would carry the head's motion into the chest's); it is
- * re-anchored, and the motion so far dropped, when the face moves CHEST_BOX_REANCHOR face widths or is
- * gone for over a second.
+ * re-anchored, and the motion so far dropped, when the face moves CHEST_BOX_REANCHOR face widths or the frame
+ * changes size. The motion is dropped when there is no chest box (no face, or the chest out of view) or no
+ * frame for over CHEST_GAP_MS, and no rate is given while frames have stopped (by `now`, a wall clock, since
+ * the frames' own media clock stops with them).
  */
 export class ChestMotion {
-	private box: ReturnType<typeof chestBox> = null;
+	private box: (NonNullable<ReturnType<typeof chestBox>> & { frameW: number; frameH: number }) | null = null;
 	private prev: { data: Float32Array; w: number; h: number } | null = null;
-	private lastFaceMs: number | null = null;
+	private lastBoxMs: number | null = null;
+	private lastFrameMs: number | null = null;
+	private lastPushAt: number | null = null;
 	private samples: ChestSample[] = [];
+	private readonly now: () => number;
+
+	constructor(opts: { now?: () => number } = {}) {
+		this.now = opts.now ?? (() => (typeof performance !== "undefined" ? performance.now() : Date.now()));
+	}
 
 	push(frame: Pick<Frame, "data" | "width" | "height" | "timestampMs">, landmarks: readonly FaceLandmarkPoint[] | null | undefined): void {
 		const t = frame.timestampMs;
 		if (t == null || !Number.isFinite(t)) return;
-		if (!landmarks || landmarks.length < 3) {
-			if (this.lastFaceMs != null && t - this.lastFaceMs > 1000) this.reset();
+		// Frames that stopped (a hidden tab) or a clock that went back: no shift is taken across the gap.
+		if (this.lastFrameMs != null && (t - this.lastFrameMs > CHEST_GAP_MS || t < this.lastFrameMs)) this.reset();
+		this.lastFrameMs = t;
+		this.lastPushAt = this.now();
+		const now = landmarks && landmarks.length >= 3 ? chestBox(landmarks, frame.width, frame.height) : null;
+		if (!now) {
+			if (this.lastBoxMs != null && t - this.lastBoxMs > CHEST_GAP_MS) this.reset();
 			return;
 		}
-		const now = chestBox(landmarks, frame.width, frame.height);
-		if (!now) return;
-		this.lastFaceMs = t;
+		this.lastBoxMs = t;
 		const b = this.box;
 		const moved =
 			b != null &&
-			Math.hypot((now.x0 + now.x1 - b.x0 - b.x1) / 2, now.y0 - b.y0) > CHEST_BOX_REANCHOR * b.faceWidth;
+			(b.frameW !== frame.width ||
+				b.frameH !== frame.height ||
+				Math.hypot((now.x0 + now.x1 - b.x0 - b.x1) / 2, now.y0 - b.y0) > CHEST_BOX_REANCHOR * b.faceWidth);
 		if (b == null || moved) {
-			this.box = now;
+			this.box = { ...now, frameW: frame.width, frameH: frame.height };
 			this.prev = null;
 			this.samples = [];
 		}
@@ -273,11 +295,11 @@ export class ChestMotion {
 		while (this.samples.length && this.samples[0][0] < t - CHEST_KEEP_MS) this.samples.shift();
 	}
 
-	/** The rate over the latest window, or null. */
+	/** The rate over the window ending at the latest frame (or `atMs`), or null; null while frames have stopped. */
 	rate(atMs?: number): { rate: number; share: number } | null {
-		const last = this.samples[this.samples.length - 1];
-		if (!last) return null;
-		return breathingFromMotion(this.samples, atMs ?? last[0]);
+		if (!this.samples.length || this.lastFrameMs == null) return null;
+		if (this.lastPushAt != null && this.now() - this.lastPushAt > CHEST_GAP_MS) return null;
+		return breathingFromMotion(this.samples, atMs ?? this.lastFrameMs);
 	}
 
 	/** The motion kept (for recording and replay). */
@@ -288,7 +310,7 @@ export class ChestMotion {
 	reset(): void {
 		this.box = null;
 		this.prev = null;
-		this.lastFaceMs = null;
+		this.lastBoxMs = null;
 		this.samples = [];
 	}
 }

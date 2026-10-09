@@ -183,3 +183,88 @@ describe("wiring", () => {
 		expect(off.getBuildSwitches().chestBreathing).toBe(false);
 	});
 });
+
+describe("a window with holes, and a chest that goes out of view", () => {
+	test("a window mostly missing gives nothing: 12 s of data at its two ends, or a stray sample and a 10 s burst", () => {
+		// Each passes the older rules (span and sample count), and each is mostly a straight line across a hole.
+		const full = breathing(15, 0.01, 30, 40);
+		const ends = full.filter(([t]) => (t > 8000 && t <= 14000) || t >= 34000);
+		expect(breathingFromMotion(ends, 40000)).toBeNull();
+		const stray = [full.find(([t]) => t > 8100)!, ...full.filter(([t]) => t >= 30000)];
+		expect(breathingFromMotion(stray, 40000)).toBeNull();
+	});
+
+	test("a short hole (2 s) still reads", () => {
+		const full = breathing(15, 0.01, 30, 40);
+		const o = breathingFromMotion(full.filter(([t]) => t < 20000 || t >= 22000), 40000);
+		expect(o).not.toBeNull();
+		expect(Math.abs(o!.rate - 15)).toBeLessThanOrEqual(1);
+	});
+
+	const FW = 160;
+	const FH = 120;
+	const face = [
+		{ x: 0.4, y: 0.1 },
+		{ x: 0.6, y: 0.1 },
+		{ x: 0.5, y: 0.4 },
+		{ x: 0.4, y: 0.4 },
+	];
+	// So close that the box below the chin falls outside the picture: a face, but no chest.
+	const leaningIn = [
+		{ x: 0.1, y: 0.2 },
+		{ x: 0.9, y: 0.2 },
+		{ x: 0.5, y: 0.99 },
+	];
+	const frameAt = (t: number, w = FW, h = FH) => {
+		const data = new Uint8ClampedArray(w * h * 4);
+		const d = 0.5 * Math.sin(2 * Math.PI * (15 / 60) * t);
+		for (let y = 0; y < h; y++)
+			for (let x = 0; x < w; x++) {
+				const v = 120 + 50 * Math.sin(0.19 * (y - d) + 0.07 * x) + 20 * Math.cos(0.11 * (y - d));
+				const i = (y * w + x) * 4;
+				data[i] = data[i + 1] = data[i + 2] = v;
+				data[i + 3] = 255;
+			}
+		return { data, width: w, height: h, timestampMs: t * 1000 };
+	};
+
+	test("a face with no chest in view for over a second drops the motion, and no rate is given", () => {
+		const wall = { t: 0 };
+		const m = new ChestMotion({ now: () => wall.t });
+		for (let i = 0; i < 15 * 36; i++) {
+			wall.t = (i * 1000) / 15;
+			m.push(frameAt(i / 15), face);
+		}
+		expect(m.rate()).not.toBeNull();
+		for (let i = 0; i < 15 * 120; i++) {
+			wall.t = 36000 + (i * 1000) / 15;
+			m.push(frameAt(36 + i / 15), leaningIn);
+		}
+		expect(m.getSamples()).toHaveLength(0);
+		expect(m.rate()).toBeNull();
+	});
+
+	test("frames that stop: no rate while stopped, and no shift taken across the gap", () => {
+		const wall = { t: 0 };
+		const m = new ChestMotion({ now: () => wall.t });
+		for (let i = 0; i < 15 * 36; i++) {
+			wall.t = (i * 1000) / 15;
+			m.push(frameAt(i / 15), face);
+		}
+		expect(m.rate()).not.toBeNull();
+		wall.t += 20000; // the tab is hidden for 20 s: no frames at all
+		expect(m.rate()).toBeNull();
+		m.push(frameAt(56), face);
+		m.push(frameAt(56 + 1 / 15), face);
+		expect(m.getSamples().length).toBeLessThanOrEqual(1);
+		expect(m.getSamples().every(([t]) => t >= 56000)).toBe(true);
+	});
+
+	test("a change of frame size re-anchors the box, even when the box barely moves", () => {
+		const m = new ChestMotion();
+		for (let i = 0; i < 15; i++) m.push(frameAt(i / 15), face);
+		expect(m.getSamples().length).toBeGreaterThan(0);
+		m.push(frameAt(1, FW + 10, FH), face); // 5 px of box movement, under the re-anchor distance
+		expect(m.getSamples()).toHaveLength(0);
+	});
+});
