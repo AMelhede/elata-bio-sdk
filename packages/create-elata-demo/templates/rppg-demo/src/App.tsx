@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createRppgSession,
-  AffectTracker,
-  classifyAffectLabel,
   type Metrics,
   type RppgSession,
   type RppgSessionDiagnostics,
@@ -75,11 +73,6 @@ function getStatusTone(diagnostics: RppgSessionDiagnostics | null): 'live' | 'wa
   return 'live';
 }
 
-function clamp01(n: number): number {
-  if (Number.isNaN(n)) return 0;
-  return Math.min(1, Math.max(0, n));
-}
-
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const sessionRef = useRef<RppgSession | null>(null);
@@ -87,8 +80,6 @@ export default function App() {
   const [status, setStatus] = useState('Requesting camera…');
   const [metrics, setMetrics] = useState<Metrics>(EMPTY_METRICS);
   const [diagnostics, setDiagnostics] = useState<RppgSessionDiagnostics | null>(null);
-  const [affect, setAffect] = useState<{ label: string; valence: number; arousal: number } | null>(null);
-  const affectTrackerRef = useRef(new AffectTracker());
 
   const syncFromSession = useCallback(() => {
     const session = sessionRef.current;
@@ -98,27 +89,6 @@ export default function App() {
     setMetrics(nextMetrics);
     setDiagnostics(nextDiagnostics);
     setStatus(getStatusMessage(nextDiagnostics));
-
-    // Affect: valence from the face (blendshapes), arousal from rPPG physiology.
-    const tracker = affectTrackerRef.current;
-    const face = session.getLastBlendshapes();
-    if (face) tracker.observeFace(face.blendshapes, face.atMs);
-    tracker.observePhysiology(nextMetrics.bpm ?? null, nextMetrics.hrv_rmssd ?? null);
-    const state = tracker.compute({
-      bpm: nextMetrics.bpm ?? null,
-      rmssd: nextMetrics.hrv_rmssd ?? null,
-      physioConfidence: nextMetrics.confidence ?? 0,
-      faceConfidence: face ? 1 : 0,
-    });
-    setAffect(
-      state.arousalSource === 'none'
-        ? null
-        : {
-            label: classifyAffectLabel(state.valence, state.arousal),
-            valence: state.valence,
-            arousal: state.arousal,
-          },
-    );
   }, []);
 
   useEffect(() => {
@@ -164,7 +134,6 @@ export default function App() {
           faceMesh: 'auto',
           wasmJsUrl: rppgWasmJsUrl,
           wasmBinaryUrl: rppgWasmBinaryUrl,
-          enableTracker: { minBpm: 55, maxBpm: 150, numParticles: 200 },
           roiSmoothingAlpha: 0.25,
           useSkinMask: true,
           onDiagnostics: () => {
@@ -209,11 +178,10 @@ export default function App() {
   const statusTone = getStatusTone(diagnostics);
   const statusDotClass =
     statusTone === 'error' ? 'status-dot error' : statusTone === 'warn' ? 'status-dot warn' : 'status-dot';
+  // A heart rate is shown only once the SDK's pulse check has proven a real pulse (forehead and both
+  // cheeks agreeing); a wall, a photo or a flickering lamp never gets one.
   const readinessLabel =
-    diagnostics?.estimationAvailable && metrics.bpm != null ? 'Ready' : 'Warm-up';
-
-  const confidencePct = Math.round(clamp01(metrics.confidence) * 100);
-  const qualityPct = Math.round(clamp01(metrics.signal_quality) * 100);
+    diagnostics?.estimationAvailable && metrics.bpm != null ? 'Pulse found' : 'Looking for a pulse';
 
   return (
     <div className="app">
@@ -267,64 +235,6 @@ export default function App() {
                 <span className="bpm-unit">BPM</span>
               </div>
               <p className="bpm-sub">{readinessLabel}</p>
-            </div>
-
-            <div className="bpm-block" aria-label="Affect">
-              <p className="bpm-label">Affect</p>
-              <div className="bpm-value-row">
-                <span className="bpm-number" style={{ fontSize: '1.5rem' }}>
-                  {affect ? affect.label : '—'}
-                </span>
-              </div>
-              <p className="bpm-sub">
-                {affect
-                  ? `valence ${affect.valence.toFixed(2)} · arousal ${affect.arousal.toFixed(2)}`
-                  : 'face + heart-rate fusion'}
-              </p>
-            </div>
-
-            <div className="bpm-block" aria-label="Respiration">
-              <p className="bpm-label">Respiration</p>
-              <div className="bpm-value-row">
-                <span className="bpm-number">
-                  {metrics.respiration_rate != null
-                    ? formatMetric(metrics.respiration_rate, 1)
-                    : '—'}
-                </span>
-                <span className="bpm-unit">br/min</span>
-              </div>
-              <p className="bpm-sub">
-                {metrics.respiration_confidence != null
-                  ? `confidence ${metrics.respiration_confidence.toFixed(2)}`
-                  : 'derived from the rPPG waveform'}
-              </p>
-            </div>
-
-            <div className="meter-group">
-              <div className="meter">
-                <div className="meter-head">
-                  <span>Confidence</span>
-                  <span className="meter-pct">{confidencePct}%</span>
-                </div>
-                <div className="meter-track" role="presentation">
-                  <div
-                    className="meter-fill meter-fill--confidence"
-                    style={{ width: `${confidencePct}%` }}
-                  />
-                </div>
-              </div>
-              <div className="meter">
-                <div className="meter-head">
-                  <span>Signal quality</span>
-                  <span className="meter-pct">{qualityPct}%</span>
-                </div>
-                <div className="meter-track" role="presentation">
-                  <div
-                    className="meter-fill meter-fill--quality"
-                    style={{ width: `${qualityPct}%` }}
-                  />
-                </div>
-              </div>
             </div>
 
             <ul className="chip-row" aria-label="Session state">
