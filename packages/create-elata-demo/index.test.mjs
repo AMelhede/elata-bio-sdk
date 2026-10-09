@@ -28,6 +28,9 @@ const eegWebBleVersion = JSON.parse(
 const rppgWebVersion = JSON.parse(
   readFileSync(join(__dirname, '..', 'rppg-web', 'package.json'), 'utf8'),
 ).version;
+const appMetricsVersion = JSON.parse(
+  readFileSync(join(__dirname, '..', 'app-metrics', 'package.json'), 'utf8'),
+).version;
 const ppgWebVersion = JSON.parse(
   readFileSync(join(__dirname, '..', 'ppg-web', 'package.json'), 'utf8'),
 ).version;
@@ -87,6 +90,18 @@ test('ships fallback SDK versions that match the repo package versions', () => {
   assert.equal(scaffolderPackage.elataSdkVersions.eegWebBle, eegWebBleVersion);
   assert.equal(scaffolderPackage.elataSdkVersions.rppgWeb, rppgWebVersion);
   assert.equal(scaffolderPackage.elataSdkVersions.ppgWeb, ppgWebVersion);
+  assert.equal(scaffolderPackage.elataSdkVersions.appMetrics, appMetricsVersion);
+});
+
+test('every version the CLI reads has a packaged fallback', () => {
+  // 0.12.1 stopped at start for every template when run from npm (no monorepo siblings beside it):
+  // index.mjs reads an appMetrics version that elataSdkVersions did not list.
+  const cli = readFileSync(join(__dirname, 'index.mjs'), 'utf8');
+  const read = [...cli.matchAll(/elataSdkVersions\?\.(\w+)/g)].map((m) => m[1]);
+  assert.ok(read.length >= 5, `found only ${read.length} version reads`);
+  for (const key of read) {
+    assert.ok(scaffolderPackage.elataSdkVersions[key], `elataSdkVersions.${key} is read by the CLI but not packaged`);
+  }
 });
 
 test('scaffolds the default template', () => {
