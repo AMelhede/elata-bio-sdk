@@ -36,9 +36,11 @@ const BANNED = [
 	// Another codebase's history: a 7 to 40 character hex word with a letter and a digit.
 	[/\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b/, "commit hash"],
 	[/\bdatasets?\b/i, "dataset mention"],
-	// "2,196 real-pulse seconds", "9,087 real seconds", "255 real recordings", "19 people".
+	// "2,196 real-pulse seconds", "9,087 real seconds", "255 real recordings", "19 people". One word may sit
+	// between the number and the noun ("16 still people", "18 locked-away recordings": a test build
+	// nearly shipped the first).
 	[
-		/\b\d[\d,]*\s+(?:(?:real|real-pulse|held-out|recorded)[ -]+)?(?:people|participants|subjects|recordings|captures)\b|\b\d[\d,]*\s+(?:real|real-pulse|held-out)[ -]?(?:pulse\s+)?seconds\b/,
+		/\b\d[\d,]*\s+(?:[A-Za-z][\w-]*\s+)?(?:people|participants|subjects|recordings|captures)\b|\b\d[\d,]*\s+(?:real|real-pulse|held-out)[ -]?(?:pulse\s+)?seconds\b/,
 		"measured count (a dataset-derived number)",
 	],
 	[

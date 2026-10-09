@@ -31,6 +31,8 @@ describe("release scrub", () => {
 		["a dataset", "owner recordings plus a public dataset", "dataset"],
 		["a count of measured seconds", "Set in Peak on 2,196 real-pulse seconds", "measured count"],
 		["a count of measured seconds, short form", "measured there to cost 8 of 9,087 real seconds and 0 readings", "measured count"],
+		["a count of people with a word between", "within 3 breaths a minute in 24 of 29 windows on 16 still people", "measured count"],
+		["a count of recordings with a word between", "read on 18 locked-away recordings", "measured count"],
 		["a percentile of a measured set", "at most 2.6 dB (p99 2.2)", "percentile"],
 	])("catches %s", (_what, text, label) => {
 		expect(scrub(text).join(" | ")).toContain(label);
