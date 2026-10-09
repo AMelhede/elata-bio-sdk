@@ -89,6 +89,25 @@ test('ships fallback SDK versions that match the repo package versions', () => {
   assert.equal(scaffolderPackage.elataSdkVersions.ppgWeb, ppgWebVersion);
 });
 
+test('no template builds through vite-plugin-top-level-await (its production build fails), all target es2022', () => {
+  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
+    const pkg = readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8');
+    const vite = readFileSync(join(__dirname, 'templates', t, 'vite.config.ts'), 'utf8');
+    assert.doesNotMatch(pkg, /vite-plugin-top-level-await/, t);
+    assert.doesNotMatch(vite, /^import .*top-level-await/m, t);
+    assert.match(vite, /target: 'es2022'/, t);
+  }
+});
+
+test('every template lets current pnpm build esbuild (pnpm 10+ refuses unlisted build scripts)', () => {
+  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
+    const ws = readFileSync(join(__dirname, 'templates', t, 'pnpm-workspace.yaml'), 'utf8');
+    const pkg = JSON.parse(readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8'));
+    assert.match(ws, /allowBuilds:\s*\n\s+esbuild: true/, t);
+    assert.deepEqual(pkg.pnpm?.onlyBuiltDependencies, ['esbuild'], t);
+  }
+});
+
 test('scaffolds the default template', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-'));
   try {
