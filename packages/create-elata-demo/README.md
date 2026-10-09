@@ -1,5 +1,20 @@
 # @elata-biosciences/create-elata-demo
 
+> **This branch publishes a test build, `@amelhede/create-elata-demo` (tag `test`), not the official package.**
+> It is Elata's starter maker 0.12.1 (MIT) with fixes: it starts again (0.12.1 on npm stops at start), all five
+> starters install with `npm install` and with pnpm and build, and the heart-rate starter uses the rppg-web test build
+> (`npm:@amelhede/rppg-web`) and shows only a checked heart rate. For testing in apps before anything is proposed to
+> Elata's SDK. Make a starter with it:
+>
+> ```text
+> npx @amelhede/create-elata-demo@test my-app --template rppg-demo
+> cd my-app
+> npm install
+> npm run dev
+> ```
+>
+> How it is published: [PUBLISHING.md](./PUBLISHING.md). The text below is the original package's.
+
 Scaffold Elata starter apps from published templates.
 
 ## What This Package Is
