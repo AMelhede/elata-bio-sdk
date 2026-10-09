@@ -210,6 +210,13 @@ export declare class RppgProcessor {
     private lastBayesUpdateMs;
     /** The last analysis and the sample time it ran at (switch steadyAnalysis); null forces the next read to analyse. */
     private analysed;
+    /**
+     * The window analysis of the samples as they stand. It is a pure function of them, so a second analysis of the
+     * same samples (steadyAnalysis' second pass, or two reads with no sample between) reuses it; any change to the
+     * samples bumps samplesVersion and the next analysis computes afresh.
+     */
+    private windowAnalysis;
+    private samplesVersion;
     private totalSamplesReceived;
     private failedBackendError;
     private failedOperation;
@@ -287,6 +294,8 @@ export declare class RppgProcessor {
     private releasePipeline;
     private pushLocalSample;
     private computeLocalRgbIntensity;
+    /** analyzePulseWindow over the samples, computed once per set of samples (see windowAnalysis). */
+    private analyseWindow;
     private computeAdvancedMetrics;
     private updateBaseline;
 }
