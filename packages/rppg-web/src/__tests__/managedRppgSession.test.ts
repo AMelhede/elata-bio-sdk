@@ -11,6 +11,7 @@ function createDiagnostics(overrides: Partial<RppgSessionDiagnostics> = {}): Rpp
   return {
     backendMode: 'wasm',
     estimationAvailable: true,
+    faceGone: false,
     faceTrackingMode: 'video_frame',
     roiSource: 'fallback_roi',
     processorMethod: 'rgb_meta',

@@ -275,12 +275,8 @@ function formatProcessorPath(value: DemoRunnerDiagnostics['lastProcessorMethod']
 
 function deriveStatusFromDiagnostics(
   debugSnapshot: RppgDebugSnapshot | null,
-  runnerDiagnostics: DemoRunnerDiagnostics | null,
   bpm: number | null,
 ): { text: string; style: BadgeStyle } {
-  if (runnerDiagnostics?.lastDropReason === 'no_face') {
-    return { text: 'No face in view. Face the camera.', style: 'warning' };
-  }
   if (bpm !== null) {
     return { text: 'Pulse found', style: 'running' };
   }
@@ -544,15 +540,20 @@ async function startDemo() {
       reasonWrap.classList.add('hidden');
     }
 
-    // Status badge: what to fix first, else whether a pulse has been found.
+    // Status badge: what to fix first, else whether a pulse has been found. No face comes first,
+    // and only once the face has been gone long enough that the session reports no rate: one
+    // missed frame is not "no face", and the capture score stops updating while no face is seen,
+    // so its last value would keep asking an empty room to hold still.
     const capture = metrics.capture_confidence;
-    if (bpm === null && capture != null && capture < 0.4) {
+    if (session.getDiagnostics().faceGone) {
+      setStatusBadge('No face in view. Face the camera.', 'warning');
+    } else if (bpm === null && capture != null && capture < 0.4) {
       setStatusBadge(
         metrics.capture_limiting === 'lighting' ? 'Increase lighting' : 'Hold still',
         'warning',
       );
     } else {
-      const status = deriveStatusFromDiagnostics(debugSnapshot, lastRunnerDiagnostics, bpm);
+      const status = deriveStatusFromDiagnostics(debugSnapshot, bpm);
       setStatusBadge(status.text, status.style);
     }
   }, 1000);

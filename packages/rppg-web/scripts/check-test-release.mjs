@@ -4,6 +4,7 @@
 // Rust or TypeScript toolchain. Fails loudly instead of publishing something wrong.
 //   node scripts/check-test-release.mjs            files, version, licence, switch in the WASM, scrub
 //   node scripts/check-test-release.mjs --publish  the same, plus: the npm tag is not 'latest'
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,15 +51,57 @@ if (existsSync(distDir)) {
 			problems.push(`dist/${f} has no source (src/${m[1]}.ts): delete it and rebuild dist`);
 	}
 }
+// And the other way: every source module needs its build. dist/ is gitignored, so a new module's
+// built files stay untracked unless force-added, and a fresh clone would ship a dist/index.js that
+// imports a file it does not have.
+const srcDir = path.join(root, "src");
+if (existsSync(srcDir)) {
+	for (const f of readdirSync(srcDir)) {
+		const m = f.match(/^(.+?)(?<!\.d|\.test)\.ts$/);
+		if (!m) continue;
+		for (const out of [`${m[1]}.js`, `${m[1]}.d.ts`])
+			if (!existsSync(path.join(distDir, out))) problems.push(`src/${f} has no build (dist/${out}): rebuild dist`);
+	}
+}
+// Inside a git checkout, every built file that ships must be committed (git add -f, dist/ is
+// gitignored), or the fresh clone PUBLISHING.md publishes from lacks it.
+const inGit = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, encoding: "utf8" });
+if (inGit.status === 0 && inGit.stdout.trim() === "true") {
+	const tracked = new Set(
+		spawnSync("git", ["ls-files", "-z", "--", "dist", "pkg"], { cwd: root, encoding: "utf8" })
+			.stdout.split("\0")
+			.filter(Boolean),
+	);
+	const built = [];
+	const walkBuilt = (d) => {
+		if (!existsSync(d)) return;
+		for (const e of readdirSync(d)) {
+			const p = path.join(d, e);
+			if (statSync(p).isDirectory()) walkBuilt(p);
+			else if (e !== ".gitignore") built.push(path.relative(root, p).split(path.sep).join("/"));
+		}
+	};
+	walkBuilt(distDir);
+	walkBuilt(path.join(root, "pkg"));
+	for (const f of built)
+		if (!tracked.has(f)) problems.push(`${f} is not committed: git add -f it (dist/ is gitignored)`);
+}
 // The version alone cannot tell a dist built from this checkout from one built before its source
-// or README moved on (a README describing an option the built code lacked said "ready").
+// or README moved on (a README describing an option the built code lacked said "ready"), nor a
+// dist that changed after the build wrote it.
 const stampFile = path.join(root, sourceStamp.STAMP_FILE);
 if (!existsSync(stampFile)) {
 	problems.push("dist has no record of the source it was built from: rebuild dist (pnpm run build)");
-} else if (JSON.parse(readFileSync(stampFile, "utf8")).sha256 !== sourceStamp.sourceStamp(root)) {
-	problems.push(
-		"dist was built from other source or another README than this checkout: rebuild dist (pnpm run build)",
-	);
+} else {
+	const record = JSON.parse(readFileSync(stampFile, "utf8"));
+	if (record.sha256 !== sourceStamp.sourceStamp(root))
+		problems.push(
+			"dist was built from other source or another README than this checkout: rebuild dist (pnpm run build)",
+		);
+	if (record.dist !== sourceStamp.distStamp(root))
+		problems.push(
+			"dist changed after it was built (edited by hand, or restored from another build): rebuild dist (pnpm run build)",
+		);
 }
 // Licence: the SDK is Elata's, under MIT, and MIT lets a copy be shared only with its
 // copyright and permission notice. npm always packs a top-level LICENSE, so the notice ships
@@ -93,7 +136,8 @@ const walk = (d) => {
 		else shipped.push(p);
 	}
 };
-for (const f of pkg.files) {
+// npm always packs package.json, whatever "files" says.
+for (const f of [...pkg.files, "package.json"]) {
 	const p = path.join(root, f);
 	if (!existsSync(p)) continue;
 	if (statSync(p).isDirectory()) walk(p);

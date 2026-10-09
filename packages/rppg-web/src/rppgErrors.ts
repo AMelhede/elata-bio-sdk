@@ -114,7 +114,7 @@ export function normalizeRppgError(
 			message: "Face tracking failed to initialize.",
 			detail,
 			guidance:
-				"Use faceMesh: 'off' for center-box mode, or ensure FaceMesh assets load successfully.",
+				"Ensure FaceMesh assets load successfully. Without face tracking the pulse check has no face regions and shows no heart rate; faceMesh: 'off' (center-box mode) gives one only with pulseCheck: false.",
 			retryable: false,
 			terminal: false,
 		};

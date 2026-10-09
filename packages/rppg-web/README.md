@@ -8,7 +8,7 @@ behaviour. It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.15` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.16` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
 - Everything below the "Switches" section is the upstream documentation, unchanged in
@@ -20,7 +20,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.15"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.16"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -269,10 +269,12 @@ Expect 20 to 40 seconds of a still, lit face before the first BPM: the pulse
 check shows a rate only once the face regions agree on it.
 
 > **If BPM is always null:** check `session.backendMode` before assuming bad
-> signal. If it is `"unavailable"`, the WASM assets did not load and metrics
-> will always be null; `onError` receives `backend_init_failed` with the URLs
-> that were tried, and `session.getState()` reads `degraded`. See the
-> [Vite Config](#vite-config) section above.
+> signal. If it is `"unavailable"`, the WASM assets did not load: the engine's
+> own rate never comes, so with `pulseCheck: false` BPM stays null (with the
+> pulse check on, its rate can still come, since the check runs without the
+> WASM). `onError` receives `backend_init_failed` with the URLs that were
+> tried, `session.lastError` holds it, and `session.getState()` reads
+> `degraded`. See the [Vite Config](#vite-config) section above.
 
 If you need a single boolean for UI gating (e.g. "show the BPM display"),
 use `createRppgAppAdapter().canPublish` instead of polling `getMetrics()`

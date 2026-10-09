@@ -113,6 +113,12 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 	processorFailure: RppgProcessorBackendFailure | null;
 	state: RppgSessionState;
 	lastError: RppgSessionError | null;
+	/**
+	 * No face has been in view for FACE_GONE_RESET_MS (face tracking on), so `getMetrics()` reports
+	 * no rate: the moment a status should say no face is in view. A shorter miss (a turned head, a
+	 * raised hand) leaves it false, as it leaves the rate; `lastDropReason` describes one frame only.
+	 */
+	faceGone: boolean;
 	modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
 
@@ -149,9 +155,11 @@ export type CreateRppgSessionOptions = Omit<
 	 * several times too high. Breathing comes from the up-and-down motion of the chest and shoulders
 	 * in a box below the chin (chestBreathing.ts), not from the metrics' `respiration_rate`; it has so
 	 * far been checked only on still people against a reference
-	 * worked out from a finger sensor, not a breathing belt. HRV comes only while the session reports
-	 * a heart rate the pulse check proved, from the session's latest `getMetrics()` read, and not
-	 * while the analysis may still hold samples from before the face last came back. With the pulse
+	 * worked out from a finger sensor, not a breathing belt. HRV comes only while a face is in view and
+	 * not while the analysis may still hold samples from before the face last came back; with the
+	 * pulse check on, also only while the session reports a heart rate the check proved, from the
+	 * session's latest `getMetrics()` read. With `pulseCheck: false` it is the engine's own HRV, handed
+	 * over whether or not a heart rate is reported. With the pulse
 	 * check on, the session's own reads (`getMetrics()`, `getDebugSnapshot()`) withhold HRV and
 	 * breathing whether this option is on or off; `session.processor`, the raw engine, is not filtered.
 	 */
@@ -247,7 +255,10 @@ type SessionInternals = {
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
 export type ExperimentalVitals = {
 	experimental: true;
-	/** RMSSD in ms, while the session reports a proven heart rate (see the option); else null. */
+	/**
+	 * RMSSD in ms under the conditions on the `experimentalVitals` option (with the pulse check on, only
+	 * while the session reports a proven heart rate; with it off, the engine's own HRV); else null.
+	 */
 	hrvRmssd: number | null;
 	/**
 	 * Breathing from chest motion over the latest 32 s: `rate` in breaths a minute, and `share`, its
@@ -266,6 +277,29 @@ const WITHHELD_VITALS = {
 	respiration_rate: null,
 	respiration_confidence: null,
 } as const;
+
+/**
+ * Metrics with every rate cleared, not only the headline one (the intermediate estimates, spectral,
+ * ACF, peaks, Bayes, calibrated, would otherwise keep reporting numbers from before), and HRV and
+ * breathing with them; `reason` says why.
+ */
+function clearedMetrics(metrics: Metrics, reason: string): Metrics {
+	const cleared: Metrics = { ...metrics };
+	for (const key of Object.keys(cleared) as (keyof Metrics)[]) {
+		if (key.endsWith("_bpm")) (cleared as Record<string, unknown>)[key] = null;
+	}
+	return {
+		...cleared,
+		bpm: null,
+		confidence: 0,
+		hrv_rmssd: null,
+		respiration_rate: null,
+		respiration_confidence: null,
+		reason_codes: metrics.reason_codes?.includes(reason) || (reason === "processor_failed" && metrics.reason_codes?.includes("backend_failed"))
+			? metrics.reason_codes
+			: [...(metrics.reason_codes ?? []), reason],
+	};
+}
 
 export class RppgSession {
 	private lastErrorValue: RppgSessionError | null = null;
@@ -292,26 +326,13 @@ export class RppgSession {
 	getMetrics(): Metrics {
 		const metrics = this.processor.getMetrics();
 		this.lastEngineMetrics = metrics;
+		// The engine failed: the runner has stopped, so no frame reaches the engine or the pulse
+		// check again and both keep their last state. Their last numbers are not a reading.
+		if (this.failed()) return clearedMetrics(metrics, "processor_failed");
 		// No face for a second (face tracking on): nothing to report, not the last number.
 		// One second rides out a brief face-finder miss without dropping a real reading.
-		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
-			// Every rate, not only the headline one: the intermediate estimates (spectral, ACF,
-			// peaks, Bayes, calibrated) would otherwise keep reporting numbers from the last face.
-			const cleared: Metrics = { ...metrics };
-			for (const key of Object.keys(cleared) as (keyof Metrics)[]) {
-				if (key.endsWith("_bpm"))
-					(cleared as Record<string, unknown>)[key] = null;
-			}
-			return {
-				...cleared,
-				bpm: null,
-				confidence: 0,
-				hrv_rmssd: null,
-				respiration_rate: null,
-				respiration_confidence: null,
-				reason_codes: [...(metrics.reason_codes ?? []), "no_face"],
-			};
-		}
+		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS)
+			return clearedMetrics(metrics, "no_face");
 		const check = this.internals.pulseCheck;
 		if (!check) return metrics;
 		// With the check on, the only number reported is the heart rate the check proved, or none.
@@ -352,7 +373,8 @@ export class RppgSession {
 	 */
 	getExperimentalVitals(): ExperimentalVitals | null {
 		if (!this.internals.experimentalVitals) return null;
-		const faceGone = (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
+		const faceGone =
+			this.failed() || (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
 		const state = this.internals.pulseCheck?.getState();
 		const proven = !state || (state.verdict === "measured" && state.bpm != null);
 		const sinceRestart = this.runner.msSinceAnalysisRestart?.() ?? null;
@@ -445,11 +467,17 @@ export class RppgSession {
 		return this.internals.waveformController?.getDiagnostics() ?? null;
 	}
 
+	/** The engine threw (the runner stops on that): the session can report nothing more. */
+	private failed(): boolean {
+		return (
+			this.processor.getBackendFailure?.() != null ||
+			this.lastErrorValue?.code === "processor_error"
+		);
+	}
+
 	getState(): RppgSessionState {
-		const processorFailure = this.processor.getBackendFailure();
 		const lastError = this.lastErrorValue;
-		const terminal =
-			processorFailure != null || lastError?.code === "processor_error";
+		const terminal = this.failed();
 		if (terminal) {
 			return {
 				status: "failed",
@@ -537,6 +565,7 @@ export class RppgSession {
 			processorFailure,
 			state,
 			lastError: this.lastErrorValue,
+			faceGone: (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS,
 			modelDiagnostics: this.getModelDiagnostics(),
 		};
 	}

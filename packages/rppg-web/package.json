@@ -1,6 +1,6 @@
 {
 	"name": "@amelhede/rppg-web",
-	"version": "0.15.0-test.15",
+	"version": "0.15.0-test.16",
 	"description": "Test build of the Elata rPPG web SDK (rppg-web 0.14.0) with nine fix switches (six heart-rate fixes and three speed changes) and a real-pulse check with six rules, each on by default and each able to be turned off, for testing in apps only.",
 	"license": "MIT",
 	"author": "Andreas Melhede",
@@ -49,7 +49,7 @@
 		"test:consumer:node": "node ./scripts/verify-consumer-node-smoke.mjs",
 		"test:consumer:browser": "pnpm exec playwright test e2e/consumer.spec.ts --project=chromium",
 		"clean": "node ./scripts/clean.mjs",
-		"build": "tsc -p . && node ./scripts/fix-dist-import-specifiers.mjs && node ./scripts/verify-dist-esm.mjs && node ./scripts/stamp-source.mjs",
+		"build": "node ./scripts/clean-build-record.mjs && tsc -p . && node ./scripts/fix-dist-import-specifiers.mjs && node ./scripts/verify-dist-esm.mjs && node ./scripts/stamp-source.mjs",
 		"verify:build": "node ../../scripts/verify-package-build.mjs dist/index.js dist/index.d.ts && pnpm run test:consumer:node",
 		"verify:publish": "node ../../scripts/verify-package-build.mjs dist/index.js dist/index.d.ts pkg/rppg_wasm.js pkg/rppg_wasm_bg.wasm && pnpm run test:consumer:node",
 		"prepare:publish": "pnpm run build:demo && pnpm run build",

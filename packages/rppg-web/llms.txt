@@ -10,7 +10,7 @@ Browser **rPPG** (camera photoplethysmography): WASM backend, optional MediaPipe
 - Published tarball includes **`dist/`** and **`pkg/`** (WASM). Local **`file:`** installs copy disk at install time: run `build:wasm` in the repo **before** installing if `pkg/` is missing.
 
 ## Critical: WASM loading (especially Vite)
-Default loader fetches **`/pkg/rppg_wasm.js`** and **`.wasm`**. If the backend never loads, **`backendMode` is `"unavailable"`**, **`metrics.bpm` stays null**, and **no error may be thrown**: same symptom as warmup.
+Default loader fetches **`/pkg/rppg_wasm.js`** and **`.wasm`**. If the backend never loads, **`backendMode` is `"unavailable"`**, the engine's own rate never comes (with `pulseCheck: false`, **`metrics.bpm` stays null**; with the pulse check on, its rate can still come), **`onError`** fires with code **`backend_init_failed`** (URLs tried in `session.lastError.message`), and **`getState()`** reads `degraded`. With `backend: "wasm"` the session throws instead.
 
 Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**, or use **`wasmImporter`** with a static import of `pkg/rppg_wasm.js`, or **`wasmJsUrl` / `wasmBinaryUrl`** with Vite **`?url`** imports. Vite 7 may block dynamic imports from `/public`: do not assume copying to `public/` is enough without the README patterns.
 
@@ -19,7 +19,7 @@ Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**, 
 - `pulseCheckRules`, each on unless set to false (`getBuildSwitches()` reports them): `wallBandEdge`, `lightFamily`, `faceFlicker`, `lightTaint`, `headMotion` (needs MediaPipe's face mesh, 468 or 478 points, on every frame; without it no rate is shown), `darkWall` (damaged colour is read as green minus the wall only over a wall that shows the light on the face: at least a tenth as bright as the face through nearly the whole window, on any colour scale).
 
 ## Session behavior
-- Roughly **~10 s warmup** before first BPM; during warmup diagnostics often include **`insufficient_window`**.
+- Expect **20 to 40 s** of a still, lit face before the first BPM (the pulse check shows a rate only once the face regions agree on it); meanwhile diagnostics often include **`insufficient_window`**.
 - Check **`diagnostics.state`**, **`backendMode`**, and **`faceTrackingMode`** (`face_mesh` vs `video_frame` when `faceMesh: "auto"`).
 - ROI behavior is versioned and composable. Omit `roiGeometryProfile` and `roiPixelSampler` for existing SDK behavior. Use `MCD_PROXY_INPUT_V1_PROFILE` only for the frozen model-input geometry, `TRADELOCK_LIVE_FOREHEAD_V1_PROFILE` for live-pipeline replay, and `TRADELOCK_RGB_WEIGHTED_V1_PIXEL_SAMPLER` for TradeLock pixel-selection replay. Do not treat those two geometry profiles as interchangeable.
 - `sampleRppgRoi()` produces `elata.rppg.roi-sample/v1`, including raw and compatibility skin fractions plus geometry/sampler IDs for traceability.

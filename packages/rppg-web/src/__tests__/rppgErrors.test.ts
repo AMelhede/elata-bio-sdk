@@ -94,3 +94,11 @@ describe('normalizeRppgError', () => {
     expect(normalizeRppgError()).toBeNull();
   });
 });
+
+// The guidance told apps to set faceMesh 'off', which with the pulse check on (the default) shows no
+// heart rate ever: the check needs the face regions only the face finder gives.
+test("face tracking failure guidance does not send apps to a setting that shows no heart rate", () => {
+	const n = normalizeRppgError({ code: "face_mesh_init_failed", stage: "face_mesh", message: "x", timestampMs: 1 });
+	expect(n?.guidance).toContain("pulseCheck: false");
+	expect(n?.guidance).not.toMatch(/^Use faceMesh: 'off'/);
+});

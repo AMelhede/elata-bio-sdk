@@ -50,6 +50,12 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
     processorFailure: RppgProcessorBackendFailure | null;
     state: RppgSessionState;
     lastError: RppgSessionError | null;
+    /**
+     * No face has been in view for FACE_GONE_RESET_MS (face tracking on), so `getMetrics()` reports
+     * no rate: the moment a status should say no face is in view. A shorter miss (a turned head, a
+     * raised hand) leaves it false, as it leaves the rate; `lastDropReason` describes one frame only.
+     */
+    faceGone: boolean;
     modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
 export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker" | "chestMotion"> & {
@@ -82,9 +88,11 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * several times too high. Breathing comes from the up-and-down motion of the chest and shoulders
      * in a box below the chin (chestBreathing.ts), not from the metrics' `respiration_rate`; it has so
      * far been checked only on still people against a reference
-     * worked out from a finger sensor, not a breathing belt. HRV comes only while the session reports
-     * a heart rate the pulse check proved, from the session's latest `getMetrics()` read, and not
-     * while the analysis may still hold samples from before the face last came back. With the pulse
+     * worked out from a finger sensor, not a breathing belt. HRV comes only while a face is in view and
+     * not while the analysis may still hold samples from before the face last came back; with the
+     * pulse check on, also only while the session reports a heart rate the check proved, from the
+     * session's latest `getMetrics()` read. With `pulseCheck: false` it is the engine's own HRV, handed
+     * over whether or not a heart rate is reported. With the pulse
      * check on, the session's own reads (`getMetrics()`, `getDebugSnapshot()`) withhold HRV and
      * breathing whether this option is on or off; `session.processor`, the raw engine, is not filtered.
      */
@@ -176,7 +184,10 @@ type SessionInternals = {
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
 export type ExperimentalVitals = {
     experimental: true;
-    /** RMSSD in ms, while the session reports a proven heart rate (see the option); else null. */
+    /**
+     * RMSSD in ms under the conditions on the `experimentalVitals` option (with the pulse check on, only
+     * while the session reports a proven heart rate; with it off, the engine's own HRV); else null.
+     */
     hrvRmssd: number | null;
     /**
      * Breathing from chest motion over the latest 32 s: `rate` in breaths a minute, and `share`, its
@@ -249,6 +260,8 @@ export declare class RppgSession {
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;
     getLatestWaveformReconstruction(): WaveformReconstructionV1 | null;
     getModelDiagnostics(): RppgModelDiagnosticsV1 | null;
+    /** The engine threw (the runner stops on that): the session can report nothing more. */
+    private failed;
     getState(): RppgSessionState;
     getDiagnostics(nowMs?: number): RppgSessionDiagnostics;
     start(): Promise<void>;

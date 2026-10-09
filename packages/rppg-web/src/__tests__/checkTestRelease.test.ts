@@ -50,9 +50,12 @@ function throwawayPackage(): { root: string; top: string } {
 		}),
 	);
 	fs.writeFileSync(path.join(root, "README.md"), "# A test build\n");
-	for (const f of ["index.js", "index.d.ts", "fixSwitches.js", "pulseCheck.js"])
-		fs.writeFileSync(path.join(root, "dist", f), "export {};\n");
+	for (const f of ["index", "fixSwitches", "pulseCheck"]) {
+		fs.writeFileSync(path.join(root, "dist", `${f}.js`), "export {};\n");
+		fs.writeFileSync(path.join(root, "dist", `${f}.d.ts`), "export {};\n");
+	}
 	fs.writeFileSync(path.join(root, "dist", "buildInfo.js"), `export const RPPG_WEB_BUILD_VERSION = "${VERSION}";\n`);
+	fs.writeFileSync(path.join(root, "dist", "buildInfo.d.ts"), "export declare const RPPG_WEB_BUILD_VERSION: string;\n");
 	fs.writeFileSync(path.join(root, "pkg", "rppg_wasm.js"), "export function set_colour_projection_fix() {}\n");
 	fs.writeFileSync(path.join(root, "pkg", "rppg_wasm_bg.wasm"), "\0asm");
 	fs.writeFileSync(path.join(root, "src", "index.ts"), "export const a = 1;\n");
@@ -170,5 +173,92 @@ describe("check-test-release.mjs refuses a built module with no source", () => {
 		const r = check(made.root);
 		expect(r.status).toBe(1);
 		expect(r.stderr).toContain("dist/gone.js has no source");
+	});
+});
+
+// The orphan check went one way only. A new module whose build was never committed (dist/ is
+// gitignored, so a new built file stays untracked unless force-added) is absent from a fresh clone,
+// while the committed dist/index.js imports it: the check said "ready" and every consumer would
+// have failed to import the package.
+describe("check-test-release.mjs refuses a source module with no build", () => {
+	let made: { root: string; top: string } | null = null;
+	afterEach(() => {
+		if (made) fs.rmSync(made.top, { recursive: true, force: true });
+		made = null;
+	});
+
+	it("refuses a source module with no built file in dist, naming it", () => {
+		made = throwawayPackage();
+		fs.writeFileSync(path.join(made.root, "src", "newThing.ts"), "export const n = 1;\n");
+		stamp(made.root);
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("src/newThing.ts has no build (dist/newThing.js)");
+		expect(r.stderr).toContain("src/newThing.ts has no build (dist/newThing.d.ts)");
+	});
+
+	it("refuses a built file that git does not track, inside a git checkout", () => {
+		made = throwawayPackage();
+		const git = (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: made!.top, encoding: "utf8" });
+		git("init", "-q");
+		fs.writeFileSync(path.join(made.top, ".gitignore"), "dist/\n");
+		git("add", "-A");
+		git("add", "-f", "packages/rppg-web/dist");
+		git("commit", "-q", "-m", "a");
+		expect(check(made.root).status).toBe(0);
+		fs.writeFileSync(path.join(made.root, "src", "newThing.ts"), "export const n = 1;\n");
+		fs.writeFileSync(path.join(made.root, "dist", "newThing.js"), "export const n = 1;\n");
+		fs.writeFileSync(path.join(made.root, "dist", "newThing.d.ts"), "export declare const n: number;\n");
+		stamp(made.root);
+		git("add", "-A");
+		git("commit", "-q", "-m", "b");
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("dist/newThing.js is not committed");
+	});
+});
+
+// The stamp hashed the source only, and tsc builds incrementally from a record kept outside dist:
+// after dist was restored to an older build, a rebuild emitted nothing, the stamp was rewritten
+// from the new source, and the old code would have shipped as "ready". Hand edits to dist passed too.
+describe("check-test-release.mjs refuses a dist that is not what the build wrote", () => {
+	let made: { root: string; top: string } | null = null;
+	afterEach(() => {
+		if (made) fs.rmSync(made.top, { recursive: true, force: true });
+		made = null;
+	});
+
+	it("refuses a built file changed after the build", () => {
+		made = throwawayPackage();
+		fs.writeFileSync(path.join(made.root, "dist", "index.js"), "export const old = 1;\n");
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("dist changed after it was built");
+	});
+
+	it("the build always re-emits every file (no incremental skip)", () => {
+		const pkg = JSON.parse(require("fs").readFileSync(path.join(pkgRoot, "package.json"), "utf8"));
+		expect(pkg.scripts.build).toMatch(/^node \.\/scripts\/clean-build-record\.mjs && tsc -p \. /);
+	});
+});
+
+// npm always packs package.json, whose description is rewritten by hand for every build, and the
+// scrub walked only the files listed in "files".
+describe("check-test-release.mjs scrubs package.json", () => {
+	let made: { root: string; top: string } | null = null;
+	afterEach(() => {
+		if (made) fs.rmSync(made.top, { recursive: true, force: true });
+		made = null;
+	});
+
+	it("refuses a banned sentence in the package description", () => {
+		made = throwawayPackage();
+		const p = path.join(made.root, "package.json");
+		const pkg = JSON.parse(require("fs").readFileSync(p, "utf8"));
+		pkg.description = "Set on the owner's recordings.";
+		fs.writeFileSync(p, JSON.stringify(pkg));
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("package.json: personal reference");
 	});
 });

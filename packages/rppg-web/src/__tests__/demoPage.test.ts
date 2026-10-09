@@ -35,7 +35,11 @@ describe("the SDK demo page", () => {
 	});
 
 	it("says when no face is in view and when it is still looking for a pulse", () => {
-		expect(main).toContain("lastDropReason === 'no_face'");
+		// Once the face has been gone long enough that no rate is reported, not on one missed frame,
+		// and before the capture score's advice, which goes stale while no face is seen.
+		expect(main).toContain("session.getDiagnostics().faceGone");
+		expect(main).not.toContain("lastDropReason === 'no_face'");
+		expect(main.indexOf("getDiagnostics().faceGone")).toBeLessThan(main.indexOf("'Increase lighting'"));
 		expect(main).toContain("Looking for a pulse");
 	});
 });
