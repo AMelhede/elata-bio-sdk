@@ -859,9 +859,9 @@ export class RppgProcessor {
 
 	/**
 	 * The heart rate and everything derived with it. With the switch steadyAnalysis (on by default) the
-	 * analysis runs at most once per ANALYSIS_EVERY_MS of sample time and reads in between are answered from it,
-	 * so the answer does not depend on how often it is read. Off, as published: every read analyses again, and
-	 * the rate tracker takes the same window once per read.
+	 * analysis runs once per ANALYSIS_EVERY_MS of sample time, as the worker's answer did, and reads in between
+	 * are answered from it, so the answer does not depend on how often it is read. Off, as published: every
+	 * read analyses again, and the rate tracker takes the same window once per read.
 	 */
 	getMetrics(): Metrics {
 		const atMs = this.samples.length ? this.samples[this.samples.length - 1].timestampMs : null;
@@ -881,6 +881,13 @@ export class RppgProcessor {
 			if (this.failedBackendError) return backendMetrics;
 			const advanced = this.computeAdvancedMetrics(backendMetrics);
 			core = { ...backendMetrics, ...advanced };
+			if (this.fixes.steadyAnalysis) {
+				// The rate tracker in this build is tuned to the worker's answer, which analysed the same window
+				// twice (its debug snapshot read the metrics again). Doing the same once per step keeps every
+				// number the worker gave, on every read pattern; the first analysis is the answer.
+				const again = this.readBackendMetrics();
+				if (!this.failedBackendError) this.computeAdvancedMetrics(again);
+			}
 			this.analysed = atMs != null ? { atMs, core } : null;
 		}
 		const metrics = { ...core };

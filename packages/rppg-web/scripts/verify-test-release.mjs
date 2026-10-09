@@ -17,9 +17,9 @@
 //   7. the packed ChestMotion (chestBreathing) on generated frames: a chest moving 15 times a minute
 //      reads 15 within 1, a still one gives no clear line;
 //   8. the packed processor with the real WASM core, read on every frame for 60 s at 30 fps: the
-//      analysis runs at most once per 250 ms of samples (at 30 fps the first frame 250 ms on is the 8th,
-//      so 225 times) with steadyAnalysis on, and on every read (1,800 times) with it off, and the known
-//      72 still reads 72.
+//      analysis runs once per 250 ms of samples, two passes as the worker's answer did (at 30 fps the
+//      first frame 250 ms on is the 8th: 225 steps, 450 passes) with steadyAnalysis on, and on every read
+//      (1,800 times) with it off, and the known 72 still reads 72.
 // BREAK=3 makes check 7 expect 20 breaths a minute instead of 15; BREAK=4 makes check 8 expect 1,800
 // analyses with the switch on.
 // BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red; BREAK=2 makes check 6
@@ -167,8 +167,9 @@ function analysesWhenReadEveryFrame(fixes) {
 }
 const steadyOn = analysesWhenReadEveryFrame({});
 const steadyOff = analysesWhenReadEveryFrame({ steadyAnalysis: false });
-// At 30 fps the first frame at least 250 ms after an analysis is the 8th (267 ms): 1,800 / 8 = 225.
-const steadyWant = process.env.BREAK === "4" ? 1800 : Math.ceil(1800 / Math.ceil(250 / (1000 / 30)));
+// At 30 fps the first frame at least 250 ms after an analysis is the 8th (267 ms): 1,800 / 8 = 225 steps,
+// two passes each.
+const steadyWant = process.env.BREAK === "4" ? 1800 : 2 * Math.ceil(1800 / Math.ceil(250 / (1000 / 30)));
 assert.ok(Math.abs(steadyOn.calls - steadyWant) <= 1, "steadyAnalysis on: " + steadyWant + " analyses expected, ran " + steadyOn.calls);
 assert.equal(steadyOff.calls, 1800, "steadyAnalysis off: one analysis per read");
 assert.ok(steadyOn.last != null && Math.abs(steadyOn.last - 72) <= 2, "steadyAnalysis on: 72 should read 72, read " + steadyOn.last);

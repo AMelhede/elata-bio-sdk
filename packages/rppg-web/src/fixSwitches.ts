@@ -45,11 +45,12 @@ export type RppgFixSwitches = {
 	 */
 	noRateDoubling?: boolean;
 	/**
-	 * Fix 6. The heart-rate analysis runs at most once per ANALYSIS_EVERY_MS (250 ms) of sample time, and reads
-	 * in between are answered from it, so the rate does not depend on how often anything reads it. Off: every
-	 * read analyses again, as published, and the rate tracker takes the same window once per read; a managed
-	 * session's diagnostics read on every camera frame, so on the main thread the whole analysis ran on every
-	 * frame, and the analysis worker read twice per answer.
+	 * Fix 6. The heart-rate analysis runs once per ANALYSIS_EVERY_MS (250 ms) of sample time, as the analysis
+	 * worker's answer did (two passes over the same window, the first kept, because this build's rate tracker
+	 * is tuned to that), and reads in between are answered from it. Every read pattern then gets the worker's
+	 * answers. Off: every read analyses again, as published, and the rate tracker takes the same window once per
+	 * read; a managed session's diagnostics read on every camera frame, so on the main thread the whole analysis
+	 * ran on every frame.
 	 */
 	steadyAnalysis?: boolean;
 	/**

@@ -1,9 +1,10 @@
 import { ANALYSIS_EVERY_MS } from "../processorWorkerProtocol";
 import { RppgProcessor } from "../rppgProcessor";
 
-// The analysis is run at most once per ANALYSIS_EVERY_MS of sample time, however often it is read. Published,
-// every read ran it again: the rate tracker took the same window once per read, so the reported rate depended on
-// how often an app (or the library's own diagnostics, on every camera frame) asked for it.
+// The analysis runs once per ANALYSIS_EVERY_MS of sample time (two passes over the window, as the worker's answer
+// did), however often it is read. Published, every read ran it again: the rate tracker took the same window once
+// per read, so the reported rate depended on how often an app (or the library's own diagnostics, on every camera
+// frame) asked for it.
 
 /** A core whose every analysis is counted, and whose answer says which analysis it was. */
 function countingBackend() {
@@ -28,14 +29,14 @@ function feed(p: RppgProcessor, fromMs: number, toMs: number, fps: number, onFra
 }
 
 describe("switch steadyAnalysis", () => {
-	test("reading on every frame analyses once per step of sample time, not once per read", () => {
+	test("reading on every frame analyses once per step of sample time (two passes), not once per read", () => {
 		const { backend, counter } = countingBackend();
 		const p = new RppgProcessor(backend, 30, 10);
 		feed(p, 1000, 3000, 30, () => p.getMetrics());
-		expect(counter.analyses).toBe(Math.ceil(2000 / ANALYSIS_EVERY_MS));
+		expect(counter.analyses).toBe(2 * Math.ceil(2000 / ANALYSIS_EVERY_MS));
 	});
 
-	test("a step is exactly ANALYSIS_EVERY_MS: at 40 frames a second, one analysis every 10th frame", () => {
+	test("a step is exactly ANALYSIS_EVERY_MS: at 40 frames a second, one step every 10th frame", () => {
 		const { backend, counter } = countingBackend();
 		const p = new RppgProcessor(backend, 30, 10);
 		const changedAt: number[] = [];
@@ -47,18 +48,18 @@ describe("switch steadyAnalysis", () => {
 			prev = bpm;
 			frame += 1;
 		});
-		expect(counter.analyses).toBe(2000 / ANALYSIS_EVERY_MS);
+		expect(counter.analyses).toBe(2 * (2000 / ANALYSIS_EVERY_MS));
 		expect(changedAt).toEqual([0, 10, 20, 30, 40, 50, 60, 70]);
 	});
 
-	test("two reads in a row give one analysis and the same answer", () => {
+	test("two reads in a row give one step and the same answer", () => {
 		const { backend, counter } = countingBackend();
 		const p = new RppgProcessor(backend, 30, 10);
 		feed(p, 1000, 1500, 30);
 		const a = p.getMetrics();
 		const b = p.getMetrics();
 		const d = p.getDebugSnapshot(0).backendMetrics;
-		expect(counter.analyses).toBe(1);
+		expect(counter.analyses).toBe(2);
 		expect(b.bpm).toBe(a.bpm);
 		expect(d.bpm).toBe(a.bpm);
 	});
@@ -102,7 +103,7 @@ describe("switch steadyAnalysis", () => {
 			p.getMetrics();
 			act(p);
 			p.getMetrics();
-			expect(counter.analyses).toBe(2);
+			expect(counter.analyses).toBe(4);
 		}
 	});
 
@@ -114,6 +115,35 @@ describe("switch steadyAnalysis", () => {
 		p.pushCaptureFrame({ motion: 0.9, clipRatio: 0.5, skinRatio: 0.1, meanLuma: 0.05, faceBox: null });
 		const m = p.getMetrics();
 		expect(m.capture_confidence).toBe(p.getCaptureConfidence()?.score);
+	});
+
+	test("every read pattern gets exactly the worker's answers (the worker read twice per answer, switch off)", () => {
+		const worker = countingBackend();
+		const pw = new RppgProcessor(worker.backend, 30, 10, { fixes: { steadyAnalysis: false } });
+		const want: (number | null | undefined)[] = [];
+		let posted = -Infinity;
+		feed(pw, 1000, 4000, 30, (ts) => {
+			if (ts - posted >= ANALYSIS_EVERY_MS) {
+				posted = ts;
+				want.push(pw.getMetrics().bpm);
+				pw.getDebugSnapshot(ts);
+			}
+		});
+		for (const readsPerFrame of [1, 3]) {
+			const { backend } = countingBackend();
+			const p = new RppgProcessor(backend, 30, 10);
+			const got: (number | null | undefined)[] = [];
+			let last = -Infinity;
+			feed(p, 1000, 4000, 30, (ts) => {
+				let m = p.getMetrics();
+				for (let r = 1; r < readsPerFrame; r++) m = p.getMetrics();
+				if (ts - last >= ANALYSIS_EVERY_MS) {
+					last = ts;
+					got.push(m.bpm);
+				}
+			});
+			expect(got).toEqual(want);
+		}
 	});
 
 	test("off: every read analyses again, as published", () => {
