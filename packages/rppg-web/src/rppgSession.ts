@@ -391,6 +391,7 @@ export async function createRppgSession(
 		wasmBinaryUrl: options.wasmBinaryUrl,
 		wasmImporter: options.wasmImporter,
 	});
+	if (backendResult.error) pendingErrors.push(backendResult.error);
 	const processor = new RppgProcessor(
 		backendResult.backend,
 		sampleRate,
@@ -530,16 +531,39 @@ async function resolveBackend(
 		CreateRppgSessionOptions,
 		"wasmJsUrl" | "wasmBinaryUrl" | "wasmImporter"
 	>,
-): Promise<{ backend: Backend; mode: RppgSessionBackendMode }> {
-	const backend = await loadWasmBackend(options.wasmImporter, {
-		strict: backendPreference === "wasm",
-		jsUrl: options.wasmJsUrl,
-		binaryUrl: options.wasmBinaryUrl,
-	});
-	if (backend) {
-		return { backend, mode: "wasm" };
+): Promise<{
+	backend: Backend;
+	mode: RppgSessionBackendMode;
+	error?: RppgSessionError;
+}> {
+	// Always load strictly, so the reason it failed is kept. "auto" still falls back to a backend
+	// that reads nothing, but now says why through onError: before, a bundler that could not serve
+	// the WASM gave a session that ran, found a face and never produced a number, with no error.
+	try {
+		const backend = await loadWasmBackend(options.wasmImporter, {
+			strict: true,
+			jsUrl: options.wasmJsUrl,
+			binaryUrl: options.wasmBinaryUrl,
+		});
+		if (backend) return { backend, mode: "wasm" };
+		throw new Error("rPPG WASM backend loaded no pipeline.");
+	} catch (cause) {
+		if (backendPreference === "wasm") throw cause;
+		return {
+			backend: createUnavailableBackend(),
+			mode: "unavailable",
+			error: {
+				code: "backend_init_failed",
+				stage: "backend",
+				message:
+					cause instanceof Error
+						? cause.message
+						: "rPPG WASM backend failed to load.",
+				timestampMs: Date.now(),
+				cause,
+			},
+		};
 	}
-	return { backend: createUnavailableBackend(), mode: "unavailable" };
 }
 
 function applyTrackerConfiguration(
