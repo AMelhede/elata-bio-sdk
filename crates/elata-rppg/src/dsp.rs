@@ -1,6 +1,29 @@
 // rPPG DSP building blocks: filtering, temporal normalization, HR estimation helpers.
 
+use std::cell::RefCell;
 use std::f32::consts::PI;
+
+/// The Hann window and the cos/sin of 2*pi*f*t for every frequency bin and sample, for the last segment length,
+/// sample rate and band the periodogram was asked for. Every read, and every Welch segment within a read, uses the
+/// same grid, and recomputing these was most of the core's time. Each entry is computed by the same expression the
+/// periodogram used inline, so every result is identical to the bit.
+struct PeriodogramGrid {
+    key: (usize, u32, u32, u32, usize),
+    hann: Vec<f32>,
+    cos: Vec<f32>,
+    sin: Vec<f32>,
+}
+
+/// cos(2*pi*k*n/m) for the cepstrum's inverse transform, for the last length m; same expression as inline.
+struct CepstrumGrid {
+    m: usize,
+    cos: Vec<f32>,
+}
+
+thread_local! {
+    static PERIODOGRAM_GRID: RefCell<Option<PeriodogramGrid>> = const { RefCell::new(None) };
+    static CEPSTRUM_GRID: RefCell<Option<CepstrumGrid>> = const { RefCell::new(None) };
+}
 
 /// Simple temporal normalization: subtract DC and scale by mean absolute.
 pub fn temporal_normalize(samples: &[f32]) -> Vec<f32> {
@@ -217,35 +240,61 @@ pub fn periodogram_peak_freq(
     }
     let n = samples.len();
     let ns = n as f32;
-    // mean-normalize
-    let mean = samples.iter().sum::<f32>() / ns;
-    let mut x: Vec<f32> = samples.iter().map(|v| v - mean).collect();
-    // Hann window
-    for (i, sample) in x.iter_mut().enumerate().take(n) {
-        let w = 0.5 * (1.0 - ((2.0 * PI * i as f32) / (ns - 1.0)).cos());
-        *sample *= w;
-    }
+    let bins = ((fmax - fmin) / df) as usize + 1;
+    let key = (n, sample_rate.to_bits(), fmin.to_bits(), df.to_bits(), bins);
+    let (powers, best_idx, best_p) = PERIODOGRAM_GRID.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.as_ref().is_none_or(|g| g.key != key) {
+            let hann = (0..n)
+                .map(|i| 0.5 * (1.0 - ((2.0 * PI * i as f32) / (ns - 1.0)).cos()))
+                .collect();
+            let mut cos = Vec::with_capacity(bins * n);
+            let mut sin = Vec::with_capacity(bins * n);
+            for k in 0..bins {
+                let f = fmin + k as f32 * df;
+                for i in 0..n {
+                    let t = i as f32 / sample_rate;
+                    let ang = 2.0 * PI * f * t;
+                    cos.push(ang.cos());
+                    sin.push(ang.sin());
+                }
+            }
+            *slot = Some(PeriodogramGrid {
+                key,
+                hann,
+                cos,
+                sin,
+            });
+        }
+        let grid = slot.as_ref().expect("grid built above");
+        // mean-normalize, then the Hann window
+        let mean = samples.iter().sum::<f32>() / ns;
+        let mut x: Vec<f32> = samples.iter().map(|v| v - mean).collect();
+        for (sample, w) in x.iter_mut().zip(grid.hann.iter()) {
+            *sample *= w;
+        }
 
-    let mut powers = Vec::new();
-    let mut best_idx: isize = -1;
-    let mut best_p = 0.0_f32;
-    for k in 0..(((fmax - fmin) / df) as usize + 1) {
-        let f = fmin + k as f32 * df;
-        let mut re = 0.0_f32;
-        let mut im = 0.0_f32;
-        for (i, &v) in x.iter().enumerate() {
-            let t = i as f32 / sample_rate;
-            let ang = 2.0 * PI * f * t;
-            re += v * ang.cos();
-            im += v * ang.sin();
+        let mut powers = Vec::with_capacity(bins);
+        let mut best_idx: isize = -1;
+        let mut best_p = 0.0_f32;
+        for k in 0..bins {
+            let cos = &grid.cos[k * n..(k + 1) * n];
+            let sin = &grid.sin[k * n..(k + 1) * n];
+            let mut re = 0.0_f32;
+            let mut im = 0.0_f32;
+            for (i, &v) in x.iter().enumerate() {
+                re += v * cos[i];
+                im += v * sin[i];
+            }
+            let pwr = (re * re + im * im) / ns;
+            powers.push(pwr);
+            if pwr > best_p {
+                best_p = pwr;
+                best_idx = k as isize;
+            }
         }
-        let pwr = (re * re + im * im) / ns;
-        powers.push(pwr);
-        if pwr > best_p {
-            best_p = pwr;
-            best_idx = k as isize;
-        }
-    }
+        (powers, best_idx, best_p)
+    });
     if best_idx < 0 {
         return None;
     }
@@ -386,14 +435,28 @@ pub fn cepstrum_from_powers(
     let m_f = m as f32;
     // inverse DFT (real) -> cepstrum (we compute only real part)
     let mut cep: Vec<f32> = vec![0.0_f32; m];
-    for (n, cep_val) in cep.iter_mut().enumerate().take(m) {
-        let mut sum = 0.0_f32;
-        for (k, log_val) in log_spec.iter().enumerate().take(m) {
-            let angle = 2.0 * PI * (k as f32) * (n as f32) / m_f;
-            sum += *log_val * angle.cos();
+    CEPSTRUM_GRID.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.as_ref().is_none_or(|g| g.m != m) {
+            let mut cos = Vec::with_capacity(m * m);
+            for n in 0..m {
+                for k in 0..m {
+                    let angle = 2.0 * PI * (k as f32) * (n as f32) / m_f;
+                    cos.push(angle.cos());
+                }
+            }
+            *slot = Some(CepstrumGrid { m, cos });
         }
-        *cep_val = sum / m_f;
-    }
+        let grid = slot.as_ref().expect("grid built above");
+        for (n, cep_val) in cep.iter_mut().enumerate().take(m) {
+            let row = &grid.cos[n * m..(n + 1) * m];
+            let mut sum = 0.0_f32;
+            for (k, log_val) in log_spec.iter().enumerate().take(m) {
+                sum += *log_val * row[k];
+            }
+            *cep_val = sum / m_f;
+        }
+    });
 
     // quefrency (seconds) per index = 1 / (M * df)
     let qdt = 1.0_f32 / (m_f * df);
@@ -642,6 +705,12 @@ pub fn rank_harmonic_candidates(
         score: f32,
     }
     let mut infos: Vec<C> = Vec::new();
+    // The cepstrum depends only on the spectrum, so it is computed once, not once per candidate.
+    let cepstrum = if candidates.is_empty() {
+        None
+    } else {
+        cepstrum_from_powers(powers, fmin, df, fmax, sample_rate)
+    };
 
     for cand in candidates {
         // harmonic-sum
@@ -703,7 +772,7 @@ pub fn rank_harmonic_candidates(
         }
         evidence *= 1.0 + 0.6 * (support as f32);
         // cepstrum boost — strong preference when cepstrum confidence is high
-        if let Some((cep_f, cep_c)) = cepstrum_from_powers(powers, fmin, df, fmax, sample_rate) {
+        if let Some((cep_f, cep_c)) = cepstrum {
             let diff = (cep_f - cand).abs();
             if diff < 0.10 {
                 // high-confidence cepstrum should dominate (fast overriding validator)
@@ -1042,5 +1111,199 @@ mod tests {
             f0,
             freq
         );
+    }
+
+    // The periodogram and cepstrum keep their trig tables between calls. These references are the inline versions
+    // they replaced; every result must match them to the bit, across changes of length, rate and band.
+    fn periodogram_reference(
+        samples: &[f32],
+        sample_rate: f32,
+        fmin: f32,
+        fmax: f32,
+        df: f32,
+    ) -> (Vec<f32>, isize, f32) {
+        let n = samples.len();
+        let ns = n as f32;
+        let mean = samples.iter().sum::<f32>() / ns;
+        let mut x: Vec<f32> = samples.iter().map(|v| v - mean).collect();
+        for (i, sample) in x.iter_mut().enumerate().take(n) {
+            let w = 0.5 * (1.0 - ((2.0 * PI * i as f32) / (ns - 1.0)).cos());
+            *sample *= w;
+        }
+        let mut powers = Vec::new();
+        let mut best_idx: isize = -1;
+        let mut best_p = 0.0_f32;
+        for k in 0..(((fmax - fmin) / df) as usize + 1) {
+            let f = fmin + k as f32 * df;
+            let mut re = 0.0_f32;
+            let mut im = 0.0_f32;
+            for (i, &v) in x.iter().enumerate() {
+                let t = i as f32 / sample_rate;
+                let ang = 2.0 * PI * f * t;
+                re += v * ang.cos();
+                im += v * ang.sin();
+            }
+            let pwr = (re * re + im * im) / ns;
+            powers.push(pwr);
+            if pwr > best_p {
+                best_p = pwr;
+                best_idx = k as isize;
+            }
+        }
+        (powers, best_idx, best_p)
+    }
+
+    fn cepstrum_reference(powers: &[f32], df: f32) -> Option<(f32, f32)> {
+        let m = powers.len();
+        let log_spec: Vec<f32> = powers.iter().map(|&p| (p + 1e-12_f32).ln()).collect();
+        let m_f = m as f32;
+        let mut cep: Vec<f32> = vec![0.0_f32; m];
+        for (n, cep_val) in cep.iter_mut().enumerate().take(m) {
+            let mut sum = 0.0_f32;
+            for (k, log_val) in log_spec.iter().enumerate().take(m) {
+                let angle = 2.0 * PI * (k as f32) * (n as f32) / m_f;
+                sum += *log_val * angle.cos();
+            }
+            *cep_val = sum / m_f;
+        }
+        let qdt = 1.0_f32 / (m_f * df);
+        let min_idx = (((60.0 / 200.0) / qdt).ceil() as usize).max(1);
+        let max_idx = (((60.0 / 30.0) / qdt).floor() as usize).min(m - 1);
+        if max_idx <= min_idx {
+            return None;
+        }
+        let mut best = min_idx;
+        for i in min_idx..=max_idx {
+            if cep[i] > cep[best] {
+                best = i;
+            }
+        }
+        let mut window: Vec<f32> = cep[min_idx..=max_idx].to_vec();
+        window.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = window[window.len() / 2];
+        let peak = cep[best];
+        let confidence = if peak <= median {
+            0.0
+        } else {
+            ((peak - median) / (peak.max(1e-6))).min(1.0)
+        };
+        Some((1.0 / (best as f32 * qdt), confidence))
+    }
+
+    fn noisy_pulse(n: usize, fs: f32, hz: f32, seed: u32) -> Vec<f32> {
+        let mut state = seed;
+        (0..n)
+            .map(|i| {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                let noise = ((state >> 8) as f32 / 16_777_216.0) - 0.5;
+                (2.0 * PI * hz * i as f32 / fs).sin() + 0.4 * noise
+            })
+            .collect()
+    }
+
+    #[test]
+    fn periodogram_with_kept_tables_matches_the_inline_version_to_the_bit() {
+        // A base setting, then settings that each differ from it in exactly one part of the table's key (length,
+        // rate, lowest frequency, step) while keeping the same number of bins, alternating with the base. A table
+        // kept for one setting and reused for another would give different powers. The step case is the next test.
+        let bins = 226usize;
+        let fmax_for = |fmin: f32, df: f32| fmin + df * (bins - 1) as f32 + 0.5 * df;
+        let base = (60usize, 30.0_f32, 0.75_f32, 0.01_f32);
+        let variants = [
+            (48usize, 30.0_f32, 0.75_f32, 0.01_f32),
+            (60, 25.0, 0.75, 0.01),
+            (60, 30.0, 0.80, 0.01),
+        ];
+        let mut sequence = Vec::new();
+        for v in variants {
+            sequence.push(base);
+            sequence.push(v);
+        }
+        sequence.push(base);
+        for round in 0..2u32 {
+            for (c, &(n, fs, fmin, df)) in sequence.iter().enumerate() {
+                let fmax = fmax_for(fmin, df);
+                assert_eq!(
+                    ((fmax - fmin) / df) as usize + 1,
+                    bins,
+                    "setting {c} keeps the bin count"
+                );
+                let sig = noisy_pulse(n, fs, 1.2 + 0.05 * c as f32, 7 + round * 31 + c as u32);
+                let (powers, best_idx, best_p) = periodogram_reference(&sig, fs, fmin, fmax, df);
+                let got = periodogram_peak_freq(&sig, fs, fmin, fmax, df).expect("a spectrum");
+                let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+                assert_eq!(
+                    bits(&got.2),
+                    bits(&powers),
+                    "powers, setting {c} round {round}"
+                );
+                assert_eq!(got.1.to_bits(), best_p.to_bits(), "peak power, setting {c}");
+                let mut f = fmin + best_idx as f32 * df;
+                let bi = best_idx as usize;
+                if bi > 0 && bi + 1 < powers.len() {
+                    let denom = powers[bi - 1] - 2.0 * powers[bi] + powers[bi + 1];
+                    if denom.abs() > 1e-12 {
+                        f += 0.5 * (powers[bi - 1] - powers[bi + 1]) / denom * df;
+                    }
+                }
+                assert_eq!(got.0.to_bits(), f.to_bits(), "peak frequency, setting {c}");
+            }
+        }
+    }
+
+    #[test]
+    fn periodogram_tables_are_not_shared_between_steps_with_the_same_bin_count() {
+        // Same length, rate, lowest frequency and number of bins; only the step differs (the band end moves with it).
+        let (n, fs, fmin) = (60usize, 30.0_f32, 0.75_f32);
+        let (df1, fmax1) = (0.01_f32, 3.0_f32);
+        let bins1 = ((fmax1 - fmin) / df1) as usize + 1;
+        let df2 = 0.0125_f32;
+        let fmax2 = fmin + df2 * (bins1 - 1) as f32 + 0.5 * df2;
+        assert_eq!(
+            ((fmax2 - fmin) / df2) as usize + 1,
+            bins1,
+            "the two settings share a bin count"
+        );
+        let sig = noisy_pulse(n, fs, 1.3, 99);
+        for round in 0..2 {
+            for &(df, fmax) in &[(df1, fmax1), (df2, fmax2)] {
+                let (powers, _, _) = periodogram_reference(&sig, fs, fmin, fmax, df);
+                let got = periodogram_peak_freq(&sig, fs, fmin, fmax, df).expect("a spectrum");
+                let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+                assert_eq!(bits(&got.2), bits(&powers), "df {df} round {round}");
+            }
+        }
+        // A wider band right after a narrower one with everything else equal: the kept table has too few rows.
+        for fmax in [3.0_f32, 3.3] {
+            let (powers, _, _) = periodogram_reference(&sig, fs, fmin, fmax, df1);
+            let got = periodogram_peak_freq(&sig, fs, fmin, fmax, df1).expect("a spectrum");
+            assert_eq!(got.2.len(), powers.len(), "fmax {fmax}");
+            assert!(
+                got.2
+                    .iter()
+                    .zip(&powers)
+                    .all(|(a, b)| a.to_bits() == b.to_bits()),
+                "fmax {fmax}"
+            );
+        }
+    }
+
+    #[test]
+    fn cepstrum_with_kept_table_matches_the_inline_version_to_the_bit() {
+        for round in 0..3u32 {
+            for (c, &m) in [226usize, 166, 226, 331].iter().enumerate() {
+                let powers: Vec<f32> = noisy_pulse(m, 30.0, 2.0, 3 + round * 17 + c as u32)
+                    .iter()
+                    .map(|v| v * v + 0.01)
+                    .collect();
+                let want = cepstrum_reference(&powers, 0.01).expect("a cepstrum");
+                let got = cepstrum_from_powers(&powers, 0.75, 0.01, 3.0, 30.0).expect("a cepstrum");
+                assert_eq!(
+                    (got.0.to_bits(), got.1.to_bits()),
+                    (want.0.to_bits(), want.1.to_bits()),
+                    "m {m} round {round}"
+                );
+            }
+        }
     }
 }
