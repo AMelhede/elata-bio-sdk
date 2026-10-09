@@ -1,3 +1,4 @@
+import { sortedLandmarkAxes } from "./landmarkStats.js";
 /**
  * Real-pulse check (`createRppgSession({ pulseCheck })`, ON by default in this test build;
  * `pulseCheck: false` turns it off).
@@ -354,7 +355,10 @@ export function wallLine(wall, atMs, bandEdge = true) {
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
 export function wallCarries(wall, atMs, bpm, rules = ALL_RULES_ON) {
-    const line = wallLine(wall, atMs, rules.wallBandEdge);
+    return lineCarries(wallLine(wall, atMs, rules.wallBandEdge), bpm, rules);
+}
+/** wallCarries on a wall line already found (one evaluation reads the same line up to three times). */
+function lineCarries(line, bpm, rules) {
     const family = rules.lightFamily ? LIGHT_FAMILY : [1];
     return (line != null &&
         line.snrDb >= WALL_MIN_SNR_DB &&
@@ -496,6 +500,14 @@ export class PulseCheck {
         const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall);
         if (est && est.skip)
             return;
+        // The wall's line for a window end, found once per evaluation: the taint, the wall check and
+        // the state read the newest one, and the wall rows do not change while this runs.
+        const lines = new Map();
+        const lineAt = (ms) => {
+            if (!lines.has(ms))
+                lines.set(ms, wallLine(this.wall, ms, this.rules.wallBandEdge));
+            return lines.get(ms) ?? null;
+        };
         // A window whose rate the wall carries is the light's, not evidence of a pulse (lightTaint):
         // counted, it builds a streak under the light, and the rate shows the first second the wall
         // line dips. Its cost on real pulses was measured on recorded captures against a reference
@@ -506,7 +518,7 @@ export class PulseCheck {
             ? headJudge(this.head, timestampMs, est.bpm)
             : null;
         const tainted = est?.bpm != null &&
-            ((this.rules.lightTaint && wallCarries(this.wall, timestampMs, est.bpm, this.rules)) ||
+            ((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
                 (windowHead != null && windowHead !== "clear"));
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
@@ -522,7 +534,7 @@ export class PulseCheck {
         // moment of proof, so a lamp's rate is withheld from its first second.
         const held = this.held ?? agreed;
         const wallMatch = held != null &&
-            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => wallCarries(this.wall, timestampMs - k * EVAL_EVERY_MS, held, this.rules));
+            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => lineCarries(lineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
         const faceFlicker = this.rules.faceFlicker &&
             held != null &&
             Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => {
@@ -546,7 +558,7 @@ export class PulseCheck {
                 windowWallSeen: est?.wallSeen ?? false,
                 windowWallLevel: est?.wallLevel ?? null,
                 windowWallToFace: est?.wallToFace ?? null,
-                wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
+                wallLine: lineAt(timestampMs),
                 wallFrames,
                 faceFlicker,
                 headMatch,
@@ -566,7 +578,7 @@ export class PulseCheck {
                 windowWallSeen: est?.wallSeen ?? false,
                 windowWallLevel: est?.wallLevel ?? null,
                 windowWallToFace: est?.wallToFace ?? null,
-                wallLine: wallLine(this.wall, timestampMs, this.rules.wallBandEdge),
+                wallLine: lineAt(timestampMs),
                 wallFrames,
                 faceFlicker,
                 headMatch,
@@ -730,13 +742,28 @@ export function wallPatchFromLandmarks(points, width, height, gap = WALL_GAPS[0]
     if (!points.length || width <= 0 || height <= 0)
         return null;
     const clamp01 = (v) => Math.min(1, Math.max(0, v));
-    const xs = points.map((p) => clamp01(p.x) * width).sort((a, b) => a - b);
-    const ys = points.map((p) => clamp01(p.y) * height).sort((a, b) => a - b);
     const pick = (v, q) => v[Math.min(v.length - 1, Math.max(0, Math.floor((v.length - 1) * q)))];
-    const x0 = pick(xs, 0.05);
-    const y0 = pick(ys, 0.03);
-    const fw = Math.max(1, pick(xs, 0.95) - x0);
-    const fh = Math.max(1, pick(ys, 0.97) - y0);
+    // Scaling by a positive width keeps the order, so the k-th scaled value is the scaled k-th value:
+    // picking from the face's sorted points (sortedLandmarkAxes) and scaling after is the same number.
+    const sorted = sortedLandmarkAxes(points);
+    let x0;
+    let y0;
+    let fw;
+    let fh;
+    if (sorted) {
+        x0 = pick(sorted.xs, 0.05) * width;
+        y0 = pick(sorted.ys, 0.03) * height;
+        fw = Math.max(1, pick(sorted.xs, 0.95) * width - x0);
+        fh = Math.max(1, pick(sorted.ys, 0.97) * height - y0);
+    }
+    else {
+        const xs = points.map((p) => clamp01(p.x) * width).sort((a, b) => a - b);
+        const ys = points.map((p) => clamp01(p.y) * height).sort((a, b) => a - b);
+        x0 = pick(xs, 0.05);
+        y0 = pick(ys, 0.03);
+        fw = Math.max(1, pick(xs, 0.95) - x0);
+        fh = Math.max(1, pick(ys, 0.97) - y0);
+    }
     const w = fw * 0.25;
     const clear = fw * gap;
     const y = y0 + fh / 3;

@@ -40,7 +40,22 @@ export declare const FINDER_SWITCH_MARGIN = 0.25;
  * stays dark, while a live one finds a face in its first few calls.
  */
 export declare const NO_FACE_AFTER_RETURN_MS = 2000;
-export type FaceRebuildReason = "context-lost" | "no-face-after-return";
+/**
+ * A rebuild that fails is tried again after this pause, doubling on each failure up to the cap, and every other
+ * try builds the other delegate: a context that cannot come back on the GPU is replaced by the CPU instead of
+ * being rebuilt on every frame. Building a finder sets up its WASM and model, which takes about a second.
+ */
+export declare const FINDER_REBUILD_RETRY_MS = 2000;
+export declare const FINDER_REBUILD_RETRY_MAX_MS = 30000;
+/** A finder that throws on this many calls in a row is rebuilt; one stray error is not a dead finder. */
+export declare const FINDER_ERRORS_BEFORE_REBUILD = 3;
+export type FaceRebuildReason = "context-lost" | "no-face-after-return" | "errors";
+/** The page, as far as the finder needs it: whether it is visible, and its visibilitychange event. */
+export type VisibilitySource = {
+    readonly visibilityState: string;
+    addEventListener(type: "visibilitychange", listener: () => void): void;
+    removeEventListener(type: "visibilitychange", listener: () => void): void;
+};
 /** The fastest candidate by mean call time; an earlier one keeps its place unless clearly beaten. */
 export declare function pickFastest<T extends {
     delegate: FinderDelegate;
@@ -65,6 +80,11 @@ export declare class TrialFaceFinder implements FaceLandmarkerLike {
     private lastFaceAtMs;
     private returnedAtMs;
     private rebuilding;
+    private closed;
+    private errorsInRow;
+    private failedRebuilds;
+    private nextRebuildAtMs;
+    private stopListening;
     constructor(candidates: readonly FinderCandidate[], opts?: {
         now?: () => number;
         rebuild?: (delegate: FinderDelegate) => Promise<FinderCandidate | null>;
@@ -72,6 +92,8 @@ export declare class TrialFaceFinder implements FaceLandmarkerLike {
             type: string;
             [k: string]: unknown;
         }) => void;
+        /** The page whose returns from hidden count as returns (see noteReturn); listened to until close(). */
+        visibility?: VisibilitySource;
     });
     /** The delegate answering now. */
     get delegate(): FinderDelegate;
@@ -85,6 +107,9 @@ export declare class TrialFaceFinder implements FaceLandmarkerLike {
     detectForVideo(input: never, timestampMs: number): FaceLandmarkerResult;
     close(): void;
     private noteTrialCall;
+    /** Records the current candidate's mean call time (infinite: it failed) and moves the trial on. */
+    private finishTrialCandidate;
+    private maybeRebuild;
     private startRebuild;
 }
 //# sourceMappingURL=faceFinderTrial.d.ts.map

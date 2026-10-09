@@ -3,6 +3,7 @@ import { type FaceBox } from "./faceFraming.js";
 import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitches.js";
 import { type FusionProjection, type FusionRoiName } from "./multiRoiFusion.js";
 import { type PulseCheck } from "./pulseCheck.js";
+import type { ChestMotion } from "./chestBreathing.js";
 import { type RoiPixelSampler, type RppgRoiSampleV1 } from "./roiPixelSampler.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
 import type { RppgProcessorLike } from "./workerRppgProcessor.js";
@@ -27,6 +28,11 @@ export type DemoRunnerOptions = {
      * null or left out: no check.
      */
     pulseChecker?: PulseCheck | null;
+    /**
+     * Breathing from chest motion (see chestBreathing.ts), fed every analysed frame with its face
+     * landmarks. The session creates it (`chestBreathing`); null or left out: not read.
+     */
+    chestMotion?: ChestMotion | null;
     roi?: {
         x: number;
         y: number;

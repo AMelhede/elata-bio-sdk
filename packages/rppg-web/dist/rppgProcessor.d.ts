@@ -208,6 +208,8 @@ export declare class RppgProcessor {
     private baselineBpm;
     private baselineDeviationStartMs;
     private lastBayesUpdateMs;
+    /** The last analysis and the sample time it ran at (switch steadyAnalysis); null forces the next read to analyse. */
+    private analysed;
     private totalSamplesReceived;
     private failedBackendError;
     private failedOperation;
@@ -270,6 +272,12 @@ export declare class RppgProcessor {
         };
     };
     loadStateSnapshot(snapshot: unknown): void;
+    /**
+     * The heart rate and everything derived with it. With the switch steadyAnalysis (on by default) the
+     * analysis runs once per ANALYSIS_EVERY_MS of sample time, as the worker's answer did, and reads in between
+     * are answered from it, so the answer does not depend on how often it is read. Off, as published: every
+     * read analyses again, and the rate tracker takes the same window once per read.
+     */
     getMetrics(): Metrics;
     getDebugSnapshot(nowMs?: number): RppgDebugSnapshot;
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;

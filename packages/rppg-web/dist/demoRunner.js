@@ -507,11 +507,17 @@ function smoothRoi(prev, next, alpha = 0.2) {
         h: prev.h + (next.h - prev.h) * a,
     };
 }
-/** sampleRgbWithSkinMask for one frame, each (box, sampler) computed once. */
+/**
+ * sampleRgbWithSkinMask for one frame, each (box, sampler) computed once. Samplers are told apart by identity
+ * (the default is `undefined`), never by their ids, so no custom sampler can stand in for another.
+ */
 function frameSampleMemo(frame) {
-    const memo = new Map();
+    const bySampler = new Map();
     return (c, sampler) => {
-        const key = `${sampler ? (sampler.id ?? "s") : "d"}|${c.x},${c.y},${c.w},${c.h}`;
+        let memo = bySampler.get(sampler);
+        if (!memo)
+            bySampler.set(sampler, (memo = new Map()));
+        const key = `${c.x},${c.y},${c.w},${c.h}`;
         let v = memo.get(key);
         if (v === undefined) {
             v = sampleRgbWithSkinMask(frame, c, sampler);

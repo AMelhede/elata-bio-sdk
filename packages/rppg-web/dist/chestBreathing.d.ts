@@ -71,16 +71,24 @@ export declare function greyHalf(frame: Pick<Frame, "data" | "width">, box: {
 /**
  * Follows the box below the chin frame by frame. The box is anchored on the first face and kept still
  * (a box that followed every small head movement would carry the head's motion into the chest's); it is
- * re-anchored, and the motion so far dropped, when the face moves CHEST_BOX_REANCHOR face widths or is
- * gone for over a second.
+ * re-anchored, and the motion so far dropped, when the face moves CHEST_BOX_REANCHOR face widths or the frame
+ * changes size. The motion is dropped when there is no chest box (no face, or the chest out of view) or no
+ * frame for over CHEST_GAP_MS, and no rate is given while frames have stopped (by `now`, a wall clock, since
+ * the frames' own media clock stops with them).
  */
 export declare class ChestMotion {
     private box;
     private prev;
-    private lastFaceMs;
+    private lastBoxMs;
+    private lastFrameMs;
+    private lastPushAt;
     private samples;
+    private readonly now;
+    constructor(opts?: {
+        now?: () => number;
+    });
     push(frame: Pick<Frame, "data" | "width" | "height" | "timestampMs">, landmarks: readonly FaceLandmarkPoint[] | null | undefined): void;
-    /** The rate over the latest window, or null. */
+    /** The rate over the window ending at the latest frame (or `atMs`), or null; null while frames have stopped. */
     rate(atMs?: number): {
         rate: number;
         share: number;

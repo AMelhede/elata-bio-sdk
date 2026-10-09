@@ -97,6 +97,13 @@ export interface HilbertBeatResult {
     unwrappedPhase: number[];
 }
 /**
+ * The imaginary part of the analytic signal (the Hilbert transform): DFT, keep DC (and Nyquist for
+ * even N) as is, double the positive frequencies, zero the negative ones, inverse DFT. Through an
+ * O(N log N) FFT of any length: it was a direct O(N^2) DFT, two thirds of the analysis's time at a
+ * 45 s window (66 of 94 ms), and the result equals it to about 1e-12 of the signal (pinned by a test).
+ */
+export declare function hilbertImag(x: number[]): number[];
+/**
  * Estimate beat instants from the analytic-signal phase of a pulse waveform.
  * `data` is the conditioned rPPG trace as {value, time(ms)} samples — the same
  * shape consumed by {@link detectPeaks}.

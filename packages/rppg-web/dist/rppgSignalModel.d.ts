@@ -53,11 +53,5 @@ export declare class Bandpass {
  * not shifted by the filter — at the cost of being offline (whole-buffer).
  */
 export declare function zeroPhaseBandpass(values: number[], sampleRate: number, lowHz?: number, highHz?: number): number[];
-/**
- * In-band spectral SNR (linear): peak power in the cardiac band divided by the
- * band's mean power, via a Hann-windowed DFT evaluated on a coarse frequency
- * grid. ~1 means no usable pulse peak; higher means a clean periodic signal.
- * Used to weight ROIs by quality and to gate HR/HRV display.
- */
 export declare function spectralSnr(signal: number[], sampleRate: number, minHz?: number, maxHz?: number): number;
 //# sourceMappingURL=rppgSignalModel.d.ts.map

@@ -60,16 +60,22 @@ export async function loadFaceFinderCandidates(options = {}, delegates = FINDER_
         return [];
     const fileset = await mod.FilesetResolver.forVisionTasks(wasmBase);
     const out = [];
+    let lastError = null;
     for (const delegate of delegates) {
         try {
             const built = await buildFinder(mod, fileset, modelAssetPath, delegate);
             if (built)
                 out.push(built);
         }
-        catch {
-            // This delegate does not exist here; the trial runs over the rest.
+        catch (error) {
+            // This delegate does not build here; the trial runs over the rest.
+            lastError = error;
         }
     }
+    // None built: fail as loudly as the published loader (the session reports face_mesh_init_failed), never
+    // fall back in silence to reading the middle of the picture.
+    if (!out.length && lastError != null)
+        throw lastError;
     return out;
 }
 /** One finder on `delegate`, with its own canvas on the GPU (Safari: MediaPipe's own choice). */
@@ -112,15 +118,9 @@ export async function loadTrialFaceFinder(options = {}, onEvent) {
     if (!candidates.length)
         return null;
     const cdn = (options.visionCdnBase ?? DEFAULT_VISION_CDN).replace(/\/+$/, "");
-    const finder = new TrialFaceFinder(candidates, {
+    return new TrialFaceFinder(candidates, {
         onEvent,
         rebuild: async (delegate) => (await loadFaceFinderCandidates({ ...options, visionCdnBase: cdn }, [delegate]))[0] ?? null,
+        visibility: typeof document !== "undefined" ? document : undefined,
     });
-    if (typeof document !== "undefined") {
-        document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible")
-                finder.noteReturn();
-        });
-    }
-    return finder;
 }

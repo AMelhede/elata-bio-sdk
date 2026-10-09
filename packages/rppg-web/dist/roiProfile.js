@@ -1,3 +1,4 @@
+import { sortedLandmarkAxes } from "./landmarkStats.js";
 /**
  * Current Elata production geometry. Changing these fractions requires a new
  * profile ID so recorded diagnostics and learned-model inputs remain traceable.
@@ -34,8 +35,9 @@ function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 function percentileBounds(points, width, height) {
-    const xs = points.map((p) => clamp(p.x, 0, 1)).sort((a, b) => a - b);
-    const ys = points.map((p) => clamp(p.y, 0, 1)).sort((a, b) => a - b);
+    const sorted = sortedLandmarkAxes(points);
+    const xs = sorted ? sorted.xs : points.map((p) => clamp(p.x, 0, 1)).sort((a, b) => a - b);
+    const ys = sorted ? sorted.ys : points.map((p) => clamp(p.y, 0, 1)).sort((a, b) => a - b);
     const pick = (values, p) => values[Math.min(values.length - 1, Math.max(0, Math.floor((values.length - 1) * p)))];
     const x0 = pick(xs, 0.05) * width;
     const x1 = pick(xs, 0.95) * width;

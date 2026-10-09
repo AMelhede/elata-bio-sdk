@@ -1,9 +1,10 @@
 /**
  * On/off switches for the fixes in this test build. Every fix is ON unless its switch is set
- * to `false`, and every switch set to `false` gives back the published 0.14.0 behaviour for
- * that part, unchanged, so a fix can be compared against the code it replaces in a live app.
+ * to `false` (sparseFaceFinder alone is off unless set to `true`: see it), and every switch set to
+ * `false` gives back the published 0.14.0 behaviour for that part, unchanged, so a fix can be compared
+ * against the code it replaces in a live app.
  *
- * - `fixes` left out, or `fixes: true`: every fix on.
+ * - `fixes` left out, or `fixes: true`: every fix at its default (all on but sparseFaceFinder).
  * - `fixes: false`: every fix off (the published behaviour).
  * - `fixes: { posFusion: false }`: that one fix off, the others on.
  */
@@ -44,6 +45,15 @@ export type RppgFixSwitches = {
      */
     noRateDoubling?: boolean;
     /**
+     * Fix 6. The heart-rate analysis runs once per ANALYSIS_EVERY_MS (250 ms) of sample time, as the analysis
+     * worker's answer did (two passes over the same window, the first kept, because this build's rate tracker
+     * is tuned to that), and reads in between are answered from it. Every read pattern then gets the worker's
+     * answers. Off: every read analyses again, as published, and the rate tracker takes the same window once per
+     * read; a managed session's diagnostics read on every camera frame, so on the main thread the whole analysis
+     * ran on every frame.
+     */
+    steadyAnalysis?: boolean;
+    /**
      * Speed 2. Frames are read at most 640 wide (same aspect), and the face finder reads that
      * same image, so landmarks and pixels come from one frame. Off: the full camera frame, and
      * the face finder reads the live video, as published.
@@ -57,8 +67,10 @@ export type RppgFixSwitches = {
      */
     analysisWorker?: boolean;
     /**
-     * Speed 5. The face finder is asked at most once per FACE_FINDER_EVERY_MS (100 ms); frames in
-     * between are read with the last face it found. Off: the finder runs on every frame, as published.
+     * Speed 5, OFF unless set to true. The face finder is asked at most once per FACE_FINDER_EVERY_MS
+     * (100 ms); frames in between are read with the last face it found. Off: the finder runs on every
+     * frame, as published. Off by default because on recorded captures it added frames but did not give a
+     * reading on as many of them, which it needed to keep a place as a default.
      */
     sparseFaceFinder?: boolean;
     /**
@@ -69,10 +81,15 @@ export type RppgFixSwitches = {
      */
     faceFinderTrial?: boolean;
 };
-/** `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless `false`. */
+/** Switches that stay off unless set to `true` (each says why). */
+export declare const FIX_SWITCHES_OFF_BY_DEFAULT: readonly (keyof RppgFixSwitches)[];
+/**
+ * `true` or left out: every fix at its default (on, but for FIX_SWITCHES_OFF_BY_DEFAULT). `false`: every fix
+ * off. An object: per fix, its default unless set.
+ */
 export type RppgFixesOption = boolean | RppgFixSwitches;
 export type ResolvedRppgFixSwitches = Required<RppgFixSwitches>;
-export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "analysisWidth", "analysisWorker", "sparseFaceFinder", "faceFinderTrial"];
+export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "steadyAnalysis", "analysisWidth", "analysisWorker", "sparseFaceFinder", "faceFinderTrial"];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
 export declare function resolveFixSwitches(option?: RppgFixesOption | null): ResolvedRppgFixSwitches;
 //# sourceMappingURL=fixSwitches.d.ts.map

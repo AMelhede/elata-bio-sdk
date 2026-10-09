@@ -2,6 +2,7 @@ import { BpmBayesTracker, } from "./bpmBayesTracker.js";
 import { ChannelGainController, ChromPulseModel, } from "./rppgSignalModel.js";
 import { analyzePulseWindow, } from "./pulseAnalysis.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
+import { ANALYSIS_EVERY_MS } from "./processorWorkerProtocol.js";
 import { CaptureConfidenceScorer, } from "./captureConfidence.js";
 const BPM_MIN = 40;
 const BPM_MAX = 180;
@@ -247,6 +248,8 @@ export class RppgProcessor {
         this.baselineBpm = null;
         this.baselineDeviationStartMs = null;
         this.lastBayesUpdateMs = null;
+        /** The last analysis and the sample time it ran at (switch steadyAnalysis); null forces the next read to analyse. */
+        this.analysed = null;
         this.totalSamplesReceived = 0;
         this.failedBackendError = null;
         this.failedOperation = null;
@@ -266,6 +269,7 @@ export class RppgProcessor {
     enableTracker(minBpm = 50, maxBpm = 160, numParticles = 150) {
         if (this.failedBackendError || this.disposed || !this.pipeline)
             return;
+        this.analysed = null;
         if (typeof this.pipeline.enable_tracker === "function") {
             try {
                 this.pipeline.enable_tracker(minBpm, maxBpm, numParticles);
@@ -439,8 +443,10 @@ export class RppgProcessor {
     }
     updateMuseMetrics(bpm, quality = 0, timestampMs = Date.now()) {
         this.fusion.updateMuse(bpm, quality, timestampMs);
+        this.analysed = null;
     }
     resetCalibration() {
+        this.analysed = null;
         this.cameraCalibration.reset();
         this.bayesTracker.reset();
         this.channelGain.reset();
@@ -465,6 +471,7 @@ export class RppgProcessor {
     loadStateSnapshot(snapshot) {
         if (!snapshot || typeof snapshot !== "object")
             return;
+        this.analysed = null;
         const raw = snapshot;
         if (raw.baselineBpm == null) {
             this.baselineBpm = null;
@@ -489,12 +496,41 @@ export class RppgProcessor {
         this.bayesTracker.loadSnapshot(raw.bayesTracker);
         this.fusion.loadSnapshot(raw.fusion);
     }
+    /**
+     * The heart rate and everything derived with it. With the switch steadyAnalysis (on by default) the
+     * analysis runs once per ANALYSIS_EVERY_MS of sample time, as the worker's answer did, and reads in between
+     * are answered from it, so the answer does not depend on how often it is read. Off, as published: every
+     * read analyses again, and the rate tracker takes the same window once per read.
+     */
     getMetrics() {
-        const backendMetrics = this.readBackendMetrics();
-        if (this.failedBackendError)
-            return backendMetrics;
-        const advanced = this.computeAdvancedMetrics(backendMetrics);
-        const metrics = { ...backendMetrics, ...advanced };
+        const atMs = this.samples.length ? this.samples[this.samples.length - 1].timestampMs : null;
+        const kept = this.analysed;
+        let core;
+        if (this.fixes.steadyAnalysis &&
+            kept != null &&
+            atMs != null &&
+            atMs >= kept.atMs &&
+            atMs - kept.atMs < ANALYSIS_EVERY_MS &&
+            !this.failedBackendError) {
+            core = kept.core;
+        }
+        else {
+            const backendMetrics = this.readBackendMetrics();
+            if (this.failedBackendError)
+                return backendMetrics;
+            const advanced = this.computeAdvancedMetrics(backendMetrics);
+            core = { ...backendMetrics, ...advanced };
+            if (this.fixes.steadyAnalysis) {
+                // The rate tracker in this build is tuned to the worker's answer, which analysed the same window
+                // twice (its debug snapshot read the metrics again). Doing the same once per step keeps every
+                // number the worker gave, on every read pattern; the first analysis is the answer.
+                const again = this.readBackendMetrics();
+                if (!this.failedBackendError)
+                    this.computeAdvancedMetrics(again);
+            }
+            this.analysed = atMs != null ? { atMs, core } : null;
+        }
+        const metrics = { ...core };
         // In multi-ROI fusion mode the backend CHROM (and its RGB-derived quality)
         // is bypassed — the fuser's in-band SNR is the authoritative quality.
         if (this.fusedQuality != null)

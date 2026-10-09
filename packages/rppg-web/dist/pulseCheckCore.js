@@ -387,8 +387,10 @@ swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE) {
     const wall = wallSeen
         ? resample(t, win.map((s) => s[10] + s[11] + s[12]), from, to)
         : null;
+    // POS once per region: the colour damage and the region's pulse read the same projection.
+    const posOf = channels.map(([R, G, B]) => pos(R, G, B));
     const damages = channels
-        .map(([R, G, B]) => fastNoise(pos(R, G, B)) / fastNoise(zeroMeanNorm(G)))
+        .map(([, G], ri) => fastNoise(posOf[ri]) / fastNoise(zeroMeanNorm(G)))
         .sort((a, b) => a - b);
     const colourDamage = Math.round(damages[1] * 10) / 10;
     // The level as the camera saw it (wallLevelSeen); `wall` is carried on across patches.
@@ -404,7 +406,7 @@ swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE) {
         const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
         const pulse = method === "greenMinusWall" && wall
             ? greenMinusWall(G, wall)
-            : pos(R, G, B);
+            : posOf[ri];
         const P = spectrum(detrend(pulse, OWN_PULSE_DETREND_S));
         spectra.push(P);
         const { bpm, snrDb } = peakOfSpectrum(P);
