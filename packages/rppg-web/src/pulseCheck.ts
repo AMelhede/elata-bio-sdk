@@ -1,4 +1,3 @@
-import { sortedLandmarkAxes } from "./landmarkStats";
 /**
  * Real-pulse check (`createRppgSession({ pulseCheck })`, ON by default in this test build;
  * `pulseCheck: false` turns it off).
@@ -966,28 +965,14 @@ export function wallPatchFromLandmarks(
 ): { x: number; y: number; w: number; h: number } | null {
 	if (!points.length || width <= 0 || height <= 0) return null;
 	const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-	const pick = (v: ArrayLike<number>, q: number) =>
+	const xs = points.map((p) => clamp01(p.x) * width).sort((a, b) => a - b);
+	const ys = points.map((p) => clamp01(p.y) * height).sort((a, b) => a - b);
+	const pick = (v: number[], q: number) =>
 		v[Math.min(v.length - 1, Math.max(0, Math.floor((v.length - 1) * q)))];
-	// Scaling by a positive width keeps the order, so the k-th scaled value is the scaled k-th value:
-	// picking from the face's sorted points (sortedLandmarkAxes) and scaling after is the same number.
-	const sorted = sortedLandmarkAxes(points);
-	let x0: number;
-	let y0: number;
-	let fw: number;
-	let fh: number;
-	if (sorted) {
-		x0 = pick(sorted.xs, 0.05) * width;
-		y0 = pick(sorted.ys, 0.03) * height;
-		fw = Math.max(1, pick(sorted.xs, 0.95) * width - x0);
-		fh = Math.max(1, pick(sorted.ys, 0.97) * height - y0);
-	} else {
-		const xs = points.map((p) => clamp01(p.x) * width).sort((a, b) => a - b);
-		const ys = points.map((p) => clamp01(p.y) * height).sort((a, b) => a - b);
-		x0 = pick(xs, 0.05);
-		y0 = pick(ys, 0.03);
-		fw = Math.max(1, pick(xs, 0.95) - x0);
-		fh = Math.max(1, pick(ys, 0.97) - y0);
-	}
+	const x0 = pick(xs, 0.05);
+	const y0 = pick(ys, 0.03);
+	const fw = Math.max(1, pick(xs, 0.95) - x0);
+	const fh = Math.max(1, pick(ys, 0.97) - y0);
 	const w = fw * 0.25;
 	const clear = fw * gap;
 	const y = y0 + fh / 3;

@@ -1,4 +1,3 @@
-import { sortedLandmarkAxes } from "./landmarkStats";
 import type { FaceLandmarkPoint, ROI } from "./frameSource";
 
 export type LandmarkLike = Pick<FaceLandmarkPoint, "x" | "y">;
@@ -76,10 +75,9 @@ function percentileBounds(
 	width: number,
 	height: number,
 ) {
-	const sorted = sortedLandmarkAxes(points);
-	const xs: ArrayLike<number> = sorted ? sorted.xs : points.map((p) => clamp(p.x, 0, 1)).sort((a, b) => a - b);
-	const ys: ArrayLike<number> = sorted ? sorted.ys : points.map((p) => clamp(p.y, 0, 1)).sort((a, b) => a - b);
-	const pick = (values: ArrayLike<number>, p: number) =>
+	const xs = points.map((p) => clamp(p.x, 0, 1)).sort((a, b) => a - b);
+	const ys = points.map((p) => clamp(p.y, 0, 1)).sort((a, b) => a - b);
+	const pick = (values: number[], p: number) =>
 		values[
 			Math.min(
 				values.length - 1,
