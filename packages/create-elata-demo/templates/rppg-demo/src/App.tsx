@@ -51,6 +51,10 @@ function getStatusMessage(diagnostics: RppgSessionDiagnostics | null): string {
     return 'WASM backend not active — check bundled asset URLs.';
   }
 
+  if (diagnostics.lastDropReason === 'no_face') {
+    return 'No face in view. Face the camera.';
+  }
+
   if (
     diagnostics.issues.includes('no_samples_yet') ||
     diagnostics.issues.includes('insufficient_window')

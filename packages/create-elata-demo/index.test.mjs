@@ -172,6 +172,8 @@ test('the heart-rate template shows only the checked heart rate, nothing unprove
   assert.doesNotMatch(app, /metrics\.confidence|metrics\.signal_quality|confidencePct|qualityPct/);
   assert.match(app, /session\.getMetrics\(\)/);
   assert.match(app, /Looking for a pulse/);
+  // A camera on a wall is told why nothing comes, not to keep waiting.
+  assert.match(app, /lastDropReason === 'no_face'/);
   assert.doesNotMatch(app, /'Warm-up'/);
 });
 
