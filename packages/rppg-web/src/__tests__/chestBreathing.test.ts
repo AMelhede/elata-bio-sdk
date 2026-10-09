@@ -173,14 +173,15 @@ describe("wiring", () => {
 		expect((plain as unknown as { opts: { chestMotion?: unknown } }).opts.chestMotion).toBeUndefined();
 	});
 
-	test("the session reports no chest breathing, and says so in its switches, unless asked", () => {
-		const off = new RppgSession({} as never, { getMetrics: () => ({}) } as never, {} as never, "wasm", "face_mesh", {});
-		expect(off.getChestBreathing()).toBeNull();
+	test("the session reports no chest breathing, and says so in its switches, unless experimentalVitals asks", () => {
+		const off = new RppgSession({} as never, { getMetrics: () => ({}) } as never, { fixes: undefined } as never, "wasm", "face_mesh", {});
+		expect(off.getExperimentalVitals()).toBeNull();
 		expect(off.getChestMotionSamples()).toEqual([]);
+		expect(off.getBuildSwitches().experimentalVitals).toBe(false);
 		const chest = new ChestMotion();
-		const on = new RppgSession({} as never, { getMetrics: () => ({}) } as never, { fixes: undefined } as never, "wasm", "face_mesh", { chestMotion: chest });
-		expect(on.getBuildSwitches().chestBreathing).toBe(true);
-		expect(off.getBuildSwitches().chestBreathing).toBe(false);
+		const on = new RppgSession({} as never, { getMetrics: () => ({}) } as never, { fixes: undefined } as never, "wasm", "face_mesh", { chestMotion: chest, experimentalVitals: true });
+		expect(on.getBuildSwitches().experimentalVitals).toBe(true);
+		expect(on.getExperimentalVitals()?.breathing).toBeNull(); // window not covered yet
 	});
 });
 

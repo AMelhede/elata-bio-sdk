@@ -35,4 +35,4 @@ If a project uses both **`rppg-web`** and **`eeg-web`**, prefer **matching publi
 ## Source of truth
 https://github.com/AMelhede/elata-bio-sdk/tree/release/test-1/packages/rppg-web (upstream: https://github.com/Elata-Biosciences/elata-bio-sdk)
 
-Experimental, off by default: `chestBreathing: true` on createRppgSession reads the breathing rate from chest and shoulder motion below the chin; `session.getChestBreathing()` returns `{ rate, share }` or null. Separate from `respiration_rate`, which stays withheld with the pulse check on.
+Experimental, off by default: `experimentalVitals: true` on createRppgSession hands over HRV and breathing (from chest and shoulder motion below the chin) in their own box, `session.getExperimentalVitals()` returns `{ experimental: true, hrvRmssd, breathing }` or null. For research and testing, not measurements. Separate from `respiration_rate`, which stays withheld with the pulse check on.

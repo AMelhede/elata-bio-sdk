@@ -65,7 +65,7 @@ export type DemoRunnerOptions = {
 	pulseChecker?: PulseCheck | null;
 	/**
 	 * Breathing from chest motion (see chestBreathing.ts), fed every analysed frame with its face
-	 * landmarks. The session creates it (`chestBreathing`); null or left out: not read.
+	 * landmarks. The session creates it (`experimentalVitals`); null or left out: not read.
 	 */
 	chestMotion?: ChestMotion | null;
 	roi?: { x: number; y: number; w: number; h: number } | null;

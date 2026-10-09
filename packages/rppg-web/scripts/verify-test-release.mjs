@@ -14,7 +14,7 @@
 //      pulse, a light on the face and the wall, and a nod with no pulse show nothing (the nod shows
 //      its 60 with headMotion off, which proves the scene tests the rule); a pulse at 70 under a
 //      nod at 90, and under a light at 96, shows 70;
-//   7. the packed ChestMotion (chestBreathing) on generated frames: a chest moving 15 times a minute
+//   7. the packed ChestMotion (experimentalVitals' breathing) on generated frames: a chest moving 15 times a minute
 //      reads 15 within 1, a still one gives no clear line;
 //   8. the packed processor with the real WASM core, read on every frame for 60 s at 30 fps: the
 //      analysis runs once per 250 ms of samples, two passes as the worker's answer did (at 30 fps the
@@ -135,7 +135,7 @@ assert.equal(nodOn.length, 0, "a nod with no pulse should show nothing");
 assert.ok(near(scene({ nod: 60, rules: { headMotion: false } }), 60), "with headMotion off the nod should show its 60 (else the scene tests nothing)");
 assert.ok(near(scene({ pulse: 70, nod: 90 }), 70), "pulse 70 under a nod at 90 should show 70");
 assert.ok(near(scene({ pulse: 70, light: 96 }), 70), "pulse 70 under a light at 96 should show 70");
-// Check 7: the packed ChestMotion (chestBreathing) on generated frames: a textured chest under a face,
+// Check 7: the packed ChestMotion (experimentalVitals' breathing) on generated frames: a textured chest under a face,
 // moving half a pixel up and down 15 times a minute at 15 frames a second, reads 15; a still one gives
 // no clear line.
 function chestRate(bpm, ampPx) {

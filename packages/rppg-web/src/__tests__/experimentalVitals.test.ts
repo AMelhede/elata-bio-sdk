@@ -11,14 +11,13 @@ type Opts = {
 	verdict?: string | null; // null: pulse check off
 	shown?: number | null; // the rate the check shows (null: proven but no longer shown)
 	vitals?: boolean;
-	chestOption?: boolean;
 	faceAbsentMs?: number;
 	sinceRestart?: number | null;
 	engineReset?: boolean;
 	hrv?: number | null;
 	chest?: { rate: number; share: number } | null;
 };
-const make = ({ verdict = "measured", shown = 71.5, vitals = true, chestOption = false, faceAbsentMs = 0, sinceRestart = null, engineReset = false, hrv = raw.hrv_rmssd, chest = { rate: 14.5, share: 0.8 } }: Opts = {}) => {
+const make = ({ verdict = "measured", shown = 71.5, vitals = true, faceAbsentMs = 0, sinceRestart = null, engineReset = false, hrv = raw.hrv_rmssd, chest = { rate: 14.5, share: 0.8 } }: Opts = {}) => {
 	const metrics = { ...raw, hrv_rmssd: hrv };
 	const engine = {
 		reads: 0,
@@ -38,7 +37,6 @@ const make = ({ verdict = "measured", shown = 71.5, vitals = true, chestOption =
 		{
 			pulseCheck: verdict == null ? null : ({ getState: () => ({ verdict, bpm: verdict === "measured" ? shown : null, snrDb: null, streak: 0 }) } as never),
 			chestMotion: { rate: () => chest, getSamples: () => [] } as never,
-			chestBreathing: chestOption,
 			experimentalVitals: vitals,
 		},
 	);
@@ -126,26 +124,25 @@ describe("experimentalVitals on", () => {
 		expect(session.getDebugSnapshot().backendMetrics.hrv_rmssd).toBeNull();
 		expect(session.getDebugSnapshot().backendMetrics.respiration_rate).toBeNull();
 	});
-	it("says so in the session's switches, and does not turn chestBreathing on", () => {
+	it("says so in the session's switches", () => {
 		const { session } = make();
 		expect(session.getBuildSwitches().experimentalVitals).toBe(true);
-		expect(session.getBuildSwitches().chestBreathing).toBe(false);
-		expect(session.getChestBreathing()).toBeNull();
 		expect(make({ vitals: false }).session.getBuildSwitches().experimentalVitals).toBe(false);
 	});
-	it("with chestBreathing on as well, both report the same chest breathing", () => {
-		const { session } = make({ chestOption: true });
-		session.getMetrics();
-		expect(session.getBuildSwitches().chestBreathing).toBe(true);
-		expect(session.getChestBreathing()).toEqual(session.getExperimentalVitals()?.breathing);
+	// test.12 to test.14 had a second way to the same chest breathing (chestBreathing and
+	// getChestBreathing). Two switches for one reading is one a tester can set wrong; this box is the one.
+	it("is the only way to chest breathing: there is no separate chestBreathing switch or reader", () => {
+		const { session } = make();
+		expect("chestBreathing" in session.getBuildSwitches()).toBe(false);
+		expect("getChestBreathing" in session).toBe(false);
 	});
 });
 
 describe("which sessions read chest motion", () => {
-	it("experimentalVitals reads it (its breathing comes from the chest), as does chestBreathing; neither alone is off", () => {
+	it("only with experimentalVitals on (its breathing comes from the chest)", () => {
 		expect(wantsChestMotion({ experimentalVitals: true })).toBe(true);
-		expect(wantsChestMotion({ chestBreathing: true })).toBe(true);
 		expect(wantsChestMotion({})).toBe(false);
-		expect(wantsChestMotion({ experimentalVitals: false, chestBreathing: false })).toBe(false);
+		expect(wantsChestMotion({ experimentalVitals: false })).toBe(false);
+		expect(wantsChestMotion({ chestBreathing: true } as never)).toBe(false);
 	});
 });
