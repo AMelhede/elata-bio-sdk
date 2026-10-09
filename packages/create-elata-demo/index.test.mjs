@@ -201,6 +201,19 @@ test('the heart-rate template shows only the checked heart rate, nothing unprove
   assert.match(readme, /getExperimentalVitals\(\)/);
 });
 
+test('every template installs under pnpm 9 and current pnpm alike', () => {
+  // A pnpm-workspace.yaml with keys but no packages field makes pnpm 9 stop before installing ("packages field missing
+  // or empty", pnpm 9.15.9); pnpm 10+ needs esbuild's build step allowed by name (allowBuilds, or for older pnpm
+  // package.json pnpm.onlyBuiltDependencies).
+  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
+    const ws = readFileSync(join(__dirname, 'templates', t, 'pnpm-workspace.yaml'), 'utf8');
+    assert.match(ws, /^packages:\s*\n\s+- ['"]?\.['"]?\s*$/m, `${t}: pnpm-workspace.yaml needs packages: ['.'] for pnpm 9`);
+    assert.match(ws, /allowBuilds:\s*\n\s+esbuild: true/, t);
+    const pkg = JSON.parse(readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8'));
+    assert.deepEqual(pkg.pnpm?.onlyBuiltDependencies, ['esbuild'], t);
+  }
+});
+
 test('scaffolds the default template', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-'));
   try {
