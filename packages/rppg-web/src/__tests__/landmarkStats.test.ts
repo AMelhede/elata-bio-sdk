@@ -63,3 +63,21 @@ test("two points moved in opposite directions, the plain total unchanged, still 
 	const after = sortedLandmarkAxes(pts)!;
 	expect(Array.from(after.xs)).toEqual(sortedCopy(pts).xs);
 });
+
+test("moves that leave any weighted total equal still get fresh axes", () => {
+	const pts = face(0);
+	pts[0] = { x: 0.5, y: 0.5 };
+	pts[1] = { x: 0.5, y: 0.5 };
+	sortedLandmarkAxes(pts);
+	pts[0].x = 0.75; // +0.25 at weight 1
+	pts[1].x = 0.375; // -0.125 at weight 2
+	expect(Array.from(sortedLandmarkAxes(pts)!.xs)).toEqual(sortedCopy(pts).xs);
+});
+
+test("a coordinate at Infinity does not pin the cache: the face moving is still seen", () => {
+	const pts = face(0);
+	pts[7] = { x: Number.POSITIVE_INFINITY, y: 0.5 };
+	sortedLandmarkAxes(pts);
+	for (const p of pts) if (Number.isFinite(p.x)) p.x += 0.2;
+	expect(Array.from(sortedLandmarkAxes(pts)!.xs)).toEqual(sortedCopy(pts).xs);
+});

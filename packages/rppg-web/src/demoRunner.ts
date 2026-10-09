@@ -782,11 +782,16 @@ type RegionSampler = (
 	sampler: RoiPixelSampler | undefined,
 ) => ReturnType<typeof sampleRgbWithSkinMask>;
 
-/** sampleRgbWithSkinMask for one frame, each (box, sampler) computed once. */
+/**
+ * sampleRgbWithSkinMask for one frame, each (box, sampler) computed once. Samplers are told apart by identity
+ * (the default is `undefined`), never by their ids, so no custom sampler can stand in for another.
+ */
 function frameSampleMemo(frame: Frame): RegionSampler {
-	const memo = new Map<string, ReturnType<typeof sampleRgbWithSkinMask>>();
+	const bySampler = new Map<RoiPixelSampler | undefined, Map<string, ReturnType<typeof sampleRgbWithSkinMask>>>();
 	return (c, sampler) => {
-		const key = `${sampler ? (sampler.id ?? "s") : "d"}|${c.x},${c.y},${c.w},${c.h}`;
+		let memo = bySampler.get(sampler);
+		if (!memo) bySampler.set(sampler, (memo = new Map()));
+		const key = `${c.x},${c.y},${c.w},${c.h}`;
 		let v = memo.get(key);
 		if (v === undefined) {
 			v = sampleRgbWithSkinMask(frame, c, sampler);
