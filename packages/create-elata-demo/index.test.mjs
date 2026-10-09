@@ -96,6 +96,8 @@ test('no template builds through vite-plugin-top-level-await (its production bui
     assert.doesNotMatch(pkg, /vite-plugin-top-level-await/, t);
     assert.doesNotMatch(vite, /^import .*top-level-await/m, t);
     assert.match(vite, /target: 'es2022'/, t);
+    // A second `build` key in the same object silently replaces the first, target included.
+    assert.strictEqual((vite.match(/^\s*build:/gm) ?? []).length, 1, `${t}: vite.config.ts must have one build key`);
   }
 });
 
