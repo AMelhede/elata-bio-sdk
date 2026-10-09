@@ -27,8 +27,9 @@
   "elataSdkVersions": {
     "eegWeb": "0.12.0",
     "eegWebBle": "0.12.0",
-    "rppgWeb": "0.14.0",
-    "ppgWeb": "0.12.0"
+    "rppgWeb": "npm:@amelhede/rppg-web@0.15.0-test.14",
+    "ppgWeb": "0.12.0",
+    "appMetrics": "0.5.0"
   },
   "bin": {
     "create-elata-demo": "index.mjs"

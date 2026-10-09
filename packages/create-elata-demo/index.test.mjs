@@ -19,18 +19,35 @@ const CLI = join(__dirname, 'index.mjs');
 const scaffolderPackage = JSON.parse(
   readFileSync(join(__dirname, 'package.json'), 'utf8'),
 );
-const eegWebVersion = JSON.parse(
-  readFileSync(join(__dirname, '..', 'eeg-web', 'package.json'), 'utf8'),
-).version;
-const eegWebBleVersion = JSON.parse(
-  readFileSync(join(__dirname, '..', 'eeg-web-ble', 'package.json'), 'utf8'),
-).version;
-const rppgWebVersion = JSON.parse(
-  readFileSync(join(__dirname, '..', 'rppg-web', 'package.json'), 'utf8'),
-).version;
-const ppgWebVersion = JSON.parse(
-  readFileSync(join(__dirname, '..', 'ppg-web', 'package.json'), 'utf8'),
-).version;
+/**
+ * The dependency spec a generated app gets for a sibling package: its version, or, when the sibling
+ * is published under another name (a fork's test build), an npm alias to it under the expected name.
+ */
+function siblingSpec(dir, expectedName) {
+  const pkg = JSON.parse(readFileSync(join(__dirname, '..', dir, 'package.json'), 'utf8'));
+  return pkg.name === expectedName ? pkg.version : `npm:${pkg.name}@${pkg.version}`;
+}
+const eegWebVersion = siblingSpec('eeg-web', '@elata-biosciences/eeg-web');
+const eegWebBleVersion = siblingSpec('eeg-web-ble', '@elata-biosciences/eeg-web-ble');
+const rppgWebVersion = siblingSpec('rppg-web', '@elata-biosciences/rppg-web');
+const ppgWebVersion = siblingSpec('ppg-web', '@elata-biosciences/ppg-web');
+const appMetricsVersion = siblingSpec('app-metrics', '@elata-biosciences/app-metrics');
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+let packedRppgWeb = null;
+/** The sibling rppg-web as npm would publish it (npm pack), made once per run. */
+function localRppgWebTarball() {
+  if (packedRppgWeb) return packedRppgWeb;
+  const out = mkdtempSync(join(tmpdir(), 'create-elata-demo-pack-'));
+  const r = spawnSync('npm', ['pack', '--silent', '--pack-destination', out], {
+    cwd: join(__dirname, '..', 'rppg-web'),
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  assert.strictEqual(r.status, 0, `npm pack failed:\n${r.stderr}`);
+  packedRppgWeb = join(out, r.stdout.trim().split('\n').pop());
+  return packedRppgWeb;
+}
 
 function runCli(args, cwd) {
   return spawnSync(process.execPath, [CLI, ...args], {
@@ -87,6 +104,75 @@ test('ships fallback SDK versions that match the repo package versions', () => {
   assert.equal(scaffolderPackage.elataSdkVersions.eegWebBle, eegWebBleVersion);
   assert.equal(scaffolderPackage.elataSdkVersions.rppgWeb, rppgWebVersion);
   assert.equal(scaffolderPackage.elataSdkVersions.ppgWeb, ppgWebVersion);
+  // 0.12.1 shipped without this one, and every template crashed at start for everyone.
+  assert.equal(scaffolderPackage.elataSdkVersions.appMetrics, appMetricsVersion);
+});
+
+test('every version the CLI reads has a packaged fallback', () => {
+  const src = readFileSync(CLI, 'utf8');
+  const keys = [...src.matchAll(/packageMetadata\.elataSdkVersions\?\.(\w+)/g)].map((m) => m[1]);
+  assert.ok(keys.length >= 5, `found ${keys.length} version reads`);
+  for (const key of keys)
+    assert.ok(scaffolderPackage.elataSdkVersions[key], `elataSdkVersions.${key} is missing`);
+});
+
+test('a sibling published under another name is installed through an npm alias', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-alias-'));
+  try {
+    const packagedDir = join(tmp, 'gen', 'create-elata-demo');
+    mkdirSync(packagedDir, { recursive: true });
+    cpSync(join(__dirname, 'index.mjs'), join(packagedDir, 'index.mjs'));
+    cpSync(join(__dirname, 'package.json'), join(packagedDir, 'package.json'));
+    cpSync(join(__dirname, 'templates'), join(packagedDir, 'templates'), { recursive: true });
+    mkdirSync(join(tmp, 'gen', 'rppg-web'));
+    writeFileSync(
+      join(tmp, 'gen', 'rppg-web', 'package.json'),
+      JSON.stringify({ name: '@someone/rppg-web', version: '9.9.9-test.1' }),
+    );
+    const result = spawnSync(process.execPath, [join(packagedDir, 'index.mjs'), 'demo-app'], {
+      cwd: tmp,
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
+    const pkg = JSON.parse(readFileSync(join(tmp, 'demo-app', 'package.json'), 'utf8'));
+    assert.equal(pkg.dependencies['@elata-biosciences/rppg-web'], 'npm:@someone/rppg-web@9.9.9-test.1');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('no template builds through vite-plugin-top-level-await (its production build fails), all target es2022', () => {
+  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
+    const pkg = readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8');
+    const vite = readFileSync(join(__dirname, 'templates', t, 'vite.config.ts'), 'utf8');
+    assert.doesNotMatch(pkg, /vite-plugin-top-level-await/, t);
+    assert.doesNotMatch(vite, /^import .*top-level-await/m, t);
+    assert.match(vite, /target: 'es2022'/, t);
+  }
+});
+
+test("the BLE template's two packages install together: eeg-web-ble's peer range takes eeg-web's version", () => {
+  const ble = JSON.parse(readFileSync(join(__dirname, '..', 'eeg-web-ble', 'package.json'), 'utf8'));
+  const web = JSON.parse(readFileSync(join(__dirname, '..', 'eeg-web', 'package.json'), 'utf8'));
+  const range = ble.peerDependencies['@elata-biosciences/eeg-web'];
+  const m = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
+  assert.ok(m, `unexpected peer range ${range}`);
+  const [maj, min] = web.version.split('.').map(Number);
+  // A caret range below 1.0 holds one minor version: ^0.2.1 takes 0.2.x only.
+  assert.ok(Number(m[1]) === maj && (maj > 0 || Number(m[2]) === min), `${range} does not take ${web.version}`);
+});
+
+test('the heart-rate template shows only the checked heart rate, nothing unproven', () => {
+  const app = readFileSync(join(__dirname, 'templates', 'rppg-demo', 'src', 'App.tsx'), 'utf8');
+  // Mood (face + HRV), breathing and HRV have not passed a check against a reference; the engine's own
+  // confidence and signal quality describe the camera picture, not the number shown (signal quality
+  // read 100% while the rate was invented), and the tracker no longer moves the checked rate.
+  assert.doesNotMatch(app, /AffectTracker|classifyAffectLabel|hrv_rmssd|respiration_rate|enableTracker/);
+  assert.doesNotMatch(app, /metrics\.confidence|metrics\.signal_quality|confidencePct|qualityPct/);
+  assert.match(app, /session\.getMetrics\(\)/);
+  assert.match(app, /Looking for a pulse/);
+  assert.doesNotMatch(app, /'Warm-up'/);
 });
 
 test('scaffolds the default template', () => {
@@ -101,7 +187,7 @@ test('scaffolds the default template', () => {
     const pkg = readFileSync(join(tmp, 'demo-app', 'package.json'), 'utf8');
     const app = readFileSync(join(tmp, 'demo-app', 'src', 'App.tsx'), 'utf8');
     const viteEnv = readFileSync(join(tmp, 'demo-app', 'src', 'vite-env.d.ts'), 'utf8');
-    assert.match(pkg, new RegExp(`"@elata-biosciences/rppg-web": "${rppgWebVersion}"`));
+    assert.match(pkg, new RegExp(`"@elata-biosciences/rppg-web": "${esc(rppgWebVersion)}"`));
     assert.match(app, /createRppgSession/);
     assert.match(app, /Technical diagnostics/);
     assert.match(app, /backendMode/);
@@ -131,15 +217,18 @@ test('scaffolds correctly from packaged contents without monorepo siblings', () 
       recursive: true,
     });
 
-    const result = spawnSync(process.execPath, [join(packagedDir, 'index.mjs'), 'demo-app'], {
-      cwd: tmp,
-      encoding: 'utf8',
-      timeout: 10_000,
-    });
-
-    assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
-    const pkg = readFileSync(join(tmp, 'demo-app', 'package.json'), 'utf8');
-    assert.match(pkg, new RegExp(`"@elata-biosciences/rppg-web": "${rppgWebVersion}"`));
+    for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
+      const result = spawnSync(process.execPath, [join(packagedDir, 'index.mjs'), `app-${t}`, '--template', t], {
+        cwd: tmp,
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      assert.strictEqual(result.status, 0, `CLI failed for ${t}:\n${result.stderr}`);
+      const pkg = readFileSync(join(tmp, `app-${t}`, 'package.json'), 'utf8');
+      assert.doesNotMatch(pkg, /__[A-Z_]+_VERSION__/, `${t} has a version left unfilled`);
+    }
+    const pkg = readFileSync(join(tmp, 'app-rppg-demo', 'package.json'), 'utf8');
+    assert.match(pkg, new RegExp(`"@elata-biosciences/rppg-web": "${esc(scaffolderPackage.elataSdkVersions.rppgWeb)}"`));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -163,6 +252,16 @@ test('smoke: each published template scaffolds, installs, and builds', () => {
       assert.ok(existsSync(join(appDir, 'package.json')));
       assert.ok(existsSync(join(appDir, 'README.md')));
 
+      // A sibling published under another name (a fork's test build) is not on the registry until it
+      // is published: install the local build instead, which is what has to work before publishing.
+      if (rppgWebVersion.startsWith('npm:')) {
+        const pkgPath = join(appDir, 'package.json');
+        const app = JSON.parse(readFileSync(pkgPath, 'utf8'));
+        if (app.dependencies['@elata-biosciences/rppg-web']) {
+          app.dependencies['@elata-biosciences/rppg-web'] = `file:${localRppgWebTarball()}`;
+          writeFileSync(pkgPath, JSON.stringify(app, null, 2));
+        }
+      }
       runCommand('pnpm', ['install'], appDir);
       runCommand('pnpm', ['run', 'build'], appDir);
     } finally {
@@ -177,7 +276,7 @@ test('scaffolds a selected EEG template', () => {
     const result = runCli(['brain-demo', '--template', 'eeg-demo'], tmp);
     assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
     const pkg = readFileSync(join(tmp, 'brain-demo', 'package.json'), 'utf8');
-    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web-ble": "${eegWebBleVersion}"`));
+    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web-ble": "${esc(eegWebBleVersion)}"`));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -189,10 +288,10 @@ test('scaffolds the BLE template with current package versions', () => {
     const result = runCli(['ble-demo', '--template', 'eeg-ble'], tmp);
     assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
     const pkg = readFileSync(join(tmp, 'ble-demo', 'package.json'), 'utf8');
-    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web": "${eegWebVersion}"`));
+    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web": "${esc(eegWebVersion)}"`));
     assert.match(
       pkg,
-      new RegExp(`"@elata-biosciences/eeg-web-ble": "${eegWebBleVersion}"`),
+      new RegExp(`"@elata-biosciences/eeg-web-ble": "${esc(eegWebBleVersion)}"`),
     );
     const readme = readFileSync(join(tmp, 'ble-demo', 'README.md'), 'utf8');
     assert.match(readme, /eeg-ble/);
@@ -209,13 +308,13 @@ test('scaffolds the PPG template with current package versions', () => {
     const result = runCli(['ppg-starter', '--template', 'ppg-demo'], tmp);
     assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
     const pkg = readFileSync(join(tmp, 'ppg-starter', 'package.json'), 'utf8');
-    assert.match(pkg, new RegExp(`"@elata-biosciences/ppg-web": "${ppgWebVersion}"`));
-    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web": "${eegWebVersion}"`));
+    assert.match(pkg, new RegExp(`"@elata-biosciences/ppg-web": "${esc(ppgWebVersion)}"`));
+    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web": "${esc(eegWebVersion)}"`));
     assert.match(
       pkg,
-      new RegExp(`"@elata-biosciences/eeg-web-ble": "${eegWebBleVersion}"`),
+      new RegExp(`"@elata-biosciences/eeg-web-ble": "${esc(eegWebBleVersion)}"`),
     );
-    assert.match(pkg, new RegExp(`"@elata-biosciences/rppg-web": "${rppgWebVersion}"`));
+    assert.match(pkg, new RegExp(`"@elata-biosciences/rppg-web": "${esc(rppgWebVersion)}"`));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -243,7 +342,7 @@ test('accepts a short template alias', () => {
     const result = runCli(['brain-demo', '--template', 'eeg'], tmp);
     assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
     const pkg = readFileSync(join(tmp, 'brain-demo', 'package.json'), 'utf8');
-    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web-ble": "${eegWebBleVersion}"`));
+    assert.match(pkg, new RegExp(`"@elata-biosciences/eeg-web-ble": "${esc(eegWebBleVersion)}"`));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

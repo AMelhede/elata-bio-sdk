@@ -107,7 +107,12 @@ function paint(text, ...codes) {
 function readVersion(relativePath, fallbackVersion, packageName) {
   const candidate = join(__dirname, relativePath);
   if (existsSync(candidate)) {
-    return JSON.parse(readFileSync(candidate, 'utf8')).version;
+    const sibling = JSON.parse(readFileSync(candidate, 'utf8'));
+    // A sibling published under another name (a fork's test build) is installed through an npm
+    // alias, so the template's imports of `packageName` keep working.
+    return sibling.name === packageName
+      ? sibling.version
+      : `npm:${sibling.name}@${sibling.version}`;
   }
   if (fallbackVersion) {
     return fallbackVersion;
