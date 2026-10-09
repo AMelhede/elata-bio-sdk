@@ -88,15 +88,6 @@
               Initializing...
             </span>
           </div>
-
-          <!-- Signal Quality badge (bottom center) -->
-          <div id="quality-badge-wrap" class="hidden absolute bottom-4 left-0 right-0 text-center pointer-events-none">
-            <div class="inline-block bg-black/60 px-3 py-1 rounded-full border border-emerald-500/30 backdrop-blur-sm">
-              <span class="text-xs font-medium text-emerald-300">
-                Signal Quality: <span id="signal-quality-badge">0%</span>
-              </span>
-            </div>
-          </div>
         </div>
 
         <!-- Pulse Waveform -->
@@ -119,41 +110,8 @@
           </div>
           <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div class="bg-slate-100/30 p-3 rounded-xl border border-slate-300/50">
-              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">BPM (Smoothed)</div>
+              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">BPM (checked)</div>
               <div id="bpm" class="text-xl font-bold font-mono text-slate-900">--</div>
-            </div>
-            <div class="bg-slate-100/30 p-3 rounded-xl border border-slate-300/50">
-              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">BPM (Raw)</div>
-              <div id="bpm-raw" class="text-xl font-bold font-mono text-sky-600">--</div>
-            </div>
-            <div class="bg-slate-100/30 p-3 rounded-xl border border-slate-300/50">
-              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">Confidence</div>
-              <div id="confidence" class="text-xl font-bold font-mono text-emerald-600">--</div>
-            </div>
-            <div class="bg-slate-100/30 p-3 rounded-xl border border-slate-300/50">
-              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">Signal Quality</div>
-              <div id="signal" class="text-xl font-bold font-mono text-indigo-600">--</div>
-            </div>
-            <div class="bg-slate-100/30 p-3 rounded-xl border border-slate-300/50">
-              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">Agreement</div>
-              <div id="agreement" class="text-xl font-bold font-mono text-amber-600">--</div>
-            </div>
-            <div class="bg-slate-100/30 p-3 rounded-xl border border-slate-300/50">
-              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">Affect</div>
-              <div id="affect-label" class="text-xl font-bold font-mono text-fuchsia-600">--</div>
-              <div class="text-[10px] text-slate-500 font-mono mt-1">
-                val <span id="affect-valence">--</span> · aro <span id="affect-arousal">--</span>
-              </div>
-            </div>
-            <div class="bg-slate-100/30 p-3 rounded-xl border border-slate-300/50">
-              <div class="text-[10px] text-slate-600 uppercase tracking-wider mb-1">Respiration</div>
-              <div class="text-xl font-bold font-mono text-cyan-600">
-                <span id="resp-rate">--</span>
-                <span class="text-[10px] text-slate-500 font-normal">br/min</span>
-              </div>
-              <div class="text-[10px] text-slate-500 font-mono mt-1">
-                conf <span id="resp-confidence">--</span>
-              </div>
             </div>
           </div>
         </div>

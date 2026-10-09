@@ -2,7 +2,7 @@ import { initDemo } from '../src/demoApp';
 import { MediaPipeFaceFrameSource } from '../src/mediaPipeFaceFrameSource';
 import { computeWaveformPeriodicityProfile } from '../src/rppgDiagnostics';
 import { replayBayesSession, type ReplayBayesSessionResult, type ReplaySyncSample } from '../src/rppgReplay';
-import { AffectTracker, classifyAffectLabel, RppgSessionRecorder } from '../src';
+import { RppgSessionRecorder } from '../src';
 import type { DemoRunnerDiagnostics, RppgDebugSnapshot } from '../src';
 
 // --- DOM helpers ---
@@ -19,16 +19,6 @@ const startBtnLabel = getEl('start-btn-label');
 const heartIcon    = getEl('heart-icon');
 const bpmMainEl    = getEl('bpm-main');
 const bpmEl        = getEl('bpm');
-const bpmRawEl     = getEl('bpm-raw');
-const confEl       = getEl('confidence');
-const signalEl     = getEl('signal');
-const agreementEl  = getEl('agreement');
-const affectLabelEl = document.getElementById('affect-label');
-const affectValenceEl = document.getElementById('affect-valence');
-const affectArousalEl = document.getElementById('affect-arousal');
-const respRateEl = document.getElementById('resp-rate');
-const respConfidenceEl = document.getElementById('resp-confidence');
-const affectTracker = new AffectTracker();
 const backendBadge = getEl('backend-badge');
 const roiBadge     = getEl('roi-badge');
 const fpsBadge     = getEl('fps-badge');
@@ -64,8 +54,6 @@ const reasonsEl    = getEl('reasons');
 const reasonWrap   = getEl('reason-wrap');
 const statusBadge  = getEl('status-badge');
 const statusBadgeWrap = getEl('status-badge-wrap');
-const qualityBadgeWrap = getEl('quality-badge-wrap');
-const signalQualityBadge = getEl('signal-quality-badge');
 const idleOverlay  = getEl('idle-overlay');
 const waveCanvas   = getEl<HTMLCanvasElement>('wave-canvas');
 const debugToggle  = getEl('debug-toggle');
@@ -249,8 +237,6 @@ function setStatusBadge(text: string, style: BadgeStyle) {
 
 // --- State ---
 let running = false;
-let emaBpm: number | null = null;
-const emaAlpha = 0.2;
 let rafId: number | null = null;
 let sampleCount = 0;
 const CALIBRATION_SAMPLES = 150; // ~5s at 30fps
@@ -289,11 +275,15 @@ function formatProcessorPath(value: DemoRunnerDiagnostics['lastProcessorMethod']
 
 function deriveStatusFromDiagnostics(
   debugSnapshot: RppgDebugSnapshot | null,
-  signalQuality: number,
-  agreement: number,
-  smoothed: number | null,
-  confidence: number,
+  runnerDiagnostics: DemoRunnerDiagnostics | null,
+  bpm: number | null,
 ): { text: string; style: BadgeStyle } {
+  if (runnerDiagnostics?.lastDropReason === 'no_face') {
+    return { text: 'No face in view. Face the camera.', style: 'warning' };
+  }
+  if (bpm !== null) {
+    return { text: 'Pulse found', style: 'running' };
+  }
   const issues = debugSnapshot?.issues ?? [];
   if (issues.includes('no_samples_yet')) {
     return { text: 'No samples yet', style: 'warning' };
@@ -310,16 +300,9 @@ function deriveStatusFromDiagnostics(
   if (issues.includes('high_clipping')) {
     return { text: 'Exposure clipping detected', style: 'warning' };
   }
-  if (signalQuality < 0.3) {
-    return { text: 'Poor signal — face camera', style: 'warning' };
-  }
-  if (agreement < 0.45) {
-    return { text: 'Signal present — estimators disagree', style: 'warning' };
-  }
-  if (smoothed !== null && confidence > 0.4) {
-    return { text: 'Active', style: 'running' };
-  }
-  return { text: 'Acquiring signal...', style: 'calibrating' };
+  // The session's pulse check shows a rate only once forehead and both cheeks agree on it, which
+  // takes 20 to 40 seconds of a still, lit face.
+  return { text: 'Looking for a pulse', style: 'calibrating' };
 }
 
 copyReplayBtn.addEventListener('click', async () => {
@@ -358,7 +341,6 @@ async function startDemo() {
 
   idleOverlay.classList.add('hidden');
   statusBadgeWrap.classList.remove('hidden');
-  qualityBadgeWrap.classList.remove('hidden');
   setStatusBadge('Requesting camera...', 'warning');
 
   try {
@@ -384,7 +366,7 @@ async function startDemo() {
   // capture cues (motion + lighting) for the capture-confidence score.
   let captureProc: { pushCaptureFrame: (s: { motion?: number; clipRatio?: number; skinRatio?: number }) => unknown } | null = null;
 
-  const { proc, source, runner } = await initDemo(video, {
+  const { proc, source, runner, session } = await initDemo(video, {
     sampleRate: trackFps ?? 30,
     windowSec: 8,
     roiSmoothingAlpha: 0.15,
@@ -437,72 +419,23 @@ async function startDemo() {
     lastRunnerDiagnostics = typeof runner.getDiagnostics === 'function'
       ? (runner.getDiagnostics() as DemoRunnerDiagnostics)
       : lastRunnerDiagnostics;
-    const rawBpm = metrics.bpm ?? null;
-
-    // Smoothed BPM (EMA)
-    if (rawBpm) {
-      emaBpm = emaBpm === null ? rawBpm : emaBpm + (rawBpm - emaBpm) * emaAlpha;
-    }
-
-    const smoothed = emaBpm ? Math.round(emaBpm) : null;
-    const signalQuality = metrics.signal_quality ?? 0;
-    const confidence = metrics.confidence ?? 0;
-    const agreement = metrics.agreement ?? 0;
+    // The rate shown is the session's: the pulse check's, proven over 8 s by forehead and both
+    // cheeks agreeing, and null until then. The engine's own metrics (above) feed only the
+    // collapsed diagnostics and the session recording.
+    const bpm = session.getMetrics().bpm ?? null;
     const snr = metrics.snr as any;
 
-    // --- Big BPM display ---
-    bpmMainEl.textContent = smoothed !== null ? String(smoothed) : '--';
-    bpmEl.textContent     = smoothed !== null ? String(smoothed) : '--';
-    bpmRawEl.textContent  = rawBpm ? rawBpm.toFixed(1) : '--';
-    confEl.textContent    = confidence.toFixed(2);
-    signalEl.textContent  = signalQuality.toFixed(2);
-    agreementEl.textContent = agreement.toFixed(2);
-
-    // --- Affect (valence from face blendshapes, arousal from rPPG physiology) ---
-    const lastFace = typeof runner.getLastBlendshapes === 'function'
-      ? runner.getLastBlendshapes()
-      : null;
-    if (lastFace) affectTracker.observeFace(lastFace.blendshapes, lastFace.atMs);
-    affectTracker.observePhysiology(metrics.bpm ?? null, (metrics as any).hrv_rmssd ?? null);
-    const affect = affectTracker.compute({
-      bpm: metrics.bpm ?? null,
-      rmssd: (metrics as any).hrv_rmssd ?? null,
-      physioConfidence: confidence,
-      faceConfidence: lastFace ? 1 : 0,
-    });
-    if (affectLabelEl) {
-      affectLabelEl.textContent = affect.arousalSource === 'none'
-        ? '--'
-        : classifyAffectLabel(affect.valence, affect.arousal);
-    }
-    if (affectValenceEl) affectValenceEl.textContent = affect.valence.toFixed(2);
-    if (affectArousalEl) affectArousalEl.textContent = affect.arousal.toFixed(2);
-
-    // --- Respiration (breaths/min) — gate the rate on its own confidence so a
-    // low-confidence estimate reads as "--" rather than a misleading number. ---
-    const respRate = metrics.respiration_rate ?? null;
-    const respConfidence = metrics.respiration_confidence ?? null;
-    if (respRateEl) {
-      // `respiration_rate` is null during warm-up; once present, show it and let
-      // the confidence readout below convey how much to trust it.
-      respRateEl.textContent = respRate != null ? respRate.toFixed(1) : '--';
-    }
-    if (respConfidenceEl) {
-      respConfidenceEl.textContent =
-        respConfidence != null ? respConfidence.toFixed(2) : '--';
-    }
+    bpmMainEl.textContent = bpm !== null ? String(Math.round(bpm)) : '--';
+    bpmEl.textContent     = bpm !== null ? String(Math.round(bpm)) : '--';
 
     // Heart animation
-    if (smoothed !== null) {
+    if (bpm !== null) {
       heartIcon.classList.remove('heart-idle');
       heartIcon.classList.add('heart-pulse');
     } else {
       heartIcon.classList.add('heart-idle');
       heartIcon.classList.remove('heart-pulse');
     }
-
-    // Signal quality badge
-    signalQualityBadge.textContent = `${Math.round(signalQuality * 100)}%`;
 
     // Badges
     fpsBadge.textContent  = lastStats.fps ? `FPS: ${lastStats.fps.toFixed(0)}` : 'FPS: --';
@@ -611,28 +544,15 @@ async function startDemo() {
       reasonWrap.classList.add('hidden');
     }
 
-    // Status badge logic
-    if (sampleCount < CALIBRATION_SAMPLES) {
-      const pct = Math.round((sampleCount / CALIBRATION_SAMPLES) * 100);
-      // Capture-confidence gate: don't leave the user staring at a stalled bar —
-      // when motion/lighting is the problem, say what to fix instead of just %.
-      const capture = metrics.capture_confidence;
-      if (capture != null && capture < 0.4) {
-        const fix = metrics.capture_limiting === 'lighting'
-          ? 'Increase lighting to calibrate'
-          : 'Hold still to calibrate';
-        setStatusBadge(`${fix} (${pct}%)`, 'warning');
-      } else {
-        setStatusBadge(`Calibrating... ${pct}%`, 'calibrating');
-      }
-    } else {
-      const status = deriveStatusFromDiagnostics(
-        debugSnapshot,
-        signalQuality,
-        agreement,
-        smoothed,
-        confidence,
+    // Status badge: what to fix first, else whether a pulse has been found.
+    const capture = metrics.capture_confidence;
+    if (bpm === null && capture != null && capture < 0.4) {
+      setStatusBadge(
+        metrics.capture_limiting === 'lighting' ? 'Increase lighting' : 'Hold still',
+        'warning',
       );
+    } else {
+      const status = deriveStatusFromDiagnostics(debugSnapshot, lastRunnerDiagnostics, bpm);
       setStatusBadge(status.text, status.style);
     }
   }, 1000);

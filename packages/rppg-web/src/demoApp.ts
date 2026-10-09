@@ -9,7 +9,8 @@ export async function initDemo(
 		video: videoEl,
 		backend: "auto",
 		faceMesh: "auto",
-		enableTracker: { minBpm: 55, maxBpm: 150, numParticles: 200 },
+		// The rate shown is the pulse check's, which the engine's rate tracker does not move.
+		enableTracker: false,
 		roiSmoothingAlpha: 0.25,
 		useSkinMask: true,
 		...opts,
