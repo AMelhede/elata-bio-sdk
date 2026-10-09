@@ -40,6 +40,16 @@ if (existsSync(built)) {
 	if (m?.[1] !== pkg.version)
 		problems.push(`dist says ${m?.[1]}, package.json says ${pkg.version}: rebuild dist`);
 }
+// tsc writes dist but never deletes from it: a module taken out of the source keeps its old build
+// in dist, and it would ship. Every built module needs its source file.
+const distDir = path.join(root, "dist");
+if (existsSync(distDir)) {
+	for (const f of readdirSync(distDir)) {
+		const m = f.match(/^(.+?)\.(?:js|d\.ts)(?:\.map)?$/);
+		if (m && !existsSync(path.join(root, "src", `${m[1]}.ts`)))
+			problems.push(`dist/${f} has no source (src/${m[1]}.ts): delete it and rebuild dist`);
+	}
+}
 // The version alone cannot tell a dist built from this checkout from one built before its source
 // or README moved on (a README describing an option the built code lacked said "ready").
 const stampFile = path.join(root, sourceStamp.STAMP_FILE);

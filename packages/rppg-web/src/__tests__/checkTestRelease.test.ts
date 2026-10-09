@@ -56,6 +56,7 @@ function throwawayPackage(): { root: string; top: string } {
 	fs.writeFileSync(path.join(root, "pkg", "rppg_wasm.js"), "export function set_colour_projection_fix() {}\n");
 	fs.writeFileSync(path.join(root, "pkg", "rppg_wasm_bg.wasm"), "\0asm");
 	fs.writeFileSync(path.join(root, "src", "index.ts"), "export const a = 1;\n");
+	for (const f of ["buildInfo", "fixSwitches", "pulseCheck"]) fs.writeFileSync(path.join(root, "src", `${f}.ts`), "export {};\n");
 	fs.writeFileSync(path.join(root, "src", "__tests__", "a.test.ts"), "test.todo('a');\n");
 	stamp(root);
 	return { root, top };
@@ -151,5 +152,23 @@ describe("check-test-release.mjs refuses a dist built from other source", () => 
 		const r = check(made.root);
 		expect(r.stderr).toBe("");
 		expect(r.status).toBe(0);
+	});
+});
+
+// tsc writes dist but never deletes from it, so a module removed from the source (four reverted
+// speed-ups took landmarkStats.ts out) left its old build in dist, where it would ship.
+describe("check-test-release.mjs refuses a built module with no source", () => {
+	let made: { root: string; top: string } | null = null;
+	afterEach(() => {
+		if (made) fs.rmSync(made.top, { recursive: true, force: true });
+		made = null;
+	});
+
+	it("refuses a dist module whose source file is gone, naming it", () => {
+		made = throwawayPackage();
+		fs.writeFileSync(path.join(made.root, "dist", "gone.js"), "export {};\n");
+		const r = check(made.root);
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("dist/gone.js has no source");
 	});
 });
