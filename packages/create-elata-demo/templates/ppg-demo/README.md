@@ -40,9 +40,10 @@ npm run dev
 
 ## Notes
 
-- `package.json` has an `overrides` entry so `npm install` works: the `@elata-biosciences/eeg-web-ble` 0.12.0 on npm
-  still names `@elata-biosciences/eeg-web` ^0.2.1 as its peer, and the override tells npm it shares this app's own
-  `eeg-web`. It can go once eeg-web-ble is republished with its peer range fixed.
+- `package.json` has `overrides` entries so `npm install` works: on npm, `@elata-biosciences/eeg-web-ble` 0.12.0
+  still names `@elata-biosciences/eeg-web` ^0.2.1 as its peer, and `@elata-biosciences/ppg-web` 0.12.0 names
+  `eeg-web` ^0.2.1, `eeg-web-ble` ^0.2.1 and `rppg-web` ^0.3.0. The overrides tell npm they share this app's own
+  copies. They can go once those two packages are republished with their peer ranges fixed.
 - This starter uses the high-level `createMusePpgSession()` API instead of wiring `BleTransport` manually.
 - The underlying transport path is the same normalized `HeadbandFrameV1` stream used elsewhere in the SDK.
 - Classic Muse `ppgRaw` timing still relies on local frame timing, so HRV should be treated as a developer preview until device timestamps are propagated end to end.

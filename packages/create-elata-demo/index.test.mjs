@@ -150,22 +150,58 @@ test('no template builds through vite-plugin-top-level-await (its production bui
     assert.doesNotMatch(pkg, /vite-plugin-top-level-await/, t);
     assert.doesNotMatch(vite, /^import .*top-level-await/m, t);
     assert.match(vite, /target: 'es2022'/, t);
+    // A second `build` key in the same object silently replaces the first, target included.
+    assert.strictEqual((vite.match(/^\s*build:/gm) ?? []).length, 1, `${t}: vite.config.ts must have one build key`);
   }
 });
 
-test("a template with eeg-web-ble installs with npm against the eeg-web-ble already on npm", () => {
-  // The published eeg-web-ble 0.12.0 still names eeg-web ^0.2.1 as its peer, so npm refuses an app that installs
-  // eeg-web 0.12.0 beside it (ERESOLVE). Until it is republished with the range fixed in this repo, each template that
-  // uses it tells npm that eeg-web-ble shares the app's own eeg-web; the override is harmless after the republish.
+test("a template with eeg-web-ble or ppg-web installs with npm against the versions already on npm", () => {
+  // The published eeg-web-ble 0.12.0 still names eeg-web ^0.2.1 as its peer, and the published ppg-web 0.12.0 names
+  // eeg-web ^0.2.1, eeg-web-ble ^0.2.1 and rppg-web ^0.3.0, so npm refuses an app that installs the 0.12 siblings
+  // beside them (ERESOLVE). Until they are republished with the ranges fixed in this repo, each template that uses
+  // them tells npm that they share the app's own copies; the overrides are harmless after the republish.
+  const peers = {
+    '@elata-biosciences/eeg-web-ble': ['@elata-biosciences/eeg-web'],
+    '@elata-biosciences/ppg-web': ['@elata-biosciences/eeg-web', '@elata-biosciences/eeg-web-ble', '@elata-biosciences/rppg-web'],
+  };
   for (const name of ['eeg-ble', 'eeg-demo', 'ppg-demo', 'pulse-game', 'rppg-demo']) {
     const pkg = JSON.parse(readFileSync(join(__dirname, 'templates', name, 'package.json'), 'utf8'));
-    if (!pkg.dependencies['@elata-biosciences/eeg-web-ble']) continue;
-    assert.ok(pkg.dependencies['@elata-biosciences/eeg-web'], `${name} must install eeg-web itself for the override to name it`);
-    assert.deepStrictEqual(
-      pkg.overrides?.['@elata-biosciences/eeg-web-ble'],
-      { '@elata-biosciences/eeg-web': '$@elata-biosciences/eeg-web' },
-      `${name}: npm cannot install the published eeg-web-ble beside eeg-web 0.12 without this override`,
-    );
+    for (const [dep, names] of Object.entries(peers)) {
+      if (!pkg.dependencies[dep]) continue;
+      for (const peer of names) assert.ok(pkg.dependencies[peer], `${name} must install ${peer} itself for the override to name it`);
+      assert.deepStrictEqual(
+        pkg.overrides?.[dep],
+        Object.fromEntries(names.map((peer) => [peer, `$${peer}`])),
+        `${name}: npm cannot install the published ${dep} beside the 0.12 siblings without this override`,
+      );
+    }
+  }
+});
+
+test('every template resolves with npm against the registry today (lockfile only, the step that failed with ERESOLVE)', () => {
+  for (const templateName of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
+    const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-resolve-'));
+    const appDir = join(tmp, 'app');
+    try {
+      const result = runCli(['app', '--template', templateName], tmp);
+      assert.strictEqual(result.status, 0, `CLI failed for ${templateName}:\n${result.stderr}`);
+      if (rppgWebVersion.startsWith('npm:')) {
+        const pkgPath = join(appDir, 'package.json');
+        const app = JSON.parse(readFileSync(pkgPath, 'utf8'));
+        if (app.dependencies['@elata-biosciences/rppg-web']) {
+          app.dependencies['@elata-biosciences/rppg-web'] = `file:${localRppgWebTarball()}`;
+          writeFileSync(pkgPath, JSON.stringify(app, null, 2));
+        }
+      }
+      const r = spawnSync('npm', ['install', '--package-lock-only', '--no-audit', '--no-fund'], {
+        cwd: appDir,
+        encoding: 'utf8',
+        timeout: 5 * 60_000,
+      });
+      assert.strictEqual(r.status, 0, `${templateName}: npm could not resolve the starter's packages:\n${r.stderr}`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   }
 });
 

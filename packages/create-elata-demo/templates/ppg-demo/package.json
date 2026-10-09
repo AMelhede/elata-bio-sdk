@@ -28,6 +28,11 @@
   "overrides": {
     "@elata-biosciences/eeg-web-ble": {
       "@elata-biosciences/eeg-web": "$@elata-biosciences/eeg-web"
+    },
+    "@elata-biosciences/ppg-web": {
+      "@elata-biosciences/eeg-web": "$@elata-biosciences/eeg-web",
+      "@elata-biosciences/eeg-web-ble": "$@elata-biosciences/eeg-web-ble",
+      "@elata-biosciences/rppg-web": "$@elata-biosciences/rppg-web"
     }
   },
   "pnpm": {
