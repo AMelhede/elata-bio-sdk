@@ -7,7 +7,8 @@ This app was generated from the `__TEMPLATE_NAME__` template in
 
 - camera-based rPPG processing in the browser
 - `createRppgSession()` as the recommended `@elata-biosciences/rppg-web` app entrypoint
-- a large BPM readout, confidence and signal-quality meters, and session chips tuned for demos
+- a large heart-rate readout that shows only a checked rate (the SDK's pulse check: forehead and both cheeks
+  agree on one rhythm), says when no face is in view, and session chips tuned for demos
 - expandable technical diagnostics (`backendMode`, `issues`, `lastError`, and related fields)
 
 ## Requirements
@@ -36,6 +37,22 @@ npm:
 cd __APP_NAME__
 npm install
 npm run dev
+```
+
+## Adding the experimental readings
+
+The readout shows only the checked heart rate. HRV and breathing rate are in the SDK too, handed over in their own
+box marked experimental, because neither has passed a check against a medical reference yet: against an ECG, camera
+HRV read several times too high, and the breathing rate (from chest and shoulder motion) has been checked only on
+people sitting still, against a reference worked out from a finger sensor. To show them, label them as experimental:
+
+```ts
+const session = await createRppgSession({ video, experimentalVitals: true /* , ...the options in App.tsx */ });
+
+// later, on each update:
+const vitals = session.getExperimentalVitals();
+// null while the option is off; otherwise { experimental: true, hrvRmssd, breathing }
+// hrvRmssd: milliseconds, or null until a pulse is proven; breathing: { rate, share } or null
 ```
 
 ## Notes

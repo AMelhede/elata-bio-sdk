@@ -47,6 +47,9 @@ npm run dev
 
 ## Notes
 
+- `package.json` has an `overrides` entry so `npm install` works: the `@elata-biosciences/eeg-web-ble` 0.12.0 on npm
+  still names `@elata-biosciences/eeg-web` ^0.2.1 as its peer, and the override tells npm it shares this app's own
+  `eeg-web`. It can go once eeg-web-ble is republished with its peer range fixed.
 - For BLE in this starter, use Chrome or Bluefy on iOS. Do not expect Safari itself to handle the headband flow.
 - Synthetic mode generates a synthetic EEG signal locally — no device or Bluetooth is needed and it works in any Chromium or Firefox build.
 - This template is a polished integration starting point and works well for demos and screen recordings.

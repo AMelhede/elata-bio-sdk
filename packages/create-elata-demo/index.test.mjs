@@ -9,6 +9,7 @@ import {
   readFileSync,
   existsSync,
   writeFileSync,
+  readdirSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -152,6 +153,22 @@ test('no template builds through vite-plugin-top-level-await (its production bui
   }
 });
 
+test("a template with eeg-web-ble installs with npm against the eeg-web-ble already on npm", () => {
+  // The published eeg-web-ble 0.12.0 still names eeg-web ^0.2.1 as its peer, so npm refuses an app that installs
+  // eeg-web 0.12.0 beside it (ERESOLVE). Until it is republished with the range fixed in this repo, each template that
+  // uses it tells npm that eeg-web-ble shares the app's own eeg-web; the override is harmless after the republish.
+  for (const name of ['eeg-ble', 'eeg-demo', 'ppg-demo', 'pulse-game', 'rppg-demo']) {
+    const pkg = JSON.parse(readFileSync(join(__dirname, 'templates', name, 'package.json'), 'utf8'));
+    if (!pkg.dependencies['@elata-biosciences/eeg-web-ble']) continue;
+    assert.ok(pkg.dependencies['@elata-biosciences/eeg-web'], `${name} must install eeg-web itself for the override to name it`);
+    assert.deepStrictEqual(
+      pkg.overrides?.['@elata-biosciences/eeg-web-ble'],
+      { '@elata-biosciences/eeg-web': '$@elata-biosciences/eeg-web' },
+      `${name}: npm cannot install the published eeg-web-ble beside eeg-web 0.12 without this override`,
+    );
+  }
+});
+
 test("the BLE template's two packages install together: eeg-web-ble's peer range takes eeg-web's version", () => {
   const ble = JSON.parse(readFileSync(join(__dirname, '..', 'eeg-web-ble', 'package.json'), 'utf8'));
   const web = JSON.parse(readFileSync(join(__dirname, '..', 'eeg-web', 'package.json'), 'utf8'));
@@ -177,6 +194,11 @@ test('the heart-rate template shows only the checked heart rate, nothing unprove
   // A camera on a wall is told why nothing comes, not to keep waiting.
   assert.match(app, /lastDropReason === 'no_face'/);
   assert.doesNotMatch(app, /'Warm-up'/);
+  // Its README says what it shows, and how an app turns on the readings it leaves out, labelled as experimental.
+  const readme = readFileSync(join(__dirname, 'templates', 'rppg-demo', 'README.md'), 'utf8');
+  assert.doesNotMatch(readme, /confidence and signal-quality meters/);
+  assert.match(readme, /experimentalVitals: true/);
+  assert.match(readme, /getExperimentalVitals\(\)/);
 });
 
 test('scaffolds the default template', () => {
@@ -210,6 +232,22 @@ test('scaffolds the default template', () => {
   }
 });
 
+test('npm pack runs the release check and ships the licence and every starter file', () => {
+  // The packaged-contents test below copies files by hand; npm decides what really ships (it never packs .npmrc or
+  // .gitignore, hence _gitignore), and prepack runs scripts/check-test-release.mjs.
+  const r = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: __dirname, encoding: 'utf8', timeout: 120_000 });
+  assert.strictEqual(r.status, 0, `npm pack failed:\n${r.stderr}`);
+  assert.match(r.stderr + r.stdout, /create-elata-demo test release\] .*: ready/);
+  const files = JSON.parse(r.stdout.slice(r.stdout.search(/^\[\s*$/m)))[0].files.map((f) => f.path);
+  assert.ok(files.includes('LICENSE'), 'LICENSE is not packed');
+  const onDisk = readdirSync(join(__dirname, 'templates'), { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => join(e.parentPath ?? e.path, e.name).slice(__dirname.length + 1).split('\\').join('/'));
+  assert.ok(onDisk.length > 20, `only ${onDisk.length} template files found`);
+  const unpacked = onDisk.filter((f) => !files.includes(f));
+  assert.deepStrictEqual(unpacked, [], 'template files npm would not ship');
+});
+
 test('scaffolds correctly from packaged contents without monorepo siblings', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-packaged-'));
   try {
@@ -238,10 +276,12 @@ test('scaffolds correctly from packaged contents without monorepo siblings', () 
   }
 });
 
-test('smoke: each published template scaffolds, installs, and builds', () => {
-  const templates = ['rppg-demo', 'eeg-demo', 'eeg-ble'];
+test('smoke: every template scaffolds, installs with npm (as the CLI tells people) and pnpm, and builds', () => {
+  // pnpm only warns where npm refuses (a peer range the installed version does not meet), so a smoke test run with
+  // pnpm alone passed while 'npm install', the command the CLI prints, failed for the EEG and BLE starters.
+  const templates = ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game'];
 
-  for (const templateName of templates) {
+  for (const [templateName, manager] of templates.flatMap((t) => [[t, 'npm'], [t, 'pnpm']])) {
     const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-smoke-'));
     const appName = `demo-${templateName}`;
     const appDir = join(tmp, appName);
@@ -266,8 +306,8 @@ test('smoke: each published template scaffolds, installs, and builds', () => {
           writeFileSync(pkgPath, JSON.stringify(app, null, 2));
         }
       }
-      runCommand('pnpm', ['install'], appDir);
-      runCommand('pnpm', ['run', 'build'], appDir);
+      runCommand(manager, manager === 'npm' ? ['install', '--no-audit', '--no-fund'] : ['install'], appDir);
+      runCommand(manager, ['run', 'build'], appDir);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -23,6 +23,11 @@
     "vite": "^6.0.5",
     "vite-plugin-wasm": "^3.3.0"
   },
+  "overrides": {
+    "@elata-biosciences/eeg-web-ble": {
+      "@elata-biosciences/eeg-web": "$@elata-biosciences/eeg-web"
+    }
+  },
   "pnpm": {
     "onlyBuiltDependencies": ["esbuild"]
   }
