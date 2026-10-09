@@ -1,0 +1,4 @@
+# Current pnpm refuses to install unless each dependency that runs a build step is allowed by
+# name; vite needs esbuild's. (Older pnpm reads the same allowance from package.json.)
+allowBuilds:
+  esbuild: true
