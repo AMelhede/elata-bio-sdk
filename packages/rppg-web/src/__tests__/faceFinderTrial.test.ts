@@ -174,3 +174,65 @@ describe("the trial on the live video", () => {
 		expect(gpu.calls).toHaveLength(2);
 	});
 });
+
+describe("lifetime", () => {
+	/** A page whose visibility can be flipped, counting its listeners. */
+	function page() {
+		const listeners = new Set<() => void>();
+		return {
+			visibilityState: "visible" as string,
+			addEventListener: (type: string, fn: () => void) => {
+				if (type === "visibilitychange") listeners.add(fn);
+			},
+			removeEventListener: (type: string, fn: () => void) => {
+				if (type === "visibilitychange") listeners.delete(fn);
+			},
+			listeners,
+			flip(state: string) {
+				this.visibilityState = state;
+				for (const fn of [...listeners]) fn();
+			},
+		};
+	}
+
+	test("a return to the page, heard from the page itself, counts as a return", () => {
+		const clock = { t: 0 };
+		const cpu = fake("CPU", 10, clock, () => NONE);
+		const rebuild = jest.fn(async () => null);
+		const doc = page();
+		const f = new TrialFaceFinder([cpu], { now: () => clock.t, rebuild, visibility: doc });
+		drive(f, 3, clock);
+		doc.flip("hidden");
+		clock.t += 5_000; // hidden for 5 s: the finder is not called while the page is hidden
+		doc.flip("visible");
+		drive(f, Math.floor(NO_FACE_AFTER_RETURN_MS / 43) - 2, clock);
+		expect(rebuild).not.toHaveBeenCalled(); // the 2 s count from the return, not from leaving
+		drive(f, 4, clock);
+		expect(rebuild).toHaveBeenCalledWith("CPU");
+	});
+
+	test("closing stops listening to the page", () => {
+		const clock = { t: 0 };
+		const doc = page();
+		const f = new TrialFaceFinder([fake("CPU", 10, clock)], { now: () => clock.t, visibility: doc });
+		expect(doc.listeners.size).toBe(1);
+		f.close();
+		expect(doc.listeners.size).toBe(0);
+	});
+
+	test("a rebuild that lands after close is closed, never used", async () => {
+		const clock = { t: 0 };
+		const gpu = fake("GPU", 15, clock);
+		const fresh = fake("GPU", 15, clock);
+		let land: (c: FinderCandidate) => void = () => undefined;
+		const f = new TrialFaceFinder([gpu], { now: () => clock.t, rebuild: () => new Promise((r) => (land = r)) });
+		gpu.lose();
+		drive(f, 1, clock);
+		f.close();
+		land(fresh);
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(fresh.closed()).toBe(true);
+		expect(f.delegate).toBe("GPU");
+	});
+});

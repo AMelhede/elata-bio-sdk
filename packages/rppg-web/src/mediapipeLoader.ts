@@ -158,14 +158,9 @@ export async function loadTrialFaceFinder(
 	const candidates = await loadFaceFinderCandidates(options);
 	if (!candidates.length) return null;
 	const cdn = (options.visionCdnBase ?? DEFAULT_VISION_CDN).replace(/\/+$/, "");
-	const finder = new TrialFaceFinder(candidates, {
+	return new TrialFaceFinder(candidates, {
 		onEvent,
 		rebuild: async (delegate) => (await loadFaceFinderCandidates({ ...options, visionCdnBase: cdn }, [delegate]))[0] ?? null,
+		visibility: typeof document !== "undefined" ? document : undefined,
 	});
-	if (typeof document !== "undefined") {
-		document.addEventListener("visibilitychange", () => {
-			if (document.visibilityState === "visible") finder.noteReturn();
-		});
-	}
-	return finder;
 }

@@ -50,6 +50,13 @@ export const NO_FACE_AFTER_RETURN_MS = 2000;
 
 export type FaceRebuildReason = "context-lost" | "no-face-after-return";
 
+/** The page, as far as the finder needs it: whether it is visible, and its visibilitychange event. */
+export type VisibilitySource = {
+	readonly visibilityState: string;
+	addEventListener(type: "visibilitychange", listener: () => void): void;
+	removeEventListener(type: "visibilitychange", listener: () => void): void;
+};
+
 /** The fastest candidate by mean call time; an earlier one keeps its place unless clearly beaten. */
 export function pickFastest<T extends { delegate: FinderDelegate; meanMs: number }>(trials: readonly T[]): T | null {
 	let best: T | null = null;
@@ -89,6 +96,8 @@ export class TrialFaceFinder implements FaceLandmarkerLike {
 	private lastFaceAtMs = Number.NEGATIVE_INFINITY;
 	private returnedAtMs: number | null = null;
 	private rebuilding = false;
+	private closed = false;
+	private stopListening: (() => void) | null = null;
 
 	constructor(
 		candidates: readonly FinderCandidate[],
@@ -96,6 +105,8 @@ export class TrialFaceFinder implements FaceLandmarkerLike {
 			now?: () => number;
 			rebuild?: (delegate: FinderDelegate) => Promise<FinderCandidate | null>;
 			onEvent?: (event: { type: string; [k: string]: unknown }) => void;
+			/** The page whose returns from hidden count as returns (see noteReturn); listened to until close(). */
+			visibility?: VisibilitySource;
 		} = {},
 	) {
 		if (!candidates.length) throw new Error("TrialFaceFinder needs at least one candidate");
@@ -105,6 +116,14 @@ export class TrialFaceFinder implements FaceLandmarkerLike {
 		this.now = opts.now ?? (() => (typeof performance !== "undefined" ? performance.now() : Date.now()));
 		this.rebuild = opts.rebuild;
 		this.onEvent = opts.onEvent;
+		const page = opts.visibility;
+		if (page) {
+			const onChange = () => {
+				if (page.visibilityState === "visible") this.noteReturn();
+			};
+			page.addEventListener("visibilitychange", onChange);
+			this.stopListening = () => page.removeEventListener("visibilitychange", onChange);
+		}
 	}
 
 	/** The delegate answering now. */
@@ -139,6 +158,9 @@ export class TrialFaceFinder implements FaceLandmarkerLike {
 	}
 
 	close(): void {
+		this.closed = true;
+		this.stopListening?.();
+		this.stopListening = null;
 		for (const c of this.candidates) c.finder.close?.();
 		this.candidates = [this.current];
 	}
@@ -175,6 +197,10 @@ export class TrialFaceFinder implements FaceLandmarkerLike {
 		this.rebuild!(old.delegate)
 			.then((fresh) => {
 				if (!fresh) return;
+				if (this.closed) {
+					fresh.finder.close?.();
+					return;
+				}
 				old.finder.close?.();
 				this.candidates = this.candidates.map((c) => (c === old ? fresh : c));
 				if (this.current === old) this.current = fresh;
