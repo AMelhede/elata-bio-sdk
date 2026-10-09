@@ -2,7 +2,7 @@
 
 **This is a test build, not the official package.** It is Elata's rPPG web SDK
 (`@elata-biosciences/rppg-web` 0.14.0, MIT licence) with six fixes to the heart-rate
-pipeline, four speed changes and a real-pulse check added. Every fix, speed change and rule of
+pipeline, three speed changes and a real-pulse check added. Every fix, speed change and rule of
 the check has its own on/off switch, so an app can compare each one against the published
 behaviour. It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
@@ -37,7 +37,7 @@ the published 0.14.0 does for that part, so "off" is the comparison. Set them on
 const session = await createRppgSession({
   video,
   faceMesh: "auto",
-  // the defaults: every fix and speed change on but sparseFaceFinder; `fixes: false` turns every one off
+  // the defaults: every fix and speed change on; `fixes: false` turns every one off
   fixes: {
     noFaceNoReading: true,
     colourProjectionFix: true,
@@ -47,7 +47,6 @@ const session = await createRppgSession({
     steadyAnalysis: true,
     analysisWidth: true,
     analysisWorker: true,
-    sparseFaceFinder: false, // off unless set to true (see the table)
     faceFinderTrial: true,
   },
   pulseCheck: true, // the default in this build
@@ -76,7 +75,6 @@ console.log(session.getBuildSwitches()); // what this session actually runs
 | `fixes.steadyAnalysis` | The heart-rate analysis runs once per 250 ms of signal, exactly as the analysis worker's answers did (so with the worker on, no number changes), and every read in between gets that answer: the rate no longer depends on how often an app (or the SDK's own diagnostics) asks for it, and a managed session on the main thread no longer analyses on every camera frame. | As published, every read runs the whole analysis again, and the rate tracker takes the same stretch of signal once per read: a managed session on the main thread analyses on every camera frame, and the analysis worker reads twice per answer, so the reported rate depends on how often it is read. |
 | `fixes.analysisWidth` | Speed. Each camera frame is read at most 640 pixels wide (same shape), and the face finder reads that same smaller picture, so the face points and the colours come from one frame. A cheek patch still averages thousands of pixels at that size, far more than the pulse needs. | The full camera frame, with the face finder reading the live video, as published. On a 1280x960 camera that cut the frames analysed to about 7 a second. |
 | `fixes.analysisWorker` | Speed. The heart-rate analysis runs in a Web Worker, so it never holds up the camera frames. It runs on the main thread instead when a worker or the WASM core inside it cannot start, or when `wasmImporter` or `bpmEvidenceQualityProvider` is set (a function cannot be sent to a worker). The session option `analysisWorker`, when given, wins over this switch. | The analysis runs on the main thread, as published, and camera frames that arrive while it runs are skipped. |
-| `fixes.sparseFaceFinder` | Speed. Off unless set to `true`: on recorded captures it added frames (about one a second) but did not give a reading on as many of them, so it is not a default. The face finder is asked at most every 100 ms (ten times a second); the frames in between are read with the last face it found. The finder is the costliest step per frame, so on a busy machine more of the camera's frames are read; a face that moves is then read with a box up to 100 ms old. | The face finder runs on every frame, as published. |
 | `fixes.faceFinderTrial` | Speed. With `faceMesh: "auto"`, the face finder is built on the GPU and on the CPU, each is timed on the live video for a few frames, and the faster is kept (a laptop's CPU alone can hold the camera to a few frames a second; a software GPU can be slower than the CPU, so the clock decides). A finder whose GPU context dies, or that finds no face for 2 s after the page comes back from hidden, is rebuilt. `session.getFaceFinder()` says which delegate won and what each cost. An app that passes its own `faceMesh` is unaffected. | The CPU delegate only, as published, and no rebuild. |
 | `pulseCheck` | A heart rate is reported only while a real pulse is proven: forehead and both cheeks agree on one rate, clearly above the noise, over 8 one-second windows, and the newest 8 seconds still back it. The reported rate is the one the check measured. A patch of wall beside the face is checked too: a light that flickers at the same rhythm is refused. HRV and breathing are always withheld while it is on, because neither yet passes a known-answer test: from `getMetrics()` and from `getDebugSnapshot()` alike (of the session's reads, `experimentalVitals` is their one way out; `session.processor`, the raw engine, is not filtered). `session.getPulseCheck()` shows the check's state. | The SDK's own rate (with the fixes chosen above), HRV and breathing, as published. |
 | `pulseCheckRules` | Each of the check's rules can be turned off on its own, for testing one at a time: `wallBandEdge` (the wall's line is found even at the band's edge, a light folded to 180 a minute), `lightFamily` (a light's whole and half multiples are the light's too), `faceFlicker` (a rate the face flickers at in brightness far more than in colour is refused), `lightTaint` (a second the wall carries does not count toward proving a pulse), `headMotion` (a rate the head's own movement keeps time with, such as a nod, is the movement's: judged at that rate, by how far the movement stands above the head's other movement and by its size against the face's width; a second the head carries the rate is not evidence, nor is a second the face mesh did not see the head, and the rate is withheld once the head carries it for 4 seconds), `darkWall` (when the camera's colour is too damaged to read by colour, the pulse is read from green minus the wall beside the face, but only over a wall that shows the light on the face: the wall at least a tenth as bright as the face through nearly the whole window, whatever the colour scale or the camera's exposure; over a darker wall it is read by colour as usual, so a light on the face that the wall does not show, such as a screen, is not read as the pulse; `getPulseCheck().windowWallToFace` shows the wall against the face, `windowWallLevel` the wall's level as the camera sees it). All on unless set to false; `getBuildSwitches()` reports them. | Each rule off: the behaviour before it existed. |
@@ -96,7 +94,7 @@ Things to know while testing:
 - **None of the fixes alone stops a number from a face with no pulse** (a photo, a lamp on a
   face). Only the pulse check does that.
 - **The movement rule needs MediaPipe's face mesh (468 points, or 478 with the irises) on
-  every frame** (with `sparseFaceFinder` on, the last mesh found is carried to the frames in between). It reads the head's bone landmarks by that mesh's own numbering. With
+  every frame**. It reads the head's bone landmarks by that mesh's own numbering. With
   `headMotion` on, a frame source that gives face regions without landmarks, or with too few
   of them (454 points or fewer, such as a 68-point face detector), shows no heart rate:
   `headCentre` finds no head, every second is judged `"blind"`, and a nod cannot be ruled

@@ -85,12 +85,11 @@ const pipe = new glue.WasmRppgPipeline(30, 10);
 assert.equal(pipe.colour_projection_fix(), true, "fix on by default in the core");
 pipe.set_colour_projection_fix(false);
 assert.equal(pipe.colour_projection_fix(), false, "switch reaches the core");
-// Every fix switch on by default except those the package lists as off by default, and every
-// pulse-check light rule on by default (read from the package's own lists so a new switch cannot be
-// missed the way the count of five once went stale).
+// Every fix switch on by default, and every pulse-check light rule on by default (read from the
+// package's own lists so a new switch cannot be missed the way the count of five once went stale).
 assert.deepEqual(Object.keys(sdk.resolveFixSwitches()).sort(), [...sdk.FIX_SWITCH_NAMES].sort());
 for (const [name, on] of Object.entries(sdk.resolveFixSwitches()))
-  assert.equal(on, !sdk.FIX_SWITCHES_OFF_BY_DEFAULT.includes(name), "default of fix " + name);
+  assert.equal(on, true, "default of fix " + name);
 assert.deepEqual(Object.keys(sdk.resolvePulseCheckRules()).sort(), [...sdk.PULSE_CHECK_RULE_NAMES].sort());
 assert.ok(Object.values(sdk.resolvePulseCheckRules()).every((v) => v === true), "every light rule on by default");
 function read(bpm, fixes) {

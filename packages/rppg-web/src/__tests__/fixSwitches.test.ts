@@ -73,15 +73,6 @@ describe("resolveFixSwitches", () => {
 			for (const n of names) expect(r[n as keyof typeof r]).toBe(true);
 		}
 	});
-	test("sparseFaceFinder is off unless set to true (measured not to earn a default); the rest stay on", () => {
-		for (const v of [undefined, null, true, {}]) {
-			const r = resolveFixSwitches(v as never);
-			expect(r.sparseFaceFinder).toBe(false);
-			expect(r.steadyAnalysis && r.analysisWorker && r.faceFinderTrial && r.analysisWidth).toBe(true);
-		}
-		expect(resolveFixSwitches({ sparseFaceFinder: true }).sparseFaceFinder).toBe(true);
-		expect(resolveFixSwitches(false).sparseFaceFinder).toBe(false);
-	});
 	test("false turns every fix off", () => {
 		const r = resolveFixSwitches(false);
 		for (const n of names) expect(r[n as keyof typeof r]).toBe(false);

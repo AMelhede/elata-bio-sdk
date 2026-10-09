@@ -1,10 +1,9 @@
 /**
  * On/off switches for the fixes in this test build. Every fix is ON unless its switch is set
- * to `false` (sparseFaceFinder alone is off unless set to `true`: see it), and every switch set to
- * `false` gives back the published 0.14.0 behaviour for that part, unchanged, so a fix can be compared
- * against the code it replaces in a live app.
+ * to `false`, and every switch set to `false` gives back the published 0.14.0 behaviour for that
+ * part, unchanged, so a fix can be compared against the code it replaces in a live app.
  *
- * - `fixes` left out, or `fixes: true`: every fix at its default (all on but sparseFaceFinder).
+ * - `fixes` left out, or `fixes: true`: every fix on.
  * - `fixes: false`: every fix off (the published behaviour).
  * - `fixes: { posFusion: false }`: that one fix off, the others on.
  */
@@ -67,13 +66,6 @@ export type RppgFixSwitches = {
 	 */
 	analysisWorker?: boolean;
 	/**
-	 * Speed 5, OFF unless set to true. The face finder is asked at most once per FACE_FINDER_EVERY_MS
-	 * (100 ms); frames in between are read with the last face it found. Off: the finder runs on every
-	 * frame, as published. Off by default because on recorded captures it added frames but did not give a
-	 * reading on as many of them, which it needed to keep a place as a default.
-	 */
-	sparseFaceFinder?: boolean;
-	/**
 	 * Speed 6. With `faceMesh: "auto"`, the face finder is built on every delegate that exists (GPU first,
 	 * then CPU), each is timed on the live video for a few calls, and the faster is kept; a finder whose GPU
 	 * context dies, or that finds no face for 2 s after the page returns from hidden, is rebuilt
@@ -82,12 +74,9 @@ export type RppgFixSwitches = {
 	faceFinderTrial?: boolean;
 };
 
-/** Switches that stay off unless set to `true` (each says why). */
-export const FIX_SWITCHES_OFF_BY_DEFAULT: readonly (keyof RppgFixSwitches)[] = ["sparseFaceFinder"];
-
 /**
- * `true` or left out: every fix at its default (on, but for FIX_SWITCHES_OFF_BY_DEFAULT). `false`: every fix
- * off. An object: per fix, its default unless set.
+ * `true` or left out: every fix on. `false`: every fix off. An object: per fix, on unless set to
+ * `false`.
  */
 export type RppgFixesOption = boolean | RppgFixSwitches;
 
@@ -102,7 +91,6 @@ export const FIX_SWITCH_NAMES = [
 	"steadyAnalysis",
 	"analysisWidth",
 	"analysisWorker",
-	"sparseFaceFinder",
 	"faceFinderTrial",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
@@ -116,7 +104,7 @@ export function resolveFixSwitches(
 	const out = {} as ResolvedRppgFixSwitches;
 	for (const name of FIX_SWITCH_NAMES) {
 		const v = given[name];
-		out[name] = typeof v === "boolean" ? v : all && !FIX_SWITCHES_OFF_BY_DEFAULT.includes(name);
+		out[name] = typeof v === "boolean" ? v : all;
 	}
 	return out;
 }
