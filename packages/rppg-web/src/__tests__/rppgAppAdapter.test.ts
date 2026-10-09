@@ -293,3 +293,28 @@ describe("RppgAppAdapter", () => {
 		}
 	});
 });
+
+// A browser's built-in timers refuse to be called on any object but the window: Chromium throws
+// "Illegal invocation" for `o.f()` with `o = { f: setInterval }`. The monitor stored setInterval as
+// its own field and called it as a method, so createRppgAppMonitor(...).start() threw in Chromium.
+describe("createRppgAppMonitor in a browser", () => {
+	const realSet = globalThis.setInterval;
+	const realClear = globalThis.clearInterval;
+	afterEach(() => {
+		globalThis.setInterval = realSet;
+		globalThis.clearInterval = realClear;
+	});
+
+	it("starts and stops with the browser's own timers, called as the browser requires", () => {
+		const asBrowser = <T extends (...a: never[]) => unknown>(real: T) =>
+			function (this: unknown, ...args: Parameters<T>) {
+				if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+				return real.apply(globalThis, args);
+			} as unknown as T;
+		globalThis.setInterval = asBrowser(realSet);
+		globalThis.clearInterval = asBrowser(realClear);
+		const monitor = createRppgAppMonitor(createSource(), { intervalMs: 1000 });
+		expect(() => monitor.start()).not.toThrow();
+		expect(() => monitor.stop()).not.toThrow();
+	});
+});
