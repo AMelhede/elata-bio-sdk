@@ -319,6 +319,16 @@ contains `insufficient_window`. Once that clears, the processor has enough
 samples for a BPM estimate. `diagnostics.windowSampleCount` gives the raw
 sample count if you want to show a progress indicator.
 
+**No face, no reading:** in `face_mesh` mode (without an explicit `roi`), a frame
+in which the face finder found no face is dropped (`lastDropReason: "no_face"`,
+`roiSource: null`) instead of being read from the centre of the frame. After one
+second with no face, `getMetrics()` reports no heart rate, HRV or breathing
+(`bpm: null`, `confidence: 0`, reason code `no_face`); a shorter miss keeps the
+last reading. When the face returns after that second, the signal starts afresh,
+so the next reading is measured only on frames from after the gap. Pass
+`requireFace: false` to keep the previous behaviour; `video_frame` mode and an
+explicit `roi` are unchanged.
+
 **FaceMesh fallback:** `faceMesh: "auto"` falls back to `video_frame` mode if
 MediaPipe fails to load. Check `diagnostics.faceTrackingMode` to see which
 mode is active — `"face_mesh"` or `"video_frame"`.

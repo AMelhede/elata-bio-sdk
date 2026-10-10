@@ -1,9 +1,8 @@
 import { DemoRunner } from '../demoRunner';
 import { FrameSource, Frame } from '../frameSource';
 
-// With face tracking on, a frame with no face in it must not be read. Every published rppg-web
-// (0.1.1 to 0.14.0) instead read a 100x100 square in the middle of the frame and kept reporting a
-// heart rate: real footage of a plain wall, demo settings, a rate shown in 27 of 41 seconds.
+// With face tracking on, a frame with no face in it must not be read: the runner used to read a
+// 100x100 square at the centre of the frame (a wall, a chair) and keep reporting a heart rate.
 
 class MockFrameSource implements FrameSource {
   onFrame: ((frame: Frame) => void) | null = null;
@@ -21,11 +20,11 @@ function wallFrame(timestampMs: number): Frame {
 
 async function feedWall(requireFace: boolean | undefined) {
   const src = new MockFrameSource();
-  const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), reset: jest.fn() };
+  const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
   const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, ...(requireFace === undefined ? {} : { requireFace }) });
   await runner.start();
   for (let i = 0; i < 60; i++) src.emit(wallFrame(1000 + i * 33.3));
-  return { proc, runner };
+  return { src, proc, runner };
 }
 
 describe('DemoRunner with no face in view', () => {
@@ -47,22 +46,27 @@ describe('DemoRunner with no face in view', () => {
     expect(proc.pushSampleRgbMeta).toHaveBeenCalled();
   });
 
-  test('restarts the analysis when the face returns after a second or more', async () => {
-    const { proc, runner } = await feedWall(true);
-    const face = { ...wallFrame(1000 + 60 * 33.3), roi: { x: 0, y: 0, w: 30, h: 30 } };
-    (runner as any).source.onFrame?.(face);
-    expect(proc.reset).toHaveBeenCalledTimes(1);
+  test('starts the signal afresh when the face returns after a second or more', async () => {
+    const { src, proc, runner } = await feedWall(true);
+    src.emit({ ...wallFrame(1000 + 60 * 33.3), roi: { x: 0, y: 0, w: 30, h: 30 } });
+    expect(proc.resetSignal).toHaveBeenCalledTimes(1);
+    expect(proc.pushSampleRgbMeta).toHaveBeenCalledTimes(1);
     expect(runner.faceAbsentMs()).toBe(0);
+  });
+
+  test('does not report a face ROI while no face is in view', async () => {
+    const { runner } = await feedWall(true);
+    expect(runner.getDiagnostics().lastRoiSource).toBeNull();
   });
 
   test('a brief face-finder miss does not restart the analysis', async () => {
     const src = new MockFrameSource();
-    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), reset: jest.fn() };
+    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
     const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
     await runner.start();
     for (let i = 0; i < 10; i++) src.emit(wallFrame(1000 + i * 33.3));
     src.emit({ ...wallFrame(1400), roi: { x: 0, y: 0, w: 30, h: 30 } });
-    expect(proc.reset).not.toHaveBeenCalled();
+    expect(proc.resetSignal).not.toHaveBeenCalled();
   });
 
   test('an empty frame is reported as invalid, not as no face', async () => {

@@ -71,10 +71,9 @@ export type DemoRunnerOptions = {
 	 */
 	multiRoiFusion?: boolean;
 	/**
-	 * Face tracking is on: a frame with no face is dropped instead of read. Without it the
-	 * runner reads a 100x100 square in the middle of the frame, which is right for whole-frame
-	 * mode and wrong with face tracking on: every published rppg-web (0.1.1 to 0.14.0) then kept
-	 * reporting a heart rate from a plain wall (27 of 41 seconds on real footage, demo settings).
+	 * Face tracking is on: a frame with no face ROI is dropped (drop reason `no_face`) instead of
+	 * read. Without it, a frame with no ROI is read from a 100x100 square at the centre of the frame.
+	 * createRppgSession turns it on in face_mesh mode without an explicit `roi`.
 	 */
 	requireFace?: boolean;
 	/**
@@ -127,7 +126,11 @@ export type DemoRunnerError = {
 	cause?: unknown;
 };
 
-/** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
+/**
+ * How long without a face (face tracking on) before the session stops reporting, and the signal
+ * starts afresh when the face returns. Longer than a face finder's brief misses: the longest
+ * interruption mid-capture on our own recordings of still people at a webcam was 733 ms.
+ */
 export const FACE_GONE_RESET_MS = 1000;
 
 export class DemoRunner {
@@ -286,7 +289,7 @@ export class DemoRunner {
 			// window still holding the frames before the face was lost.
 			if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
 				this.fuser?.reset();
-				(this.processor as { reset?: () => void }).reset?.();
+				this.processor.resetSignal();
 			}
 			this.noFaceSinceMs = null;
 		}
@@ -335,6 +338,7 @@ export class DemoRunner {
 			if (!roi && this.opts.requireFace) {
 				this.noFaceSinceMs ??= frame.timestampMs ?? Date.now();
 				this.noFaceLastMs = frame.timestampMs ?? Date.now();
+				this.diagnostics.lastRoiSource = null;
 				this.recordDrop("no_face");
 				return;
 			}

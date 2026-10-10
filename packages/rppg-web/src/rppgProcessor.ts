@@ -524,6 +524,8 @@ export class RppgProcessor {
 	private disposed = false;
 	private readonly sampleRate: number;
 	private readonly windowSec: number;
+	/** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
+	private trackerSettings: [number, number, number] | null = null;
 
 	constructor(
 		private backend: Backend,
@@ -547,6 +549,7 @@ export class RppgProcessor {
 	}
 
 	enableTracker(minBpm = 50, maxBpm = 160, numParticles = 150) {
+		this.trackerSettings = [minBpm, maxBpm, numParticles];
 		if (this.failedBackendError || this.disposed || !this.pipeline) return;
 		if (typeof this.pipeline.enable_tracker === "function") {
 			try {
@@ -776,6 +779,37 @@ export class RppgProcessor {
 
 	updateMuseMetrics(bpm: number | null, quality = 0, timestampMs = Date.now()) {
 		this.fusion.updateMuse(bpm, quality, timestampMs);
+	}
+
+	/**
+	 * Start the signal afresh after a break in it (for example the face out of view): drop the
+	 * sample window and start the engine's pipeline anew, so the next estimate is made only from
+	 * samples after the break. A window that spans a break counts the missing time as samples, so
+	 * its sample-rate estimate, and every rate, is scaled down by the share of the window that has
+	 * samples. The signal models that carry state from sample to sample (channel gain, CHROM, the
+	 * fused-quality scalar) restart with it; calibration, the rolling baseline, the rate history
+	 * and the Bayesian tracker are kept, as are the capture-confidence scorer and the backend
+	 * failure state. No-op once disposed or failed.
+	 */
+	resetSignal() {
+		if (this.disposed || this.failedBackendError) return;
+		this.samples.length = 0;
+		this.channelGain.reset();
+		this.chromPulse.reset();
+		this.fusedQuality = null;
+		this.releasePipeline();
+		try {
+			this.pipeline = this.backend.newPipeline(this.sampleRate, this.windowSec);
+		} catch (error) {
+			this.failBackend("new_pipeline", error);
+			return;
+		}
+		if (!this.trackerSettings) return;
+		try {
+			this.enableTracker(...this.trackerSettings);
+		} catch {
+			// enableTracker has recorded the backend failure; getMetrics reports it from here on.
+		}
 	}
 
 	resetCalibration() {

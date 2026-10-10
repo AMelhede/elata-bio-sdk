@@ -205,17 +205,24 @@ export class RppgSession {
 		// No face for a second (face tracking on): nothing to report, not the last number.
 		// One second rides out a brief face-finder miss without dropping a real reading.
 		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
-			// Every rate, not only the headline one: the intermediate estimates (spectral, ACF,
-			// peaks, Bayes, calibrated) would otherwise keep reporting numbers from the last face.
-			const cleared: Metrics = { ...metrics };
-			for (const key of Object.keys(cleared) as (keyof Metrics)[]) {
-				if (key.endsWith("_bpm"))
-					(cleared as Record<string, unknown>)[key] = null;
-			}
+			// Every rate and confidence, not only the headline one: the intermediate estimates would
+			// otherwise keep reporting numbers from the last face. The rolling baseline is the
+			// person's, not this frame's, and stays.
 			return {
-				...cleared,
+				...metrics,
 				bpm: null,
 				confidence: 0,
+				spectral_bpm: null,
+				acf_bpm: null,
+				peaks_bpm: null,
+				resolved_bpm: null,
+				resolved_confidence: 0,
+				bayes_bpm: null,
+				bayes_confidence: 0,
+				calibrated_bpm: null,
+				fused_bpm: null,
+				fused_source: "none",
+				baseline_delta: null,
 				hrv_rmssd: null,
 				respiration_rate: null,
 				respiration_confidence: null,
@@ -441,7 +448,9 @@ export async function createRppgSession(
 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,
 		useSkinMask: options.useSkinMask ?? true,
 		multiRoiFusion: options.multiRoiFusion,
-		requireFace: faceTrackingMode === "face_mesh" && options.roi === undefined,
+		requireFace:
+			options.requireFace ??
+			(faceTrackingMode === "face_mesh" && options.roi === undefined),
 		roiPixelSampler: options.roiPixelSampler,
 		onRoiSamples: (samples) => {
 			options.onRoiSamples?.(samples);
