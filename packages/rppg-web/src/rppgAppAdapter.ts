@@ -381,18 +381,17 @@ export function createRppgAppAdapter(
 	return new RppgAppAdapter(options);
 }
 
-type IntervalId = ReturnType<typeof setInterval>;
 type RppgAppMonitorInternals = {
-	setIntervalFn?: (handler: () => void, ms: number) => IntervalId;
-	clearIntervalFn?: (id: IntervalId) => void;
+	setIntervalFn?: typeof setInterval;
+	clearIntervalFn?: typeof clearInterval;
 };
 
 export class RppgAppMonitor {
 	private readonly adapter: RppgAppAdapter;
 	private readonly intervalMs: number;
 	private readonly emitImmediately: boolean;
-	private readonly setIntervalFn: (handler: () => void, ms: number) => IntervalId;
-	private readonly clearIntervalFn: (id: IntervalId) => void;
+	private readonly setIntervalFn: typeof setInterval;
+	private readonly clearIntervalFn: typeof clearInterval;
 	private readonly listeners = new Set<RppgAppSnapshotListener>();
 	private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -404,12 +403,8 @@ export class RppgAppMonitor {
 		this.adapter = new RppgAppAdapter(options);
 		this.intervalMs = options.intervalMs ?? DEFAULT_APP_MONITOR_INTERVAL_MS;
 		this.emitImmediately = options.emitImmediately !== false;
-		// Wrapped, not stored: a browser's own timers throw "Illegal invocation" when called as a
-		// method of any object but the window, which `this.setIntervalFn(...)` would be.
-		this.setIntervalFn =
-			internals.setIntervalFn ?? ((handler, ms) => setInterval(handler, ms));
-		this.clearIntervalFn =
-			internals.clearIntervalFn ?? ((id) => clearInterval(id));
+		this.setIntervalFn = internals.setIntervalFn ?? setInterval;
+		this.clearIntervalFn = internals.clearIntervalFn ?? clearInterval;
 	}
 
 	getSnapshot(): RppgAppSnapshot {
@@ -428,14 +423,18 @@ export class RppgAppMonitor {
 
 	start() {
 		if (this.timer) return;
-		this.timer = this.setIntervalFn(() => {
+		// Called as a plain function, not as `this.setIntervalFn(...)`: a browser's own timers throw
+		// "Illegal invocation" when called as a method of any object but the window.
+		const setIntervalFn = this.setIntervalFn;
+		this.timer = setIntervalFn(() => {
 			this.emit();
 		}, this.intervalMs);
 	}
 
 	stop() {
 		if (!this.timer) return;
-		this.clearIntervalFn(this.timer);
+		const clearIntervalFn = this.clearIntervalFn;
+		clearIntervalFn(this.timer);
 		this.timer = null;
 	}
 

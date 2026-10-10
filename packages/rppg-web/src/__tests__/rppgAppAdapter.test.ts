@@ -317,4 +317,18 @@ describe("createRppgAppMonitor in a browser", () => {
 		expect(() => monitor.start()).not.toThrow();
 		expect(() => monitor.stop()).not.toThrow();
 	});
+
+	it("calls timers handed to the class the same way, so a browser's own timers work there too", () => {
+		const strict = <T extends (...a: never[]) => unknown>(real: T) =>
+			function (this: unknown, ...args: Parameters<T>) {
+				if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+				return real.apply(globalThis, args);
+			} as unknown as T;
+		const monitor = new RppgAppMonitor(createSource(), { intervalMs: 1000 }, {
+			setIntervalFn: strict(realSet),
+			clearIntervalFn: strict(realClear),
+		});
+		expect(() => monitor.start()).not.toThrow();
+		expect(() => monitor.stop()).not.toThrow();
+	});
 });
