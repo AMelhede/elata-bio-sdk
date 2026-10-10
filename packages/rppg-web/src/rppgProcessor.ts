@@ -644,7 +644,7 @@ export class RppgProcessor {
 
 	/**
 	 * Push a pre-extracted, fused pulse value from the multi-ROI fuser
-	 * ({@link MultiRoiRppgFuser}). The fuser already ran CHROM + bandpass per face
+	 * ({@link MultiRoiRppgFuser}). The fuser already projected and band-passed each face
 	 * region and blended them by in-band spectral SNR, so we feed the fused pulse
 	 * through the intensity path for spectral BPM/HRV and carry the fuser's
 	 * `fusedSnr` as the quality scalar — the backend's RGB-derived signal_quality

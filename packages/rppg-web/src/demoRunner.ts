@@ -64,14 +64,19 @@ export type DemoRunnerOptions = {
 	onError?: (error: DemoRunnerError) => void;
 	skinRatioSmoothingAlpha?: number;
 	/**
-	 * Multi-ROI rPPG fusion: run CHROM + bandpass per face region (forehead +
-	 * both cheeks) and blend by in-band spectral SNR, so glare/hair/occlusion on
-	 * one region no longer poisons the estimate. Requires sub-ROIs on the frame
+	 * Multi-ROI rPPG fusion: project each face region (forehead + both cheeks)
+	 * to a pulse (see `fusionProjection`), band-pass it, and blend the regions
+	 * by in-band spectral SNR, so glare/hair/occlusion on one region no longer
+	 * poisons the estimate. Requires sub-ROIs on the frame
 	 * (face-mesh mode) + the skin mask. Defaults to on; falls back to the single
 	 * aggregated-ROI path when sub-ROIs are unavailable.
 	 */
 	multiRoiFusion?: boolean;
-	/** Per-region projection inside the fuser: "pos" (default) or "chrom". */
+	/**
+	 * Per-region projection inside the multi-ROI fuser: "pos" (default) or
+	 * "chrom", the projection used before this option existed. See
+	 * {@link FusionProjection}.
+	 */
 	fusionProjection?: FusionProjection;
 	/**
 	 * Pixel-selection and spatial-weighting profile. When omitted, the original
@@ -171,9 +176,9 @@ export class DemoRunner {
 		if (opts.multiRoiFusion !== false) {
 			this.fuser = new MultiRoiRppgFuser(
 				opts.sampleRate ?? 30,
-				8,
-				0.5,
-				opts.fusionProjection ?? "pos",
+				undefined,
+				undefined,
+				opts.fusionProjection,
 			);
 		}
 	}
@@ -279,7 +284,7 @@ export class DemoRunner {
 			skinRatio = agg.skinRatio;
 			clipRatio = agg.clipRatio;
 			intensity = agg.g;
-			// Multi-ROI fusion: per-region CHROM blended by in-band SNR. The
+			// Multi-ROI fusion: per-region projection blended by in-band SNR. The
 			// aggregate above is still computed for diagnostics/onStats and as the
 			// fallback if the fuser can't produce a valid frame this tick.
 			if (this.fuser && useSkinMask) {
@@ -372,8 +377,9 @@ export class DemoRunner {
 				fusionResult?.valid &&
 				typeof proc.pushFusedSample === "function"
 			) {
-				// Fused pulse already carries CHROM + SNR-weighted blending; feed it
-				// straight to spectral BPM/HRV, with the fused SNR as quality.
+				// Fused pulse already carries the per-region projection + SNR-weighted
+				// blending; feed it straight to spectral BPM/HRV, with the fused SNR
+				// as quality.
 				proc.pushFusedSample(ts, fusionResult.fused, fusionResult.fusedSnr);
 				this.diagnostics.lastProcessorMethod = "fused";
 				this.diagnostics.framesWithFusion += 1;

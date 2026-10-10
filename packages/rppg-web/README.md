@@ -323,13 +323,15 @@ sample count if you want to show a progress indicator.
 MediaPipe fails to load. Check `diagnostics.faceTrackingMode` to see which
 mode is active — `"face_mesh"` or `"video_frame"`.
 
-**Multi-ROI fusion (on by default):** in `face_mesh` mode the session runs CHROM +
-bandpass independently on the forehead and both cheeks and blends them by in-band
-spectral SNR, so glare/hair/glasses-glint or partial occlusion on one region no
-longer poisons the pulse. It falls back automatically to the single aggregated-ROI
-path in `video_frame` mode or when the skin mask is off. Disable with
-`multiRoiFusion: false`. Runner diagnostics expose `lastFusionWeights` (per-region,
-SNR-driven), `lastFusedSnr`, and `lastProcessorMethod: "fused"`.
+**Multi-ROI fusion (on by default):** in `face_mesh` mode the session projects the
+forehead and both cheeks to a pulse independently (POS, Wang et al. 2017), band-passes
+each one, and blends them by in-band spectral SNR, so glare/hair/glasses-glint or
+partial occlusion on one region no longer poisons the pulse. It falls back
+automatically to the single aggregated-ROI path in `video_frame` mode or when the
+skin mask is off. Disable with `multiRoiFusion: false`. `fusionProjection: "chrom"`
+selects the CHROM projection the fuser used before POS became the default (see
+`PosPulseModel` for why it changed). Runner diagnostics expose `lastFusionWeights`
+(per-region, SNR-driven), `lastFusedSnr`, and `lastProcessorMethod: "fused"`.
 
 ### Versioned ROI profiles
 

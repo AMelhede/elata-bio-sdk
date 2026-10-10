@@ -100,14 +100,22 @@ export class ChromPulseModel {
 }
 
 /**
- * POS (plane-orthogonal-to-skin, Wang et al., IEEE TBME 2017), streaming over the same
- * sliding window as {@link ChromPulseModel}. On mean-normalised channels, S1 = G - B and
- * S2 = G + B - 2R, and the pulse is h = S1 + (sd S1 / sd S2) S2. The plane is orthogonal
- * to the skin's own colour, so a brightness change (all channels scaled together) cannot
- * reach the output, where CHROM's fixed skin-tone weights let part of it through. The
- * 45-sample window is 1.5 s at 30 Hz, the paper's 1.6 s. Measured on 255 real recordings
- * through the SDK's own fuser and processor (MCD-rPPG, finger-sensor truth): right in 29%
- * of seconds with CHROM, 49% with POS; held-out side cameras 23% vs 38%.
+ * POS, "plane orthogonal to skin" (Wang, den Brinker, Stuijk and de Haan,
+ * "Algorithmic principles of remote PPG", IEEE TBME 64(7), 2017), streaming over
+ * the same 45-sample window as {@link ChromPulseModel} and returning the newest
+ * sample. On window-mean-normalised channels, S1 = G - B, S2 = G + B - 2R and the
+ * pulse is h = S1 + (sd S1 / sd S2) S2.
+ *
+ * Each normalised channel averages exactly 1 over the window, so each axis
+ * averages the sum of its weights. POS's weights sum to zero, so S1 and S2 have
+ * no constant part, and a brightness change (all channels scaled together)
+ * cancels. The weight sd S1 / sd S2 is re-estimated on every frame; here its
+ * frame-to-frame change only rescales a pulse-sized deviation. CHROM's axes
+ * (3R - 2G and 1.5R + G - 1.5B) each sum to 1, so ChromPulseModel's X - aY
+ * carries a term (1 - a): every frame-to-frame change in a reaches the output
+ * at full size, and the part inside the heart-rate band passes the band-pass that
+ * follows. The paper version of CHROM band-passes X and Y before combining them,
+ * which removes that constant; ChromPulseModel combines them unfiltered.
  */
 export class PosPulseModel {
 	private rQueue: number[] = [];

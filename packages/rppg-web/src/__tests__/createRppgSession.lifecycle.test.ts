@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
 }));
 
 import { createRppgSession } from "../rppgSession";
+import { DemoRunner } from "../demoRunner";
 import { loadFaceLandmarker } from "../mediapipeLoader";
 import { ensureVideoPlaying } from "../videoPlayback";
 import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
@@ -160,6 +161,21 @@ describe("createRppgSession lifecycle", () => {
 		expect(mockedLoadFaceMesh).toHaveBeenCalledTimes(1);
 		expect(mockedMediaPipeFaceFrameSource).toHaveBeenCalledTimes(1);
 		expect(session.faceTrackingMode).toBe("face_mesh");
+	});
+
+	test("passes fusionProjection through to the runner's fuser", async () => {
+		await createRppgSession({
+			video: document.createElement("video"),
+			faceMesh: "off",
+			ensureVideoPlayback: false,
+			fusionProjection: "chrom",
+		});
+
+		expect(DemoRunner).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ fusionProjection: "chrom" }),
+		);
 	});
 
 	test("dispose frees the created backend pipeline", async () => {

@@ -205,6 +205,44 @@ describe('DemoRunner multi-ROI path', () => {
     await runner.stop();
   });
 
+  test('fuses with POS by default and with CHROM only when fusionProjection asks', async () => {
+    // A 72 bpm pulse, 2% deep along the blood-volume colour direction (0.33, 0.77, 0.53).
+    const pulseFrame = (i: number): Frame => {
+      const p = 0.02 * Math.sin((2 * Math.PI * 1.2 * i) / 30);
+      const frame = makeSkinFrame(30, 30);
+      for (let px = 0; px < frame.data.length; px += 4) {
+        frame.data[px] = SKIN_PIXEL[0] * (1 + 0.33 * p);
+        frame.data[px + 1] = SKIN_PIXEL[1] * (1 + 0.77 * p);
+        frame.data[px + 2] = SKIN_PIXEL[2] * (1 + 0.53 * p);
+      }
+      frame.rois = [
+        { x: 0, y: 0, w: 10, h: 10 },
+        { x: 10, y: 10, w: 10, h: 10 },
+        { x: 20, y: 0, w: 10, h: 10 },
+      ];
+      frame.timestampMs = (i * 1000) / 30;
+      return frame;
+    };
+    const fused = async (opts: ConstructorParameters<typeof DemoRunner>[2]) => {
+      const src = new MockFrameSource();
+      const proc = new MockProcessor() as any;
+      proc.pushFusedSample = jest.fn();
+      const runner = new DemoRunner(src as any, proc as any, opts);
+      await runner.start();
+      for (let i = 0; i < 150; i++) src.emit(pulseFrame(i));
+      await runner.stop();
+      return proc.pushFusedSample.mock.calls.map((call: unknown[]) => call[1]);
+    };
+
+    const byDefault = await fused({});
+    const pos = await fused({ fusionProjection: 'pos' });
+    const chrom = await fused({ fusionProjection: 'chrom' });
+    expect(byDefault.length).toBeGreaterThan(0);
+    expect(byDefault).toEqual(pos);
+    expect(chrom).toHaveLength(pos.length);
+    expect(chrom).not.toEqual(pos);
+  });
+
   test('falls back to aggregate path when multiRoiFusion is disabled', async () => {
     const src = new MockFrameSource();
     const proc = new MockProcessor() as any;

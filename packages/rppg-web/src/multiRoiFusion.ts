@@ -5,19 +5,31 @@ import {
 	spectralSnr,
 } from "./rppgSignalModel";
 
-/** Per-region pulse projection. POS by default: see {@link PosPulseModel} for the evidence. */
+/**
+ * How each region's colour is turned into a pulse sample. `"pos"` (the default)
+ * uses {@link PosPulseModel}. `"chrom"` uses {@link ChromPulseModel}, the
+ * projection the fuser used before this option existed, kept so that output
+ * stays reachable. See {@link PosPulseModel} for why POS is the default.
+ */
 export type FusionProjection = "pos" | "chrom";
+
+/** A per-region projection: one pulse sample per colour sample. */
+type PulseProjection = {
+	process(r: number, g: number, b: number): number;
+	reset(): void;
+};
 
 /**
  * Multi-ROI rPPG fusion.
  *
- * Instead of reading the pulse from a single forehead patch, this runs CHROM +
- * bandpass independently on several face regions (forehead + both cheeks) and
- * blends them with weights proportional to each region's in-band spectral SNR.
+ * Instead of reading the pulse from a single forehead patch, this projects each
+ * of several face regions (forehead + both cheeks) to a pulse (POS by default,
+ * see {@link FusionProjection}), band-passes it, and blends the regions with
+ * weights proportional to each region's in-band spectral SNR.
  * The cleanest region dominates moment-to-moment, so local glare, hair, glasses
  * glint, or partial occlusion on any one ROI no longer poisons the estimate.
  *
- * Per-ROI CHROM is self-normalizing (it divides by each channel's temporal
+ * Per-ROI projection is self-normalizing (it divides by each channel's temporal
  * mean), so the raw skin-masked ROI averages can be fed directly — no shared
  * AGC across regions, which would be incorrect.
  */
@@ -57,10 +69,7 @@ const MIN_SKIN_FRACTION = 0.1;
 
 export class MultiRoiRppgFuser {
 	private readonly fs: number;
-	private readonly chrom: Record<
-		FusionRoiName,
-		ChromPulseModel | PosPulseModel
-	>;
+	private readonly projection: Record<FusionRoiName, PulseProjection>;
 	private readonly band: Record<FusionRoiName, Bandpass>;
 	private buf: Record<FusionRoiName, number[]>;
 	private fusedBuf: number[] = [];
@@ -83,7 +92,7 @@ export class MultiRoiRppgFuser {
 		this.bufLimit = Math.max(60, Math.round(fs * windowSeconds));
 		this.minSamples = Math.round(fs * 3);
 		this.updateEvery = Math.max(1, Math.round(fs * updateEverySeconds));
-		this.chrom = this.makeRecord(() =>
+		this.projection = this.makeRecord<PulseProjection>(() =>
 			projection === "chrom" ? new ChromPulseModel() : new PosPulseModel(),
 		);
 		this.band = this.makeRecord(() => new Bandpass(fs, 0.7, 4.0));
@@ -102,7 +111,7 @@ export class MultiRoiRppgFuser {
 
 	reset() {
 		for (const roi of FUSION_ROIS) {
-			this.chrom[roi].reset();
+			this.projection[roi].reset();
 			this.band[roi].reset();
 			this.buf[roi] = [];
 			this.weights[roi] = 1 / FUSION_ROIS.length;
@@ -131,8 +140,8 @@ export class MultiRoiRppgFuser {
 			) {
 				continue;
 			}
-			const chromVal = this.chrom[roi].process(s.r, s.g, s.b);
-			const f = this.band[roi].process(chromVal);
+			const pulse = this.projection[roi].process(s.r, s.g, s.b);
+			const f = this.band[roi].process(pulse);
 			filtered[roi] = f;
 			const buf = this.buf[roi];
 			buf.push(f);
