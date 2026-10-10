@@ -24,13 +24,13 @@ pnpm install
 pnpm run dev
 ```
 
-If this app was created inside another `pnpm` workspace and is not part of that
-workspace, run from the parent directory:
+This app ships its own `pnpm-workspace.yaml`, so inside another `pnpm` workspace
+it still installs as its own project. From the parent directory:
 
 ```text
 pnpm:
-pnpm --dir __APP_NAME__ --ignore-workspace install
-pnpm --dir __APP_NAME__ --ignore-workspace run dev
+pnpm --dir __APP_NAME__ install
+pnpm --dir __APP_NAME__ run dev
 
 npm:
 cd __APP_NAME__

@@ -66,12 +66,13 @@ npm install
 npm run dev
 ```
 
-If the new app lives inside another `pnpm` workspace, run this from the parent
-directory instead:
+If the new app lives inside another `pnpm` workspace, it still installs as its
+own project, because it ships its own `pnpm-workspace.yaml`. From the parent
+directory:
 
 ```bash
-pnpm --dir my-app --ignore-workspace install
-pnpm --dir my-app --ignore-workspace run dev
+pnpm --dir my-app install
+pnpm --dir my-app run dev
 ```
 
 Full details: [docs/create-elata-demo.md](docs/create-elata-demo.md)
@@ -108,7 +109,7 @@ Wrong turns to avoid:
 
 - Do not start with `./run.sh sync-to` unless you are modifying `packages/eeg-web` inside this monorepo.
 - Do not treat in-repo dev demos as the normal consumer install path; they are reference and SDK-development surfaces.
-- If you scaffold inside another `pnpm` workspace, check the `--ignore-workspace` flow before assuming the template is broken.
+- A scaffolded app installs as its own pnpm project even inside another workspace, because it ships its own `pnpm-workspace.yaml`. To make it part of the parent workspace instead, delete that file and allow esbuild's build script in the parent's.
 
 ## Example applications
 

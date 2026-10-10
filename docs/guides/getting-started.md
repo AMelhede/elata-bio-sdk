@@ -39,10 +39,10 @@ Follow-up guides:
 
 ## Workspace Caveat
 
-If you scaffold an app inside another `pnpm` workspace and the new app is not
-added to that workspace, run from the parent directory:
+A scaffolded app ships its own `pnpm-workspace.yaml`, so inside another `pnpm`
+workspace it still installs as its own project. From the parent directory:
 
 ```bash
-pnpm --dir my-app --ignore-workspace install
-pnpm --dir my-app --ignore-workspace run dev
+pnpm --dir my-app install
+pnpm --dir my-app run dev
 ```

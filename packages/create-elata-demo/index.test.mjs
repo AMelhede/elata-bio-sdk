@@ -89,25 +89,21 @@ test('ships fallback SDK versions that match the repo package versions', () => {
   assert.equal(scaffolderPackage.elataSdkVersions.ppgWeb, ppgWebVersion);
 });
 
-test('no template builds through vite-plugin-top-level-await (its production build fails), all target es2022', () => {
-  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
-    const pkg = readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8');
-    const vite = readFileSync(join(__dirname, 'templates', t, 'vite.config.ts'), 'utf8');
-    assert.doesNotMatch(pkg, /vite-plugin-top-level-await/, t);
-    assert.doesNotMatch(vite, /^import .*top-level-await/m, t);
-    assert.match(vite, /target: 'es2022'/, t);
-    // A second `build` key in the same object silently replaces the first, target included.
-    assert.strictEqual((vite.match(/^\s*build:/gm) ?? []).length, 1, `${t}: vite.config.ts must have one build key`);
-  }
-});
+const TEMPLATE_DIRS = ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game'];
 
-test('every template installs under pnpm 9 and current pnpm alike (pnpm 9 needs a packages field; pnpm 10+ refuses unlisted build scripts)', () => {
-  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
-    const ws = readFileSync(join(__dirname, 'templates', t, 'pnpm-workspace.yaml'), 'utf8');
-    const pkg = JSON.parse(readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8'));
-    assert.match(ws, /^packages:\s*\n\s+- \.\s*$/m, t);
-    assert.match(ws, /allowBuilds:\s*\n\s+esbuild: true/, t);
-    assert.deepEqual(pkg.pnpm?.onlyBuiltDependencies, ['esbuild'], t);
+test('no template depends on vite-plugin-top-level-await, and each one allows esbuild for pnpm 11+', () => {
+  // The behaviour test is the smoke test below (scaffold, install, build). This guard is the cheap
+  // part of it that runs offline: the plugin's production build fails with @swc/core >= 1.16.0, and
+  // pnpm 11+ refuses to install until esbuild's build script is reviewed in pnpm-workspace.yaml.
+  for (const t of TEMPLATE_DIRS) {
+    const dir = join(__dirname, 'templates', t);
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    assert.ok(!('vite-plugin-top-level-await' in deps), `${t}: depends on vite-plugin-top-level-await`);
+    assert.doesNotMatch(readFileSync(join(dir, 'vite.config.ts'), 'utf8'), /top-level-await/, t);
+    const ws = readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8').replace(/#.*$/gm, '');
+    assert.match(ws, /^packages:\s*(\n\s+- ['"]?\.['"]?\s*$|\[\s*['"]?\.['"]?\s*\])/m, `${t}: packages must list the app`);
+    assert.match(ws, /^allowBuilds:\s*(\n\s+esbuild:\s*true|\{\s*esbuild:\s*true\s*\})/m, `${t}: esbuild not allowed`);
   }
 });
 
@@ -168,9 +164,8 @@ test('scaffolds correctly from packaged contents without monorepo siblings', () 
 });
 
 test('smoke: each published template scaffolds, installs, and builds', () => {
-  const templates = ['rppg-demo', 'eeg-demo', 'eeg-ble'];
-
-  for (const templateName of templates) {
+  // Every template, with pnpm as corepack resolves it today (its version is printed first).
+  for (const templateName of TEMPLATE_DIRS) {
     const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-smoke-'));
     const appName = `demo-${templateName}`;
     const appDir = join(tmp, appName);
@@ -185,6 +180,7 @@ test('smoke: each published template scaffolds, installs, and builds', () => {
       assert.ok(existsSync(join(appDir, 'package.json')));
       assert.ok(existsSync(join(appDir, 'README.md')));
 
+      runCommand('pnpm', ['--version'], appDir);
       runCommand('pnpm', ['install'], appDir);
       runCommand('pnpm', ['run', 'build'], appDir);
     } finally {
@@ -253,7 +249,9 @@ test('warns when scaffolding inside a parent pnpm workspace', () => {
     const result = runCli(['nested-demo'], workspaceDir);
     assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
     assert.match(result.stdout, /inside an existing pnpm workspace/);
-    assert.match(result.stdout, /--ignore-workspace install/);
+    assert.match(result.stdout, /pnpm --dir nested-demo install/);
+    assert.doesNotMatch(result.stdout, /--ignore-workspace/);
+    assert.ok(existsSync(join(workspaceDir, 'nested-demo', 'pnpm-workspace.yaml')));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

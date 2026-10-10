@@ -86,19 +86,24 @@ be null — no error is thrown.** Two approaches to fix it:
 **Option A — vite-plugin-wasm (recommended)**
 
 ```bash
-npm install -D vite-plugin-wasm vite-plugin-top-level-await
+npm install -D vite-plugin-wasm
 ```
 
 ```ts
 // vite.config.ts
 import { defineConfig } from "vite";
 import wasm from "vite-plugin-wasm";
-import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
-  plugins: [wasm(), topLevelAwait()],
+  plugins: [wasm()],
+  // Only because the example below awaits at the top level of a module.
+  build: { target: "es2022" },
 });
 ```
+
+Do not add `vite-plugin-top-level-await`: with `@swc/core` 1.16.0 or later its
+production build fails ("missing field `type`") on this package, which uses
+dynamic `import()`.
 
 Then import the WASM JS bundle statically and pass it as `wasmImporter`:
 

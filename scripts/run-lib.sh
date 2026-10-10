@@ -1557,9 +1557,36 @@ link_package_into_app() {
     echo "Undo with: ./run.sh unlink $app_dir"
 }
 
+# Remove the `link:` overrides that `pnpm link` records in a pnpm-workspace.yaml and keep
+# everything else (packages, allowBuilds, other overrides). An `overrides:` key left empty is
+# dropped, and a file left with only comments and blank lines (the override-only file pnpm
+# creates when an app has no workspace file of its own) is deleted.
+remove_pnpm_link_overrides() {
+    local ws="$1" tmp
+    tmp="$(mktemp)"
+    awk '
+        BEGIN { link_re = ":[[:space:]]*[\"\047]?link:" }
+        function end_block() { in_ov = 0; held = "" }
+        /^overrides:[[:space:]]*$/ { in_ov = 1; held = $0; next }
+        in_ov && /^[[:space:]]+[^[:space:]]/ {
+            if ($0 ~ link_re) next
+            if (held != "") { print held; held = "" }
+            print
+            next
+        }
+        in_ov { end_block() }
+        { print }
+    ' "$ws" >"$tmp"
+    if grep -qvE '^[[:space:]]*(#|$)' "$tmp"; then
+        cat "$tmp" >"$ws"
+    else
+        rm -f "$ws"
+    fi
+    rm -f "$tmp"
+}
+
 # Drop a local link from an app and reinstall so it resolves registry deps.
-# pnpm (v10) records `pnpm link` as an override in pnpm-workspace.yaml; remove
-# that override-only file, but never a real workspace definition.
+# pnpm (v10 and later) records `pnpm link` as an override in pnpm-workspace.yaml.
 unlink_package_from_app() {
     local app_dir="$1"
     require_package_manager
@@ -1569,14 +1596,12 @@ unlink_package_from_app() {
 
     if [[ "$PKG_MGR" == "pnpm" ]]; then
         local ws="$app_dir/pnpm-workspace.yaml"
-        if [[ -f "$ws" ]]; then
-            if grep -q "link:" "$ws" && ! grep -qE "^[[:space:]]*packages:" "$ws"; then
-                echo "Removing pnpm link override: $ws"
-                rm -f "$ws"
-            else
-                echo "Note: $ws looks like a real workspace file; leaving it in place."
-                echo "Remove any 'link:' override under 'overrides:' manually if needed."
-            fi
+        if [[ -f "$ws" ]] && grep -q "link:" "$ws"; then
+            echo "Removing pnpm link overrides from: $ws"
+            remove_pnpm_link_overrides "$ws"
+        fi
+        if [[ -f "$app_dir/package.json" ]] && grep -q '"link:' "$app_dir/package.json"; then
+            echo "Note: $app_dir/package.json still has a 'link:' entry (pnpm.overrides); remove it by hand."
         fi
     fi
 
@@ -2494,6 +2519,13 @@ case "$cmd" in
             die "Internal self-test command is disabled." "Run via: RUN_SH_INTERNAL_TEST=1 ./run.sh __selftest_requirecmd"
         fi
         require_cmd "__definitely_missing_command__"
+        ;;
+    __selftest_unlink_overrides)
+        RUN_SH_TASK="__selftest_unlink_overrides"
+        if [[ "${RUN_SH_INTERNAL_TEST:-0}" != "1" ]]; then
+            die "Internal self-test command is disabled." "Run via: RUN_SH_INTERNAL_TEST=1 ./run.sh __selftest_unlink_overrides <pnpm-workspace.yaml>"
+        fi
+        remove_pnpm_link_overrides "$2"
         ;;
     help|-h|--help)
         RUN_SH_TASK="help"

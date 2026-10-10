@@ -72,14 +72,12 @@ templates (`rppg-demo`, `eeg-demo`, `eeg-ble`): scaffold to a temp directory,
 
 ## Workspace Caveat
 
-If you scaffold an app inside this repo, plain `pnpm install` in the generated
-app can attach to the parent workspace from `pnpm-workspace.yaml`.
-
-Use:
+If you scaffold an app inside this repo, it installs as its own project,
+because the scaffolder gives it its own `pnpm-workspace.yaml`:
 
 ```bash
-pnpm --dir my-app --ignore-workspace install
-pnpm --dir my-app --ignore-workspace run dev
+pnpm --dir my-app install
+pnpm --dir my-app run dev
 ```
 
 or use `npm` inside the generated app.
