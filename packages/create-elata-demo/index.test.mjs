@@ -89,29 +89,6 @@ test('ships fallback SDK versions that match the repo package versions', () => {
   assert.equal(scaffolderPackage.elataSdkVersions.ppgWeb, ppgWebVersion);
 });
 
-test("every sibling's peer range takes the sibling version the templates install (npm refuses one outside it)", () => {
-  // npm refuses to install a peer outside its range (ERESOLVE): with eeg-web-ble naming eeg-web ^0.2.1, and ppg-web
-  // naming eeg-web ^0.2.1, eeg-web-ble ^0.2.1 and rppg-web ^0.3.0, while every template installs the current
-  // versions, 'npm install' (the command the CLI prints) failed for the BLE and PPG starters.
-  const siblings = ['eeg-web', 'eeg-web-ble', 'ppg-web', 'rppg-web', 'app-metrics'];
-  const read = (dir) => JSON.parse(readFileSync(join(__dirname, '..', dir, 'package.json'), 'utf8'));
-  const versions = Object.fromEntries(siblings.map((dir) => { const p = read(dir); return [p.name, p.version]; }));
-  let checked = 0;
-  for (const dir of siblings) {
-    const pkg = read(dir);
-    for (const [peer, range] of Object.entries(pkg.peerDependencies ?? {})) {
-      if (!versions[peer]) continue;
-      const m = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
-      assert.ok(m, `${pkg.name}: unexpected peer range ${range} for ${peer}`);
-      const [maj, min] = versions[peer].split('.').map(Number);
-      // A caret range below 1.0 holds one minor version: ^0.2.1 takes 0.2.x only.
-      assert.ok(Number(m[1]) === maj && (maj > 0 || Number(m[2]) === min), `${pkg.name}: ${peer} ${range} does not take ${versions[peer]}`);
-      checked++;
-    }
-  }
-  assert.ok(checked >= 4, `only ${checked} sibling peer ranges found`);
-});
-
 test('scaffolds the default template', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-'));
   try {

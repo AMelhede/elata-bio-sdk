@@ -199,9 +199,41 @@ if (fs.existsSync(workspacePackagesDir)) {
 	}
 }
 
+// Whether a caret range takes a version, as npm's semver does for x.y.z versions: ^1.2.3 takes
+// >=1.2.3 <2.0.0, ^0.2.3 takes >=0.2.3 <0.3.0, ^0.0.3 takes 0.0.3 only. Null for any other range.
+function caretTakes(range, version) {
+	const r = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
+	const v = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+	if (!r || !v) return null;
+	const [r0, r1, r2] = r.slice(1).map(Number);
+	const [v0, v1, v2] = v.slice(1).map(Number);
+	const atLeast = v0 !== r0 ? v0 > r0 : v1 !== r1 ? v1 > r1 : v2 >= r2;
+	if (!atLeast) return false;
+	if (r0 > 0) return v0 === r0;
+	if (r1 > 0) return v0 === 0 && v1 === r1;
+	return v0 === 0 && v1 === 0 && v2 === r2;
+}
+
 for (const { manifest, relPath } of workspacePackages.values()) {
 	const peerDependencies = manifest.peerDependencies ?? {};
 	const devDependencies = manifest.devDependencies ?? {};
+
+	// A workspace package named as a peer must be installable at its current version: npm refuses a
+	// peer outside its range (ERESOLVE) and pnpm warns, so an app installing both breaks. A release
+	// that bumps a package has to move the peer ranges that name it.
+	for (const [depName, range] of Object.entries(peerDependencies)) {
+		const sibling = workspacePackages.get(depName);
+		if (!sibling) continue;
+		const takes = caretTakes(range, sibling.manifest.version);
+		assert(
+			takes !== null,
+			`${relPath} names workspace peer '${depName}' with '${range}'; use a caret range (^x.y.z) the audit can check`,
+		);
+		assert(
+			takes !== false,
+			`${relPath} names workspace peer '${depName}' ${range}, which does not take its current version ${sibling.manifest.version}`,
+		);
+	}
 
 	for (const depName of Object.keys(peerDependencies)) {
 		if (!workspacePackages.has(depName)) continue;
