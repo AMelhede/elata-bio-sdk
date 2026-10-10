@@ -471,6 +471,8 @@ fn resample_rgb_into(
     r_out.len() >= 10
 }
 
+/// Colour projection with CHROM's axes (de Haan & Jeanne 2013): X = 3R - 2G and
+/// Y = 1.5R + G - 1.5B on window-normalised channels, combined as S = X - (sd X / sd Y) * Y.
 #[allow(clippy::too_many_arguments)]
 fn pos_from_rgb_windowed_into(
     r: &[f32],
@@ -523,11 +525,11 @@ fn pos_from_rgb_windowed_into(
         let std_y = stddev(y_buf);
         let alpha = if std_y > 1e-6 { std_x / std_y } else { 0.0 };
         for i in 0..win_len {
-            // push_sample (one value, e.g. the multi-ROI fuser's finished pulse) arrives as
-            // R = G = B, so X = Y and the projection would cancel it: such a sample is already a
-            // pulse and passes through as its normalised value, with the same per-window
-            // normalisation and overlap-add as before. Decided per sample, so a window mixing
-            // camera RGB with fused samples keeps both.
+            // A sample with no colour difference (R = G = B, as push_sample sends one value, for
+            // example the multi-region fuser's pulse) has nothing for a colour projection to
+            // separate, and X = Y would cancel it, so it is used as is (as the GREEN method would),
+            // with the same per-window normalisation and overlap-add. Decided per sample, so a
+            // window mixing camera RGB with such samples keeps both.
             let k = start + i;
             let pre_extracted = r[k] == g[k] && g[k] == b[k];
             out[k] += if pre_extracted {
@@ -606,9 +608,9 @@ mod tests {
     }
 
     /// CHROM (de Haan & Jeanne 2013) is S = X - (sd X / sd Y) * Y. A lamp scales R, G and B alike,
-    /// which moves X and Y equally, so the subtraction cancels it; adding them doubled it. Measured on
-    /// real recordings through this path: UBFC-rPPG 15% -> 81% of seconds within 5 bpm of the finger
-    /// sensor, MCD-rPPG 38% -> 49%, seconds with a rate on no-pulse videos 102 -> 37.
+    /// so after normalisation it moves X and Y by the same amount and the subtraction cancels it
+    /// (adding doubled it). A blood-volume pulse moves X and Y in opposite directions, so the
+    /// subtraction keeps it (adding cancelled it).
     #[test]
     fn projection_cancels_brightness_and_keeps_pulse_colour() {
         let lamp = projection_rms(|t| {
@@ -629,17 +631,23 @@ mod tests {
         );
     }
 
-    /// The fused path (push_sample, R = G = B) must read a clean pulse at its rate across the band,
-    /// alone and after a stretch of camera RGB in the same window (DemoRunner sends RGB until the
-    /// fuser is ready). A window-level bypass read 72 bpm as 48 and 140 as none; this
-    /// reads them exactly as the shipped sign did.
+    /// The fused path (push_sample, R = G = B) must read a pulse at its rate as before, alone and
+    /// after a stretch of camera RGB inside the analysed window (DemoRunner sends RGB until the
+    /// fuser is ready): the window covers the last 10 of 14 s, so RGB until 7 s puts 3 s of it in.
     #[test]
     fn fused_samples_keep_their_rate() {
         let fs = 30.0_f32;
-        // 72 to 140: where the unchanged estimator downstream reads a clean sine within 5 bpm
-        // (it reads 48 as 59, 60 as 64 and 170 as none with or without this change).
-        for &bpm in &[72.0_f32, 90.0, 110.0, 140.0] {
-            for &rgb_first_s in &[0.0_f32, 3.0] {
+        // 72 to 140: the rates at which the fused path, including its per-window normalisation,
+        // reads a clean sine within 5 bpm, on main and with this change alike. With RGB in the
+        // window, 140 reads as none on main too, so that case is left out rather than pinned.
+        let cases: [(f32, &[f32]); 4] = [
+            (72.0, &[0.0, 7.0]),
+            (90.0, &[0.0, 7.0]),
+            (110.0, &[0.0, 7.0]),
+            (140.0, &[0.0]),
+        ];
+        for &(bpm, firsts) in &cases {
+            for &rgb_first_s in firsts {
                 let mut p = RppgPipeline::new(fs, 10.0);
                 for i in 0..(14.0 * fs) as usize {
                     let t = i as f32 / fs;
@@ -659,10 +667,40 @@ mod tests {
                 }
                 let got = p.get_metrics().bpm;
                 assert!(
-                    got.map_or(false, |b| (b - bpm).abs() <= 5.0),
+                    got.is_some_and(|b| (b - bpm).abs() <= 5.0),
                     "true {bpm} (RGB first {rgb_first_s} s) read {got:?}"
                 );
             }
+        }
+    }
+
+    /// Known answer through the public API: a 90 bpm pulse under a lamp flickering by 1% at 60 or
+    /// 120 a minute. The projection must follow the pulse, not the lamp. Pulse colour from the
+    /// blood-volume-pulse signature, roughly 0.33 : 0.77 : 0.53 in R : G : B (de Haan & van Leest
+    /// 2014), at 0.4% in green.
+    #[test]
+    fn rgb_input_reads_the_pulse_not_the_lamp() {
+        let fs = 30.0_f32;
+        for &lamp_bpm in &[60.0_f32, 120.0] {
+            let mut p = RppgPipeline::new(fs, 10.0);
+            for i in 0..(12.0 * fs) as usize {
+                let t = i as f32 / fs;
+                let pulse = (2.0 * PI * 1.5 * t).sin();
+                let lamp = 1.0 + 0.01 * (2.0 * PI * lamp_bpm / 60.0 * t + 0.7).sin();
+                let a = 0.004 / 0.77;
+                p.push_sample_rgb(
+                    (t * 1000.0) as i64,
+                    150.0 * lamp * (1.0 - 0.33 * a * pulse),
+                    120.0 * lamp * (1.0 - 0.77 * a * pulse),
+                    100.0 * lamp * (1.0 - 0.53 * a * pulse),
+                    1.0,
+                );
+            }
+            let got = p.get_metrics().bpm;
+            assert!(
+                got.is_some_and(|b| (b - 90.0).abs() <= 3.0),
+                "lamp {lamp_bpm}: read {got:?}, true pulse 90"
+            );
         }
     }
 

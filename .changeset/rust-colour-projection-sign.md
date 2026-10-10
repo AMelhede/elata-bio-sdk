@@ -2,4 +2,4 @@
 "@elata-biosciences/rppg-web": patch
 ---
 
-Rust core (`elata-rppg`): the colour projection in `pos_from_rgb_windowed_into` now subtracts (CHROM is X - alpha*Y); the added sign kept room-light flicker and cancelled the pulse. Pre-extracted samples (R = G = B, e.g. the fused pulse from push_sample) pass through per sample, so the fused path reads exactly as before. Needs the WASM in `pkg/` rebuilt before release.
+The heart rate read from camera colour without the multi-region fuser (`video_frame` mode, the fallback when the face finder does not load, `multiRoiFusion: false`, the skin mask off, and direct `RppgProcessor.pushSampleRgb*` callers) now follows the pulse instead of a flickering light: the WASM core's CHROM colour step subtracts its two axes, as CHROM does, where it added them, which kept brightness changes and cancelled the pulse. The fused `face_mesh` path reads exactly as before.
