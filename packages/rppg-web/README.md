@@ -329,7 +329,12 @@ spectral SNR, so glare/hair/glasses-glint or partial occlusion on one region no
 longer poisons the pulse. It falls back automatically to the single aggregated-ROI
 path in `video_frame` mode or when the skin mask is off. Disable with
 `multiRoiFusion: false`. Runner diagnostics expose `lastFusionWeights` (per-region,
-SNR-driven), `lastFusedSnr`, and `lastProcessorMethod: "fused"`.
+SNR-driven), `lastFusedSnr`, and `lastProcessorMethod: "fused"`. The fuser's filters
+and weights are designed for `sampleRate`, so the runner interpolates each region
+between camera frames onto an even `sampleRate` grid (30 per second by default)
+before fusing; a gap of more than 250 ms between frames is a stall and is not
+bridged. On this path the processor receives one sample per grid step, so its
+`totalSamplesReceived` and `windowSampleCount` count grid samples, not frames.
 
 ### Versioned ROI profiles
 
