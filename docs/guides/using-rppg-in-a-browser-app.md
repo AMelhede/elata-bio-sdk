@@ -248,7 +248,7 @@ Prefer the scaffolded `rppg-demo` template when you want:
 
 ## Common Gotchas
 
-- If `session.backendMode` is `unavailable`, your app is probably not serving the packaged `pkg/` assets correctly.
+- If `session.backendMode` is `unavailable`, your app is probably not serving the packaged `pkg/` assets correctly. `session.getDiagnostics().backendLoadError` says which URLs the loader tried and why the last one failed.
 - If `session.state.status` is `failed`, treat that processor backend as terminal and recreate the session instead of continuing to poll metrics from it.
 - If you see "backend pipeline has no push_sample API", you likely bypassed the safe wrapper path. Start with `createRppgSession()` for browser apps, or use `RppgProcessor` for low-level ingestion.
 - If you hit `wasmrppgpipeline_new`, verify your app is loading `rppg-web` WASM assets and avoid calling generated constructors directly.

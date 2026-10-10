@@ -8,7 +8,7 @@ Browser **rPPG** (camera photoplethysmography): WASM backend, optional MediaPipe
 - Published tarball includes **`dist/`** and **`pkg/`** (WASM). Local **`file:`** installs copy disk at install time — run `build:wasm` in the repo **before** installing if `pkg/` is missing.
 
 ## Critical: WASM loading (especially Vite)
-Default loader fetches **`/pkg/rppg_wasm.js`** and **`.wasm`**. If the backend never loads, **`backendMode` is `"unavailable"`**, **`metrics.bpm` stays null**, and **no error may be thrown** — same symptom as warmup.
+Default loader fetches **`/pkg/rppg_wasm.js`** and **`.wasm`**. If the backend never loads, **`backendMode` is `"unavailable"`**, **no error is thrown** and `onError` is not called; **`getDiagnostics().backendLoadError`** lists the URLs tried and the last import error. `metrics.bpm` can still be non-null (JavaScript estimators), so check `backendMode` or the app adapter's `canPublish`, not the number.
 
 Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**, or use **`wasmImporter`** with a static import of `pkg/rppg_wasm.js`, or **`wasmJsUrl` / `wasmBinaryUrl`** with Vite **`?url`** imports. Vite 7 may block dynamic imports from `/public` — do not assume copying to `public/` is enough without the README patterns.
 

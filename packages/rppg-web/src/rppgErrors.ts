@@ -26,7 +26,10 @@ export type RppgNormalizedError = {
 };
 
 type DiagnosticsLike = Partial<
-	Pick<RppgSessionDiagnostics, "backendMode" | "state" | "lastError">
+	Pick<
+		RppgSessionDiagnostics,
+		"backendMode" | "state" | "lastError" | "backendLoadError"
+	>
 >;
 
 export function normalizeRppgError(
@@ -39,12 +42,14 @@ export function normalizeRppgError(
 	if (!sessionError && !backendUnavailable) return null;
 
 	if (backendUnavailable) {
+		const loadError = coerceSessionError(diagnostics?.backendLoadError);
+		const detail =
+			"Packaged WASM assets were unavailable, so the session cannot provide full estimation.";
 		return {
 			code: "backend_unavailable",
 			phase: phaseFromDiagnostics(diagnostics?.state?.phase),
 			message: "rPPG is running without the WASM processor backend.",
-			detail:
-				"Packaged WASM assets were unavailable, so the session cannot provide full estimation.",
+			detail: loadError ? `${detail} ${formatErrorDetail(loadError)}` : detail,
 			guidance:
 				"Serve the packaged WASM assets or pass wasmJsUrl, wasmBinaryUrl, or wasmImporter explicitly.",
 			retryable: false,

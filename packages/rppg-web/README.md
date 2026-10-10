@@ -80,8 +80,9 @@ or use the import-based options below to let Vite manage the asset URLs instead.
 
 Vite 7 blocks `import(url)` for files served from `/public`, which is where
 most projects place the `pkg/` WASM assets. **If you skip this step, the
-session will start, `backendMode` will be `"unavailable"`, and BPM will always
-be null — no error is thrown.** Two approaches to fix it:
+session still starts with `backendMode` set to `"unavailable"`, no error is
+thrown and `onError` is not called. `getDiagnostics().backendLoadError` lists
+the URLs that were tried and the last import error.** Two approaches to fix it:
 
 **Option A — vite-plugin-wasm (recommended)**
 
@@ -164,10 +165,14 @@ const interval = setInterval(() => {
 
 Expect a ~10 second warmup before the first BPM estimate.
 
-> **If BPM is always null:** check `session.backendMode` before assuming bad
-> signal. If it is `"unavailable"`, the WASM assets did not load — the session
-> runs gracefully but metrics will always be null. This looks identical to the
-> warmup period. See the [Vite Config](#vite-config) section above.
+> **Check `session.backendMode` before trusting BPM.** If it is
+> `"unavailable"`, the WASM assets did not load. The session keeps running
+> without the WASM estimator: `estimationAvailable` is `false` and
+> `createRppgAppAdapter()` never sets `canPublish`, but `getMetrics()` can
+> still return a BPM from the package's JavaScript estimators, so a number
+> alone does not show that the WASM loaded. `getDiagnostics().backendLoadError`
+> lists the URLs that were tried and why the last one failed. See the
+> [Vite Config](#vite-config) section above.
 
 If you need a single boolean for UI gating (e.g. "show the BPM display"),
 use `createRppgAppAdapter().canPublish` instead of polling `getMetrics()`
@@ -199,7 +204,10 @@ console.log(session.getMetrics());
 capture loop, ROI handling, diagnostics emission, and cleanup. If WASM is not
 available and you use `backend: "auto"`, the session falls back to an
 `unavailable` backend mode and reports that state through diagnostics instead of
-failing silently.
+failing silently. The reason (the URLs tried and the last import error) is in
+`diagnostics.backendLoadError`, and `normalizeRppgError()` adds it to the
+`backend_unavailable` detail. It is not passed to `onError` and does not set
+`lastError`.
 
 ## Which API To Use
 
@@ -310,6 +318,7 @@ Every session diagnostics payload includes:
 - `totalSamplesReceived`, `windowSampleCount`, and `lastSampleAgeMs`
 - processor issue codes such as `no_samples_yet`, `insufficient_window`, and `low_skin_ratio`
 - session-level issues such as `backend_unavailable`
+- `backendLoadError` when `backend: "auto"` fell back because the WASM did not load: the URLs tried and the last import error
 - `state` with `running`, `degraded`, or terminal `failed` status
 - `processorFailure` when a fatal backend exception poisons the WASM pipeline
 - `lastError` when capture, FaceMesh, or processor work fails
@@ -679,7 +688,7 @@ page can also run `replayBayesSession()` on it and render the result.
 
 ## Troubleshooting
 
-- If `session.backendMode` is `unavailable`, make sure your app is serving the packaged `pkg/rppg_wasm.js` and `.wasm` assets.
+- If `session.backendMode` is `unavailable`, make sure your app is serving the packaged `pkg/rppg_wasm.js` and `.wasm` assets. `session.getDiagnostics().backendLoadError` says which URLs the loader tried and why the last one failed.
 - If you see "backend pipeline has no push_sample API", make sure you are using `createRppgSession()` or a backend created through the normalized wrappers rather than constructing generated bindings directly.
 - If you hit `wasmrppgpipeline_new`, make sure the underlying WASM module was initialized before creating low-level pipelines and prefer the package helpers over raw generated constructors.
 - If you see deprecated init warnings, route startup through `initEegWasm()` instead of calling generated init exports with raw strings, URLs, or buffers.

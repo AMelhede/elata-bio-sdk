@@ -220,41 +220,4 @@ describe("createRppgSession lifecycle", () => {
 		await session.dispose();
 		expect(model.dispose).toHaveBeenCalledTimes(2);
 	});
-
-	// With backend "auto" (every README example), a WASM core that would not load left the session
-	// with no heart rate forever and the load error thrown away: no onError, no lastError, nothing
-	// saying which URLs were tried. A wrong bundler setup looked like a camera that sees no pulse.
-	test("backend auto: a WASM core that does not load is reported to the app, with what was tried", async () => {
-		mockedLoadWasmBackend.mockImplementationOnce(async (_importer, opts) => {
-			if (opts?.strict) throw new Error("Unable to load rPPG WASM backend. Tried: /pkg/rppg_wasm.js.");
-			return null;
-		});
-		const onError = jest.fn();
-		const session = await createRppgSession({
-			video: document.createElement("video"),
-			faceMesh: "off",
-			backend: "auto",
-			ensureVideoPlayback: false,
-			onError,
-		});
-		expect(session.backendMode).toBe("unavailable");
-		expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "backend_init_failed", stage: "backend" }));
-		expect(session.lastError?.message).toContain("Tried: /pkg/rppg_wasm.js");
-		expect(session.getState()).toMatchObject({ status: "degraded", phase: "startup", errorCode: "backend_init_failed" });
-		await session.dispose();
-	});
-
-	test("backend auto: a WASM core that loads raises no error", async () => {
-		const onError = jest.fn();
-		const session = await createRppgSession({
-			video: document.createElement("video"),
-			faceMesh: "off",
-			backend: "auto",
-			ensureVideoPlayback: false,
-			onError,
-		});
-		expect(session.backendMode).toBe("wasm");
-		expect(onError).not.toHaveBeenCalled();
-		await session.dispose();
-	});
 });

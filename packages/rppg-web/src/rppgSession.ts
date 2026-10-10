@@ -18,6 +18,7 @@ import {
 import {
 	loadWasmBackend,
 	createUnavailableBackend,
+	RppgWasmLoadError,
 	type Backend,
 	type WasmImporter,
 } from "./wasmBackend";
@@ -94,6 +95,14 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 	processorFailure: RppgProcessorBackendFailure | null;
 	state: RppgSessionState;
 	lastError: RppgSessionError | null;
+	/**
+	 * Why the WASM backend did not load when `backend: "auto"` fell back to
+	 * `backendMode: "unavailable"`: `message` lists the URLs the loader tried
+	 * and `cause` is the last import error. `null` when the backend loaded.
+	 * Diagnostic only: it is not `lastError`, does not call `onError`, and does
+	 * not change `state`.
+	 */
+	backendLoadError?: RppgSessionError | null;
 	modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
 
@@ -174,6 +183,7 @@ type SessionInternals = {
 	onDiagnostics?: (diagnostics: RppgSessionDiagnostics) => void;
 	onError?: (error: RppgSessionError) => void;
 	backendDegraded?: boolean;
+	backendLoadError?: RppgSessionError | null;
 	faceTrackingDegraded?: boolean;
 	beforeStart?: () => Promise<void>;
 	waveformController?: WaveformReconstructionController;
@@ -321,6 +331,7 @@ export class RppgSession {
 			processorFailure,
 			state,
 			lastError: this.lastErrorValue,
+			backendLoadError: this.internals.backendLoadError ?? null,
 			modelDiagnostics: this.getModelDiagnostics(),
 		};
 	}
@@ -391,7 +402,6 @@ export async function createRppgSession(
 		wasmBinaryUrl: options.wasmBinaryUrl,
 		wasmImporter: options.wasmImporter,
 	});
-	if (backendResult.error) pendingErrors.push(backendResult.error);
 	const processor = new RppgProcessor(
 		backendResult.backend,
 		sampleRate,
@@ -467,6 +477,7 @@ export async function createRppgSession(
 			onDiagnostics: options.onDiagnostics,
 			onError: options.onError,
 			backendDegraded: backendResult.mode !== "wasm",
+			backendLoadError: backendResult.loadError,
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,
 			beforeStart: async () => {
@@ -534,36 +545,38 @@ async function resolveBackend(
 ): Promise<{
 	backend: Backend;
 	mode: RppgSessionBackendMode;
-	error?: RppgSessionError;
+	loadError: RppgSessionError | null;
 }> {
-	// Always load strictly, so the reason it failed is kept. "auto" still falls back to a backend
-	// that reads nothing, but now says why through onError: before, a bundler that could not serve
-	// the WASM gave a session that ran, found a face and never produced a number, with no error.
+	// Strict in both modes: it tries the same URLs, but a failed load throws
+	// RppgWasmLoadError (the URLs tried and the last import error) instead of
+	// resolving null, so "auto" can keep the reason when it falls back.
 	try {
 		const backend = await loadWasmBackend(options.wasmImporter, {
 			strict: true,
 			jsUrl: options.wasmJsUrl,
 			binaryUrl: options.wasmBinaryUrl,
 		});
-		if (backend) return { backend, mode: "wasm" };
-		throw new Error("rPPG WASM backend loaded no pipeline.");
+		// Strict mode never resolves null; this check only narrows the type.
+		if (backend) return { backend, mode: "wasm", loadError: null };
 	} catch (cause) {
 		if (backendPreference === "wasm") throw cause;
 		return {
 			backend: createUnavailableBackend(),
 			mode: "unavailable",
-			error: {
+			loadError: {
 				code: "backend_init_failed",
 				stage: "backend",
-				message:
-					cause instanceof Error
-						? cause.message
-						: "rPPG WASM backend failed to load.",
+				message: cause instanceof Error ? cause.message : String(cause),
 				timestampMs: Date.now(),
-				cause,
+				cause: cause instanceof RppgWasmLoadError ? cause.lastError : cause,
 			},
 		};
 	}
+	return {
+		backend: createUnavailableBackend(),
+		mode: "unavailable",
+		loadError: null,
+	};
 }
 
 function applyTrackerConfiguration(
