@@ -1,7 +1,7 @@
 # @elata-biosciences/create-elata-demo — context for tools and agents
 
 ## Role
-CLI **`create-elata-demo`** that scaffolds starter apps from embedded templates. Packaged **`elataSdkVersions`** in `package.json` pin compatible **`eeg-web` / `eeg-web-ble` / `rppg-web`** versions for generated `package.json` files.
+CLI **`create-elata-demo`** that scaffolds starter apps from embedded templates. Packaged **`elataSdkVersions`** in `package.json` pin the version of every Elata SDK package a template depends on (**`eeg-web` / `eeg-web-ble` / `rppg-web` / `ppg-web` / `app-metrics`**) for generated `package.json` files.
 
 ## Templates (and aliases)
 | Template ID   | Aliases                          | Contents (short)                          |
