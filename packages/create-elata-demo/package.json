@@ -36,7 +36,7 @@
   },
   "scripts": {
     "test": "node --test index.test.mjs",
-    "verify:publish": "node ../../scripts/verify-package-build.mjs index.mjs templates/rppg-demo/package.json templates/ppg-demo/package.json templates/eeg-demo/package.json",
+    "verify:publish": "node ../../scripts/verify-package-build.mjs index.mjs templates/rppg-demo/package.json templates/ppg-demo/package.json templates/eeg-demo/package.json && node scripts/verify-packed-cli.mjs",
     "prepare:publish": "pnpm run verify:publish",
     "prepack": "pnpm run prepare:publish && pnpm run verify:publish"
   },

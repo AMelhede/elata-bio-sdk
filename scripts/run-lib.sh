@@ -354,8 +354,9 @@ release_tag_prefix_for_target() {
 release_targets_for() {
     local target="$1"
     if [[ "$target" == "all" ]]; then
-        # Keep repo-published dependency order.
-        echo "eeg-web eeg-web-ble rppg-web rppg-models-web ppg-web create-elata-demo app-metrics biosignal-session"
+        # Keep repo-published dependency order. create-elata-demo goes last: it pins the
+        # version of every package in its elataSdkVersions, synced just before it publishes.
+        echo "eeg-web eeg-web-ble rppg-web rppg-models-web ppg-web app-metrics biosignal-session create-elata-demo"
     else
         echo "$target"
     fi
@@ -730,6 +731,9 @@ package_version_for_target() {
 sync_create_elata_demo_versions_if_needed() {
     # create-elata-demo embeds fallback SDK versions in its own package.json.
     # Ensure they match the repo's current package versions before publishing.
+    # With "check", only confirm that each one names a package in this repo, so a
+    # bad entry stops release-check instead of a half-published release.
+    local mode="${1:-sync}"
     require_cmds node
 
     local pkg_dir="packages/create-elata-demo"
@@ -754,6 +758,7 @@ sync_create_elata_demo_versions_if_needed() {
           console.error('elataSdkVersions.' + key + ' names no package at packages/' + dir);
           process.exit(2);
         }
+        if ('$mode' === 'check') continue;
         const version = JSON.parse(fs.readFileSync(manifest, 'utf8')).version;
         if (next[key] !== version) { next[key] = version; didChange = true; }
       }
@@ -936,6 +941,9 @@ verify_release_contract_for_target() {
 
     for pkg in $(release_targets_for "$target"); do
         local pkg_dir verify_script
+        if [[ "$pkg" == "create-elata-demo" ]]; then
+            sync_create_elata_demo_versions_if_needed check
+        fi
         pkg_dir="$(package_dir_for_target "$pkg")"
         verify_script="$(verify_script_for_target "$pkg")"
         if [[ -n "$verify_script" ]]; then

@@ -125,9 +125,10 @@ the commit/tags.
 
 ### Release order
 
-Release order is fixed in `release_targets_for` (`scripts/run-lib.sh`): `eeg-web` → `eeg-web-ble` → `rppg-web` → `rppg-models-web` → `ppg-web` → `create-elata-demo` → `app-metrics` → `biosignal-session`.
+Release order is fixed in `release_targets_for` (`scripts/run-lib.sh`): `eeg-web` → `eeg-web-ble` → `rppg-web` → `rppg-models-web` → `ppg-web` → `app-metrics` → `biosignal-session` → `create-elata-demo`.
 `rppg-models-web` follows `rppg-web` because it depends on the base package.
 `eeg-web-ble` must follow `eeg-web` because it has an `eeg-web` peer dependency.
+`create-elata-demo` goes last because it pins the version of every package in its `elataSdkVersions`, which the release syncs just before publishing it. A package published after it could still be patch-bumped past the pinned version, or fail to publish and leave the pin pointing at a version npm does not have.
 
 Two publishable packages are deliberately **excluded from the `all` set** and
 released individually while their APIs settle:

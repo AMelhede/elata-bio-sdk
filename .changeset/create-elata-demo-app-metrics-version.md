@@ -2,4 +2,4 @@
 "@elata-biosciences/create-elata-demo": patch
 ---
 
-`npx @elata-biosciences/create-elata-demo` (and `npm create @elata-biosciences/elata-demo`) starts again: every release from 0.3.1 to 0.12.1 crashed before doing anything, for every command, unless `@elata-biosciences/app-metrics` was installed beside it, because the CLI reads an `appMetrics` version its package did not carry. The release script now syncs every version the CLI carries, so the next release cannot leave one behind.
+`npx @elata-biosciences/create-elata-demo` (and `npm create @elata-biosciences/elata-demo`) works again. Every release from 0.3.1 to 0.12.1 crashed on start, for every template and every command including `--list-templates`, unless `@elata-biosciences/app-metrics` happened to be installed beside it: the CLI reads an `app-metrics` version on start that the package did not carry.
