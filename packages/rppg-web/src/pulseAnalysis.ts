@@ -173,8 +173,7 @@ export function estimateDominantBpm(
 
 	// No jump to twice the strongest rate: a pulse wave's own second harmonic (the dicrotic
 	// notch) routinely exceeds a third of the fundamental, so such a rule doubles correct
-	// rates. Removing it: 49% -> 54% of seconds right on 255 real recordings (see
-	// spectralNoDoubling.test.ts).
+	// rates (see spectralNoDoubling.test.ts).
 	const energy = centered.reduce((acc, value) => acc + value * value, 0) / n;
 	const confidence =
 		energy > 1e-9 ? clamp(bestMag / (Math.sqrt(energy) + 1e-9), 0, 1) : 0;
