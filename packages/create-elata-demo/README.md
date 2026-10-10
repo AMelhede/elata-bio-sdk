@@ -100,13 +100,13 @@ each template by scaffolding, installing dependencies, and running a build.
 
 ## Workspace Caveat
 
-If you scaffold a new app inside another `pnpm` workspace and that app is not
-added to the workspace globs, run this from the parent directory:
+A new app ships its own `pnpm-workspace.yaml`, so inside another `pnpm`
+workspace it still installs as its own project. From the parent directory:
 
 ```text
 pnpm:
-pnpm --dir my-app --ignore-workspace install
-pnpm --dir my-app --ignore-workspace run dev
+pnpm --dir my-app install
+pnpm --dir my-app run dev
 
 npm:
 cd my-app
@@ -117,7 +117,7 @@ npm run dev
 ## Troubleshooting
 
 - If scaffolding fails because the directory already exists, choose a new target folder or remove the existing one first.
-- If `pnpm install` inside a generated app does not create `node_modules`, check whether you are inside another `pnpm` workspace and use `--ignore-workspace`.
+- If `pnpm install` inside a generated app does not create `node_modules`, check that the app still has its own `pnpm-workspace.yaml` (starters from 0.12.1 and earlier have none; see the repository's docs/create-elata-demo.md).
 - If you are deciding between this package and `./run.sh sync-to`, use `create-elata-demo` for new apps and `sync-to` only for local `eeg-web` iteration against an existing app.
 
 ## More Details

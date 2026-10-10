@@ -1,6 +1,8 @@
-# This app is its own pnpm workspace: pnpm 9 stops without a packages field ("packages field missing or
-# empty"). Current pnpm refuses to install unless each dependency that runs a build step is allowed by name;
-# vite needs esbuild's. (Older pnpm reads the same allowance from package.json.)
+# This app is its own pnpm workspace, so installing it from inside another workspace gives it
+# its own node_modules and lockfile. pnpm 9 needs the packages field ("packages field missing or empty").
+# pnpm 11 and later refuse to install until every dependency build script has been reviewed, and they
+# read that review only from this file. vite's esbuild is the one build script here; allowing it is a
+# deliberate choice, the same allowance Elata's own repository root makes. (pnpm 10 skips it with a warning.)
 packages:
   - .
 allowBuilds:

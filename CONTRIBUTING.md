@@ -83,9 +83,10 @@ rather than forking consumer demos.
 - The current scaffold flow supports interactive template selection, template
   aliases (`rppg`, `eeg`, `ble`; plus legacy `eeg-web-ble-demo`), and
   `--list-templates`.
-- If you scaffold inside another `pnpm` workspace, verify the
-  `pnpm --dir my-app --ignore-workspace ...` caveat before treating it as a
-  scaffold failure.
+- Scaffolded apps ship their own `pnpm-workspace.yaml` (it also allows
+  esbuild's build script, which pnpm 11 and later require). If an install
+  misbehaves inside another workspace, check that file is still there before
+  treating it as a scaffold failure.
 
 ### Demo And Example Notes
 

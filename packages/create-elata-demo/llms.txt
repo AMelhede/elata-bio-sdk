@@ -24,7 +24,7 @@ Interactive runs ask for app type then project name. **Non-interactive runs with
 - List templates: `pnpm dlx @elata-biosciences/create-elata-demo -- --list-templates` (note **`--` before flags** when the runner requires it)
 
 ## Workspace caveat
-Scaffolding **inside** a parent **pnpm workspace** may attach to the parent and skip a local `node_modules`. Use **`pnpm --dir <app> --ignore-workspace install`** or **`npm install`** inside the new app.
+Each starter ships its own **`pnpm-workspace.yaml`**, so scaffolding **inside** a parent **pnpm workspace** still gives it its own `node_modules`: use **`pnpm --dir <app> install`** from the parent, or **`npm install`** inside the new app.
 
 ## vs internal repo tools
 **`create-elata-demo`** is the canonical path for new consumer apps. **`./run.sh sync-to`** is for maintainers iterating **`eeg-web`** into an existing app — not equivalent to scaffolding.

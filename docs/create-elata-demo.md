@@ -81,7 +81,9 @@ Each scaffolded app includes:
 - a `package.json` pinned to the current compatible Elata SDK package versions,
 - a minimal React + Vite shell, and
 - a template-specific `README.md` with browser and hardware notes,
-- a `build` script that Type-checks and runs `vite build`.
+- a `build` script that Type-checks and runs `vite build`, and
+- a `pnpm-workspace.yaml` that makes the app its own pnpm project and allows
+  esbuild's build script (pnpm 11 and later refuse to install without that).
 
 After scaffolding:
 
@@ -95,15 +97,41 @@ pnpm run dev
 
 > Note: The templates are compatible with `pnpm` and other package managers; this repo prefers `pnpm` for local work.
 >
-> If you scaffold **inside an existing pnpm workspace** but do not add the new app
-> to that workspace's `pnpm-workspace.yaml`, run this from the parent directory:
+> If you scaffold **inside an existing pnpm workspace**, the new app still installs
+> as its own project, because it ships its own `pnpm-workspace.yaml`. From the
+> parent directory:
 >
 > ```bash
-> pnpm --dir my-app --ignore-workspace install
-> pnpm --dir my-app --ignore-workspace run dev
+> pnpm --dir my-app install
+> pnpm --dir my-app run dev
 > ```
 >
-> or use `npm install` / `npm run dev` from inside `my-app`.
+> or use `npm install` / `npm run dev` from inside `my-app`. To make the app part
+> of the parent workspace instead, delete its `pnpm-workspace.yaml` and allow
+> esbuild's build script in the parent's.
+
+### Starters made by create-elata-demo 0.12.1 and earlier
+
+Those starters fail `vite build` with current `@swc/core` (1.16.0 and later):
+`vite-plugin-top-level-await` reports "missing field `type`" for every chunk
+that contains a dynamic `import()`, which includes anything that bundles
+`@elata-biosciences/rppg-web`. On pnpm 11 and later they also fail to install,
+because nothing allows esbuild's build script. To repair one:
+
+1. In `vite.config.ts`, delete the `vite-plugin-top-level-await` import and its
+   entry in `plugins`, and remove it from `devDependencies` in `package.json`.
+   No template uses top-level await.
+2. For pnpm, add a `pnpm-workspace.yaml` next to `package.json`:
+
+   ```yaml
+   packages:
+     - .
+   allowBuilds:
+     esbuild: true
+   ```
+
+   pnpm 9 needs the `packages` field. On pnpm 9, `pnpm add` inside such an app
+   needs `-w`.
 
 ### Using `pnpm dlx` directly
 
@@ -132,7 +160,7 @@ This command:
 
 1. Ensures `node_modules/` exists at the workspace root (`pnpm install` if needed).
 2. Runs the `packages/create-elata-demo` test suite.
-3. For each template (`rppg-demo`, `eeg-demo`, `eeg-ble`):
+3. For each template (`rppg-demo`, `ppg-demo`, `eeg-demo`, `eeg-ble`, `pulse-game`):
    - scaffolds into a temporary directory,
    - installs dependencies with `pnpm install`, and
    - runs `pnpm run build` (Vite + TypeScript).

@@ -143,17 +143,7 @@ test('a sibling published under another name is installed through an npm alias',
   }
 });
 
-test('no template builds through vite-plugin-top-level-await (its production build fails), all target es2022', () => {
-  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
-    const pkg = readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8');
-    const vite = readFileSync(join(__dirname, 'templates', t, 'vite.config.ts'), 'utf8');
-    assert.doesNotMatch(pkg, /vite-plugin-top-level-await/, t);
-    assert.doesNotMatch(vite, /^import .*top-level-await/m, t);
-    assert.match(vite, /target: 'es2022'/, t);
-    // A second `build` key in the same object silently replaces the first, target included.
-    assert.strictEqual((vite.match(/^\s*build:/gm) ?? []).length, 1, `${t}: vite.config.ts must have one build key`);
-  }
-});
+const TEMPLATE_DIRS = ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game'];
 
 test("a template with eeg-web-ble or ppg-web installs with npm against the versions already on npm", () => {
   // The published eeg-web-ble 0.12.0 still names eeg-web ^0.2.1 as its peer, and the published ppg-web 0.12.0 names
@@ -240,16 +230,19 @@ test('the heart-rate template shows only the checked heart rate, nothing unprove
   assert.match(readme, /getExperimentalVitals\(\)/);
 });
 
-test('every template installs under pnpm 9 and current pnpm alike', () => {
-  // A pnpm-workspace.yaml with keys but no packages field makes pnpm 9 stop before installing ("packages field missing
-  // or empty", pnpm 9.15.9); pnpm 10+ needs esbuild's build step allowed by name (allowBuilds, or for older pnpm
-  // package.json pnpm.onlyBuiltDependencies).
-  for (const t of ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game']) {
-    const ws = readFileSync(join(__dirname, 'templates', t, 'pnpm-workspace.yaml'), 'utf8');
-    assert.match(ws, /^packages:\s*\n\s+- ['"]?\.['"]?\s*$/m, `${t}: pnpm-workspace.yaml needs packages: ['.'] for pnpm 9`);
-    assert.match(ws, /allowBuilds:\s*\n\s+esbuild: true/, t);
-    const pkg = JSON.parse(readFileSync(join(__dirname, 'templates', t, 'package.json'), 'utf8'));
-    assert.deepEqual(pkg.pnpm?.onlyBuiltDependencies, ['esbuild'], t);
+test('no template depends on vite-plugin-top-level-await, and each one allows esbuild for pnpm 11+', () => {
+  // The behaviour test is the smoke test below (scaffold, install, build). This guard is the cheap
+  // part of it that runs offline: the plugin's production build fails with @swc/core >= 1.16.0, and
+  // pnpm 11+ refuses to install until esbuild's build script is reviewed in pnpm-workspace.yaml.
+  for (const t of TEMPLATE_DIRS) {
+    const dir = join(__dirname, 'templates', t);
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    assert.ok(!('vite-plugin-top-level-await' in deps), `${t}: depends on vite-plugin-top-level-await`);
+    assert.doesNotMatch(readFileSync(join(dir, 'vite.config.ts'), 'utf8'), /top-level-await/, t);
+    const ws = readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8').replace(/#.*$/gm, '');
+    assert.match(ws, /^packages:\s*(\n\s+- ['"]?\.['"]?\s*$|\[\s*['"]?\.['"]?\s*\])/m, `${t}: packages must list the app`);
+    assert.match(ws, /^allowBuilds:\s*(\n\s+esbuild:\s*true|\{\s*esbuild:\s*true\s*\})/m, `${t}: esbuild not allowed`);
   }
 });
 
@@ -436,7 +429,9 @@ test('warns when scaffolding inside a parent pnpm workspace', () => {
     const result = runCli(['nested-demo'], workspaceDir);
     assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
     assert.match(result.stdout, /inside an existing pnpm workspace/);
-    assert.match(result.stdout, /--ignore-workspace install/);
+    assert.match(result.stdout, /pnpm --dir nested-demo install/);
+    assert.doesNotMatch(result.stdout, /--ignore-workspace/);
+    assert.ok(existsSync(join(workspaceDir, 'nested-demo', 'pnpm-workspace.yaml')));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

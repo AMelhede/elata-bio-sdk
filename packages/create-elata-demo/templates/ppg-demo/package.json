@@ -34,8 +34,5 @@
       "@elata-biosciences/eeg-web-ble": "$@elata-biosciences/eeg-web-ble",
       "@elata-biosciences/rppg-web": "$@elata-biosciences/rppg-web"
     }
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
   }
 }

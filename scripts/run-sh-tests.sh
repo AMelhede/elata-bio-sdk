@@ -69,10 +69,47 @@ test_unknown_command_still_shows_usage() {
     assert_contains "$out" "Usage:"
 }
 
+test_unlink_removes_only_link_overrides() {
+    local dir out
+    dir="$(mktemp -d)"
+
+    # A starter's own workspace file after `pnpm link`: the link goes, everything else stays.
+    printf '%s\n' "# comment" "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
+        "  '@elata-biosciences/rppg-web': link:../../elata-bio-sdk/packages/rppg-web" >"$dir/starter.yaml"
+    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/starter.yaml"
+    out="$(<"$dir/starter.yaml")"
+    assert_contains "$out" "packages:"
+    assert_contains "$out" "esbuild: true"
+    if [[ "$out" == *"link:"* || "$out" == *"overrides:"* ]]; then
+        fail "link override or empty overrides key left behind: $out"
+    fi
+
+    # Another override in the same block is kept, with its key.
+    printf '%s\n' "overrides:" "  foo: 1.2.3" "  '@elata-biosciences/eeg-web': link:../eeg-web" "packages:" "  - ." >"$dir/mixed.yaml"
+    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/mixed.yaml"
+    out="$(<"$dir/mixed.yaml")"
+    assert_contains "$out" "overrides:"
+    assert_contains "$out" "foo: 1.2.3"
+    assert_contains "$out" "packages:"
+    if [[ "$out" == *"link:"* ]]; then
+        fail "link override left behind: $out"
+    fi
+
+    # The override-only file pnpm creates for an app without a workspace file is removed.
+    printf '%s\n' "overrides:" "  '@elata-biosciences/rppg-web': link:../rppg-web" >"$dir/only.yaml"
+    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/only.yaml"
+    if [[ -e "$dir/only.yaml" ]]; then
+        fail "override-only workspace file was not removed"
+    fi
+
+    rm -rf "$dir"
+}
+
 main() {
     test_err_trap_has_context
     test_require_cmd_is_actionable
     test_unknown_command_still_shows_usage
+    test_unlink_removes_only_link_overrides
     printf "run-sh-tests: ok\n"
 }
 
