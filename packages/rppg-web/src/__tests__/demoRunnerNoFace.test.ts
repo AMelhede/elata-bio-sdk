@@ -21,7 +21,7 @@ function wallFrame(timestampMs: number): Frame {
 
 async function feedWall(requireFace: boolean | undefined) {
   const src = new MockFrameSource();
-  const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), reset: jest.fn() };
+  const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
   const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, ...(requireFace === undefined ? {} : { requireFace }) });
   await runner.start();
   for (let i = 0; i < 60; i++) src.emit(wallFrame(1000 + i * 33.3));
@@ -51,7 +51,7 @@ describe('DemoRunner with no face in view', () => {
     const { proc, runner } = await feedWall(true);
     const face = { ...wallFrame(1000 + 60 * 33.3), roi: { x: 0, y: 0, w: 30, h: 30 } };
     (runner as any).source.onFrame?.(face);
-    expect(proc.reset).toHaveBeenCalledTimes(1);
+    expect(proc.resetSignal).toHaveBeenCalledTimes(1);
     expect(runner.faceAbsentMs()).toBe(0);
   });
 
@@ -68,7 +68,7 @@ describe('DemoRunner with no face in view', () => {
 
   test('a brief face-finder miss does not count as a restart', async () => {
     const src = new MockFrameSource();
-    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), reset: jest.fn() };
+    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
     const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
     await runner.start();
     for (let i = 0; i < 10; i++) src.emit(wallFrame(1000 + i * 33.3));
@@ -78,12 +78,12 @@ describe('DemoRunner with no face in view', () => {
 
   test('a brief face-finder miss does not restart the analysis', async () => {
     const src = new MockFrameSource();
-    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), reset: jest.fn() };
+    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
     const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
     await runner.start();
     for (let i = 0; i < 10; i++) src.emit(wallFrame(1000 + i * 33.3));
     src.emit({ ...wallFrame(1400), roi: { x: 0, y: 0, w: 30, h: 30 } });
-    expect(proc.reset).not.toHaveBeenCalled();
+    expect(proc.resetSignal).not.toHaveBeenCalled();
   });
 
   test('an empty frame is reported as invalid, not as no face', async () => {

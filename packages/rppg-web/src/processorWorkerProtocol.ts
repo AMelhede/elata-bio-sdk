@@ -31,6 +31,7 @@ export type ProcessorWorkerMethod =
 	| "enableTracker"
 	| "updateMuseMetrics"
 	| "resetCalibration"
+	| "resetSignal"
 	| "loadStateSnapshot";
 
 export type ProcessorWorkerRequest =

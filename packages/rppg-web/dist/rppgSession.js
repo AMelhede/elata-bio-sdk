@@ -6,7 +6,7 @@ import { ChestMotion } from "./chestBreathing.js";
 import { TrialFaceFinder } from "./faceFinderTrial.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
-import { RppgProcessor, SAMPLE_HISTORY_MS, } from "./rppgProcessor.js";
+import { RppgProcessor, } from "./rppgProcessor.js";
 import { loadWasmBackend, createUnavailableBackend, } from "./wasmBackend.js";
 import { DemoRunner, FACE_GONE_RESET_MS, } from "./demoRunner.js";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow.js";
@@ -105,9 +105,8 @@ export class RppgSession {
      * would run another analysis when steadyAnalysis is off, and move the engine's own rate). It is
      * given only while all of these hold: a face is in view; the pulse check (when on) has proven a
      * pulse and still shows its rate, as `getMetrics()` does (an HRV of something that is not a pulse
-     * means nothing); and the engine's window holds no samples from before the face last came back.
-     * The runner asks the engine to start afresh then, but neither processor has a `reset()`, so its
-     * window keeps the previous face's samples until SAMPLE_HISTORY_MS have passed.
+     * means nothing). The engine's window holds no samples from before the face last came back: the
+     * runner starts the engine's signal afresh then (`resetSignal()`).
      */
     getExperimentalVitals() {
         if (!this.internals.experimentalVitals)
@@ -115,13 +114,10 @@ export class RppgSession {
         const faceGone = this.failed() || (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
         const state = this.internals.pulseCheck?.getState();
         const proven = !state || (state.verdict === "measured" && state.bpm != null);
-        const sinceRestart = this.runner.msSinceAnalysisRestart?.() ?? null;
-        const engineResets = typeof this.processor.reset === "function";
-        const windowFresh = sinceRestart == null || engineResets || sinceRestart >= SAMPLE_HISTORY_MS;
         const hrv = this.lastEngineMetrics?.hrv_rmssd;
         return {
             experimental: true,
-            hrvRmssd: !faceGone && proven && windowFresh && Number.isFinite(hrv)
+            hrvRmssd: !faceGone && proven && Number.isFinite(hrv)
                 ? hrv
                 : null,
             breathing: this.internals.chestMotion?.rate() ?? null,

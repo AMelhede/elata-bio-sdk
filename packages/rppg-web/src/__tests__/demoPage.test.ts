@@ -4,7 +4,10 @@
 // read 100% while a rate was invented. The page shows the session's checked heart rate and nothing
 // that claims more, as the generated heart-rate demo already does (create-elata-demo's own test).
 
-// Jest provides require and __dirname; this package's tests carry no Node type declarations.
+// Jest provides require and __dirname; this package's tests carry no Node type declarations. The
+// export makes this file a module, so these declarations stay its own when ts-jest checks several
+// test files in one program.
+export {};
 declare const require: (id: string) => any;
 declare const __dirname: string;
 const fs = require("fs") as { readFileSync: (p: string, enc: string) => string };

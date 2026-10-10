@@ -1,18 +1,22 @@
 # @amelhede/rppg-web (test build)
 
-**This is a test build, not the official package.** It is Elata's rPPG web SDK
-(`@elata-biosciences/rppg-web` 0.14.0, MIT licence) with six fixes to the heart-rate
-pipeline, three speed changes and a real-pulse check added. Every fix, speed change and rule of
-the check has its own on/off switch, so an app can compare each one against the published
-behaviour. It exists so the team can try
+**This is a test build, not the official package.** It is built from Elata's rPPG web SDK
+(`@elata-biosciences/rppg-web`, MIT licence) as Elata's main branch stood on 2026-07-26: the
+published 0.14.0 plus five changes Elata made after it and has not released yet (versioned
+face-region profiles, waveform reconstruction, tracker configuration). On top of that it adds
+six fixes to the heart-rate pipeline, three speed changes and a real-pulse check. Every fix,
+speed change and rule of the check has its own on/off switch, so an app can compare each one
+against the published behaviour: with every fix and the check off, the heart rate it reports
+matched the published 0.14.0 second by second on a synthetic known answer (the new tracker
+fields aside). It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.16` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.17` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
-- Everything below the "Switches" section is the upstream documentation, unchanged in
-  substance. It uses the official package name, which is also how an app imports this build.
+- Everything below the "Switches" section is Elata's documentation from that same main
+  branch. It uses the official package name, which is also how an app imports this build.
 
 ## Install it in place of the official package
 
@@ -20,7 +24,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.16"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.17"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -179,12 +183,32 @@ The built assets live in `node_modules/@elata-biosciences/rppg-web/pkg/` after
 an npm install. Copy or symlink that directory into your app's `public/` folder,
 or use the import-based options below to let Vite manage the asset URLs instead.
 
+### The analysis worker in Vite's dev server
+
+This build runs the heart-rate analysis in a Web Worker (`fixes.analysisWorker`). Vite's dev
+server pre-bundles dependencies and then cannot find the worker's file (a 404 for
+`processorWorker.js`), so the analysis quietly runs on the main thread instead. Exclude the
+package from pre-bundling, which the WASM setup below needs anyway:
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  optimizeDeps: { exclude: ["@elata-biosciences/rppg-web"] },
+});
+```
+
+A production build (`vite build`) bundles the worker either way.
+
 ### Dynamic import restriction
 
 Vite 7 blocks `import(url)` for files served from `/public`, which is where
-most projects place the `pkg/` WASM assets. **If you skip this step, the
-session will start, `backendMode` will be `"unavailable"`, and BPM will always
-be null: no error is thrown.** Two approaches to fix it:
+most projects place the `pkg/` WASM assets. **If you skip this step, the WASM
+engine does not start:** `backendMode` is `"unavailable"`, and in this build
+`onError` receives `backend_init_failed` with the URLs it tried (the published
+0.14.0 raises no error). The same happens in a production build deployed under a
+sub-path (`/app/`, a GitHub Pages project site), because the default loader asks
+for the root-absolute `/pkg/rppg_wasm.js`; Options A and B below work there too.
+Two approaches to fix it:
 
 **Option A: vite-plugin-wasm (recommended)**
 
@@ -269,12 +293,13 @@ Expect 20 to 40 seconds of a still, lit face before the first BPM: the pulse
 check shows a rate only once the face regions agree on it.
 
 > **If BPM is always null:** check `session.backendMode` before assuming bad
-> signal. If it is `"unavailable"`, the WASM assets did not load: the engine's
-> own rate never comes, so with `pulseCheck: false` BPM stays null (with the
-> pulse check on, its rate can still come, since the check runs without the
-> WASM). `onError` receives `backend_init_failed` with the URLs that were
-> tried, `session.lastError` holds it, and `session.getState()` reads
-> `degraded`. See the [Vite Config](#vite-config) section above.
+> signal. If it is `"unavailable"`, the WASM assets did not load. `onError`
+> receives `backend_init_failed` with the URLs that were tried,
+> `session.lastError` holds it, and `session.getState()` reads `degraded`. The
+> pulse check does not need the WASM, so with it on its rate can still come;
+> with `pulseCheck: false` the engine falls back to its JavaScript estimators,
+> which still give a rate but are not the build's measured path. See the
+> [Vite Config](#vite-config) section above.
 
 If you need a single boolean for UI gating (e.g. "show the BPM display"),
 use `createRppgAppAdapter().canPublish` instead of polling `getMetrics()`

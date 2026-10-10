@@ -46,6 +46,7 @@ export type RppgProcessorLike = Pick<
 	| "pushSampleRgbMeta"
 	| "updateMuseMetrics"
 	| "resetCalibration"
+	| "resetSignal"
 	| "getStateSnapshot"
 	| "loadStateSnapshot"
 	| "getMetrics"
@@ -103,6 +104,8 @@ export class WorkerRppgProcessor implements RppgProcessorLike {
 	private captureScorer: CaptureConfidenceScorer | null = null;
 	private lastCapture: CaptureConfidenceResult | null = null;
 	private disposed = false;
+	/** The first error the worker reported (a fatal engine error); the next push throws it. */
+	private workerError: Error | null = null;
 
 	constructor(
 		private readonly worker: WorkerLike,
@@ -111,13 +114,30 @@ export class WorkerRppgProcessor implements RppgProcessorLike {
 	) {
 		this.state = emptyState(sampleRate, windowSec);
 		worker.onmessage = (event) => {
-			if (event.data?.type === "state") this.state = event.data.state;
+			const data = event.data;
+			if (data?.type === "state") this.state = data.state;
+			else if (data?.type === "error" && !this.workerError)
+				this.workerError = new Error(data.message);
 		};
 	}
 
 	private call(method: ProcessorWorkerMethod, args: unknown[]) {
 		if (this.disposed) return;
 		this.worker.postMessage({ type: "call", method, args });
+	}
+
+	/**
+	 * A main-thread processor's push throws once its engine has failed, which is how the runner
+	 * learns of it (it stops and reports processor_error). The worker reports the failure by
+	 * message, so the next push throws it here.
+	 */
+	private assertHealthy(operation: string) {
+		if (this.workerError) throw this.workerError;
+		const failure = this.state.backendFailure;
+		if (failure)
+			throw new Error(
+				`rPPG backend is unavailable after a fatal error in ${failure.operation}; refusing ${operation}.`,
+			);
 	}
 
 	enableTracker(minBpm = 50, maxBpm = 160, numParticles = 150) {
@@ -156,10 +176,12 @@ export class WorkerRppgProcessor implements RppgProcessorLike {
 	}
 
 	pushSample(timestampMs: number, intensity: number) {
+		this.assertHealthy("push_sample");
 		this.call("pushSample", [timestampMs, intensity]);
 	}
 
 	pushFusedSample(timestampMs: number, fusedValue: number, fusedSnr: number) {
+		this.assertHealthy("push_fused_sample");
 		this.call("pushFusedSample", [timestampMs, fusedValue, fusedSnr]);
 	}
 
@@ -170,10 +192,12 @@ export class WorkerRppgProcessor implements RppgProcessorLike {
 		b: number,
 		skinRatio = 1,
 	) {
+		this.assertHealthy("push_sample_rgb");
 		this.call("pushSampleRgb", [timestampMs, r, g, b, skinRatio]);
 	}
 
 	pushSampleRgbMeta(...args: Parameters<RppgProcessor["pushSampleRgbMeta"]>) {
+		this.assertHealthy("push_sample_rgb_meta");
 		this.call("pushSampleRgbMeta", args);
 	}
 
@@ -185,6 +209,10 @@ export class WorkerRppgProcessor implements RppgProcessorLike {
 		this.captureScorer?.reset();
 		this.lastCapture = null;
 		this.call("resetCalibration", []);
+	}
+
+	resetSignal() {
+		this.call("resetSignal", []);
 	}
 
 	getStateSnapshot(): ReturnType<RppgProcessor["getStateSnapshot"]> {
@@ -212,6 +240,10 @@ export class WorkerRppgProcessor implements RppgProcessorLike {
 		};
 	}
 
+	/**
+	 * The trace the worker last sent: at most its newest 300 points (about 10 s at 30 a second),
+	 * whatever `maxPoints` asks for, so a caller that needs a longer trace polls it.
+	 */
 	getTraceSnapshot(maxPoints = 300): RppgTraceSnapshot {
 		const trace = this.state.trace;
 		const n = Math.max(1, Math.floor(maxPoints));

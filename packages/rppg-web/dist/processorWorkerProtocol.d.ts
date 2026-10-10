@@ -15,7 +15,7 @@ import type { Metrics, RppgDebugSnapshot, RppgProcessorBackendFailure, RppgTrace
  */
 export declare const ANALYSIS_EVERY_MS = 250;
 /** Processor methods the worker accepts from the main thread. */
-export type ProcessorWorkerMethod = "pushSample" | "pushFusedSample" | "pushSampleRgb" | "pushSampleRgbMeta" | "pushCaptureFrame" | "enableTracker" | "updateMuseMetrics" | "resetCalibration" | "loadStateSnapshot";
+export type ProcessorWorkerMethod = "pushSample" | "pushFusedSample" | "pushSampleRgb" | "pushSampleRgbMeta" | "pushCaptureFrame" | "enableTracker" | "updateMuseMetrics" | "resetCalibration" | "resetSignal" | "loadStateSnapshot";
 export type ProcessorWorkerRequest = {
     type: "init";
     sampleRate: number;

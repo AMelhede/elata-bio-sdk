@@ -263,19 +263,26 @@ export class RppgProcessor {
         this.failedBackendError = null;
         this.failedOperation = null;
         this.disposed = false;
+        /** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
+        this.trackerSettings = null;
         this.sampleRate = sampleRate;
         this.windowSec = windowSec;
         this.fixes = resolveFixSwitches(options.fixes);
         this.bayesTracker = new BpmBayesTracker(BPM_MIN, BPM_MAX, 1, options.bpmTrackerConfig, options.bpmEvidenceQualityProvider);
-        this.pipeline = this.backend.newPipeline(sampleRate, windowSec);
+        this.pipeline = this.newPipeline();
+    }
+    newPipeline() {
+        const pipeline = this.backend.newPipeline(this.sampleRate, this.windowSec);
         // Fix 2 lives in the WASM core; the switch reaches it through this setter. A core built
         // without the setter (the published 0.14.0 WASM) has only the published projection.
-        const setFix = this.pipeline?.set_colour_projection_fix;
+        const setFix = pipeline?.set_colour_projection_fix;
         if (typeof setFix === "function") {
-            setFix.call(this.pipeline, this.fixes.colourProjectionFix);
+            setFix.call(pipeline, this.fixes.colourProjectionFix);
         }
+        return pipeline;
     }
     enableTracker(minBpm = 50, maxBpm = 160, numParticles = 150) {
+        this.trackerSettings = [minBpm, maxBpm, numParticles];
         if (this.failedBackendError || this.disposed || !this.pipeline)
             return;
         this.analysed = null;
@@ -454,6 +461,43 @@ export class RppgProcessor {
     updateMuseMetrics(bpm, quality = 0, timestampMs = Date.now()) {
         this.fusion.updateMuse(bpm, quality, timestampMs);
         this.analysed = null;
+    }
+    /**
+     * Start the signal afresh after a break in it (for example the face out of view): drop the
+     * sample window and start the engine's pipeline anew, so the next estimate is made only from
+     * samples after the break. A window that spans a break counts the missing time as samples, so
+     * its sample-rate estimate, and every rate, is scaled down by the share of the window that has
+     * samples. The signal models that carry state from sample to sample (channel gain, CHROM, the
+     * fused-quality scalar) restart with it; calibration, the rolling baseline, the rate history
+     * and the Bayesian tracker are kept, as are the capture-confidence scorer and the backend
+     * failure state. No-op once disposed or failed.
+     */
+    resetSignal() {
+        if (this.disposed || this.failedBackendError)
+            return;
+        this.samples.length = 0;
+        this.samplesVersion += 1;
+        this.windowAnalysis = null;
+        this.analysed = null;
+        this.channelGain.reset();
+        this.chromPulse.reset();
+        this.fusedQuality = null;
+        this.releasePipeline();
+        try {
+            this.pipeline = this.newPipeline();
+        }
+        catch (error) {
+            this.failBackend("new_pipeline", error);
+            return;
+        }
+        if (!this.trackerSettings)
+            return;
+        try {
+            this.enableTracker(...this.trackerSettings);
+        }
+        catch {
+            // enableTracker has recorded the backend failure; getMetrics reports it from here on.
+        }
     }
     resetCalibration() {
         this.analysed = null;

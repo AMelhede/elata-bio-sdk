@@ -1,5 +1,4 @@
 import { FACE_GONE_RESET_MS } from "../demoRunner";
-import { SAMPLE_HISTORY_MS } from "../rppgProcessor";
 import { RppgSession, wantsChestMotion } from "../rppgSession";
 
 // experimentalVitals: HRV and chest breathing handed over in their own box, labelled experimental.
@@ -13,11 +12,10 @@ type Opts = {
 	vitals?: boolean;
 	faceAbsentMs?: number;
 	sinceRestart?: number | null;
-	engineReset?: boolean;
 	hrv?: number | null;
 	chest?: { rate: number; share: number } | null;
 };
-const make = ({ verdict = "measured", shown = 71.5, vitals = true, faceAbsentMs = 0, sinceRestart = null, engineReset = false, hrv = raw.hrv_rmssd, chest = { rate: 14.5, share: 0.8 } }: Opts = {}) => {
+const make = ({ verdict = "measured", shown = 71.5, vitals = true, faceAbsentMs = 0, sinceRestart = null, hrv = raw.hrv_rmssd, chest = { rate: 14.5, share: 0.8 } }: Opts = {}) => {
 	const metrics = { ...raw, hrv_rmssd: hrv };
 	const engine = {
 		reads: 0,
@@ -26,7 +24,7 @@ const make = ({ verdict = "measured", shown = 71.5, vitals = true, faceAbsentMs 
 			return { ...metrics };
 		},
 		getDebugSnapshot: () => ({ ...debug, backendMetrics: { ...metrics } }),
-		...(engineReset ? { reset: () => {} } : {}),
+		resetSignal: () => {},
 	};
 	const session = new RppgSession(
 		{} as never,
@@ -88,14 +86,9 @@ describe("experimentalVitals on", () => {
 		expect(vitalsAfterPoll({ faceAbsentMs: FACE_GONE_RESET_MS })?.hrvRmssd).toBeNull();
 		expect(vitalsAfterPoll({ faceAbsentMs: FACE_GONE_RESET_MS - 1 })?.hrvRmssd).toBe(180);
 	});
-	it("gives no HRV while the engine's window may still hold the previous face's samples", () => {
-		expect(vitalsAfterPoll({ sinceRestart: 0 })?.hrvRmssd).toBeNull();
-		expect(vitalsAfterPoll({ sinceRestart: SAMPLE_HISTORY_MS - 1 })?.hrvRmssd).toBeNull();
-		expect(vitalsAfterPoll({ sinceRestart: SAMPLE_HISTORY_MS })?.hrvRmssd).toBe(180);
+	it("needs no wait after the face returns: the engine's window starts afresh then", () => {
+		expect(vitalsAfterPoll({ sinceRestart: 0 })?.hrvRmssd).toBe(180);
 		expect(vitalsAfterPoll({ sinceRestart: null })?.hrvRmssd).toBe(180);
-	});
-	it("an engine that really starts afresh (has reset) needs no wait", () => {
-		expect(vitalsAfterPoll({ sinceRestart: 0, engineReset: true })?.hrvRmssd).toBe(180);
 	});
 	it("gives no HRV when the engine has none or a non-number", () => {
 		expect(vitalsAfterPoll({ hrv: null })?.hrvRmssd).toBeNull();

@@ -227,12 +227,15 @@ export declare class RppgProcessor {
     private readonly windowSec;
     /** The fix switches this processor applies (colourProjectionFix, noRateDoubling). */
     readonly fixes: ResolvedRppgFixSwitches;
+    /** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
+    private trackerSettings;
     constructor(backend: Backend, sampleRate?: number, windowSec?: number, options?: {
         bpmTrackerConfig?: BpmTrackerConfigV1;
         bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
         /** Fix switches, all on unless set to false (see fixSwitches.ts). */
         fixes?: RppgFixesOption;
     });
+    private newPipeline;
     enableTracker(minBpm?: number, maxBpm?: number, numParticles?: number): void;
     /**
      * Feed one frame's capture cues (motion + lighting). Returns the current
@@ -260,6 +263,17 @@ export declare class RppgProcessor {
     pushSampleRgb(timestampMs: number, r: number, g: number, b: number, skinRatio?: number): void;
     pushSampleRgbMeta(timestampMs: number, r: number, g: number, b: number, skinRatio?: number, motion?: number, clipRatio?: number): void;
     updateMuseMetrics(bpm: number | null, quality?: number, timestampMs?: number): void;
+    /**
+     * Start the signal afresh after a break in it (for example the face out of view): drop the
+     * sample window and start the engine's pipeline anew, so the next estimate is made only from
+     * samples after the break. A window that spans a break counts the missing time as samples, so
+     * its sample-rate estimate, and every rate, is scaled down by the share of the window that has
+     * samples. The signal models that carry state from sample to sample (channel gain, CHROM, the
+     * fused-quality scalar) restart with it; calibration, the rolling baseline, the rate history
+     * and the Bayesian tracker are kept, as are the capture-confidence scorer and the backend
+     * failure state. No-op once disposed or failed.
+     */
+    resetSignal(): void;
     resetCalibration(): void;
     getStateSnapshot(): {
         baselineBpm: number | null;

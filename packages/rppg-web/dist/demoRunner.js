@@ -211,7 +211,7 @@ export class DemoRunner {
             // window still holding the frames before the face was lost.
             if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
                 this.fuser?.reset();
-                this.processor.reset?.();
+                this.processor.resetSignal();
                 this.analysisRestartMs = frame.timestampMs ?? Date.now();
             }
             this.noFaceSinceMs = null;

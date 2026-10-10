@@ -21,7 +21,6 @@ import {
 import { ensureVideoPlaying } from "./videoPlayback";
 import {
 	RppgProcessor,
-	SAMPLE_HISTORY_MS,
 	type Metrics,
 	type RppgDebugIssueCode,
 	type RppgDebugSnapshot,
@@ -367,9 +366,8 @@ export class RppgSession {
 	 * would run another analysis when steadyAnalysis is off, and move the engine's own rate). It is
 	 * given only while all of these hold: a face is in view; the pulse check (when on) has proven a
 	 * pulse and still shows its rate, as `getMetrics()` does (an HRV of something that is not a pulse
-	 * means nothing); and the engine's window holds no samples from before the face last came back.
-	 * The runner asks the engine to start afresh then, but neither processor has a `reset()`, so its
-	 * window keeps the previous face's samples until SAMPLE_HISTORY_MS have passed.
+	 * means nothing). The engine's window holds no samples from before the face last came back: the
+	 * runner starts the engine's signal afresh then (`resetSignal()`).
 	 */
 	getExperimentalVitals(): ExperimentalVitals | null {
 		if (!this.internals.experimentalVitals) return null;
@@ -377,16 +375,11 @@ export class RppgSession {
 			this.failed() || (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
 		const state = this.internals.pulseCheck?.getState();
 		const proven = !state || (state.verdict === "measured" && state.bpm != null);
-		const sinceRestart = this.runner.msSinceAnalysisRestart?.() ?? null;
-		const engineResets =
-			typeof (this.processor as { reset?: unknown }).reset === "function";
-		const windowFresh =
-			sinceRestart == null || engineResets || sinceRestart >= SAMPLE_HISTORY_MS;
 		const hrv = this.lastEngineMetrics?.hrv_rmssd;
 		return {
 			experimental: true,
 			hrvRmssd:
-				!faceGone && proven && windowFresh && Number.isFinite(hrv)
+				!faceGone && proven && Number.isFinite(hrv)
 					? (hrv as number)
 					: null,
 			breathing: this.internals.chestMotion?.rate() ?? null,

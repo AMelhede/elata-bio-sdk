@@ -4,7 +4,10 @@
 // as written, each one runs, finds no face to check and never shows a heart rate, with no error. An
 // example that turns the face finder off must also turn the pulse check off, or it cannot work.
 
-// Jest provides require and __dirname; this package's tests carry no Node type declarations.
+// Jest provides require and __dirname; this package's tests carry no Node type declarations. The
+// export makes this file a module, so these declarations stay its own when ts-jest checks several
+// test files in one program.
+export {};
 declare const require: (id: string) => any;
 declare const __dirname: string;
 const fs = require("fs") as { readFileSync: (p: string, enc: string) => string };

@@ -14,7 +14,7 @@ import { type CaptureConfidenceConfig, type CaptureConfidenceResult, type Captur
 import type { ProcessorWorkerRequest, ProcessorWorkerResponse } from "./processorWorkerProtocol.js";
 import type { Metrics, RppgDebugSnapshot, RppgProcessor, RppgProcessorBackendFailure, RppgTraceSnapshot } from "./rppgProcessor.js";
 /** What the session and runner use of a processor; both implementations provide it. */
-export type RppgProcessorLike = Pick<RppgProcessor, "enableTracker" | "pushCaptureFrame" | "getCaptureConfidence" | "isBackendFailed" | "getBackendFailure" | "dispose" | "pushSample" | "pushFusedSample" | "pushSampleRgb" | "pushSampleRgbMeta" | "updateMuseMetrics" | "resetCalibration" | "getStateSnapshot" | "loadStateSnapshot" | "getMetrics" | "getDebugSnapshot" | "getTraceSnapshot">;
+export type RppgProcessorLike = Pick<RppgProcessor, "enableTracker" | "pushCaptureFrame" | "getCaptureConfidence" | "isBackendFailed" | "getBackendFailure" | "dispose" | "pushSample" | "pushFusedSample" | "pushSampleRgb" | "pushSampleRgbMeta" | "updateMuseMetrics" | "resetCalibration" | "resetSignal" | "getStateSnapshot" | "loadStateSnapshot" | "getMetrics" | "getDebugSnapshot" | "getTraceSnapshot">;
 /** Minimal Worker surface (mockable in tests). */
 export type WorkerLike = {
     postMessage(message: ProcessorWorkerRequest): void;
@@ -28,8 +28,16 @@ export declare class WorkerRppgProcessor implements RppgProcessorLike {
     private captureScorer;
     private lastCapture;
     private disposed;
+    /** The first error the worker reported (a fatal engine error); the next push throws it. */
+    private workerError;
     constructor(worker: WorkerLike, sampleRate: number, windowSec: number);
     private call;
+    /**
+     * A main-thread processor's push throws once its engine has failed, which is how the runner
+     * learns of it (it stops and reports processor_error). The worker reports the failure by
+     * message, so the next push throws it here.
+     */
+    private assertHealthy;
     enableTracker(minBpm?: number, maxBpm?: number, numParticles?: number): void;
     pushCaptureFrame(sample: CaptureFrameSample, config?: Partial<CaptureConfidenceConfig>): CaptureConfidenceResult;
     getCaptureConfidence(): CaptureConfidenceResult | null;
@@ -42,10 +50,15 @@ export declare class WorkerRppgProcessor implements RppgProcessorLike {
     pushSampleRgbMeta(...args: Parameters<RppgProcessor["pushSampleRgbMeta"]>): void;
     updateMuseMetrics(bpm: number | null, quality?: number, timestampMs?: number): void;
     resetCalibration(): void;
+    resetSignal(): void;
     getStateSnapshot(): ReturnType<RppgProcessor["getStateSnapshot"]>;
     loadStateSnapshot(snapshot: unknown): void;
     getMetrics(): Metrics;
     getDebugSnapshot(nowMs?: number): RppgDebugSnapshot;
+    /**
+     * The trace the worker last sent: at most its newest 300 points (about 10 s at 30 a second),
+     * whatever `maxPoints` asks for, so a caller that needs a longer trace polls it.
+     */
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;
 }
 /**

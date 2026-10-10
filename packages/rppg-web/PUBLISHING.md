@@ -42,7 +42,7 @@ One line in the app's `package.json`, so every import keeps the official name (t
 this build's, as in this package's `package.json` and the README's install line):
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.16"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.17"
 ```
 
 ## Rules for every later test build

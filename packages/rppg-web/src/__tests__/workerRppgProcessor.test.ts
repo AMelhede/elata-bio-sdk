@@ -102,6 +102,62 @@ describe("WorkerRppgProcessor", () => {
 		viaWorker!.dispose();
 	});
 
+	test("starts the signal afresh in the worker, as a main-thread processor does", async () => {
+		const worker = await startInProcessWorker();
+		const viaWorker = await createWorkerRppgProcessor({
+			sampleRate: 30,
+			windowSec: 10,
+			createWorker: () => worker,
+		});
+		expect(viaWorker).not.toBeNull();
+		const direct = new RppgProcessor(fakeBackend() as never, 30, 10);
+		for (let i = 0; i < 150; i++) {
+			const t = 1000 + i * (1000 / 30);
+			const [r, g, b] = rgbAt(t);
+			direct.pushSampleRgb(t, r, g, b, 1);
+			viaWorker!.pushSampleRgb(t, r, g, b, 1);
+		}
+		expect(direct.getDebugSnapshot(7000).windowSampleCount).toBe(150);
+		direct.resetSignal();
+		viaWorker!.resetSignal();
+		expect(direct.getDebugSnapshot(7000).windowSampleCount).toBe(0);
+		expect(viaWorker!.getDebugSnapshot(7000)).toEqual(direct.getDebugSnapshot(7000));
+		expect(viaWorker!.getMetrics()).toEqual(direct.getMetrics());
+		viaWorker!.dispose();
+	});
+
+	test("a fatal engine error in the worker makes the next push throw, as on the main thread", async () => {
+		const { loadWasmBackend } = jest.requireMock("../wasmBackend") as { loadWasmBackend: jest.Mock };
+		let pushes = 0;
+		const poisoned = {
+			push_sample: () => {},
+			push_sample_rgb: () => {
+				if (++pushes >= 20) throw new Error("engine poisoned");
+			},
+			get_metrics: () => ({ bpm: 70, confidence: 0.9, signal_quality: 0.9 }),
+			enable_tracker: () => {},
+			free: () => {},
+		};
+		loadWasmBackend.mockImplementationOnce(async () => ({ newPipeline: () => poisoned }));
+		const worker = await startInProcessWorker();
+		const viaWorker = await createWorkerRppgProcessor({
+			sampleRate: 30,
+			windowSec: 10,
+			createWorker: () => worker,
+		});
+		expect(viaWorker).not.toBeNull();
+		const push = (i: number) => {
+			const t = 1000 + i * (1000 / 30);
+			const [r, g, b] = rgbAt(t);
+			viaWorker!.pushSampleRgb(t, r, g, b, 1);
+		};
+		for (let i = 0; i < 20; i++) push(i);
+		expect(viaWorker!.isBackendFailed()).toBe(true);
+		expect(() => push(20)).toThrow("engine poisoned");
+		expect(() => push(21)).toThrow("engine poisoned");
+		viaWorker!.dispose();
+	});
+
 	test("falls back (returns null) when the worker never loads the core", async () => {
 		jest.useFakeTimers();
 		const silent: WorkerLike = {

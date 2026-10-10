@@ -85,10 +85,9 @@ export declare class RppgAppAdapter {
     getSnapshot(source: RppgAppAdapterSource): RppgAppSnapshot;
 }
 export declare function createRppgAppAdapter(options?: CreateRppgAppAdapterOptions): RppgAppAdapter;
-type IntervalId = ReturnType<typeof setInterval>;
 type RppgAppMonitorInternals = {
-    setIntervalFn?: (handler: () => void, ms: number) => IntervalId;
-    clearIntervalFn?: (id: IntervalId) => void;
+    setIntervalFn?: typeof setInterval;
+    clearIntervalFn?: typeof clearInterval;
 };
 export declare class RppgAppMonitor {
     private readonly source;
