@@ -737,12 +737,6 @@ sync_create_elata_demo_versions_if_needed() {
         return 0
     fi
 
-    local eeg_web_version eeg_web_ble_version rppg_web_version ppg_web_version
-    eeg_web_version="$(package_version_for_target "eeg-web")"
-    eeg_web_ble_version="$(package_version_for_target "eeg-web-ble")"
-    rppg_web_version="$(package_version_for_target "rppg-web")"
-    ppg_web_version="$(package_version_for_target "ppg-web")"
-
     local changed="0"
     changed="$(node -e "
       const fs = require('node:fs');
@@ -750,15 +744,18 @@ sync_create_elata_demo_versions_if_needed() {
       const file = path.join(process.cwd(), '$pkg_dir', 'package.json');
       const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
       const next = { ...(pkg.elataSdkVersions || {}) };
-      const desired = {
-        eegWeb: '$eeg_web_version',
-        eegWebBle: '$eeg_web_ble_version',
-        rppgWeb: '$rppg_web_version',
-        ppgWeb: '$ppg_web_version',
-      };
+      // Every version the CLI carries follows the package it names (eegWebBle: packages/eeg-web-ble),
+      // so a version added for a new template cannot be left behind at a release.
       let didChange = false;
-      for (const [k, v] of Object.entries(desired)) {
-        if (next[k] !== v) { next[k] = v; didChange = true; }
+      for (const key of Object.keys(next)) {
+        const dir = key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+        const manifest = path.join(process.cwd(), 'packages', dir, 'package.json');
+        if (!fs.existsSync(manifest)) {
+          console.error('elataSdkVersions.' + key + ' names no package at packages/' + dir);
+          process.exit(2);
+        }
+        const version = JSON.parse(fs.readFileSync(manifest, 'utf8')).version;
+        if (next[key] !== version) { next[key] = version; didChange = true; }
       }
       if (didChange) {
         pkg.elataSdkVersions = next;

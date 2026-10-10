@@ -94,13 +94,45 @@ test('ships fallback SDK versions that match the repo package versions', () => {
 });
 
 test('every version the CLI reads has a packaged fallback', () => {
-  // 0.12.1 stopped at start for every template when run from npm (no monorepo siblings beside it):
+  // Every release from 0.3.1 to 0.12.1 crashed at start when run from npm (no app-metrics beside it):
   // index.mjs reads an appMetrics version that elataSdkVersions did not list.
   const cli = readFileSync(join(__dirname, 'index.mjs'), 'utf8');
   const read = [...cli.matchAll(/elataSdkVersions\?\.(\w+)/g)].map((m) => m[1]);
   assert.ok(read.length >= 5, `found only ${read.length} version reads`);
   for (const key of read) {
     assert.ok(scaffolderPackage.elataSdkVersions[key], `elataSdkVersions.${key} is read by the CLI but not packaged`);
+  }
+});
+
+test('the release sync keeps every packaged SDK version current', () => {
+  // Before publishing, scripts/run-lib.sh syncs elataSdkVersions with the repo's packages. A key
+  // the sync does not know goes stale at the next release, and the CLI then pins an old version
+  // (or, when the key was never written, cannot start at all).
+  const root = mkdtempSync(join(tmpdir(), 'create-elata-demo-sync-'));
+  try {
+    mkdirSync(join(root, 'scripts'));
+    writeFileSync(join(root, 'scripts', 'run-lib.sh'), readFileSync(join(__dirname, '..', '..', 'scripts', 'run-lib.sh')));
+    const dirs = ['create-elata-demo', 'eeg-web', 'eeg-web-ble', 'rppg-web', 'ppg-web', 'app-metrics'];
+    for (const dir of dirs) {
+      mkdirSync(join(root, 'packages', dir), { recursive: true });
+      const pkg = JSON.parse(readFileSync(join(__dirname, '..', dir, 'package.json'), 'utf8'));
+      // The next release: every SDK package one minor version on.
+      if (dir !== 'create-elata-demo') {
+        const [maj, min] = pkg.version.split('.').map(Number);
+        pkg.version = `${maj}.${min + 1}.0`;
+      }
+      writeFileSync(join(root, 'packages', dir, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
+    }
+    const run = spawnSync('bash', ['-c', 'source scripts/run-lib.sh && pnpm() { :; } && npm() { :; } && sync_create_elata_demo_versions_if_needed'], { cwd: root, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    const synced = JSON.parse(readFileSync(join(root, 'packages', 'create-elata-demo', 'package.json'), 'utf8')).elataSdkVersions;
+    for (const [key, version] of Object.entries(synced)) {
+      const dir = key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+      const current = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8')).version;
+      assert.equal(version, current, `elataSdkVersions.${key} was not synced`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
