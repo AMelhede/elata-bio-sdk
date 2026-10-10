@@ -852,6 +852,55 @@ guard_major_zerover() {
     esac
 }
 
+# `pnpm version` rewrites only the version of the package it runs in. Below 1.0 a caret
+# range takes one minor (^0.12.0 is >=0.12.0 <0.13.0), so after a minor bump a peer range
+# naming a bumped package refuses its new version, and npm will not install the two
+# together (ERESOLVE). Set every peer range that names a bumped package to ^<new version>,
+# as `changeset version` does on the ./run.sh bump path, in every workspace package
+# (biosignal-analytics peers on rppg-web but is not in the `all` set). Each range is
+# edited in place so the rest of the manifest keeps its formatting.
+sync_workspace_peer_ranges() {
+    require_cmds node
+    local pkg
+    local -a bumped=()
+    for pkg in "$@"; do
+        bumped+=("$(package_dir_for_target "$pkg")/package.json")
+    done
+    (
+        cd "$ROOT_DIR"
+        node -e '
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const bumped = new Map(process.argv.slice(1).map((file) => {
+            const { name, version } = JSON.parse(fs.readFileSync(file, "utf8"));
+            return [name, version];
+          }));
+          for (const dir of fs.readdirSync("packages")) {
+            const file = path.join("packages", dir, "package.json");
+            if (!fs.existsSync(file)) continue;
+            const original = fs.readFileSync(file, "utf8");
+            let text = original;
+            for (const [name, range] of Object.entries(JSON.parse(text).peerDependencies || {})) {
+              if (!bumped.has(name)) continue;
+              const next = "^" + bumped.get(name);
+              if (range === next) continue;
+              const start = text.indexOf("\"peerDependencies\"");
+              const end = text.indexOf("}", start);
+              const from = JSON.stringify(name) + ": " + JSON.stringify(range);
+              const to = JSON.stringify(name) + ": " + JSON.stringify(next);
+              text = text.slice(0, start) + text.slice(start, end).replace(from, to) + text.slice(end);
+              if (JSON.parse(text).peerDependencies[name] !== next) {
+                console.error(file + ": could not rewrite peer " + name + " " + range + " to " + next);
+                process.exit(2);
+              }
+              console.error("  -> " + file + ": peer " + name + " " + range + " -> " + next);
+            }
+            if (text !== original) fs.writeFileSync(file, text);
+          }
+        ' "${bumped[@]}"
+    )
+}
+
 bump_publish_packages() {
     local level="$1"
     local pkg
@@ -880,6 +929,7 @@ bump_publish_packages() {
             pnpm version "$level" --no-git-tag-version
         ) 1>&2
     done
+    sync_workspace_peer_ranges $(release_targets_for all) 1>&2 || return 1
 }
 
 resolve_release_target_and_dist_tag() {
@@ -1172,6 +1222,12 @@ release_commit_and_push_version_changes() {
         pkg_dir="$(package_dir_for_target "$pkg")"
         [[ -f "$ROOT_DIR/$pkg_dir/package.json" ]] && to_add+=("$ROOT_DIR/$pkg_dir/package.json")
         [[ -f "$ROOT_DIR/$pkg_dir/CHANGELOG.md" ]] && to_add+=("$ROOT_DIR/$pkg_dir/CHANGELOG.md")
+    done
+    # A semver bump also moves peer ranges in packages outside the release set
+    # (sync_workspace_peer_ranges), so commit every workspace manifest it may have edited.
+    local manifest
+    for manifest in "$ROOT_DIR"/packages/*/package.json; do
+        [[ -f "$manifest" ]] && to_add+=("$manifest")
     done
 
     if [[ ${#to_add[@]} -eq 0 ]]; then

@@ -219,15 +219,20 @@ for (const { manifest, relPath } of workspacePackages.values()) {
 	const devDependencies = manifest.devDependencies ?? {};
 
 	// A workspace package named as a peer must be installable at its current version: npm refuses a
-	// peer outside its range (ERESOLVE) and pnpm warns, so an app installing both breaks. A release
-	// that bumps a package has to move the peer ranges that name it.
+	// peer outside its range (ERESOLVE), and pnpm warns, or fails when it has to install the peer
+	// itself. A semver release moves these ranges (sync_workspace_peer_ranges in scripts/run-lib.sh);
+	// this catches any version or range changed another way.
 	for (const [depName, range] of Object.entries(peerDependencies)) {
 		const sibling = workspacePackages.get(depName);
 		if (!sibling) continue;
 		const takes = caretTakes(range, sibling.manifest.version);
 		assert(
-			takes !== null,
+			/^\^\d+\.\d+\.\d+$/.test(range),
 			`${relPath} names workspace peer '${depName}' with '${range}'; use a caret range (^x.y.z) the audit can check`,
+		);
+		assert(
+			/^\d+\.\d+\.\d+$/.test(sibling.manifest.version),
+			`${relPath} names workspace peer '${depName}', whose version ${sibling.manifest.version} is not x.y.z (a prerelease?); the audit cannot check it`,
 		);
 		assert(
 			takes !== false,

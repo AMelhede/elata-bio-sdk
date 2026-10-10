@@ -123,6 +123,14 @@ the commit/tags.
 
    Optional shorthand when you want a raw semver bump on **every** publishable package before publishing (same order as below): `./run.sh release patch`, `./run.sh release minor`, or `./run.sh release major`. Prefer `./run.sh bump` first when you are cutting a **Changesets** release so changelogs stay accurate.
 
+### Peer ranges
+
+A peer range that names a workspace package has to take that package's new version, or npm refuses to install the two together (ERESOLVE). Below 1.0 a caret range takes one minor, so `^0.12.0` refuses `0.13.0`.
+
+- `./run.sh release major|minor|patch` sets every workspace peer range that names a bumped package to `^<new version>`, in every package under `packages/`, and commits those manifests with the release.
+- `./run.sh bump` (Changesets) moves them too, but when the named package takes a minor or major bump it also bumps the package that declares the peer to a major, which takes a 0.x package to 1.0.0. Check the versions at step 2.
+- `pnpm run audit:repo` (in `pnpm lint`, `./run.sh doctor` and `verify:all`) fails while any workspace peer range does not take its sibling's current version.
+
 ### Release order
 
 Release order is fixed in `release_targets_for` (`scripts/run-lib.sh`): `eeg-web` → `eeg-web-ble` → `rppg-web` → `rppg-models-web` → `ppg-web` → `create-elata-demo` → `app-metrics` → `biosignal-session`.
