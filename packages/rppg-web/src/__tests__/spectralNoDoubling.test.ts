@@ -2,9 +2,7 @@ import { estimateDominantBpm } from "../pulseAnalysis";
 
 // A real pulse wave carries a strong second harmonic (the dicrotic notch). The estimator used
 // to jump to twice the strongest rate whenever that harmonic exceeded 35% of the peak below
-// 85 bpm, so a correct 70 read as 140. Measured with the built SDK on 255 MCD-rPPG recordings
-// with finger-sensor truth (POS fuser, frame grid on): right 49% of seconds with the jump,
-// 54% without; with the old CHROM fuser, 26% with and 27% without.
+// 85 bpm, so a correct 70 read as 140. The cases below are synthetic known answers.
 
 const fs = 30;
 const wave = (bpm: number, h2: number, seconds = 10) =>
