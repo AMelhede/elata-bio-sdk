@@ -294,41 +294,66 @@ describe("RppgAppAdapter", () => {
 	});
 });
 
-// A browser's built-in timers refuse to be called on any object but the window: Chromium throws
-// "Illegal invocation" for `o.f()` with `o = { f: setInterval }`. The monitor stored setInterval as
-// its own field and called it as a method, so createRppgAppMonitor(...).start() threw in Chromium.
-describe("createRppgAppMonitor in a browser", () => {
-	const realSet = globalThis.setInterval;
-	const realClear = globalThis.clearInterval;
+// WebIDL operations such as setInterval and clearInterval throw a TypeError
+// unless `this` is the global object or undefined (Chromium: "Illegal
+// invocation"). Node and jsdom do not enforce this, so these tests do, on top
+// of jest's fake timers, and check that the monitor really reports.
+describe("RppgAppMonitor with browser-strict timers", () => {
+	const realSetInterval = globalThis.setInterval;
+	const realClearInterval = globalThis.clearInterval;
+
+	const browserStrict = <T extends (...args: never[]) => unknown>(timer: T): T =>
+		function (this: unknown, ...args: Parameters<T>) {
+			if (this !== undefined && this !== globalThis) {
+				throw new TypeError("Illegal invocation");
+			}
+			return timer.apply(globalThis, args);
+		} as unknown as T;
+
+	beforeEach(() => {
+		jest.useFakeTimers();
+		globalThis.setInterval = browserStrict(globalThis.setInterval);
+		globalThis.clearInterval = browserStrict(globalThis.clearInterval);
+	});
+
 	afterEach(() => {
-		globalThis.setInterval = realSet;
-		globalThis.clearInterval = realClear;
+		jest.useRealTimers();
+		globalThis.setInterval = realSetInterval;
+		globalThis.clearInterval = realClearInterval;
 	});
 
-	it("starts and stops with the browser's own timers, called as the browser requires", () => {
-		const asBrowser = <T extends (...a: never[]) => unknown>(real: T) =>
-			function (this: unknown, ...args: Parameters<T>) {
-				if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
-				return real.apply(globalThis, args);
-			} as unknown as T;
-		globalThis.setInterval = asBrowser(realSet);
-		globalThis.clearInterval = asBrowser(realClear);
-		const monitor = createRppgAppMonitor(createSource(), { intervalMs: 1000 });
-		expect(() => monitor.start()).not.toThrow();
-		expect(() => monitor.stop()).not.toThrow();
+	function expectSnapshotsUntilStopped(monitor: RppgAppMonitor) {
+		const listener = jest.fn();
+		monitor.subscribe(listener);
+		monitor.start();
+		jest.advanceTimersByTime(650);
+		expect(listener).toHaveBeenCalledTimes(3);
+		expect(listener).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: "ready" }),
+		);
+
+		monitor.stop();
+		jest.advanceTimersByTime(650);
+		expect(listener).toHaveBeenCalledTimes(3);
+	}
+
+	test("createRppgAppMonitor reports every interval until stop()", () => {
+		expectSnapshotsUntilStopped(
+			createRppgAppMonitor(createSource(), {
+				nowMs: () => 1000,
+				intervalMs: 200,
+				emitImmediately: false,
+			}),
+		);
 	});
 
-	it("calls timers handed to the class the same way, so a browser's own timers work there too", () => {
-		const strict = <T extends (...a: never[]) => unknown>(real: T) =>
-			function (this: unknown, ...args: Parameters<T>) {
-				if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
-				return real.apply(globalThis, args);
-			} as unknown as T;
-		const monitor = new RppgAppMonitor(createSource(), { intervalMs: 1000 }, {
-			setIntervalFn: strict(realSet),
-			clearIntervalFn: strict(realClear),
-		});
-		expect(() => monitor.start()).not.toThrow();
-		expect(() => monitor.stop()).not.toThrow();
+	test("timers passed to the constructor are called the same way", () => {
+		expectSnapshotsUntilStopped(
+			new RppgAppMonitor(
+				createSource(),
+				{ nowMs: () => 1000, intervalMs: 200, emitImmediately: false },
+				{ setIntervalFn: setInterval, clearIntervalFn: clearInterval },
+			),
+		);
 	});
 });

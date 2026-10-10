@@ -423,8 +423,9 @@ export class RppgAppMonitor {
 
 	start() {
 		if (this.timer) return;
-		// Called as a plain function, not as `this.setIntervalFn(...)`: a browser's own timers throw
-		// "Illegal invocation" when called as a method of any object but the window.
+		// Plain call, not `this.setIntervalFn(...)`: WebIDL operations such as
+		// setInterval throw a TypeError unless `this` is the global object or
+		// undefined. stop() does the same for clearInterval.
 		const setIntervalFn = this.setIntervalFn;
 		this.timer = setIntervalFn(() => {
 			this.emit();

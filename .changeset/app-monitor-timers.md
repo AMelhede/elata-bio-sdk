@@ -2,4 +2,4 @@
 "@elata-biosciences/rppg-web": patch
 ---
 
-`createRppgAppMonitor(...).start()` no longer throws "Illegal invocation" in Chromium: the monitor called the browser's `setInterval` as a method of itself, which browsers refuse; it now calls the timer as a plain function, which also covers timers handed to the `RppgAppMonitor` constructor.
+`createRppgAppMonitor(...).start()` no longer throws a TypeError ("Illegal invocation" in Chromium) in browsers and Web Workers, so the monitor now emits snapshots on its interval: `start()` and `stop()` call `setInterval`/`clearInterval` as plain functions.
