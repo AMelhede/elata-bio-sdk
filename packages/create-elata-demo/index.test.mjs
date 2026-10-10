@@ -548,6 +548,31 @@ test('rppg template uses Vite URL assets instead of public pkg imports', () => {
   }
 });
 
+test('the test-release check fails when a template the CLI offers is missing', () => {
+  // The check listed whatever folders were on disk, so a package missing a whole starter passed it
+  // ("ready (4 templates)") and the CLI then crashed on that starter.
+  const copy = mkdtempSync(join(tmpdir(), 'create-elata-demo-check-'));
+  try {
+    cpSync(__dirname, copy, { recursive: true, filter: (src) => !src.includes('node_modules') });
+    rmSync(join(copy, 'templates', 'pulse-game'), { recursive: true, force: true });
+    const r = spawnSync(process.execPath, [join(copy, 'scripts', 'check-test-release.mjs')], { encoding: 'utf8', cwd: copy });
+    assert.notEqual(r.status, 0, r.stdout);
+    assert.match(r.stderr + r.stdout, /pulse-game/);
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('the game starter shows the pulse check\'s rate and calls signal quality what it is', () => {
+  const rppg = readFileSync(join(__dirname, 'templates', 'pulse-game', 'src', 'game', 'useRppg.ts'), 'utf8');
+  // The rate shown is the pulse check's, which the engine's rate tracker does not move.
+  assert.match(rppg, /enableTracker: false/);
+  const app = readFileSync(join(__dirname, 'templates', 'pulse-game', 'src', 'game', 'GameApp.tsx'), 'utf8');
+  // signal_quality scores skin, motion and clipping, not whether the rate is right.
+  assert.doesNotMatch(app, />\s*signal \{|Signal quality:/);
+  assert.match(app, /camera \{Math\.round\(currentSignalQuality \* 100\)\}%/);
+});
+
 test('fails on unknown template', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-'));
   try {

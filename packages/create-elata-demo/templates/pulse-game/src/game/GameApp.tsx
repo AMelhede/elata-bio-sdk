@@ -261,8 +261,11 @@ export default function GameApp() {
         <span className="bpm-value">
           {currentBpm != null ? Math.round(currentBpm) : '—'}
         </span>
-        <span className="bpm-quality">
-          signal {Math.round(currentSignalQuality * 100)}%
+        <span
+          className="bpm-quality"
+          title="Camera conditions: skin in view, little motion, no clipping. Not a check of the rate."
+        >
+          camera {Math.round(currentSignalQuality * 100)}%
         </span>
       </div>
 
@@ -381,7 +384,7 @@ function PhaseView(props: {
           <ul className="result-list">
             <li>Baseline: {Math.round(phase.result.baselineBpm)} BPM</li>
             <li>Peak: {Math.round(phase.result.peakBpm)} BPM</li>
-            <li>Signal quality: {phase.result.signalQualityPct}%</li>
+            <li>Camera conditions: {phase.result.signalQualityPct}%</li>
           </ul>
           <button className="btn" onClick={onReset}>
             Run another round

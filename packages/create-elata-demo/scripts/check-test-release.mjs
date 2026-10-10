@@ -39,10 +39,15 @@ if (!existsSync(licence)) {
 }
 if (!pkg.files?.includes("LICENSE")) problems.push("package.json files does not list LICENSE");
 
-// Every template the CLI offers is shipped, with the files a starter needs.
+// Every template the CLI offers is shipped, with the files a starter needs. The list is the CLI's own
+// (index.mjs's templates map), so a missing starter folder fails here instead of crashing the CLI.
 const templatesDir = path.join(root, "templates");
+const offered = [...readFileSync(path.join(root, "index.mjs"), "utf8").matchAll(/\bdir: '([^']+)'/g)].map((m) => m[1]);
 const templates = existsSync(templatesDir) ? readdirSync(templatesDir) : [];
-if (templates.length === 0) problems.push("no templates");
+if (offered.length === 0) problems.push("no templates found in index.mjs");
+for (const t of offered) {
+	if (!templates.includes(t)) problems.push(`templates/${t} is missing (the CLI offers it)`);
+}
 for (const t of templates) {
 	for (const f of ["package.json", "index.html", "vite.config.ts", "README.md", "_gitignore"]) {
 		if (!existsSync(path.join(templatesDir, t, f))) problems.push(`templates/${t}/${f} is missing`);
@@ -87,4 +92,5 @@ if (problems.length) {
 	console.error(`[create-elata-demo test release] NOT ready:\n  ${problems.join("\n  ")}`);
 	process.exit(1);
 }
-console.log(`[create-elata-demo test release] ${pkg.name}@${pkg.version}: ready (${templates.length} templates).`);
+// stderr, so `npm pack --json` output (prepack runs this) stays parseable.
+console.error(`[create-elata-demo test release] ${pkg.name}@${pkg.version}: ready (${templates.length} templates).`);

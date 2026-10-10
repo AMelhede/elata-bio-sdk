@@ -71,7 +71,8 @@ export function useRppg(videoRef: React.RefObject<HTMLVideoElement>) {
         faceMesh: 'auto',
         wasmJsUrl: rppgWasmJsUrl,
         wasmBinaryUrl: rppgWasmBinaryUrl,
-        enableTracker: { minBpm: 55, maxBpm: 150, numParticles: 200 },
+        // The rate shown is the pulse check's, which the engine's rate tracker does not move.
+        enableTracker: false,
         roiSmoothingAlpha: 0.25,
         useSkinMask: true,
       });
