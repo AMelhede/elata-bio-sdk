@@ -408,13 +408,18 @@ export class DemoRunner {
      * delivered/assumed. Each grid time between the previous frame and this one
      * gets the two frames' region means, linearly interpolated, so a slowed
      * camera reads close to the same rate as a full-rate one. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow camera:
-     * the grid restarts at the new frame instead of drawing a line across it.
+     * the grid restarts at the new frame instead of drawing a line across it. So does a timestamp that does not increase or
+     * is not a number; that frame is pushed at its own timestamp.
      */
     pushOnGrid(proc, cur, skinRatio, motion, clipRatio) {
         const step = 1000 / (this.opts.sampleRate ?? 30);
         const prev = this.gridPrev;
         const ticks = [];
-        if (!prev || cur.t <= prev.t || cur.t - prev.t > GRID_MAX_GAP_MS) {
+        // Stated as the one case that bridges, so a NaN timestamp (which fails every comparison)
+        // restarts the grid instead of becoming an interpolation weight that would leave NaN in
+        // the fuser's filters for the rest of the session.
+        const bridge = prev !== null && cur.t > prev.t && cur.t - prev.t <= GRID_MAX_GAP_MS;
+        if (!bridge) {
             ticks.push(cur);
             this.gridNextT = cur.t + step;
         }

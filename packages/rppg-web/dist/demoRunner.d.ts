@@ -180,7 +180,8 @@ export declare class DemoRunner {
      * delivered/assumed. Each grid time between the previous frame and this one
      * gets the two frames' region means, linearly interpolated, so a slowed
      * camera reads close to the same rate as a full-rate one. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow camera:
-     * the grid restarts at the new frame instead of drawing a line across it.
+     * the grid restarts at the new frame instead of drawing a line across it. So does a timestamp that does not increase or
+     * is not a number; that frame is pushed at its own timestamp.
      */
     private pushOnGrid;
     /**
