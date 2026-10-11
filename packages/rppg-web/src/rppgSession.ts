@@ -334,7 +334,8 @@ export class RppgSession {
 			return clearedMetrics(metrics, "no_face");
 		const check = this.internals.pulseCheck;
 		if (!check) return metrics;
-		// With the check on, the only number reported is the heart rate the check proved, or none.
+		// With the check on, `bpm` is the heart rate the check proved, or none. The engine's own
+		// estimates (the other *_bpm fields) and its confidence pass through as diagnostics.
 		// Breathing rate and HRV are withheld always: neither yet passes a known answer, even with
 		// the pulse proven (synthetic face, rate proven at 70, no breathing in the video: breathing
 		// read 14 to 21 in 42 of 42 seconds). Each comes back when it has a check of its own.
