@@ -18,6 +18,17 @@ assert_contains() {
     fi
 }
 
+assert_file_is() {
+    local file="$1" actual expected
+    shift
+    actual="$(<"$file")"
+    expected="$(printf '%s\n' "$@")"
+    if [[ "$actual" != "$expected" ]]; then
+        printf -- "---- expected %s ----\n%s\n---- actual ----\n%s\n----------------\n" "$file" "$expected" "$actual" >&2
+        exit 1
+    fi
+}
+
 run_and_capture_stderr() {
     local logfile="$1"
     shift
@@ -101,6 +112,26 @@ test_unlink_removes_only_link_overrides() {
     if [[ -e "$dir/only.yaml" ]]; then
         fail "override-only workspace file was not removed"
     fi
+
+    # Blank lines and comments inside the block do not end it. This is the layout pnpm 10.33.2
+    # writes when the app's own overrides are separated by a blank line: the link sorts first and
+    # the blank line follows it. The other overrides must stay under `overrides:`, not slide under
+    # the key above it.
+    printf '%s\n' "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
+        "  '@elata-biosciences/rppg-web': link:../rppg-web" "" "  react: 18.3.1" "  zod: 3.23.8" >"$dir/blank.yaml"
+    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/blank.yaml"
+    assert_file_is "$dir/blank.yaml" "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
+        "" "  react: 18.3.1" "  zod: 3.23.8"
+
+    printf '%s\n' "overrides:" "# pinned on purpose" "  '@elata-biosciences/rppg-web': link:../rppg-web" \
+        "  zod: 3.23.8" "packages:" "  - ." >"$dir/comment.yaml"
+    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/comment.yaml"
+    assert_file_is "$dir/comment.yaml" "overrides:" "# pinned on purpose" "  zod: 3.23.8" "packages:" "  - ."
+
+    # A comment after the key is still the key.
+    printf '%s\n' "packages:" "  - ." "overrides: # local builds" "  '@elata-biosciences/rppg-web': link:../rppg-web" >"$dir/keycomment.yaml"
+    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/keycomment.yaml"
+    assert_file_is "$dir/keycomment.yaml" "packages:" "  - ."
 
     rm -rf "$dir"
 }
