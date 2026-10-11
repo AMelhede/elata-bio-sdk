@@ -75,7 +75,7 @@ function autoOptions(wasmImporter: (url: string) => Promise<WasmModule>) {
 }
 
 describe("createRppgSession, backend auto, WASM glue that does not load", () => {
-	test("keeps the reason: the URLs the loader tried and the last import error", async () => {
+	test("keeps the reason: every URL the loader tried and why each one failed", async () => {
 		const importer = failingImporter();
 		const session = await createRppgSession(autoOptions(importer));
 
@@ -86,8 +86,37 @@ describe("createRppgSession, backend auto, WASM glue that does not load", () => 
 		const loadError = session.getDiagnostics().backendLoadError;
 		expect(loadError).toMatchObject({ code: "backend_init_failed", stage: "backend" });
 		expect(loadError?.message).toContain("Tried: /pkg/rppg_wasm.js, /rppg_wasm.js");
-		expect(String(loadError?.cause)).toContain(
-			"Failed to fetch dynamically imported module: /rppg_wasm.js",
+		for (const url of DEFAULT_URLS) {
+			expect(loadError?.message).toContain(
+				`${url}: TypeError: Failed to fetch dynamically imported module: ${url}`,
+			);
+		}
+		// The cause is what the loader threw: the same error backend "wasm" throws.
+		expect(loadError?.cause).toMatchObject({
+			name: "RppgWasmLoadError",
+			attemptedUrls: DEFAULT_URLS,
+		});
+		await session.dispose();
+	});
+
+	test("when the glue loads but its .wasm does not, the reason names that failure, not the next URL's", async () => {
+		// The glue is served at /pkg/ but its .wasm is not (an SPA answers with
+		// index.html), so init fails there and the loader moves on to
+		// /rppg_wasm.js, which is not served either.
+		const initFailure = new Error(
+			"WebAssembly.instantiate(): expected magic word 00 61 73 6d, found 3c 21 44 4f @+0",
+		);
+		const importer = jest.fn((url: string): Promise<WasmModule> =>
+			url === "/pkg/rppg_wasm.js"
+				? Promise.resolve({ default: () => Promise.reject(initFailure) })
+				: Promise.reject(new TypeError(`Failed to fetch dynamically imported module: ${url}`)),
+		);
+		const session = await createRppgSession(autoOptions(importer));
+
+		const expected = `/pkg/rppg_wasm.js: ${String(initFailure)}`;
+		expect(session.getDiagnostics().backendLoadError?.message).toContain(expected);
+		expect(normalizeRppgError(session.lastError, session.getDiagnostics())?.detail).toContain(
+			expected,
 		);
 		await session.dispose();
 	});
@@ -103,9 +132,13 @@ describe("createRppgSession, backend auto, WASM glue that does not load", () => 
 			terminal: false,
 		});
 		expect(normalized?.detail).toContain("Tried: /pkg/rppg_wasm.js, /rppg_wasm.js");
-		expect(normalized?.detail).toContain(
-			"Failed to fetch dynamically imported module: /rppg_wasm.js",
-		);
+		for (const url of DEFAULT_URLS) {
+			expect(normalized?.detail).toContain(
+				`${url}: TypeError: Failed to fetch dynamically imported module: ${url}`,
+			);
+		}
+		// Said once, not repeated from the cause.
+		expect(normalized?.detail.split("Unable to load rPPG WASM backend")).toHaveLength(2);
 
 		const snapshot = createRppgAppAdapter().getSnapshot(session);
 		expect(snapshot.status).toBe("degraded");

@@ -24,6 +24,11 @@ Check the following:
 Make sure your app is serving the packaged `pkg/rppg_wasm.js` and `.wasm`
 assets from a path the browser can reach.
 
+To see why, pass `{ strict: true }`: the loader then throws an error whose
+`attemptedUrls` and `errors` say which URLs it tried and what each one failed
+with. A session created with `createRppgSession({ backend: "auto" })` keeps the
+same information in `session.getDiagnostics().backendLoadError`.
+
 If you are unsure, compare your app with the scaffolded `rppg-demo` app.
 
 ## My app shows its own 404 page when played on app.elata.bio

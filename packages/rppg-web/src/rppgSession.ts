@@ -97,8 +97,9 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 	lastError: RppgSessionError | null;
 	/**
 	 * Why the WASM backend did not load when `backend: "auto"` fell back to
-	 * `backendMode: "unavailable"`: `message` lists the URLs the loader tried
-	 * and `cause` is the last import error. `null` when the backend loaded.
+	 * `backendMode: "unavailable"`: `message` lists each URL the loader tried
+	 * and the error it failed with, and `cause` is the loader's error (with
+	 * `attemptedUrls` and `errors`). `null` when the backend loaded.
 	 * Diagnostic only: it is not `lastError`, does not call `onError`, and does
 	 * not change `state`.
 	 */
@@ -548,7 +549,7 @@ async function resolveBackend(
 	loadError: RppgSessionError | null;
 }> {
 	// Strict in both modes: it tries the same URLs, but a failed load throws
-	// RppgWasmLoadError (the URLs tried and the last import error) instead of
+	// RppgWasmLoadError (the URLs tried and why each failed) instead of
 	// resolving null, so "auto" can keep the reason when it falls back.
 	try {
 		const backend = await loadWasmBackend(options.wasmImporter, {
@@ -566,9 +567,9 @@ async function resolveBackend(
 			loadError: {
 				code: "backend_init_failed",
 				stage: "backend",
-				message: cause instanceof Error ? cause.message : String(cause),
+				message: describeWasmLoadFailure(cause),
 				timestampMs: Date.now(),
-				cause: cause instanceof RppgWasmLoadError ? cause.lastError : cause,
+				cause,
 			},
 		};
 	}
@@ -577,6 +578,21 @@ async function resolveBackend(
 		mode: "unavailable",
 		loadError: null,
 	};
+}
+
+// The loader's message names the URLs; this adds what each one failed with.
+// The telling error is not always the last one: when the glue at the first URL
+// loads but its .wasm does not, the loader moves on and the last error is just
+// the next URL's 404.
+function describeWasmLoadFailure(error: unknown): string {
+	if (!(error instanceof RppgWasmLoadError)) {
+		return error instanceof Error ? error.message : String(error);
+	}
+	const failures = error.attemptedUrls.map((url, index) => {
+		const reason = error.errors[index];
+		return `${url}: ${reason === undefined ? "no error recorded" : String(reason)}`;
+	});
+	return `${error.message} Errors by URL: ${failures.join("; ")}`;
 }
 
 function applyTrackerConfiguration(

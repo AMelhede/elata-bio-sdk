@@ -49,7 +49,9 @@ export function normalizeRppgError(
 			code: "backend_unavailable",
 			phase: phaseFromDiagnostics(diagnostics?.state?.phase),
 			message: "rPPG is running without the WASM processor backend.",
-			detail: loadError ? `${detail} ${formatErrorDetail(loadError)}` : detail,
+			// The message already names each URL and its error; the cause is the
+			// loader's error, whose message would only repeat the first sentence.
+			detail: loadError ? `${detail} ${loadError.message}` : detail,
 			guidance:
 				"Serve the packaged WASM assets or pass wasmJsUrl, wasmBinaryUrl, or wasmImporter explicitly.",
 			retryable: false,
