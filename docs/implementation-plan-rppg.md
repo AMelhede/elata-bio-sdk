@@ -20,10 +20,11 @@ consumer-facing session APIs). Optional JS fallbacks can exist for web-only use.
 - [x] Identify target output metrics: `bpm`, `confidence`, `signal_quality`,
   agreement/debug evidence, and quality reason codes.
 - [~] Select baseline algorithms to port.
-  - Implemented: POS-style RGB pipeline, temporal normalization, Welch/SNR,
-    harmonic checks, autocorrelation/peaks/Bayesian helpers in the TS layer.
-  - Planned: CHROM and GREEN/GRGB as first-class Rust-side candidate views for
-    multi-ROI fusion.
+  - Implemented: RGB pipeline with CHROM's projection, temporal normalization,
+    Welch/SNR, harmonic checks, autocorrelation/peaks/Bayesian helpers in the TS
+    layer.
+  - Planned: POS, CHROM and GREEN/GRGB as first-class Rust-side candidate views
+    for multi-ROI fusion.
 - [ ] Capture or curate small internal test clips for regression.
 
 ## Phase 1: Rust DSP core
@@ -121,7 +122,7 @@ https://doi.org/10.1038/s43856-024-00519-6.
   - Compute heavier spectral quality/SNR on a cadence, e.g. once per second,
     not every frame.
 - [ ] Add classical candidate signals per region or region group.
-  - POS first, matching the current Rust pipeline.
+  - POS first. (The current Rust pipeline's projection is CHROM's, not POS.)
   - Add CHROM and GREEN/GRGB baselines as cheap additional views.
   - Consider LGI/ICA only after the POS+CHROM ensemble is measured.
 - [ ] Add deterministic fusion before BPM estimation.

@@ -80,7 +80,7 @@ browser video
   -> average RGB/green from ROI(s)
   -> RppgProcessor
   -> WASM RppgPipeline
-  -> POS-style Rust pipeline
+  -> Rust colour projection (CHROM axes and sign)
   -> temporal normalization, bandpass, Welch/SNR, harmonic selection
   -> metrics
 ```
@@ -300,12 +300,14 @@ Start with cheap classical views:
 
 **POS**
 
-- Current Rust pipeline already uses a POS-style RGB projection.
+- Add as a second RGB projection method. The current Rust pipeline's projection
+  uses CHROM's axes and sign, not POS (see CHROM).
 - First-class baseline for the multi-ROI path.
 
 **CHROM**
 
-- Add as a second RGB projection method.
+- Current Rust pipeline already uses CHROM's axes and X - alpha * Y over 1.6 s
+  windows, without CHROM's band-pass before alpha.
 - Often strong under skin-tone and illumination changes.
 - Cheap enough for Rust/WASM.
 
