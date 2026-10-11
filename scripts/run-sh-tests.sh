@@ -80,15 +80,27 @@ test_unknown_command_still_shows_usage() {
     assert_contains "$out" "Usage:"
 }
 
+unlink_overrides() {
+    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$1"
+}
+
+# Writes <app>/pnpm-workspace.yaml from the remaining arguments, one line each.
+write_workspace_file() {
+    local app="$1"
+    shift
+    mkdir -p "$app"
+    printf '%s\n' "$@" >"$app/pnpm-workspace.yaml"
+}
+
 test_unlink_removes_only_link_overrides() {
     local dir out
     dir="$(mktemp -d)"
 
     # A starter's own workspace file after `pnpm link`: the link goes, everything else stays.
-    printf '%s\n' "# comment" "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
-        "  '@elata-biosciences/rppg-web': link:../../elata-bio-sdk/packages/rppg-web" >"$dir/starter.yaml"
-    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/starter.yaml"
-    out="$(<"$dir/starter.yaml")"
+    write_workspace_file "$dir/starter" "# comment" "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
+        "  '@elata-biosciences/rppg-web': link:../../elata-bio-sdk/packages/rppg-web"
+    unlink_overrides "$dir/starter"
+    out="$(<"$dir/starter/pnpm-workspace.yaml")"
     assert_contains "$out" "packages:"
     assert_contains "$out" "esbuild: true"
     if [[ "$out" == *"link:"* || "$out" == *"overrides:"* ]]; then
@@ -96,9 +108,9 @@ test_unlink_removes_only_link_overrides() {
     fi
 
     # Another override in the same block is kept, with its key.
-    printf '%s\n' "overrides:" "  foo: 1.2.3" "  '@elata-biosciences/eeg-web': link:../eeg-web" "packages:" "  - ." >"$dir/mixed.yaml"
-    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/mixed.yaml"
-    out="$(<"$dir/mixed.yaml")"
+    write_workspace_file "$dir/mixed" "overrides:" "  foo: 1.2.3" "  '@elata-biosciences/eeg-web': link:../eeg-web" "packages:" "  - ."
+    unlink_overrides "$dir/mixed"
+    out="$(<"$dir/mixed/pnpm-workspace.yaml")"
     assert_contains "$out" "overrides:"
     assert_contains "$out" "foo: 1.2.3"
     assert_contains "$out" "packages:"
@@ -107,9 +119,9 @@ test_unlink_removes_only_link_overrides() {
     fi
 
     # The override-only file pnpm creates for an app without a workspace file is removed.
-    printf '%s\n' "overrides:" "  '@elata-biosciences/rppg-web': link:../rppg-web" >"$dir/only.yaml"
-    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/only.yaml"
-    if [[ -e "$dir/only.yaml" ]]; then
+    write_workspace_file "$dir/only" "overrides:" "  '@elata-biosciences/rppg-web': link:../rppg-web"
+    unlink_overrides "$dir/only"
+    if [[ -e "$dir/only/pnpm-workspace.yaml" ]]; then
         fail "override-only workspace file was not removed"
     fi
 
@@ -117,21 +129,47 @@ test_unlink_removes_only_link_overrides() {
     # writes when the app's own overrides are separated by a blank line: the link sorts first and
     # the blank line follows it. The other overrides must stay under `overrides:`, not slide under
     # the key above it.
-    printf '%s\n' "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
-        "  '@elata-biosciences/rppg-web': link:../rppg-web" "" "  react: 18.3.1" "  zod: 3.23.8" >"$dir/blank.yaml"
-    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/blank.yaml"
-    assert_file_is "$dir/blank.yaml" "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
+    write_workspace_file "$dir/blank" "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
+        "  '@elata-biosciences/rppg-web': link:../rppg-web" "" "  react: 18.3.1" "  zod: 3.23.8"
+    unlink_overrides "$dir/blank"
+    assert_file_is "$dir/blank/pnpm-workspace.yaml" "packages:" "  - ." "allowBuilds:" "  esbuild: true" "overrides:" \
         "" "  react: 18.3.1" "  zod: 3.23.8"
 
-    printf '%s\n' "overrides:" "# pinned on purpose" "  '@elata-biosciences/rppg-web': link:../rppg-web" \
-        "  zod: 3.23.8" "packages:" "  - ." >"$dir/comment.yaml"
-    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/comment.yaml"
-    assert_file_is "$dir/comment.yaml" "overrides:" "# pinned on purpose" "  zod: 3.23.8" "packages:" "  - ."
+    write_workspace_file "$dir/comment" "overrides:" "# pinned on purpose" "  '@elata-biosciences/rppg-web': link:../rppg-web" \
+        "  zod: 3.23.8" "packages:" "  - ."
+    unlink_overrides "$dir/comment"
+    assert_file_is "$dir/comment/pnpm-workspace.yaml" "overrides:" "# pinned on purpose" "  zod: 3.23.8" "packages:" "  - ."
 
     # A comment after the key is still the key.
-    printf '%s\n' "packages:" "  - ." "overrides: # local builds" "  '@elata-biosciences/rppg-web': link:../rppg-web" >"$dir/keycomment.yaml"
-    RUN_SH_INTERNAL_TEST=1 "$ROOT_DIR/run.sh" __selftest_unlink_overrides "$dir/keycomment.yaml"
-    assert_file_is "$dir/keycomment.yaml" "packages:" "  - ."
+    write_workspace_file "$dir/keycomment" "packages:" "  - ." "overrides: # local builds" "  '@elata-biosciences/rppg-web': link:../rppg-web"
+    unlink_overrides "$dir/keycomment"
+    assert_file_is "$dir/keycomment/pnpm-workspace.yaml" "packages:" "  - ."
+
+    # pnpm 10 writes the link into package.json's pnpm.overrides instead when package.json has a
+    # "pnpm" field. That link goes too; the other override, the rest of the field and a dependency
+    # the app itself declares as link: stay, and so does the file's indentation.
+    mkdir -p "$dir/pkg" "$dir/pkgonly"
+    printf '%s\n' '{' '  "name": "app",' '  "dependencies": {' '    "local-thing": "link:../local-thing"' '  },' \
+        '  "pnpm": {' '    "onlyBuiltDependencies": [' '      "esbuild"' '    ],' '    "overrides": {' \
+        '      "@elata-biosciences/rppg-web": "link:../rppg-web",' '      "zod": "3.23.8"' '    }' '  }' '}' >"$dir/pkg/package.json"
+    unlink_overrides "$dir/pkg"
+    assert_file_is "$dir/pkg/package.json" '{' '  "name": "app",' '  "dependencies": {' '    "local-thing": "link:../local-thing"' '  },' \
+        '  "pnpm": {' '    "onlyBuiltDependencies": [' '      "esbuild"' '    ],' '    "overrides": {' '      "zod": "3.23.8"' '    }' '  }' '}'
+
+    # An overrides object, and then a pnpm field, left empty are dropped, like the workspace key.
+    printf '{\n\t"name": "app",\n\t"pnpm": {\n\t\t"overrides": {\n\t\t\t"@elata-biosciences/rppg-web": "link:../rppg-web"\n\t\t}\n\t}\n}\n' >"$dir/pkgonly/package.json"
+    unlink_overrides "$dir/pkgonly"
+    assert_file_is "$dir/pkgonly/package.json" '{' $'\t"name": "app"' '}'
+
+    # A link this cannot edit (overrides written inline) fails loudly instead of being reported as
+    # unlinked, and the file is left as it was.
+    write_workspace_file "$dir/inline" "packages:" "  - ." "overrides: { '@elata-biosciences/rppg-web': 'link:../rppg-web' }"
+    run_and_capture_stderr "$dir/inline.err" unlink_overrides "$dir/inline"
+    if [[ "$RUN_SH_TEST_RC" -eq 0 ]]; then
+        fail "unlink reported success with an inline link override left in place"
+    fi
+    assert_contains "$(<"$dir/inline.err")" "link:"
+    assert_file_is "$dir/inline/pnpm-workspace.yaml" "packages:" "  - ." "overrides: { '@elata-biosciences/rppg-web': 'link:../rppg-web' }"
 
     rm -rf "$dir"
 }
