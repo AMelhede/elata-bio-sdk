@@ -82,8 +82,9 @@ describe("check-test-release.mjs applies the release scrub to what ships", () =>
 	it("says ready for a package with nothing in it that may not ship", () => {
 		made = throwawayPackage();
 		const r = check(made.root);
-		expect(r.stderr).toBe("");
-		expect(r.stdout).toContain(`@amelhede/rppg-web@${VERSION}: ready`);
+		// stdout stays empty: npm runs this before `npm pack --json`, whose JSON goes to stdout.
+		expect(r.stdout).toBe("");
+		expect(r.stderr).toContain(`@amelhede/rppg-web@${VERSION}: ready`);
 		expect(r.status).toBe(0);
 	});
 
@@ -153,7 +154,8 @@ describe("check-test-release.mjs refuses a dist built from other source", () => 
 		fs.appendFileSync(path.join(made.root, "src", "__tests__", "a.test.ts"), "test.todo('b');\n");
 		fs.writeFileSync(path.join(made.root, "src", "index.ts"), "export const a = 1;\r\n");
 		const r = check(made.root);
-		expect(r.stderr).toBe("");
+		expect(r.stderr).not.toContain("NOT ready");
+		expect(r.stderr).toContain(`@amelhede/rppg-web@${VERSION}: ready`);
 		expect(r.status).toBe(0);
 	});
 });

@@ -163,4 +163,5 @@ if (problems.length) {
 	console.error(`[rppg-web test release] NOT ready:\n  ${problems.join("\n  ")}`);
 	process.exit(1);
 }
-console.log(`[rppg-web test release] ${pkg.name}@${pkg.version}: ready (${shipped.length} files checked).`);
+// stderr, so `npm pack --json` output (prepack runs this) stays parseable.
+console.error(`[rppg-web test release] ${pkg.name}@${pkg.version}: ready (${shipped.length} files checked).`);
