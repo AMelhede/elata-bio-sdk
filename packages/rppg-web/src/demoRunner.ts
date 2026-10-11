@@ -102,7 +102,8 @@ export type DemoRunnerOptions = {
 	fusionProjection?: FusionProjection;
 	/**
 	 * Face tracking is on. With the `noFaceNoReading` fix switch on, a frame with no face is
-	 * then dropped instead of read. Otherwise the runner reads a 100x100 square in the middle
+	 * then dropped (drop reason `no_face`) instead of read. createRppgSession turns it on in
+	 * face_mesh mode without an explicit `roi`, unless the caller sets it. Otherwise the runner reads a 100x100 square in the middle
 	 * of the frame, which is right for whole-frame mode and wrong with face tracking on: every
 	 * published rppg-web (0.1.1 to 0.14.0) then kept reporting a heart rate from a plain wall
 	 * (27 of 41 seconds on real wall footage, demo settings).
@@ -275,7 +276,10 @@ export class DemoRunner {
 		}
 	}
 
-	/** How long no face has been in view as of `nowMs` (0 while a face is in view). */
+	/**
+	 * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the
+	 * clock of `Frame.timestampMs`; by default it is the timestamp of the latest frame without a face.
+	 */
 	faceAbsentMs(nowMs: number = this.noFaceLastMs ?? 0): number {
 		return this.noFaceSinceMs == null
 			? 0

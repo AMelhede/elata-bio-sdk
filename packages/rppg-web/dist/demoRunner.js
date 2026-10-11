@@ -101,7 +101,10 @@ export class DemoRunner {
             this.fuser = new MultiRoiRppgFuser(opts.sampleRate ?? 30, 8, 0.5, opts.fusionProjection ?? (this.fixes.posFusion ? "pos" : "chrom"));
         }
     }
-    /** How long no face has been in view as of `nowMs` (0 while a face is in view). */
+    /**
+     * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the
+     * clock of `Frame.timestampMs`; by default it is the timestamp of the latest frame without a face.
+     */
     faceAbsentMs(nowMs = this.noFaceLastMs ?? 0) {
         return this.noFaceSinceMs == null
             ? 0
