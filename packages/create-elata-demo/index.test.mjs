@@ -81,6 +81,14 @@ function copyPackedFiles(fromDir, toDir) {
   }
 }
 
+// Each template is a directory. A stray file beside them, such as the .DS_Store macOS Finder
+// leaves, is not a template, and npm does not pack it.
+function templateNamesIn(packageDir) {
+  return readdirSync(join(packageDir, 'templates'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+}
+
 function* filesUnder(dir) {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
@@ -263,7 +271,7 @@ test('scaffolds every template from packaged contents without monorepo siblings'
   try {
     const packagedDir = join(tmp, 'pkg');
     copyPackedFiles(__dirname, packagedDir);
-    const templateNames = readdirSync(join(packagedDir, 'templates'));
+    const templateNames = templateNamesIn(packagedDir);
     assert.ok(templateNames.length > 0);
 
     for (const templateName of templateNames) {
@@ -305,6 +313,14 @@ test('the publish check refuses a package that cannot scaffold from its packed f
 
   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-publish-check-'));
   try {
+    // A file beside the templates, such as the .DS_Store macOS Finder leaves (git ignores it and
+    // npm does not pack it), is not a template and must not stop a release.
+    const strayFile = join(tmp, 'stray-file');
+    copyPackedFiles(__dirname, strayFile);
+    writeFileSync(join(strayFile, 'templates', '.DS_Store'), '');
+    const tolerated = check(strayFile);
+    assert.strictEqual(tolerated.status, 0, tolerated.stderr);
+
     // As 0.3.1 to 0.12.1 shipped: no appMetrics fallback.
     const noFallback = join(tmp, 'no-fallback');
     copyPackedFiles(__dirname, noFallback);

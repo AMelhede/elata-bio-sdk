@@ -59,7 +59,13 @@ try {
 	}
 
 	const cli = path.join(packed, manifest.bin["create-elata-demo"]);
-	templates = readdirSync(path.join(packed, "templates"));
+	// Each template is a directory. A stray file beside them, such as the .DS_Store macOS
+	// Finder leaves, is not a template, and npm does not pack it.
+	templates = readdirSync(path.join(packed, "templates"), {
+		withFileTypes: true,
+	})
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name);
 	for (const template of templates) {
 		const app = `app-${template}`;
 		const run = spawnSync(
