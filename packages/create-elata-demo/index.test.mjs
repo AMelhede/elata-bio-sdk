@@ -558,6 +558,33 @@ test('the test-release check fails when a template the CLI offers is missing', (
   }
 });
 
+test("the publish check finds the starters' versions on npm where a bare `npm` cannot be started (Windows)", () => {
+  // npm on Windows is npm.cmd, which Node starts only through a shell, so spawnSync('npm') found nothing there and the
+  // check called every version missing, refusing the publish PUBLISHING.md runs from PowerShell. npm names its own CLI
+  // script in npm_execpath when it runs prepublishOnly. Here PATH holds no npm, as a shell-less spawn sees Windows.
+  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-npmview-'));
+  try {
+    const emptyPath = join(tmp, 'bin');
+    mkdirSync(emptyPath);
+    // Stands in for npm's CLI: answers `npm view <name>@<version> version --json` with that version.
+    const cli = join(tmp, 'npm-cli.js');
+    writeFileSync(
+      cli,
+      "const [cmd, spec, field, json] = process.argv.slice(2);\n" +
+        "if (cmd !== 'view' || field !== 'version' || json !== '--json') process.exit(2);\n" +
+        "console.log(JSON.stringify(spec.slice(spec.lastIndexOf('@') + 1)));\n",
+    );
+    const r = spawnSync(process.execPath, [join(__dirname, 'scripts', 'check-test-release.mjs'), '--publish'], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: emptyPath, npm_execpath: cli, npm_config_tag: 'test' },
+    });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /: ready/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('the game starter shows the pulse check\'s rate and calls signal quality what it is', () => {
   const rppg = readFileSync(join(__dirname, 'templates', 'pulse-game', 'src', 'game', 'useRppg.ts'), 'utf8');
   // The rate shown is the pulse check's, which the engine's rate tracker does not move.

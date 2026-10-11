@@ -61,6 +61,21 @@ for (const key of ["eegWeb", "eegWebBle", "rppgWeb", "ppgWeb", "appMetrics"]) {
 	if (!versions[key]) problems.push(`elataSdkVersions.${key} is not set`);
 }
 
+/**
+ * `npm view <spec> version --json`. npm on Windows is npm.cmd, which Node starts only through a shell
+ * (nodejs.org/api/child_process.html, "Spawning .bat and .cmd files on Windows"), so a bare spawn of `npm`
+ * finds nothing there. When npm runs this script (prepublishOnly), npm_execpath names its own CLI script,
+ * which runs with this Node on every system; run by hand on Windows, it goes through cmd.exe.
+ */
+function npmView(spec) {
+	const args = ["view", spec, "version", "--json"];
+	const options = { encoding: "utf8", timeout: 60_000 };
+	const cli = process.env.npm_execpath;
+	if (cli && /npm-cli\.[cm]?js$/.test(cli)) return spawnSync(process.execPath, [cli, ...args], options);
+	if (process.platform === "win32") return spawnSync("cmd.exe", ["/d", "/s", "/c", ["npm", ...args].join(" ")], options);
+	return spawnSync("npm", args, options);
+}
+
 if (process.argv.includes("--publish")) {
 	const tag = process.env.npm_config_tag ?? "latest";
 	if (tag === "latest") problems.push("npm tag is 'latest': publish with --tag test (see PUBLISHING.md)");
@@ -76,7 +91,7 @@ if (process.argv.includes("--publish")) {
 		const name = alias ? alias[1] : names[key];
 		const version = alias ? alias[2] : spec;
 		if (!name) continue;
-		const r = spawnSync("npm", ["view", `${name}@${version}`, "version", "--json"], { encoding: "utf8", timeout: 60_000 });
+		const r = npmView(`${name}@${version}`);
 		let found = null;
 		try {
 			found = JSON.parse(r.stdout || "null");
