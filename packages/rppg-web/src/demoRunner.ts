@@ -127,9 +127,9 @@ export type DemoRunnerError = {
 };
 
 /**
- * How long without a face (face tracking on) before the session stops reporting, and the signal
- * starts afresh when the face returns. Longer than a face finder's brief misses: the longest
- * interruption mid-capture on our own recordings of still people at a webcam was 733 ms.
+ * How long without a face (face tracking on) before the session stops reporting; when the face
+ * returns after at least this long, the signal starts afresh. Long enough to ride out a face
+ * finder's brief misses on a face that is still in view.
  */
 export const FACE_GONE_RESET_MS = 1000;
 
@@ -187,7 +187,10 @@ export class DemoRunner {
 		}
 	}
 
-	/** How long no face has been in view as of `nowMs` (0 while a face is in view). */
+	/**
+	 * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the
+	 * clock of `Frame.timestampMs`; by default it is the timestamp of the latest frame without a face.
+	 */
 	faceAbsentMs(nowMs: number = this.noFaceLastMs ?? 0): number {
 		return this.noFaceSinceMs == null
 			? 0

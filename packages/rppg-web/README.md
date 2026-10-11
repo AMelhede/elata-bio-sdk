@@ -321,13 +321,16 @@ sample count if you want to show a progress indicator.
 
 **No face, no reading:** in `face_mesh` mode (without an explicit `roi`), a frame
 in which the face finder found no face is dropped (`lastDropReason: "no_face"`,
-`roiSource: null`) instead of being read from the centre of the frame. After one
-second with no face, `getMetrics()` reports no heart rate, HRV or breathing
-(`bpm: null`, `confidence: 0`, reason code `no_face`); a shorter miss keeps the
-last reading. When the face returns after that second, the signal starts afresh,
-so the next reading is measured only on frames from after the gap. Pass
-`requireFace: false` to keep the previous behaviour; `video_frame` mode and an
-explicit `roi` are unchanged.
+`roiSource: null`, no `onStats` call) instead of being read from the centre of
+the frame. After one second with no face, `session.getMetrics()` reports no
+reading: `bpm: null`, `confidence: 0` and every other estimate cleared as for a
+failed backend, with reason code `no_face`; the rolling baseline and calibration
+state are kept. A shorter miss keeps the last reading. When the face returns
+after that second, the sample window and the engine pipeline start afresh, so
+the window's estimates use only frames from after the gap and the reading comes
+back once the window has refilled; the Bayesian tracker, the rate history,
+calibration and the baseline carry over. Pass `requireFace: false` to keep the
+previous behaviour; `video_frame` mode and an explicit `roi` are unchanged.
 
 **FaceMesh fallback:** `faceMesh: "auto"` falls back to `video_frame` mode if
 MediaPipe fails to load. Check `diagnostics.faceTrackingMode` to see which
