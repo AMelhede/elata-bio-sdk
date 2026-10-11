@@ -66,9 +66,9 @@ Before changing release docs, verify the package set against current
 - Docs that mention onboarding: verify `create-elata-demo` guidance and workspace caveats
 
 `./run.sh test create-elata-demo` runs the Node test suite in
-`packages/create-elata-demo`, including a smoke build for **each** of the three
-templates (`rppg-demo`, `eeg-demo`, `eeg-ble`): scaffold to a temp directory,
-`pnpm install`, and `pnpm run build`.
+`packages/create-elata-demo`, including a smoke build for **each** of the five
+templates (`rppg-demo`, `ppg-demo`, `eeg-demo`, `eeg-ble`, `pulse-game`): scaffold
+to a temp directory, `pnpm install`, and `pnpm run build`.
 
 ## Workspace Caveat
 
