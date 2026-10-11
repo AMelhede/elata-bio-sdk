@@ -111,6 +111,11 @@ describe('@elata-biosciences/rppg-web exports', () => {
     expect(typeof rppgWeb.replayBayesSession).toBe('function');
   });
 
+  test('exports PosPulseModel as a constructor', () => {
+    expect(rppgWeb.PosPulseModel).toBeDefined();
+    expect(typeof rppgWeb.PosPulseModel).toBe('function');
+  });
+
   test('has no unexpected undefined exports', () => {
     const expectedKeys = [
       'RppgProcessor',

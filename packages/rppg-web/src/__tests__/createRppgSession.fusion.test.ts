@@ -135,10 +135,11 @@ describe("createRppgSession default multi-region fusion", () => {
 			const r = rng(seed);
 			for (let i = 0; i < SECONDS * FS; i++) source.onFrame(frameAt(i, r));
 
-			// Every one of the last 10 s of samples came from the fuser.
+			// Every sample the processor received came from the fuser, from the first frame on.
 			const diagnostics = session.getDiagnostics();
 			expect(diagnostics.processorMethod).toBe("fused");
-			expect(diagnostics.framesWithFusion).toBeGreaterThanOrEqual(10 * FS);
+			expect(diagnostics.framesWithFusion).toBe(SECONDS * FS);
+			expect(diagnostics.totalSamplesReceived).toBe(SECONDS * FS);
 			const fused = session
 				.getTraceSnapshot(10 * FS)
 				.points.map((point) => point.intensity);
