@@ -73,6 +73,33 @@ describe('DemoRunner feeds the fuser and processor at the rate they were built f
     expect(ts.filter((t) => t > 1100 && t < 2500)).toEqual([]);
   });
 
+  test('a clock that starts again from zero (a looping video file) keeps feeding the processor', async () => {
+    // Each frame whose timestamp does not increase restarts the grid at its own time, as on
+    // main. Waiting for the clock to pass the old grid time instead would push nothing for as
+    // long as the first run lasted.
+    const ts = await run([...framesAt(30, 30, 1000), ...framesAt(30, 30, 0)]);
+    const afterRestart = ts.filter((t) => t < 1000);
+    expect(afterRestart).toHaveLength(30);
+    expect(afterRestart[0]).toBe(0);
+  });
+
+  test('stop and start do not draw a line back to the previous run', async () => {
+    const src = new MockFrameSource();
+    const order: number[] = [];
+    const push = (t: number) => { order.push(t); };
+    const proc = { pushFusedSample: jest.fn(push), pushSampleRgbMeta: jest.fn(push), getMetrics: jest.fn() };
+    const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30 });
+    await runner.start();
+    src.emit(skinFrame(1000));
+    src.emit(skinFrame(1000 + 1000 / 30));
+    await runner.stop();
+    order.length = 0;
+    await runner.start();
+    src.emit(skinFrame(1100 + 1000 / 30));
+    await runner.stop();
+    expect(order).toEqual([1100 + 1000 / 30]);
+  });
+
   test('a grid time halfway between two frames gets each region halfway between them', async () => {
     const spy = jest.spyOn(MultiRoiRppgFuser.prototype, 'pushFrame');
     try {
@@ -209,6 +236,8 @@ describe('a processor without pushFusedSample still gets every grid sample', () 
     [1000, 1000 + 1000 / 30, 1000 + 1000 / 15].forEach((t, i) => expect(times[i]).toBeCloseTo(t, 6));
     expect(greenOf(calls[1])).toBeCloseTo(145 / 255, 6);
     expect(runner.getDiagnostics().lastProcessorMethod).toBe(expectedMethod);
+    // Both frames went through the fuser's grid, but none of its output reached the processor.
+    expect(runner.getDiagnostics().framesWithFusion).toBe(0);
     expect(runner.getLastError()).toBeNull();
   });
 
