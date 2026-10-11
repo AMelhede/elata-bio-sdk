@@ -57,6 +57,48 @@ describe("readings built on the spectral rate", () => {
 		expect(Math.abs(analysis!.peaks!.bpm - 60)).toBeLessThan(3);
 	});
 
+	// Beat timing for HRV is centred on the spectral rate. The pulse below wanders in phase by
+	// 0.3 rad at 0.25 Hz, so its beat-to-beat intervals vary by a known amount: the true RMSSD
+	// comes from solving for the beat times directly. Tolerance 30%: across 50 to 84 bpm this
+	// pulse reads 11 to 27% low with the fix, and up to four times high around a doubled centre.
+	test.each([
+		[60, 0.5],
+		[72, 0.4],
+	])("analyzePulseWindow's HRV matches the known RMSSD of a %i bpm pulse (harmonic %f)", (bpm, h2) => {
+		const seconds = 10;
+		const phase = (t: number) =>
+			2 * Math.PI * (bpm / 60) * t + 0.3 * Math.sin(2 * Math.PI * 0.25 * t);
+		const samples = Array.from({ length: fs * seconds }, (_, i) => {
+			const p = phase(i / fs);
+			return {
+				timestampMs: (i * 1000) / fs,
+				intensity: Math.sin(p) + h2 * Math.sin(2 * p + 0.8),
+				skinRatio: 0.9,
+				motion: 0.01,
+				clipRatio: 0.01,
+			};
+		});
+		// One beat per cycle of the phase (it only increases), found by bisection.
+		const beats: number[] = [];
+		for (let k = 0; phase(seconds) >= 2 * Math.PI * k + Math.PI / 2; k++) {
+			let lo = 0;
+			let hi = seconds;
+			for (let i = 0; i < 60; i++) {
+				const mid = (lo + hi) / 2;
+				if (phase(mid) < 2 * Math.PI * k + Math.PI / 2) lo = mid;
+				else hi = mid;
+			}
+			beats.push(lo * 1000);
+		}
+		const ibis = beats.slice(1).map((t, i) => t - beats[i]);
+		const diffs = ibis.slice(1).map((ibi, i) => ibi - ibis[i]);
+		const trueRmssd = Math.sqrt(diffs.reduce((acc, d) => acc + d * d, 0) / diffs.length);
+
+		const analysis = analyzePulseWindow(samples);
+		expect(analysis?.hrvRmssd).not.toBeNull();
+		expect(Math.abs(analysis!.hrvRmssd! - trueRmssd)).toBeLessThan(0.3 * trueRmssd);
+	});
+
 	const idleBackend = () => {
 		const metrics = () => ({ bpm: null, confidence: 0.1, signal_quality: 0.9 });
 		const pipeline = {
