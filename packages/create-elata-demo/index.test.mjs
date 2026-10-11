@@ -626,6 +626,60 @@ test("the publish check finds the starters' versions on npm where a bare `npm` c
   }
 });
 
+test("the package's own prepack, prepublishOnly and verify:publish lines refuse a package missing a starter", () => {
+  // npm runs prepack (npm pack, npm publish) and prepublishOnly (npm publish) as script lines in a shell, and the repo's
+  // release flow runs verify:publish. The tests above call scripts/check-test-release.mjs directly, so dropping it, or
+  // its --publish flag, from those lines left every test green. Run the lines themselves, in a copy laid out like the
+  // repo, on this package and on one with a starter missing.
+  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-lines-'));
+  try {
+    const repoRoot = join(__dirname, '..', '..');
+    cpSync(join(repoRoot, 'LICENSE'), join(tmp, 'LICENSE'));
+    mkdirSync(join(tmp, 'scripts'));
+    cpSync(join(repoRoot, 'scripts', 'verify-package-build.mjs'), join(tmp, 'scripts', 'verify-package-build.mjs'));
+    const packageDir = join(tmp, 'packages', 'create-elata-demo');
+    cpSync(__dirname, packageDir, { recursive: true, filter: (src) => !src.includes('node_modules') });
+    // Stands in for npm's CLI, as npm_execpath names it while npm runs a script: every starter version is on npm.
+    const cli = join(tmp, 'npm-cli.js');
+    writeFileSync(
+      cli,
+      "const [cmd, spec, field, json] = process.argv.slice(2);\n" +
+        "if (cmd !== 'view' || field !== 'version' || json !== '--json') process.exit(2);\n" +
+        "console.log(JSON.stringify(spec.slice(spec.lastIndexOf('@') + 1)));\n",
+    );
+    const run = (script, tag = 'test') =>
+      spawnSync(scaffolderPackage.scripts[script], {
+        cwd: packageDir,
+        shell: true,
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: { ...process.env, npm_execpath: cli, npm_config_tag: tag },
+      });
+
+    for (const script of ['prepack', 'prepublishOnly', 'verify:publish']) {
+      const passed = run(script);
+      assert.strictEqual(passed.status, 0, `${script}: ${passed.stderr}`);
+    }
+    // prepublishOnly is the publish check: it refuses the latest tag, which the pack check does not look at.
+    const latest = run('prepublishOnly', 'latest');
+    assert.notStrictEqual(latest.status, 0, 'prepublishOnly published under the latest tag');
+    assert.match(latest.stderr, /npm tag is 'latest'/);
+
+    rmSync(join(packageDir, 'templates', 'rppg-demo'), { recursive: true, force: true });
+    for (const [script, reason] of [
+      ['prepack', /templates\/rppg-demo is missing/],
+      ['prepublishOnly', /templates\/rppg-demo is missing/],
+      ['verify:publish', /templates\/rppg-demo\/package\.json not found/],
+    ]) {
+      const refused = run(script);
+      assert.notStrictEqual(refused.status, 0, `${script} passed a package with no rppg-demo starter`);
+      assert.match(refused.stderr, reason, script);
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('the game starter shows the pulse check\'s rate and calls signal quality what it is', () => {
   const rppg = readFileSync(join(__dirname, 'templates', 'pulse-game', 'src', 'game', 'useRppg.ts'), 'utf8');
   // The rate shown is the pulse check's, which the engine's rate tracker does not move.
