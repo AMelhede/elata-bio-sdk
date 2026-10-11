@@ -79,9 +79,9 @@ export type BpmResolutionResult = {
 };
 
 export type Metrics = {
-	/** Recommended display field. Final fused/calibrated BPM estimate. Null during warmup (~10s) or when backend is unavailable. */
+	/** Recommended display field. Through a session with the pulse check on (this build's default), null until the check proves a pulse and whenever it no longer backs the rate; otherwise the final fused/calibrated estimate, null during warmup (~10s). An unavailable WASM backend does not make it null: the JavaScript estimators still produce one. To tell whether the WASM backend is running, check the session's `backendMode` or the app adapter's `canPublish`, not this value. */
 	bpm?: number | null;
-	/** 0–1 confidence score. Gate your UI on this — only show BPM when above your threshold (e.g. 0.5). */
+	/** 0 to 1, the engine's own confidence in its estimate. With the pulse check on, `bpm` is already gated by the check, and this value passes through unchanged: it does not say whether `bpm` is shown. With the check off, apps commonly show `bpm` only above a threshold of their choosing. */
 	confidence: number;
 	/** 0–1 raw signal quality based on skin ratio, motion, and clipping. Low values mean the camera signal is poor regardless of algorithm state. */
 	signal_quality: number;
