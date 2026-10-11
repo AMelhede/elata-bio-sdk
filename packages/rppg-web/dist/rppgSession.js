@@ -6,7 +6,7 @@ import { ChestMotion } from "./chestBreathing.js";
 import { TrialFaceFinder } from "./faceFinderTrial.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
-import { RppgProcessor, } from "./rppgProcessor.js";
+import { RppgProcessor, withoutReading, } from "./rppgProcessor.js";
 import { loadWasmBackend, createUnavailableBackend, } from "./wasmBackend.js";
 import { DemoRunner, FACE_GONE_RESET_MS, } from "./demoRunner.js";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow.js";
@@ -22,27 +22,18 @@ const WITHHELD_VITALS = {
     respiration_confidence: null,
 };
 /**
- * Metrics with every rate cleared, not only the headline one (the intermediate estimates, spectral,
- * ACF, peaks, Bayes, calibrated, would otherwise keep reporting numbers from before), and HRV and
- * breathing with them; `reason` says why.
+ * Metrics with no reading in them (withoutReading): every estimate cleared, not only the headline
+ * rate, and every figure describing the sample window (agreement, signal quality, the skin, motion
+ * and clip means), which would otherwise keep describing the last face or the engine's last
+ * window. The rolling baseline, calibration state, tracker configuration and capture fields stay.
+ * `reason` says why, added once.
  */
 function clearedMetrics(metrics, reason) {
-    const cleared = { ...metrics };
-    for (const key of Object.keys(cleared)) {
-        if (key.endsWith("_bpm"))
-            cleared[key] = null;
-    }
-    return {
-        ...cleared,
-        bpm: null,
-        confidence: 0,
-        hrv_rmssd: null,
-        respiration_rate: null,
-        respiration_confidence: null,
-        reason_codes: metrics.reason_codes?.includes(reason) || (reason === "processor_failed" && metrics.reason_codes?.includes("backend_failed"))
-            ? metrics.reason_codes
-            : [...(metrics.reason_codes ?? []), reason],
-    };
+    const cleared = withoutReading(metrics, reason);
+    const already = metrics.reason_codes?.includes(reason) ||
+        (reason === "processor_failed" &&
+            metrics.reason_codes?.includes("backend_failed"));
+    return already ? { ...cleared, reason_codes: metrics.reason_codes } : cleared;
 }
 export class RppgSession {
     constructor(source, processor, runner, backendMode, faceTrackingMode, internals = {}) {

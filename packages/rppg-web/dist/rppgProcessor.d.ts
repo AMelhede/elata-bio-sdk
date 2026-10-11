@@ -315,4 +315,13 @@ export declare class RppgProcessor {
     private computeAdvancedMetrics;
     private updateBaseline;
 }
+/**
+ * `metrics` with no reading in it, for a cause other than a failed backend (no face in view, an
+ * engine that stopped): every estimate and every figure describing the sample window takes its
+ * failedMetrics() value, `snr` and `bayes_ambiguity` are dropped, and `reasonCode` is appended to
+ * the reason codes. What belongs to the person or the host is kept: the rolling baseline,
+ * calibration state, the tracker configuration ids and the `capture_*` fields fed through
+ * pushCaptureFrame.
+ */
+export declare function withoutReading(metrics: Metrics, reasonCode: string): Metrics;
 //# sourceMappingURL=rppgProcessor.d.ts.map

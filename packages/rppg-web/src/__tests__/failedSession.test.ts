@@ -43,6 +43,22 @@ describe("a session whose engine failed reports no number", () => {
 		expect(m.reason_codes).toContain("processor_failed");
 	});
 
+	it("reports nothing from the engine's last window after the failure, and keeps the person's baseline", () => {
+		const engine = {
+			getMetrics: () => ({ ...raw, spectral_bpm: 96, agreement: 0.9, winning_sources: ["spectral", "acf"], alias_flag: true, snr: 6, bayes_ambiguity: 0.2, skin_ratio_mean: 0.8, motion_mean: 0.1, clip_mean: 0.02, resolved_confidence: 0.7, bayes_confidence: 0.65, baseline_bpm: 70, baseline_delta: 27, calibration_trained: true, reason_codes: ["LOW_SNR"] }),
+			getBackendFailure: () => null,
+		};
+		const session = new RppgSession({} as never, engine as never, { faceAbsentMs: () => 0, msSinceAnalysisRestart: () => null, fixes: undefined } as never, "wasm", "face_mesh", { pulseCheck: null });
+		fail(session);
+		const m = session.getMetrics();
+		expect([m.agreement, m.winning_sources, m.alias_flag, m.signal_quality]).toEqual([0, [], false, 0]);
+		expect([m.skin_ratio_mean, m.motion_mean, m.clip_mean, m.resolved_confidence, m.bayes_confidence, m.baseline_delta]).toEqual([0, 0, 0, 0, 0, null]);
+		expect(m.snr).toBeUndefined();
+		expect(m.bayes_ambiguity).toBeUndefined();
+		expect([m.baseline_bpm, m.calibration_trained]).toEqual([70, true]);
+		expect(m.reason_codes).toEqual(["LOW_SNR", "processor_failed"]);
+	});
+
 	it("with the pulse check off, the engine's last rate is not reported either", () => {
 		const session = make({ pulseCheck: false });
 		expect(session.getMetrics().bpm).toBe(97);

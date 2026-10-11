@@ -26,6 +26,7 @@ import {
 	type RppgDebugSnapshot,
 	type RppgProcessorBackendFailure,
 	type RppgTraceSnapshot,
+	withoutReading,
 } from "./rppgProcessor";
 import {
 	loadWasmBackend,
@@ -278,26 +279,19 @@ const WITHHELD_VITALS = {
 } as const;
 
 /**
- * Metrics with every rate cleared, not only the headline one (the intermediate estimates, spectral,
- * ACF, peaks, Bayes, calibrated, would otherwise keep reporting numbers from before), and HRV and
- * breathing with them; `reason` says why.
+ * Metrics with no reading in them (withoutReading): every estimate cleared, not only the headline
+ * rate, and every figure describing the sample window (agreement, signal quality, the skin, motion
+ * and clip means), which would otherwise keep describing the last face or the engine's last
+ * window. The rolling baseline, calibration state, tracker configuration and capture fields stay.
+ * `reason` says why, added once.
  */
 function clearedMetrics(metrics: Metrics, reason: string): Metrics {
-	const cleared: Metrics = { ...metrics };
-	for (const key of Object.keys(cleared) as (keyof Metrics)[]) {
-		if (key.endsWith("_bpm")) (cleared as Record<string, unknown>)[key] = null;
-	}
-	return {
-		...cleared,
-		bpm: null,
-		confidence: 0,
-		hrv_rmssd: null,
-		respiration_rate: null,
-		respiration_confidence: null,
-		reason_codes: metrics.reason_codes?.includes(reason) || (reason === "processor_failed" && metrics.reason_codes?.includes("backend_failed"))
-			? metrics.reason_codes
-			: [...(metrics.reason_codes ?? []), reason],
-	};
+	const cleared = withoutReading(metrics, reason);
+	const already =
+		metrics.reason_codes?.includes(reason) ||
+		(reason === "processor_failed" &&
+			metrics.reason_codes?.includes("backend_failed"));
+	return already ? { ...cleared, reason_codes: metrics.reason_codes } : cleared;
 }
 
 export class RppgSession {
