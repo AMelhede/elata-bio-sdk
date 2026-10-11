@@ -856,9 +856,10 @@ guard_major_zerover() {
 # range takes one minor (^0.12.0 is >=0.12.0 <0.13.0), so after a minor bump a peer range
 # naming a bumped package refuses its new version, and npm will not install the two
 # together (ERESOLVE). Set every peer range that names a bumped package to ^<new version>,
-# as `changeset version` does on the ./run.sh bump path, in every workspace package
-# (biosignal-analytics peers on rppg-web but is not in the `all` set). Each range is
-# edited in place so the rest of the manifest keeps its formatting.
+# as `changeset version` does on the ./run.sh bump path for the caret ranges that
+# scripts/audit-repo.mjs requires, in every workspace package (biosignal-analytics peers
+# on rppg-web but is not in the `all` set). Each range is edited in place so the rest of
+# the manifest keeps its formatting.
 sync_workspace_peer_ranges() {
     require_cmds node
     local pkg
