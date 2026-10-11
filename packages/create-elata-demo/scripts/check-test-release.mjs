@@ -43,7 +43,13 @@ if (!pkg.files?.includes("LICENSE")) problems.push("package.json files does not 
 // (index.mjs's templates map), so a missing starter folder fails here instead of crashing the CLI.
 const templatesDir = path.join(root, "templates");
 const offered = [...readFileSync(path.join(root, "index.mjs"), "utf8").matchAll(/\bdir: '([^']+)'/g)].map((m) => m[1]);
-const templates = existsSync(templatesDir) ? readdirSync(templatesDir) : [];
+// Each template is a directory. A file beside them, such as the .DS_Store macOS Finder or the Thumbs.db and
+// desktop.ini Windows Explorer leave, is not a template.
+const templates = existsSync(templatesDir)
+	? readdirSync(templatesDir, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+	: [];
 if (offered.length === 0) problems.push("no templates found in index.mjs");
 for (const t of offered) {
 	if (!templates.includes(t)) problems.push(`templates/${t} is missing (the CLI offers it)`);

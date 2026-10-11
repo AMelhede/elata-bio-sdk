@@ -558,6 +558,22 @@ test('the test-release check fails when a template the CLI offers is missing', (
   }
 });
 
+test('a file beside the templates, such as the ones Finder and Explorer leave, does not stop the release check', () => {
+  // Each template is a directory. The check took every entry in templates/ as one, so a .DS_Store (macOS Finder), a
+  // Thumbs.db or a desktop.ini (Windows Explorer) there made it look for templates/.DS_Store/package.json and refuse a
+  // valid package.
+  const copy = mkdtempSync(join(tmpdir(), 'create-elata-demo-stray-'));
+  try {
+    cpSync(__dirname, copy, { recursive: true, filter: (src) => !src.includes('node_modules') });
+    for (const name of ['.DS_Store', 'Thumbs.db', 'desktop.ini']) writeFileSync(join(copy, 'templates', name), '');
+    const r = spawnSync(process.execPath, [join(copy, 'scripts', 'check-test-release.mjs')], { encoding: 'utf8', cwd: copy });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stderr, /: ready \(5 templates\)/);
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 test("the publish check finds the starters' versions on npm where a bare `npm` cannot be started (Windows)", () => {
   // npm on Windows is npm.cmd, which Node starts only through a shell, so spawnSync('npm') found nothing there and the
   // check called every version missing, refusing the publish PUBLISHING.md runs from PowerShell. npm names its own CLI
