@@ -302,7 +302,9 @@ describe("RppgAppMonitor with browser-strict timers", () => {
 	const realSetInterval = globalThis.setInterval;
 	const realClearInterval = globalThis.clearInterval;
 
-	const browserStrict = <T extends (...args: never[]) => unknown>(timer: T): T =>
+	const browserStrict = <T extends (...args: never[]) => unknown>(
+		timer: T,
+	): T =>
 		function (this: unknown, ...args: Parameters<T>) {
 			if (this !== undefined && this !== globalThis) {
 				throw new TypeError("Illegal invocation");
