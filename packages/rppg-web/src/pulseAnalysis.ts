@@ -171,9 +171,10 @@ export function estimateDominantBpm(
 
 	if (!(bestMag > 0) || !Number.isFinite(bestBpm)) return null;
 
-	// No jump to twice the strongest rate: a pulse wave's own second harmonic (the dicrotic
-	// notch) routinely exceeds a third of the fundamental, so such a rule doubles correct
-	// rates (see spectralNoDoubling.test.ts).
+	// No jump to twice the strongest rate: a pulse wave is not a sine, and its second harmonic
+	// can exceed a third of the fundamental, so such a rule doubles correct resting rates. A
+	// signal whose strongest line is half its true rate has the same spectrum and reads that
+	// line too (see spectralNoDoubling.test.ts).
 	const energy = centered.reduce((acc, value) => acc + value * value, 0) / n;
 	const confidence =
 		energy > 1e-9 ? clamp(bestMag / (Math.sqrt(energy) + 1e-9), 0, 1) : 0;
