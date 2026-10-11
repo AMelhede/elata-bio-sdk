@@ -84,6 +84,8 @@ Each scaffolded app includes:
 - a `build` script that Type-checks and runs `vite build`, and
 - a `pnpm-workspace.yaml` that makes the app its own pnpm project and allows
   esbuild's build script (pnpm 11 and later refuse to install without that).
+  Because the app is then a workspace root, pnpm 9 wants `-w` on `pnpm add`;
+  pnpm 10 and later do not.
 
 After scaffolding:
 
