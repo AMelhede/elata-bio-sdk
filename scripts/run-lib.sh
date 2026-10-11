@@ -1573,21 +1573,27 @@ link_package_into_app() {
 # everything else (packages, allowBuilds, other overrides). An `overrides:` key left empty is
 # dropped, and a file left with only comments and blank lines (the override-only file pnpm
 # creates when an app has no workspace file of its own) is deleted.
+# As in YAML, the overrides block runs from its key to the next line that is not indented,
+# blank or a comment. Blank and comment lines are held until it is known whether the block
+# continues, so they never end it early.
 remove_pnpm_link_overrides() {
     local ws="$1" tmp
     tmp="$(mktemp)"
     awk '
         BEGIN { link_re = ":[[:space:]]*[\"\047]?link:" }
-        function end_block() { in_ov = 0; held = "" }
-        /^overrides:[[:space:]]*$/ { in_ov = 1; held = $0; next }
-        in_ov && /^[[:space:]]+[^[:space:]]/ {
+        /^overrides:[[:space:]]*(#.*)?$/ { in_ov = 1; key = $0; held = ""; next }
+        in_ov && /^[[:space:]]*(#.*)?$/ { held = held $0 "\n"; next }
+        in_ov && /^[[:space:]]/ {
             if ($0 ~ link_re) next
-            if (held != "") { print held; held = "" }
+            if (key != "") { print key; key = "" }
+            printf "%s", held
+            held = ""
             print
             next
         }
-        in_ov { end_block() }
+        in_ov { printf "%s", held; in_ov = 0; key = ""; held = "" }
         { print }
+        END { if (in_ov) printf "%s", held }
     ' "$ws" >"$tmp"
     if grep -qvE '^[[:space:]]*(#|$)' "$tmp"; then
         cat "$tmp" >"$ws"
