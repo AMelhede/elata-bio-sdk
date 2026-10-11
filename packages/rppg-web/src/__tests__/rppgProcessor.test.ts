@@ -1247,3 +1247,63 @@ describe('Snapshot persistence', () => {
     expect(Array.isArray(restored.bpmHistory)).toBe(true);
   });
 });
+
+describe('RppgProcessor.resetSignal', () => {
+  const backend = () => ({
+    newPipeline: jest.fn(() => ({
+      push_sample_rgb_meta: jest.fn(),
+      enable_tracker: jest.fn(),
+      free: jest.fn(),
+      get_metrics: jest.fn(() => ({ bpm: null, confidence: 0, signal_quality: 0.5, reason_codes: [] })),
+    })),
+  });
+  // A colour pulse (green dips most) with a little deterministic sensor noise.
+  const feed = (processors: RppgProcessor[], fromMs: number, toMs: number, bpm: number, seed: { v: number }) => {
+    for (let t = fromMs; t < toMs; t += 1000 / 30) {
+      seed.v = (seed.v * 1664525 + 1013904223) >>> 0;
+      const noise = seed.v / 2 ** 32 - 0.5;
+      const p = Math.sin((2 * Math.PI * bpm * t) / 60000);
+      for (const processor of processors) {
+        processor.pushSampleRgbMeta(t, 200 * (1 - 0.01 * p) + noise, 140 * (1 - 0.03 * p) + noise, 110 * (1 - 0.015 * p) + noise, 1, 0, 0);
+      }
+    }
+  };
+  // What is measured on the sample window. The Bayesian tracker, the rate history, calibration
+  // and the baseline are kept across a restart by design, so the estimates built on them are not
+  // compared.
+  const windowEstimates = (processor: RppgProcessor) => {
+    const m = processor.getMetrics();
+    return [m.spectral_bpm, m.acf_bpm, m.peaks_bpm, m.hrv_rmssd, m.respiration_rate, m.respiration_confidence];
+  };
+
+  test('after a restart the window estimates are those of a processor that only saw the later samples', () => {
+    const backendRestarted = backend();
+    const restarted = new RppgProcessor(backendRestarted as any, 30, 10);
+    restarted.enableTracker(55, 150, 200);
+    feed([restarted], 0, 20000, 66, { v: 1 });
+    restarted.resetSignal();
+    // The engine's pipeline starts anew, with the tracker settings it had, and the old one is freed.
+    expect(backendRestarted.newPipeline).toHaveBeenCalledTimes(2);
+    expect(backendRestarted.newPipeline.mock.results[0].value.free).toHaveBeenCalledTimes(1);
+    const engine = backendRestarted.newPipeline.mock.results[1].value;
+    expect(engine.enable_tracker).toHaveBeenCalledWith(55, 150, 200);
+
+    const fresh = new RppgProcessor(backend() as any, 30, 10);
+    fresh.enableTracker(55, 150, 200);
+    const seed = { v: 2 };
+    for (let end = 35000; end <= 45000; end += 5000) {
+      feed([restarted, fresh], end - 5000, end, 84, seed);
+      const estimates = windowEstimates(fresh);
+      expect(estimates[0]).not.toBeNull();
+      expect(windowEstimates(restarted)).toEqual(estimates);
+    }
+  });
+
+  test('is a no-op once disposed', () => {
+    const b = backend();
+    const processor = new RppgProcessor(b as any, 30, 10);
+    processor.dispose();
+    processor.resetSignal();
+    expect(b.newPipeline).toHaveBeenCalledTimes(1);
+  });
+});

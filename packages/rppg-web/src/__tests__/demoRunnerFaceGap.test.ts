@@ -17,7 +17,7 @@ class Source implements FrameSource {
 	}
 }
 
-function frame(tMs: number, face: boolean, seed: { v: number }): Frame {
+function frame(tMs: number, face: boolean, seed: { v: number }, regions = false): Frame {
 	const width = 20;
 	const height = 20;
 	const data = new Uint8ClampedArray(width * height * 4);
@@ -35,6 +35,13 @@ function frame(tMs: number, face: boolean, seed: { v: number }): Frame {
 	}
 	const f: Frame = { data, width, height, timestampMs: tMs };
 	if (face) f.roi = { x: 5, y: 5, w: 10, h: 10 };
+	// Forehead and both cheeks, as MediaPipeFaceFrameSource sends them with a face.
+	if (face && regions)
+		f.rois = [
+			{ x: 6, y: 3, w: 8, h: 5 },
+			{ x: 3, y: 10, w: 6, h: 6 },
+			{ x: 11, y: 10, w: 6, h: 6 },
+		];
 	return f;
 }
 
@@ -66,6 +73,45 @@ describe("DemoRunner and RppgProcessor across a face gap", () => {
 		expect(Math.abs((after as number) - TRUE_BPM)).toBeLessThanOrEqual(3);
 		// The engine's own window starts afresh too.
 		expect(newPipeline).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("DemoRunner and RppgProcessor across a face gap, multi-region path", () => {
+	test("the fused rate after the gap is measured on frames from after it, and so are the region weights", async () => {
+		const pipeline = {
+			push_sample: jest.fn(),
+			push_sample_rgb_meta: jest.fn(),
+			free: jest.fn(),
+			get_metrics: jest.fn(() => ({ bpm: null, confidence: 0, signal_quality: 0.5, reason_codes: [] })),
+		};
+		const processor = new RppgProcessor({ newPipeline: () => pipeline } as never, 30, 10);
+		const src = new Source();
+		// The default with a face: the multi-region fuser and the skin mask on.
+		const runner = new DemoRunner(src, processor, { sampleRate: 30, requireFace: true });
+		await runner.start();
+		const seed = { v: 3 };
+		let beforeGap: number | null = null;
+		let snrBeforeGap = 0;
+		let snrJustAfter: number | null = null;
+		for (let i = 0; i < 75 * 30; i++) {
+			const t = (i * 1000) / 30;
+			src.emit(frame(t, t < 45000 || t >= 55000, seed, true));
+			if (beforeGap == null && t >= 44000) {
+				beforeGap = processor.getMetrics().spectral_bpm ?? null;
+				snrBeforeGap = runner.getDiagnostics().lastFusedSnr ?? 0;
+			}
+			// One second after the face returns: too soon for the fuser to have measured an SNR
+			// on frames from after the gap (it needs three seconds of them).
+			if (snrJustAfter == null && t >= 56000) snrJustAfter = runner.getDiagnostics().lastFusedSnr ?? 0;
+		}
+		expect(runner.getDiagnostics().lastProcessorMethod).toBe("fused");
+		expect(snrBeforeGap).toBeGreaterThan(1);
+		expect(snrJustAfter).toBe(0);
+		expect(beforeGap).not.toBeNull();
+		expect(Math.abs((beforeGap as number) - TRUE_BPM)).toBeLessThanOrEqual(3);
+		const after = processor.getMetrics().spectral_bpm ?? null;
+		expect(after).not.toBeNull();
+		expect(Math.abs((after as number) - TRUE_BPM)).toBeLessThanOrEqual(3);
 	});
 });
 
