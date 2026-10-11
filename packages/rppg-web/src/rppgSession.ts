@@ -14,6 +14,7 @@ import {
 	type RppgDebugSnapshot,
 	type RppgProcessorBackendFailure,
 	type RppgTraceSnapshot,
+	withoutReading,
 } from "./rppgProcessor";
 import {
 	loadWasmBackend,
@@ -205,29 +206,9 @@ export class RppgSession {
 		// No face for a second (face tracking on): nothing to report, not the last number.
 		// One second rides out a brief face-finder miss without dropping a real reading.
 		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
-			// Every rate and confidence, not only the headline one: the intermediate estimates would
-			// otherwise keep reporting numbers from the last face. The rolling baseline is the
-			// person's, not this frame's, and stays.
-			return {
-				...metrics,
-				bpm: null,
-				confidence: 0,
-				spectral_bpm: null,
-				acf_bpm: null,
-				peaks_bpm: null,
-				resolved_bpm: null,
-				resolved_confidence: 0,
-				bayes_bpm: null,
-				bayes_confidence: 0,
-				calibrated_bpm: null,
-				fused_bpm: null,
-				fused_source: "none",
-				baseline_delta: null,
-				hrv_rmssd: null,
-				respiration_rate: null,
-				respiration_confidence: null,
-				reason_codes: [...(metrics.reason_codes ?? []), "no_face"],
-			};
+			// Every estimate, not only the headline one: the intermediate estimates and the window's
+			// quality figures would otherwise keep describing the last face.
+			return withoutReading(metrics, "no_face");
 		}
 		return metrics;
 	}

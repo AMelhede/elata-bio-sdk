@@ -1394,6 +1394,24 @@ function normalizeMetrics(raw: any): Metrics {
 	};
 }
 
+/**
+ * `metrics` with no reading in it, for a cause other than a failed backend (for example no face in
+ * view): every estimate and every figure describing the sample window takes its failedMetrics()
+ * value, `snr` and `bayes_ambiguity` are dropped, and `reasonCode` is appended to the reason codes.
+ * What belongs to the person or the host is kept: the rolling baseline, calibration state, the
+ * tracker configuration ids and the `capture_*` fields fed through pushCaptureFrame.
+ */
+export function withoutReading(metrics: Metrics, reasonCode: string): Metrics {
+	const { snr: _snr, bayes_ambiguity: _ambiguity, ...kept } = metrics;
+	return {
+		...kept,
+		...failedMetrics(),
+		calibration_trained: metrics.calibration_trained,
+		baseline_bpm: metrics.baseline_bpm,
+		reason_codes: [...(metrics.reason_codes ?? []), reasonCode],
+	};
+}
+
 function failedMetrics(): Metrics {
 	return {
 		bpm: null,
