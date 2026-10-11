@@ -72,7 +72,7 @@ export type BpmResolutionResult = {
 };
 
 export type Metrics = {
-	/** Recommended display field. Final fused/calibrated BPM estimate. Null during warmup (~10s) or when backend is unavailable. */
+	/** Recommended display field. Final fused/calibrated BPM estimate. Null during warmup (~10s). An unavailable WASM backend does not make it null: the JavaScript estimators still produce one. To tell whether the WASM backend is running, check the session's `backendMode` or the app adapter's `canPublish`, not this value. */
 	bpm?: number | null;
 	/** 0–1 confidence score. Gate your UI on this — only show BPM when above your threshold (e.g. 0.5). */
 	confidence: number;

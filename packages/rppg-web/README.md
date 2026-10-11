@@ -168,7 +168,7 @@ Expect a ~10 second warmup before the first BPM estimate.
 > **Check `session.backendMode` before trusting BPM.** If it is
 > `"unavailable"`, the WASM assets did not load. The session keeps running
 > without the WASM estimator: `estimationAvailable` is `false` and
-> `createRppgAppAdapter()` never sets `canPublish`, but `getMetrics()` can
+> `createRppgAppAdapter()` keeps `canPublish` false, but `getMetrics()` can
 > still return a BPM from the package's JavaScript estimators, so a number
 > alone does not show that the WASM loaded. `getDiagnostics().backendLoadError`
 > lists each URL that was tried and why it failed. See the
