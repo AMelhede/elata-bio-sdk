@@ -36,6 +36,39 @@ test('loadWasmBackend throws a structured error in strict mode', async () => {
   });
 });
 
+test('loadWasmBackend in strict mode keeps why each URL failed, in the order tried', async () => {
+  // The glue at /pkg/ imports but its .wasm does not instantiate; /rppg_wasm.js is not served.
+  const initError = new Error('WebAssembly.instantiate(): expected magic word 00 61 73 6d');
+  const importError = new TypeError('Failed to fetch dynamically imported module: /rppg_wasm.js');
+  const error = await loadWasmBackend(async (url) => {
+    if (url === '/pkg/rppg_wasm.js') {
+      return { default: async () => { throw initError; } };
+    }
+    throw importError;
+  }, { strict: true }).catch((e) => e);
+
+  expect(error).toMatchObject({
+    name: 'RppgWasmLoadError',
+    attemptedUrls: ['/pkg/rppg_wasm.js', '/rppg_wasm.js'],
+    lastError: importError,
+  });
+  expect(error.errors).toEqual([initError, importError]);
+});
+
+test('loadWasmBackend in strict mode records a module that loads but exposes no pipeline', async () => {
+  const importError = new TypeError('Failed to fetch dynamically imported module: /rppg_wasm.js');
+  const error = await loadWasmBackend(async (url) => {
+    if (url === '/pkg/rppg_wasm.js') return {};
+    throw importError;
+  }, { strict: true }).catch((e) => e);
+
+  expect(error.errors).toHaveLength(2);
+  expect(String(error.errors[0])).toContain('/pkg/rppg_wasm.js loaded but exports no rPPG pipeline');
+  expect(error.errors[1]).toBe(importError);
+  // lastError keeps its meaning: the last error an attempt threw.
+  expect(error.lastError).toBe(importError);
+});
+
 test('loadWasmBackend honors explicit jsUrl and binaryUrl options', async () => {
   const initSpy = jest.fn(async (_binaryUrl?: string) => undefined);
   const importer = jest.fn(async (url: string) => {

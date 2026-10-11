@@ -38,12 +38,13 @@ function createNormalizedPipelineFactory(module, Constructor) {
     return (sampleRate, windowSec) => normalizePipelineInstance(new Constructor(sampleRate, windowSec), module);
 }
 export class RppgWasmLoadError extends Error {
-    constructor(attemptedUrls, lastError) {
+    constructor(attemptedUrls, lastError, errors = []) {
         super(`Unable to load rPPG WASM backend. Tried: ${attemptedUrls.join(", ")}. Set up the bundle so one of these URLs resolves.`);
         this.code = "RPPG_WASM_LOAD_FAILED";
         this.name = "RppgWasmLoadError";
         this.attemptedUrls = attemptedUrls;
         this.lastError = lastError;
+        this.errors = errors;
     }
 }
 // Try to dynamically import the wasm JS bundle from a few common locations
@@ -57,6 +58,7 @@ export async function loadWasmBackend(importer = defaultImporter, options = {}) 
                 "/rppg_wasm.js",
             ];
     let lastError = undefined;
+    const errors = [];
     for (const url of candidates) {
         try {
             const mod = await importer(url);
@@ -84,13 +86,15 @@ export async function loadWasmBackend(importer = defaultImporter, options = {}) 
                     newPipeline: (sr, ws) => new mod.default(sr, ws),
                 };
             }
+            errors.push(new Error(`${url} loaded but exports no rPPG pipeline constructor.`));
         }
         catch (e) {
             lastError = e;
+            errors.push(e);
         }
     }
     if (options.strict) {
-        throw new RppgWasmLoadError(candidates, lastError);
+        throw new RppgWasmLoadError(candidates, lastError, errors);
     }
     return null;
 }

@@ -32,6 +32,7 @@ import {
 	loadWasmBackend,
 	createUnavailableBackend,
 	type Backend,
+	type RppgWasmLoadError,
 	type WasmImporter,
 } from "./wasmBackend";
 import {
@@ -833,15 +834,31 @@ async function resolveBackend(
 			error: {
 				code: "backend_init_failed",
 				stage: "backend",
-				message:
-					cause instanceof Error
-						? cause.message
-						: "rPPG WASM backend failed to load.",
+				message: describeWasmLoadFailure(cause),
 				timestampMs: Date.now(),
 				cause,
 			},
 		};
 	}
+}
+
+// The loader's message names the URLs; this adds what each one failed with. The telling error is
+// not always the last one: when the glue at the first URL loads but its .wasm does not, the loader
+// moves on and the last error is just the next URL's not-found.
+// Read by shape (RppgWasmLoadError's attemptedUrls and errors), not instanceof, so an error from
+// another copy of the loader is described the same way.
+function describeWasmLoadFailure(error: unknown): string {
+	if (!(error instanceof Error)) return "rPPG WASM backend failed to load.";
+	const { attemptedUrls, errors } = error as Partial<
+		Pick<RppgWasmLoadError, "attemptedUrls" | "errors">
+	>;
+	if (!Array.isArray(attemptedUrls) || !Array.isArray(errors))
+		return error.message;
+	const failures = attemptedUrls.map((url, index) => {
+		const reason = errors[index];
+		return `${url}: ${reason === undefined ? "no error recorded" : String(reason)}`;
+	});
+	return `${error.message} Errors by URL: ${failures.join("; ")}`;
 }
 
 function applyTrackerConfiguration(

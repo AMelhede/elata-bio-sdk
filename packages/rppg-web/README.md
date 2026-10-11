@@ -208,8 +208,8 @@ A production build (`vite build`) bundles the worker either way.
 Vite 7 blocks `import(url)` for files served from `/public`, which is where
 most projects place the `pkg/` WASM assets. **If you skip this step, the WASM
 engine does not start:** `backendMode` is `"unavailable"`, and in this build
-`onError` receives `backend_init_failed` with the URLs it tried (the published
-0.14.0 raises no error). The same happens in a production build deployed under a
+`onError` receives `backend_init_failed` with each URL it tried and the error
+that URL failed with (the published 0.14.0 raises no error). The same happens in a production build deployed under a
 sub-path (`/app/`, a GitHub Pages project site), because the default loader asks
 for the root-absolute `/pkg/rppg_wasm.js`; Options A and B below work there too.
 Two approaches to fix it:
@@ -304,8 +304,8 @@ check shows a rate only once the face regions agree on it.
 
 > **If BPM is always null:** check `session.backendMode` before assuming bad
 > signal. If it is `"unavailable"`, the WASM assets did not load. `onError`
-> receives `backend_init_failed` with the URLs that were tried,
-> `session.lastError` holds it, and `session.getState()` reads `degraded`. The
+> receives `backend_init_failed` with each URL that was tried and why it
+> failed, `session.lastError` holds it, and `session.getState()` reads `degraded`. The
 > pulse check does not need the WASM, so with it on its rate can still come;
 > with `pulseCheck: false` the engine falls back to its JavaScript estimators,
 > which still give a rate but are not the build's measured path. See the

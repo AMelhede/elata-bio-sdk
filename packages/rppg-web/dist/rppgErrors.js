@@ -108,7 +108,9 @@ function formatErrorDetail(error) {
         return "Unknown rPPG error.";
     const message = error.message || "Unknown rPPG error.";
     const causeMessage = formatCause(error.cause);
-    return causeMessage && causeMessage !== message
+    // A message that already carries the cause's (a WASM load failure lists the loader's message
+    // and then each URL's error) is not repeated.
+    return causeMessage && !message.includes(causeMessage)
         ? `${message} ${causeMessage}`
         : message;
 }

@@ -73,8 +73,18 @@ export class RppgWasmLoadError extends Error {
 	public readonly code = "RPPG_WASM_LOAD_FAILED";
 	public readonly attemptedUrls: string[];
 	public readonly lastError?: unknown;
+	/**
+	 * Why each URL in `attemptedUrls` failed, in the same order: the error its
+	 * import or init threw, or an error saying the module loaded but exports
+	 * no pipeline constructor. `lastError` only keeps the last one thrown.
+	 */
+	public readonly errors: unknown[];
 
-	constructor(attemptedUrls: string[], lastError?: unknown) {
+	constructor(
+		attemptedUrls: string[],
+		lastError?: unknown,
+		errors: unknown[] = [],
+	) {
 		super(
 			`Unable to load rPPG WASM backend. Tried: ${attemptedUrls.join(
 				", ",
@@ -83,6 +93,7 @@ export class RppgWasmLoadError extends Error {
 		this.name = "RppgWasmLoadError";
 		this.attemptedUrls = attemptedUrls;
 		this.lastError = lastError;
+		this.errors = errors;
 	}
 }
 
@@ -100,6 +111,7 @@ export async function loadWasmBackend(
 					"/rppg_wasm.js",
 				];
 	let lastError: unknown = undefined;
+	const errors: unknown[] = [];
 	for (const url of candidates) {
 		try {
 			const mod: WasmModule = await importer(url);
@@ -135,12 +147,16 @@ export async function loadWasmBackend(
 						new (mod.default as any)(sr, ws),
 				};
 			}
+			errors.push(
+				new Error(`${url} loaded but exports no rPPG pipeline constructor.`),
+			);
 		} catch (e) {
 			lastError = e;
+			errors.push(e);
 		}
 	}
 	if (options.strict) {
-		throw new RppgWasmLoadError(candidates, lastError);
+		throw new RppgWasmLoadError(candidates, lastError, errors);
 	}
 	return null;
 }
