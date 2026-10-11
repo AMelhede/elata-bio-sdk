@@ -350,6 +350,47 @@ test('the publish check refuses a package that cannot scaffold from its packed f
   }
 });
 
+test('verify:publish refuses a package that cannot start from npm', () => {
+  // release-check runs verify:publish before anything is published, and prepack runs it again.
+  // Run that script line the way npm and pnpm do (in a shell), in a copy laid out like the repo,
+  // so the test fails if the publish check is ever dropped from it.
+  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-verify-publish-'));
+  try {
+    mkdirSync(join(tmp, 'scripts'));
+    cpSync(
+      join(repoRoot, 'scripts', 'verify-package-build.mjs'),
+      join(tmp, 'scripts', 'verify-package-build.mjs'),
+    );
+    const packageDir = join(tmp, 'packages', 'create-elata-demo');
+    copyPackedFiles(__dirname, packageDir);
+    cpSync(join(__dirname, 'scripts'), join(packageDir, 'scripts'), { recursive: true });
+    const verifyPublish = () =>
+      spawnSync(scaffolderPackage.scripts['verify:publish'], {
+        cwd: packageDir,
+        shell: true,
+        encoding: 'utf8',
+        timeout: 60_000,
+      });
+
+    const passed = verifyPublish();
+    assert.strictEqual(passed.status, 0, passed.stderr);
+
+    // As 0.3.1 to 0.12.1 shipped: no appMetrics fallback.
+    const manifest = {
+      ...scaffolderPackage,
+      elataSdkVersions: Object.fromEntries(
+        Object.entries(scaffolderPackage.elataSdkVersions).filter(([key]) => key !== 'appMetrics'),
+      ),
+    };
+    writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    const refused = verifyPublish();
+    assert.notStrictEqual(refused.status, 0, 'verify:publish passed a package that crashes on start');
+    assert.match(refused.stderr, /Missing packaged SDK version metadata for @elata-biosciences\/app-metrics/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('smoke: each published template scaffolds, installs, and builds', () => {
   const templates = ['rppg-demo', 'eeg-demo', 'eeg-ble'];
 
