@@ -55,6 +55,19 @@ describe('DemoRunner with no face in view', () => {
     expect(runner.faceAbsentMs()).toBe(0);
   });
 
+  test('does not report a face ROI once the face has left', async () => {
+    // The face first, then the wall: the last frame read came from a face, but no face is in view.
+    const src = new MockFrameSource();
+    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
+    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
+    await runner.start();
+    for (let i = 0; i < 30; i++) src.emit({ ...wallFrame(1000 + i * 33.3), roi: { x: 0, y: 0, w: 30, h: 30 } });
+    expect(runner.getDiagnostics().lastRoiSource).toBe('face_roi');
+    for (let i = 30; i < 60; i++) src.emit(wallFrame(1000 + i * 33.3));
+    expect(runner.getDiagnostics().lastDropReason).toBe('no_face');
+    expect(runner.getDiagnostics().lastRoiSource).toBeNull();
+  });
+
   test('keeps the time since the analysis restarted, on the frame clock, until stopped', async () => {
     const { runner } = await feedWall(true);
     expect(runner.msSinceAnalysisRestart()).toBeNull();

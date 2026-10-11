@@ -487,6 +487,8 @@ export class DemoRunner {
 			if (!roi && this.opts.requireFace && this.fixes.noFaceNoReading) {
 				this.noFaceSinceMs ??= frame.timestampMs ?? Date.now();
 				this.noFaceLastMs = frame.timestampMs ?? Date.now();
+				// The last frame read came from a face; none is in view now.
+				this.diagnostics.lastRoiSource = null;
 				this.recordDrop("no_face");
 				return;
 			}
