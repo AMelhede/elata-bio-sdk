@@ -16,7 +16,9 @@ cd C:\Users\andre; if (-not (Test-Path elata-bio-sdk-test)) { git clone https://
 1. `node -p ...` prints the version about to be published: check it is the build meant.
 2. `npm stage publish` first runs `scripts/check-test-release.mjs --publish`: the name and `-test.N` version, the `test`
    tag, Elata's MIT LICENSE unedited, every template present, and every package version a starter installs found on
-   npm. Then it uploads to npm's staging area; nothing is public yet.
+   npm. Then it uploads to npm's staging area; nothing is public yet. Only folders under `templates/` count as
+   templates, so a `.DS_Store`, `Thumbs.db` or `desktop.ini` that Finder or Explorer leaves there does not stop the
+   check, and none of them is packed (`templates/.npmignore`).
 3. Approve it with two-factor authentication at https://www.npmjs.com/settings/amelhede/staged-packages.
 
 ## Using it
