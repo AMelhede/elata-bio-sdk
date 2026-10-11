@@ -1,0 +1,4 @@
+# Files macOS Finder and Windows Explorer leave in folders they show. npm already leaves out
+# .DS_Store; it would pack these two, and the CLI copies every file of a template into the new app.
+Thumbs.db
+desktop.ini

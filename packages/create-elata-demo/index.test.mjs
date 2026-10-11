@@ -287,6 +287,11 @@ test("the test build's npm links point at the fork it is built from, not Elata's
   assert.match(scaffolderPackage.bugs, /github\.com\/AMelhede\/elata-bio-sdk/);
 });
 
+// Files macOS Finder (.DS_Store) and Windows Explorer (Thumbs.db, desktop.ini) leave in folders they show. npm never
+// packs .DS_Store; templates/.npmignore keeps the other two out of the package, and so out of every starter.
+const OS_FILES = ['.DS_Store', 'Thumbs.db', 'desktop.ini'];
+const isOsFile = (path) => OS_FILES.includes(path.split('/').pop());
+
 test('npm pack runs the release check and ships the licence and every starter file', () => {
   // The packaged-contents test below copies files by hand; npm decides what really ships (it never packs .npmrc or
   // .gitignore, hence _gitignore), and prepack runs scripts/check-test-release.mjs.
@@ -297,10 +302,30 @@ test('npm pack runs the release check and ships the licence and every starter fi
   assert.ok(files.includes('LICENSE'), 'LICENSE is not packed');
   const onDisk = readdirSync(join(__dirname, 'templates'), { recursive: true, withFileTypes: true })
     .filter((e) => e.isFile())
-    .map((e) => join(e.parentPath ?? e.path, e.name).slice(__dirname.length + 1).split('\\').join('/'));
+    .map((e) => join(e.parentPath ?? e.path, e.name).slice(__dirname.length + 1).split('\\').join('/'))
+    .filter((f) => !isOsFile(f) && f !== 'templates/.npmignore');
   assert.ok(onDisk.length > 20, `only ${onDisk.length} template files found`);
   const unpacked = onDisk.filter((f) => !files.includes(f));
   assert.deepStrictEqual(unpacked, [], 'template files npm would not ship');
+});
+
+test('npm never packs the files Finder and Explorer leave in the templates', () => {
+  // A Thumbs.db or desktop.ini in a template folder was packed (npm ignores .DS_Store by default, not these), and the
+  // CLI copies every file of a template into the new app.
+  const copy = mkdtempSync(join(tmpdir(), 'create-elata-demo-osfiles-'));
+  try {
+    cpSync(__dirname, copy, { recursive: true, filter: (src) => !src.includes('node_modules') });
+    const folders = [join(copy, 'templates'), join(copy, 'templates', 'rppg-demo'), join(copy, 'templates', 'rppg-demo', 'src')];
+    for (const folder of folders) for (const name of OS_FILES) writeFileSync(join(folder, name), 'x');
+    const r = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: copy, encoding: 'utf8', timeout: 120_000 });
+    assert.strictEqual(r.status, 0, `npm pack failed:\n${r.stderr}`);
+    const files = JSON.parse(r.stdout.slice(r.stdout.search(/^\[\s*$/m)))[0].files.map((f) => f.path);
+    assert.deepStrictEqual(files.filter(isOsFile), [], 'npm would ship these');
+    assert.ok(files.includes('templates/rppg-demo/_gitignore'), 'a starter file is no longer packed');
+    assert.ok(!files.some((f) => f.endsWith('.npmignore')), 'the ignore file itself is packed');
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
+  }
 });
 
 test('scaffolds correctly from packaged contents without monorepo siblings', () => {
