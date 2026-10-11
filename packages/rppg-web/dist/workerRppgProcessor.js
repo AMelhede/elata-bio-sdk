@@ -149,12 +149,22 @@ export class WorkerRppgProcessor {
     }
     /**
      * The trace the worker last sent: at most its newest 300 points (about 10 s at 30 a second),
-     * whatever `maxPoints` asks for, so a caller that needs a longer trace polls it.
+     * whatever `maxPoints` asks for, so a caller that needs a longer trace polls it. Its duration is
+     * that of the points returned, as a main-thread processor's is.
      */
     getTraceSnapshot(maxPoints = 300) {
         const trace = this.state.trace;
         const n = Math.max(1, Math.floor(maxPoints));
-        return { ...trace, points: trace.points.slice(-n) };
+        const points = trace.points.slice(-n);
+        const first = points[0];
+        const last = points[points.length - 1];
+        const windowDurationMs = first && last ? Math.max(0, last.timestampMs - first.timestampMs) : 0;
+        return {
+            ...trace,
+            windowDurationMs,
+            durationSec: windowDurationMs / 1000,
+            points,
+        };
     }
 }
 /**

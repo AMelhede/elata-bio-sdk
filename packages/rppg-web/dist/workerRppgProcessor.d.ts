@@ -57,7 +57,8 @@ export declare class WorkerRppgProcessor implements RppgProcessorLike {
     getDebugSnapshot(nowMs?: number): RppgDebugSnapshot;
     /**
      * The trace the worker last sent: at most its newest 300 points (about 10 s at 30 a second),
-     * whatever `maxPoints` asks for, so a caller that needs a longer trace polls it.
+     * whatever `maxPoints` asks for, so a caller that needs a longer trace polls it. Its duration is
+     * that of the points returned, as a main-thread processor's is.
      */
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;
 }
