@@ -115,6 +115,7 @@ the commit/tags.
    ```bash
    ./run.sh release-check all
    ```
+   For `create-elata-demo` the preflight also refuses an `elataSdkVersions` entry that names no package under `packages/`, and its `verify:publish` (which `prepack` runs again at publish) scaffolds every template from the package's packed files alone, as npm installs it, so a version the CLI needs but does not carry stops the release before anything is published.
 4. **Build and publish**:
    ```bash
    ./run.sh release
