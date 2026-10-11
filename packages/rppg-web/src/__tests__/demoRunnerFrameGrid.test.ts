@@ -165,6 +165,30 @@ describe('the fuser sees the pulse in real time, whatever the camera rate', () =
   });
 });
 
+test('a frame with no usable timestamp costs that frame only, not the rest of the session', async () => {
+  // The fuser's filters keep state, so one NaN reaching them stays there. A NaN timestamp must
+  // restart the grid like any other timestamp that does not increase, not become an
+  // interpolation weight for the next frame's grid times.
+  const src = new MockFrameSource();
+  const pushes: FusedPush[] = [];
+  const proc = { pushFusedSample: (t: number, value: number, snr: number) => { pushes.push({ t, value, snr }); }, getMetrics: jest.fn() };
+  const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30 });
+  await runner.start();
+  const r = rng(1);
+  const times = framesAt(30, 241, 0);
+  times.forEach((t, i) => {
+    const frame = pulseFrame(t, 72, r);
+    if (i === 30) frame.timestampMs = Number.NaN;
+    src.emit(frame);
+  });
+  const d = runner.getDiagnostics();
+  await runner.stop();
+  const after = pushes.filter((p) => p.t > times[31]);
+  expect(after.length).toBeGreaterThan(200);
+  expect(after.filter((p) => !Number.isFinite(p.value))).toEqual([]);
+  expect(d.lastFusedSnr).toBeGreaterThan(1);
+});
+
 describe('a processor without pushFusedSample still gets every grid sample', () => {
   // DemoRunner duck-types its processor, so on the fusion path the fallback chain is the same
   // as on every other path: rgb_meta, then rgb, then intensity, then a processor error.

@@ -461,8 +461,9 @@ export class DemoRunner {
 		this.smoothedSkinRatio = skinRatio;
 		const ts = frame.timestampMs ?? Date.now();
 		const proc = this.processor as any;
-		// A frame that bypasses the grid pushes its own timestamp; the grid restarts after it, or
-		// it would later fill times before that timestamp and send the processor samples out of order.
+		// A frame that bypasses the grid pushes its own timestamp. The grid
+		// restarts after it, or it would later fill times before that timestamp
+		// and send the processor samples out of order.
 		if (!fusionSamples) this.gridPrev = null;
 		try {
 			if (fusionSamples) {
@@ -527,7 +528,9 @@ export class DemoRunner {
 	 * sample per frame. Faster than `sampleRate`, each grid time takes the line
 	 * between the two frames around it, so frames in between are not averaged
 	 * in. A gap longer than GRID_MAX_GAP_MS is a stall: the grid restarts at the
-	 * new frame instead of drawing a line across it.
+	 * new frame instead of drawing a line across it. So does a timestamp that
+	 * does not increase or is not a number; that frame is pushed at its own
+	 * timestamp, as before.
 	 */
 	private pushOnGrid(
 		proc: any,
@@ -539,11 +542,17 @@ export class DemoRunner {
 		const step = 1000 / (this.opts.sampleRate ?? 30);
 		const prev = this.gridPrev;
 		const ticks: GridSample[] = [];
-		if (!prev || cur.t <= prev.t || cur.t - prev.t > GRID_MAX_GAP_MS) {
+		// Stated as the one case that bridges, so a NaN timestamp (which fails
+		// every comparison) restarts the grid instead of becoming an
+		// interpolation weight that would leave NaN in the fuser's filters.
+		const bridge =
+			prev !== null && cur.t > prev.t && cur.t - prev.t <= GRID_MAX_GAP_MS;
+		if (!bridge) {
 			ticks.push(cur);
 			this.gridNextT = cur.t + step;
 		} else {
-			// 1e-6 ms: a grid time that equals the frame time up to float rounding is this frame.
+			// 1e-6 ms: a grid time equal to the frame time up to float rounding
+			// is this frame.
 			for (; this.gridNextT <= cur.t + 1e-6; this.gridNextT += step) {
 				ticks.push(interpolateGrid(prev, cur, this.gridNextT));
 			}
