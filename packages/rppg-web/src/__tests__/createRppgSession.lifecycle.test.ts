@@ -74,6 +74,7 @@ jest.mock("../demoRunner", () => ({
 }));
 
 import { createRppgSession } from "../rppgSession";
+import { DemoRunner } from "../demoRunner";
 import { loadFaceLandmarker, loadTrialFaceFinder } from "../mediapipeLoader";
 import { ensureVideoPlaying } from "../videoPlayback";
 import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
@@ -85,6 +86,7 @@ const mockedEnsureVideoPlaying = ensureVideoPlaying as jest.MockedFunction<typeo
 const mockedMediaPipeFrameSource = MediaPipeFrameSource as unknown as jest.Mock;
 const mockedMediaPipeFaceFrameSource = MediaPipeFaceFrameSource as unknown as jest.Mock;
 const mockedLoadWasmBackend = loadWasmBackend as jest.MockedFunction<typeof loadWasmBackend>;
+const mockedDemoRunner = DemoRunner as unknown as jest.Mock;
 
 describe("createRppgSession lifecycle", () => {
 	beforeEach(() => {
@@ -272,5 +274,55 @@ describe("createRppgSession lifecycle", () => {
 		expect(session.backendMode).toBe("wasm");
 		expect(onError).not.toHaveBeenCalled();
 		await session.dispose();
+	});
+
+	describe("requireFace", () => {
+		const faceMeshLoads = () =>
+			mockedLoadFaceMesh.mockResolvedValueOnce({
+				detectForVideo: jest.fn(() => ({ faceLandmarks: [] })),
+			} as any);
+		const runnerRequireFace = () => mockedDemoRunner.mock.calls[0][2].requireFace;
+		const video = () => document.createElement("video");
+
+		test("is on in face_mesh mode without an explicit roi", async () => {
+			faceMeshLoads();
+			await createRppgSession({ video: video(), faceMesh: "auto", ensureVideoPlayback: false });
+			expect(runnerRequireFace()).toBe(true);
+		});
+
+		test("is off with an explicit roi", async () => {
+			faceMeshLoads();
+			await createRppgSession({
+				video: video(),
+				faceMesh: "auto",
+				roi: { x: 0, y: 0, w: 10, h: 10 },
+				ensureVideoPlayback: false,
+			});
+			expect(runnerRequireFace()).toBe(false);
+		});
+
+		test("is off in video_frame mode, including when FaceMesh fails to load", async () => {
+			await createRppgSession({ video: video(), faceMesh: "off", ensureVideoPlayback: false });
+			mockedLoadFaceMesh.mockRejectedValueOnce(new Error("no model"));
+			await createRppgSession({ video: video(), faceMesh: "auto", ensureVideoPlayback: false });
+			expect(mockedDemoRunner.mock.calls.map((call) => call[2].requireFace)).toEqual([false, false]);
+		});
+
+		test("honours a caller's requireFace", async () => {
+			faceMeshLoads();
+			await createRppgSession({
+				video: video(),
+				faceMesh: "auto",
+				requireFace: false,
+				ensureVideoPlayback: false,
+			});
+			await createRppgSession({
+				video: video(),
+				faceMesh: "off",
+				requireFace: true,
+				ensureVideoPlayback: false,
+			});
+			expect(mockedDemoRunner.mock.calls.map((call) => call[2].requireFace)).toEqual([false, true]);
+		});
 	});
 });
