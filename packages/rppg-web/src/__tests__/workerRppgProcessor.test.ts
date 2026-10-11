@@ -91,6 +91,11 @@ describe("WorkerRppgProcessor", () => {
 				expect(viaWorker!.getTraceSnapshot(300)).toEqual(
 					direct.getTraceSnapshot(300),
 				);
+				// A shorter trace (the app adapter asks for 120 points) says the duration of the
+				// points it returns, not of the 300 the worker sent.
+				expect(viaWorker!.getTraceSnapshot(120)).toEqual(
+					direct.getTraceSnapshot(120),
+				);
 			}
 			compared++;
 		}

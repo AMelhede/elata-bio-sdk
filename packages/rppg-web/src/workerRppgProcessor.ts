@@ -213,7 +213,17 @@ export class WorkerRppgProcessor implements RppgProcessorLike {
 	getTraceSnapshot(maxPoints = 300): RppgTraceSnapshot {
 		const trace = this.state.trace;
 		const n = Math.max(1, Math.floor(maxPoints));
-		return { ...trace, points: trace.points.slice(-n) };
+		const points = trace.points.slice(-n);
+		const first = points[0];
+		const last = points[points.length - 1];
+		const windowDurationMs =
+			first && last ? Math.max(0, last.timestampMs - first.timestampMs) : 0;
+		return {
+			...trace,
+			windowDurationMs,
+			durationSec: windowDurationMs / 1000,
+			points,
+		};
 	}
 }
 
