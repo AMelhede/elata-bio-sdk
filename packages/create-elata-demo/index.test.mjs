@@ -402,6 +402,23 @@ test('a semver release bump moves the peer ranges that name the bumped packages'
     assert.equal(git('init', '-q').status, 0);
     assert.equal(git('add', '-A').status, 0);
     assert.equal(git('commit', '-qm', 'base').status, 0);
+    // A package that is not committed yet (a release run with ALLOW_DIRTY=1) is not part of the
+    // release, even when it peers on a bumped package.
+    mkdirSync(join(root, 'packages', 'zz-uncommitted'));
+    writeFileSync(
+      join(root, 'packages', 'zz-uncommitted', 'package.json'),
+      `${JSON.stringify(
+        {
+          name: '@elata-biosciences/zz-uncommitted',
+          version: '0.0.0',
+          peerDependencies: {
+            '@elata-biosciences/eeg-web': `^${before.get('@elata-biosciences/eeg-web')}`,
+          },
+        },
+        null,
+        '\t',
+      )}\n`,
+    );
 
     const release = spawnSync(
       'bash',
@@ -440,7 +457,11 @@ test('a semver release bump moves the peer ranges that name the bumped packages'
     }
     assert.ok(checked > 0, 'no workspace peer names a bumped package');
     assert.deepEqual(stale, []);
-    assert.equal(git('status', '--porcelain').stdout, '', 'the release commit left edited files behind');
+    assert.equal(
+      git('status', '--porcelain').stdout,
+      '?? packages/zz-uncommitted/\n',
+      'the release commit must take every manifest the release edited, and no package that was not committed',
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

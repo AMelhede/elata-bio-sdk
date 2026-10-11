@@ -1225,9 +1225,12 @@ release_commit_and_push_version_changes() {
     done
     # A semver bump also moves peer ranges in packages outside the release set
     # (sync_workspace_peer_ranges), so commit every workspace manifest it may have edited.
+    # Tracked ones only: a package that is not committed yet is not part of the release.
     local manifest
     for manifest in "$ROOT_DIR"/packages/*/package.json; do
-        [[ -f "$manifest" ]] && to_add+=("$manifest")
+        if git -C "$ROOT_DIR" ls-files --error-unmatch -- "$manifest" >/dev/null 2>&1; then
+            to_add+=("$manifest")
+        fi
     done
 
     if [[ ${#to_add[@]} -eq 0 ]]; then
