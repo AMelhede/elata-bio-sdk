@@ -150,6 +150,9 @@ impl RppgPipeline {
         self.tracker = None;
     }
 
+    /// Push one pre-extracted value, such as a fused pulse or a green-only intensity. It is
+    /// stored with R = G = B, and an analysis window made only of such samples is used as is
+    /// rather than colour-projected: there is no colour difference to separate.
     pub fn push_sample(&mut self, timestamp_ms: i64, intensity: f32) {
         // Backwards-compatible: green-only intensity.
         self.push_sample_rgb(timestamp_ms, intensity, intensity, intensity, 1.0);
@@ -209,6 +212,8 @@ impl RppgPipeline {
     }
 
     /// Compute rPPG metrics over the current window.
+    /// - Projects RGB to a pulse signal with CHROM over 1.6 s windows (a window of
+    ///   [`push_sample`](Self::push_sample) values, R = G = B, is used as is)
     /// - Applies temporal normalization
     /// - Runs bandpass filter
     /// - Computes a simple periodogram over candidate HR band and returns peak BPM
@@ -524,15 +529,20 @@ fn pos_from_rgb_windowed_into(
         let std_x = stddev(x_buf);
         let std_y = stddev(y_buf);
         let alpha = if std_y > 1e-6 { std_x / std_y } else { 0.0 };
+        // A window with no colour difference in it (every sample R = G = B, as push_sample sends
+        // one value, for example the multi-region fuser's pulse) has nothing for a colour
+        // projection to separate: X = Y there, so X - alpha * Y would cancel it. Such a window is
+        // used as is (X is then the normalised value itself, as the GREEN method would use it).
+        // A window with any camera colour in it goes through CHROM whole, which also cancels the
+        // jump where camera RGB meets pre-extracted values: normalisation makes it equal on R, G
+        // and B, which is brightness. Decided per sample instead, that jump stays in the signal.
+        let pre_extracted = r_win
+            .iter()
+            .zip(g_win)
+            .zip(b_win)
+            .all(|((rv, gv), bv)| rv == gv && gv == bv);
         for i in 0..win_len {
-            // A sample with no colour difference (R = G = B, as push_sample sends one value, for
-            // example the multi-region fuser's pulse) has nothing for a colour projection to
-            // separate, and X = Y would cancel it, so it is used as is (as the GREEN method would),
-            // with the same per-window normalisation and overlap-add. Decided per sample, so a
-            // window mixing camera RGB with such samples keeps both.
-            let k = start + i;
-            let pre_extracted = r[k] == g[k] && g[k] == b[k];
-            out[k] += if pre_extracted {
+            out[start + i] += if pre_extracted {
                 x_buf[i]
             } else {
                 x_buf[i] - alpha * y_buf[i]
@@ -632,14 +642,16 @@ mod tests {
     }
 
     /// The fused path (push_sample, R = G = B) must read a pulse at its rate as before, alone and
-    /// after a stretch of camera RGB inside the analysed window (DemoRunner sends RGB until the
-    /// fuser is ready): the window covers the last 10 of 14 s, so RGB until 7 s puts 3 s of it in.
+    /// after a stretch of camera RGB inside the analysed window (DemoRunner sends camera RGB on
+    /// frames the fuser cannot use, for example before it has face regions): the window covers
+    /// the last 10 of 14 s, so RGB until 7 s puts 3 s of it in.
     #[test]
     fn fused_samples_keep_their_rate() {
         let fs = 30.0_f32;
-        // 72 to 140: the rates at which the fused path, including its per-window normalisation,
-        // reads a clean sine within 5 bpm, on main and with this change alike. With RGB in the
-        // window, 140 reads as none on main too, so that case is left out rather than pinned.
+        // 72, 90, 110 and 140 are rates the fused path, including its per-window normalisation,
+        // reads within 5 bpm, before this change and after it. Not every rate between them does,
+        // on either (74 reads 48.6, 114 reads 106.8). With RGB in the window, 140 reads as none
+        // before this change too, so that case is left out rather than pinned.
         let cases: [(f32, &[f32]); 4] = [
             (72.0, &[0.0, 7.0]),
             (90.0, &[0.0, 7.0]),
@@ -700,6 +712,41 @@ mod tests {
             assert!(
                 got.is_some_and(|b| (b - 90.0).abs() <= 3.0),
                 "lamp {lamp_bpm}: read {got:?}, true pulse 90"
+            );
+        }
+    }
+
+    /// A window that holds camera RGB and then the first fused samples (the moment DemoRunner
+    /// switches to the fuser) must still read the pulse. Per-window normalisation turns the jump
+    /// from camera-scale values to the fuser's zero-mean values into an equal drop on R, G and B,
+    /// which is brightness, so CHROM cancels it when the whole mixed window goes through CHROM.
+    #[test]
+    fn switch_from_camera_rgb_to_fused_reads_the_pulse() {
+        let fs = 30.0_f32;
+        for &bpm in &[66.0_f32, 90.0, 120.0] {
+            let mut p = RppgPipeline::new(fs, 10.0);
+            // 14 s with a 10 s window: camera RGB for the first 9 s of the window, fused for 1 s.
+            for i in 0..(14.0 * fs) as usize {
+                let t = i as f32 / fs;
+                let v = (2.0 * PI * bpm / 60.0 * t).sin();
+                let ts = (t * 1000.0) as i64;
+                if t < 13.0 {
+                    let a = 0.004 / 0.77;
+                    p.push_sample_rgb(
+                        ts,
+                        150.0 * (1.0 - 0.33 * a * v),
+                        120.0 * (1.0 - 0.77 * a * v),
+                        100.0 * (1.0 - 0.53 * a * v),
+                        1.0,
+                    );
+                } else {
+                    p.push_sample(ts, v);
+                }
+            }
+            let got = p.get_metrics().bpm;
+            assert!(
+                got.is_some_and(|b| (b - bpm).abs() <= 3.0),
+                "true {bpm}: read {got:?} across the switch to fused samples"
             );
         }
     }
