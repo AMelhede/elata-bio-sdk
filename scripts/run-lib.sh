@@ -1557,14 +1557,33 @@ link_package_into_app() {
     echo "Undo with: ./run.sh unlink $app_dir"
 }
 
-# Remove the `link:` overrides that `pnpm link` records in a pnpm-workspace.yaml and keep
-# everything else (packages, allowBuilds, other overrides). An `overrides:` key left empty is
-# dropped, and a file left with only comments and blank lines (the override-only file pnpm
-# creates when an app has no workspace file of its own) is deleted.
-# As in YAML, the overrides block runs from its key to the next line that is not indented,
-# blank or a comment. Blank and comment lines are held until it is known whether the block
-# continues, so they never end it early.
+# Remove the `link:` overrides that `pnpm link` (pnpm 10 and later) records for an app, and keep
+# everything else. pnpm writes them to the app's pnpm-workspace.yaml, creating an override-only
+# file when the app has none, or to package.json's pnpm.overrides when package.json has a "pnpm"
+# field. Dies, before anything is reinstalled, if a link entry is left that this cannot edit, so
+# unlink never reports success while the app still resolves the local build.
 remove_pnpm_link_overrides() {
+    local app_dir="$1"
+    local ws="$app_dir/pnpm-workspace.yaml" pj="$app_dir/package.json"
+    if [[ -f "$ws" ]] && grep -q "link:" "$ws"; then
+        echo "Removing pnpm link overrides from: $ws"
+        remove_workspace_link_overrides "$ws"
+    fi
+    if [[ -f "$pj" ]] && grep -q '"link:' "$pj"; then
+        remove_package_json_link_overrides "$pj"
+    fi
+    if [[ -f "$ws" ]] && grep -qE "^[^#]*:[[:space:]]*[\"']?link:" "$ws"; then
+        die "$ws still has a 'link:' entry that unlink cannot edit, for example overrides written inline as 'overrides: { ... }'." \
+            "Delete that entry by hand, then run ./run.sh unlink again."
+    fi
+}
+
+# The pnpm-workspace.yaml half: an `overrides:` key left empty is dropped, and a file left with
+# only comments and blank lines (the override-only file pnpm creates) is deleted. As in YAML, the
+# overrides block runs from its key to the next line that is not indented, blank or a comment.
+# Blank and comment lines are held until it is known whether the block continues, so they never
+# end it early.
+remove_workspace_link_overrides() {
     local ws="$1" tmp
     tmp="$(mktemp)"
     awk '
@@ -1591,8 +1610,32 @@ remove_pnpm_link_overrides() {
     rm -f "$tmp"
 }
 
+# The package.json half: drops the `link:` values from pnpm.overrides, then an overrides object
+# and a pnpm field left empty, and keeps the file's indentation. A dependency the app itself
+# declares as link: is not an override and is left alone.
+remove_package_json_link_overrides() {
+    node - "$1" <<'NODE'
+const fs = require("node:fs");
+const file = process.argv[2];
+const text = fs.readFileSync(file, "utf8");
+const pkg = JSON.parse(text);
+const overrides = pkg.pnpm?.overrides;
+const links =
+  overrides && typeof overrides === "object"
+    ? Object.keys(overrides).filter((name) => String(overrides[name]).startsWith("link:"))
+    : [];
+if (links.length > 0) {
+  console.log(`Removing pnpm link overrides from: ${file}`);
+  for (const name of links) delete overrides[name];
+  if (Object.keys(overrides).length === 0) delete pkg.pnpm.overrides;
+  if (Object.keys(pkg.pnpm).length === 0) delete pkg.pnpm;
+  const indent = /^([ \t]+)"/m.exec(text)?.[1] ?? "  ";
+  fs.writeFileSync(file, `${JSON.stringify(pkg, null, indent)}${text.endsWith("\n") ? "\n" : ""}`);
+}
+NODE
+}
+
 # Drop a local link from an app and reinstall so it resolves registry deps.
-# pnpm (v10 and later) records `pnpm link` as an override in pnpm-workspace.yaml.
 unlink_package_from_app() {
     local app_dir="$1"
     require_package_manager
@@ -1601,14 +1644,7 @@ unlink_package_from_app() {
     fi
 
     if [[ "$PKG_MGR" == "pnpm" ]]; then
-        local ws="$app_dir/pnpm-workspace.yaml"
-        if [[ -f "$ws" ]] && grep -q "link:" "$ws"; then
-            echo "Removing pnpm link overrides from: $ws"
-            remove_pnpm_link_overrides "$ws"
-        fi
-        if [[ -f "$app_dir/package.json" ]] && grep -q '"link:' "$app_dir/package.json"; then
-            echo "Note: $app_dir/package.json still has a 'link:' entry (pnpm.overrides); remove it by hand."
-        fi
+        remove_pnpm_link_overrides "$app_dir"
     fi
 
     echo "Reinstalling dependencies in $app_dir (using $PKG_MGR)..."
@@ -2529,7 +2565,7 @@ case "$cmd" in
     __selftest_unlink_overrides)
         RUN_SH_TASK="__selftest_unlink_overrides"
         if [[ "${RUN_SH_INTERNAL_TEST:-0}" != "1" ]]; then
-            die "Internal self-test command is disabled." "Run via: RUN_SH_INTERNAL_TEST=1 ./run.sh __selftest_unlink_overrides <pnpm-workspace.yaml>"
+            die "Internal self-test command is disabled." "Run via: RUN_SH_INTERNAL_TEST=1 ./run.sh __selftest_unlink_overrides <app-dir>"
         fi
         remove_pnpm_link_overrides "$2"
         ;;
