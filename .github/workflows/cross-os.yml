@@ -1,0 +1,115 @@
+name: Cross-OS starters
+
+# Runs the create-elata-demo suite and builds every starter from the packed CLI
+# on Windows, macOS and Linux, Node 20 and 22. Steps after the install run even
+# when an earlier one fails, so one run reports every step.
+
+on:
+  push:
+    branches: [ci/cross-os, ci/cross-os-main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
+jobs:
+  starters:
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        node: [20, 22]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm (version from packageManager)
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Tool versions
+        run: |
+          node --version
+          npm --version
+          pnpm --version
+          corepack --version || true
+          bash --version | head -1
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: create-elata-demo test suite
+        if: ${{ !cancelled() }}
+        timeout-minutes: 40
+        run: pnpm --dir packages/create-elata-demo test
+
+      - name: Pack the CLI
+        id: pack
+        if: ${{ !cancelled() }}
+        run: |
+          W=$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
+          mkdir -p "$W/cli"
+          pnpm --dir packages/create-elata-demo pack --pack-destination "$W/cli"
+          ls -l "$W/cli"
+
+      - name: Starters from the packed CLI, npm
+        if: ${{ !cancelled() }}
+        run: |
+          W=$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
+          REPO=$(pwd)
+          TGZ=$(cd "$W/cli" && ls *.tgz | head -1)
+          fail=0
+          for t in rppg-demo eeg-demo eeg-ble ppg-demo pulse-game; do
+            cd "$W/cli"
+            app="npm-$t"
+            rm -rf "$app"
+            cli=packed
+            if ! npx --yes --package="./$TGZ" create-elata-demo "$app" --template "$t"; then
+              cli=in-repo
+              node "$REPO/packages/create-elata-demo/index.mjs" "$app" --template "$t" || { echo "RESULT npm $t scaffold=fail cli=both"; fail=1; continue; }
+              fail=1
+            fi
+            cd "$app"
+            if npm install --no-audit --no-fund; then inst=ok; else inst=fail; fail=1; fi
+            if npm run build; then build=ok; else build=fail; fail=1; fi
+            echo "RESULT npm $t cli=$cli install=$inst build=$build"
+            echo "| npm | $t | $cli | $inst | $build |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $fail
+
+      - name: Starters from the packed CLI, pnpm
+        if: ${{ !cancelled() }}
+        run: |
+          W=$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
+          REPO=$(pwd)
+          TGZ=$(cd "$W/cli" && ls *.tgz | head -1)
+          pnpm --version
+          fail=0
+          for t in rppg-demo eeg-demo eeg-ble ppg-demo pulse-game; do
+            cd "$W/cli"
+            app="pnpm-$t"
+            rm -rf "$app"
+            cli=packed
+            if ! npx --yes --package="./$TGZ" create-elata-demo "$app" --template "$t"; then
+              cli=in-repo
+              node "$REPO/packages/create-elata-demo/index.mjs" "$app" --template "$t" || { echo "RESULT pnpm $t scaffold=fail cli=both"; fail=1; continue; }
+              fail=1
+            fi
+            if pnpm --dir "$app" install; then inst=ok; else inst=fail; fail=1; fi
+            if pnpm --dir "$app" run build; then build=ok; else build=fail; fail=1; fi
+            echo "RESULT pnpm $t cli=$cli install=$inst build=$build"
+            echo "| pnpm | $t | $cli | $inst | $build |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $fail
