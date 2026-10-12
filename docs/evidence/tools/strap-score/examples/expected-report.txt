@@ -1,0 +1,17 @@
+page library version: 0.15.0-test.19
+strap: HRV Logger RR; 933 beats, 2 dropped as artefacts
+reference: 5 s mean of the strap's beats (60000 / mean RR)
+lag found: 2 s (the page's number at second s is compared with the strap at s+2; this is the clock difference plus how late the page is). Off by 1.2 bpm at this lag; the closest rival 3+ s away (5 s) is off by 1.7, t 4.6.
+lag curve (s: mean |page - strap| bpm, capped at 20): -15:5.0 -14:4.9 -13:4.8 -12:4.7 -11:4.5 -10:4.3 -9:4.1 -8:3.9 -7:3.7 -6:3.4 -5:3.2 -4:2.9 -3:2.6 -2:2.4 -1:2.1 0:1.8 1:1.5 2:1.2 3:1.2 4:1.5 5:1.7 6:2.0 7:2.2 8:2.5 9:2.7 10:2.9 11:3.1 12:3.3 13:3.4 14:3.6 15:3.7
+
+calm: 95/120 s shown (79 of 100); first number after 25 s; right within 5 bpm 92, within 10% 92, wrong 8 of every 100 shown; bias +1.2 bpm, limits -6.6 to +8.9
+  against the instantaneous beat rate instead: within 5 bpm 92 of 100
+  at lag 0 (clocks as recorded): 95/120 s shown (79 of 100); first number after 25 s; right within 5 bpm 92, within 10% 92, wrong 8 of every 100 shown; bias +1.2 bpm, limits -7.0 to +9.4
+
+stairs: 114/150 s shown (76 of 100); first number after 30 s; right within 5 bpm 89, within 10% 100, wrong 0 of every 100 shown; bias -1.0 bpm, limits -6.5 to +4.5
+  against the instantaneous beat rate instead: within 5 bpm 89 of 100
+  at lag 0 (clocks as recorded): 114/150 s shown (76 of 100); first number after 30 s; right within 5 bpm 89, within 10% 100, wrong 0 of every 100 shown; bias -1.4 bpm, limits -7.1 to +4.3
+
+ALL: 209/270 s shown (77 of 100); median first number after 27.5 s; right within 5 bpm 90, within 10% 96, wrong 4 of every 100 shown; bias -0.0 bpm, limits -6.9 to +6.9
+Limits are Bland-Altman 95% limits over seconds; neighbouring seconds are not independent, so treat them as a description, not a confidence interval.
+VERDICT: the page showed a number in 77 of every 100 seconds; when it did, it was within 5 bpm of the chest strap 90 times in 100 and wrong (outside 5 bpm and 10%) 4 times in 100 (good is close to 0); median first number after 27.5 s.

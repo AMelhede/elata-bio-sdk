@@ -17,6 +17,8 @@ sent to Elata yet. Written 2026-10-12.
   (the build testers install), the behaviour difference against 0.14.0, and the package-tool checks.
 - [methods.md](methods.md): how the pulse check works, every constant and its source.
 - [open-gaps.md](open-gaps.md): everything not yet evidenced, what would close it, and who can.
+- [tools/strap-score/](tools/strap-score/): scores the demo page's "Save readings" file against a chest strap
+  (Polar, HRV Logger, Elite HRV, Kubios or a plain RR list), with self-checks and synthetic examples.
 
 Labels on every number:
 
