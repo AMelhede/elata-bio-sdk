@@ -860,6 +860,36 @@ guard_major_zerover() {
 # scripts/audit-repo.mjs requires, in every workspace package (biosignal-analytics peers
 # on rppg-web but is not in the `all` set). Each range is edited in place so the rest of
 # the manifest keeps its formatting.
+# Shared by the sync and the release commit: rewrite every peer range in one manifest's text
+# that names a package in `bumped` (name -> version) to ^<version>, in place.
+PEER_SYNC_JS='
+  function syncPeers(file, original, bumped, log) {
+    let text = original;
+    for (const [name, range] of Object.entries(JSON.parse(text).peerDependencies || {})) {
+      if (!bumped.has(name)) continue;
+      const next = "^" + bumped.get(name);
+      if (range === next) continue;
+      const start = text.indexOf("\"peerDependencies\"");
+      const end = text.indexOf("}", start);
+      const from = JSON.stringify(name) + ": " + JSON.stringify(range);
+      const to = JSON.stringify(name) + ": " + JSON.stringify(next);
+      text = text.slice(0, start) + text.slice(start, end).replace(from, to) + text.slice(end);
+      if (JSON.parse(text).peerDependencies[name] !== next) {
+        throw new Error(file + ": could not rewrite peer " + name + " " + range + " to " + next);
+      }
+      if (log) console.error("  -> " + file + ": peer " + name + " " + range + " -> " + next);
+    }
+    return text;
+  }
+  function bumpedVersions(files) {
+    const fs = require("node:fs");
+    return new Map(files.map((file) => {
+      const { name, version } = JSON.parse(fs.readFileSync(file, "utf8"));
+      return [name, version];
+    }));
+  }
+'
+
 sync_workspace_peer_ranges() {
     require_cmds node
     local pkg
@@ -869,36 +899,65 @@ sync_workspace_peer_ranges() {
     done
     (
         cd "$ROOT_DIR"
-        node -e '
+        node -e "$PEER_SYNC_JS"'
           const fs = require("node:fs");
           const path = require("node:path");
-          const bumped = new Map(process.argv.slice(1).map((file) => {
-            const { name, version } = JSON.parse(fs.readFileSync(file, "utf8"));
-            return [name, version];
-          }));
-          for (const dir of fs.readdirSync("packages")) {
-            const file = path.join("packages", dir, "package.json");
-            if (!fs.existsSync(file)) continue;
-            const original = fs.readFileSync(file, "utf8");
-            let text = original;
-            for (const [name, range] of Object.entries(JSON.parse(text).peerDependencies || {})) {
-              if (!bumped.has(name)) continue;
-              const next = "^" + bumped.get(name);
-              if (range === next) continue;
-              const start = text.indexOf("\"peerDependencies\"");
-              const end = text.indexOf("}", start);
-              const from = JSON.stringify(name) + ": " + JSON.stringify(range);
-              const to = JSON.stringify(name) + ": " + JSON.stringify(next);
-              text = text.slice(0, start) + text.slice(start, end).replace(from, to) + text.slice(end);
-              if (JSON.parse(text).peerDependencies[name] !== next) {
-                console.error(file + ": could not rewrite peer " + name + " " + range + " to " + next);
-                process.exit(2);
-              }
-              console.error("  -> " + file + ": peer " + name + " " + range + " -> " + next);
+          const bumped = bumpedVersions(process.argv.slice(1));
+          try {
+            for (const dir of fs.readdirSync("packages")) {
+              const file = path.join("packages", dir, "package.json");
+              if (!fs.existsSync(file)) continue;
+              const original = fs.readFileSync(file, "utf8");
+              const text = syncPeers(file, original, bumped, true);
+              if (text !== original) fs.writeFileSync(file, text);
             }
-            if (text !== original) fs.writeFileSync(file, text);
+          } catch (error) {
+            console.error(error.message);
+            process.exit(2);
           }
         ' "${bumped[@]}"
+    )
+}
+
+# Stage the peer ranges sync_workspace_peer_ranges moved in committed manifests outside the
+# release set, and nothing else in them: the staged file is the committed one with only those
+# ranges rewritten, so any other uncommitted edit (possible with ALLOW_DIRTY=1) stays in the
+# working tree. A manifest whose working copy does not carry the rewrite is left alone.
+stage_synced_peer_ranges() {
+    require_cmds node git
+    local pkg
+    local -a released=()
+    for pkg in "$@"; do
+        released+=("$(package_dir_for_target "$pkg")/package.json")
+    done
+    (
+        cd "$ROOT_DIR"
+        node -e "$PEER_SYNC_JS"'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const { execFileSync } = require("node:child_process");
+          const released = process.argv.slice(1);
+          const bumped = bumpedVersions(released);
+          const git = (args, input) => execFileSync("git", args, { encoding: "utf8", input });
+          try {
+            for (const dir of fs.readdirSync("packages")) {
+              const file = path.posix.join("packages", dir, "package.json");
+              if (released.includes(file)) continue;
+              const staged = git(["ls-files", "-s", "--", file]).trim();
+              if (!staged) continue;
+              const committed = git(["show", "HEAD:" + file]);
+              const synced = syncPeers(file, committed, bumped, false);
+              if (synced === committed) continue;
+              const working = fs.readFileSync(file, "utf8");
+              if (syncPeers(file, working, bumped, false) !== working) continue;
+              const blob = git(["hash-object", "-w", "--stdin"], synced).trim();
+              git(["update-index", "--cacheinfo", staged.split(" ")[0] + "," + blob + "," + file]);
+            }
+          } catch (error) {
+            console.error(error.message);
+            process.exit(2);
+          }
+        ' "${released[@]}"
     )
 }
 
@@ -1224,15 +1283,6 @@ release_commit_and_push_version_changes() {
         [[ -f "$ROOT_DIR/$pkg_dir/package.json" ]] && to_add+=("$ROOT_DIR/$pkg_dir/package.json")
         [[ -f "$ROOT_DIR/$pkg_dir/CHANGELOG.md" ]] && to_add+=("$ROOT_DIR/$pkg_dir/CHANGELOG.md")
     done
-    # A semver bump also moves peer ranges in packages outside the release set
-    # (sync_workspace_peer_ranges), so commit every workspace manifest it may have edited.
-    # Tracked ones only: a package that is not committed yet is not part of the release.
-    local manifest
-    for manifest in "$ROOT_DIR"/packages/*/package.json; do
-        if git -C "$ROOT_DIR" ls-files --error-unmatch -- "$manifest" >/dev/null 2>&1; then
-            to_add+=("$manifest")
-        fi
-    done
 
     if [[ ${#to_add[@]} -eq 0 ]]; then
         echo "No version-related files found to commit."
@@ -1240,6 +1290,9 @@ release_commit_and_push_version_changes() {
     fi
 
     git add "${to_add[@]}" >/dev/null 2>&1 || true
+    # A semver bump also moves peer ranges in packages outside the release set
+    # (sync_workspace_peer_ranges); commit those ranges with the release, and only those.
+    stage_synced_peer_ranges $(release_targets_for "$target") || die "Could not stage the moved peer ranges."
     if git diff --cached --quiet >/dev/null; then
         echo "No version-related changes to commit."
         return 0

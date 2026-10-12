@@ -419,6 +419,18 @@ test('a semver release bump moves the peer ranges that name the bumped packages'
         '\t',
       )}\n`,
     );
+    // Uncommitted edits to committed manifests (also only possible with ALLOW_DIRTY=1) stay out of
+    // the release commit too: app-state, which no bump touches, and biosignal-analytics, whose rppg-web
+    // peer the release moves. Only the peer range goes into the commit; the edit stays in the tree.
+    const localEdit = (dir) => {
+      const file = join(root, 'packages', dir, 'package.json');
+      const text = readFileSync(file, 'utf8');
+      const edited = text.replace(/("description": ")/, '$1local edit, ');
+      assert.notEqual(edited, text);
+      writeFileSync(file, edited);
+    };
+    localEdit('app-state');
+    localEdit('biosignal-analytics');
 
     const release = spawnSync(
       'bash',
@@ -459,9 +471,23 @@ test('a semver release bump moves the peer ranges that name the bumped packages'
     assert.deepEqual(stale, []);
     assert.equal(
       git('status', '--porcelain').stdout,
-      '?? packages/zz-uncommitted/\n',
-      'the release commit must take every manifest the release edited, and no package that was not committed',
+      [
+        ' M packages/app-state/package.json',
+        ' M packages/biosignal-analytics/package.json',
+        '?? packages/zz-uncommitted/',
+        '',
+      ].join('\n'),
+      'the release commit must take every manifest the release edited, and nothing it did not edit',
     );
+    const committed = (dir) => JSON.parse(git('show', `HEAD:packages/${dir}/package.json`).stdout);
+    assert.doesNotMatch(committed('app-state').description, /local edit/);
+    const analytics = committed('biosignal-analytics');
+    assert.doesNotMatch(analytics.description, /local edit/);
+    assert.equal(
+      analytics.peerDependencies['@elata-biosciences/rppg-web'],
+      `^${after.get('@elata-biosciences/rppg-web').version}`,
+    );
+    assert.match(after.get('@elata-biosciences/biosignal-analytics').description, /^local edit, /);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
