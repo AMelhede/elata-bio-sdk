@@ -62,15 +62,15 @@ than first claimed; **withdrawn** = do not send the code.
 | [4. POS in the fuser](proposals/04-pos-in-fuser/) | strong | true 120 right in 0 of 150 s on 0.14.0, 150 of 150 with POS [synthetic] | default output of every face-mesh session changes | breathing under POS not measured | `fix/pos-in-fuser` 564d589, `pr/...` deca8d7 |
 | [5. No rate doubling](proposals/05-no-rate-doubling/) | keep, narrower | 105 clean resting pulses: 69 right on 0.14.0, 105 with the fix [synthetic] | 10 more no-pulse seconds with a number of 432 | gains on real captures only with fix 13 [owner] | `fix/no-rate-doubling` ea12c6b, `pr/...` 1a73b09 |
 | [6. Maker crashes](proposals/06-create-elata-demo-starts/) | strong | 11 published versions crash; fixed on Windows, macOS, Linux | about 1 s more to pack | CI green only with fix 7 | `fix/create-elata-demo-starts` fef0a51, `pr/...` 8b8ecad |
-| [7. Starters build](proposals/07-starters-build-and-install/) | strong | of 50 tool and starter cells, none works on main and breaks with the fix | pnpm 9 needs `-w` | other awk versions, Intel macOS, PowerShell | `fix/starters-build-and-install` b94551e, `pr/...` aeb6d5b |
+| [7. Starters build](proposals/07-starters-build-and-install/) | strong | 19 of 25 tool and starter pairs fail on main, 3 with the fix (all fix 8's npm problem); none newly broken | pnpm 9 needs `-w` | other awk versions, Intel macOS, PowerShell | `fix/starters-build-and-install` b94551e, `pr/...` aeb6d5b |
 | [8. Peer ranges](proposals/08-eeg-web-ble-peer-range/) | strong | npm install fails today, packed fix installs clean | one manual release check | provable on npm only after publishing | `fix/eeg-web-ble-peer-range` 1c4d1fe, `pr/...` 2d3d672 |
 | [9. Monitor timers](proposals/09-app-monitor-timers/) | strong | `start()` throws in 8 of 8 browser setups on 0.14.0 | none | Firefox, Safari not run | `fix/app-monitor-timers` 93db1f3, `pr/...` 9132e83 |
 | [10. Engine load errors](proposals/10-report-wasm-load-failure/) | strong | one fixed 85-character sentence on 0.14.0; each URL and its error with the fix | longer message, carries host names | docs correction bundled | `fix/report-wasm-load-failure` 82ff7e0, `pr/...` 962299d |
 | [11. Processor colour path](proposals/11-processor-colour-pulse/) | strong | spectral 84.0 for every true rate on 0.14.0; right with the option [synthetic] | opt-in, so nobody benefits by default | band-pass corner near 50 bpm | `fix/processor-colour-pulse` b748546, `pr/...` 9828923 |
 | [12. Engine fallback](proposals/12-no-engine-fallback/) | withdrawn, issue only | `fused_bpm` already gives the checked rate in 5,440 of 5,440 reads | none (not sent) | none | `fix/no-engine-fallback` 6894d3a, `pr/...` 13793e5 |
-| [13. Calibration blend](proposals/13-no-calibration-blend/) | modest | true 120 shows 116.4 on 0.14.0, 120.0 with the option [synthetic] | one more option forever | adds nothing on real captures once 4 and 5 are in [owner] | `fix/no-calibration-blend` 608e797, `pr/...` c4f98c2 |
+| [13. Calibration blend](proposals/13-no-calibration-blend/) | modest | real engine, grey pulses: right in 1,813 of 2,592 s on 0.14.0, 2,053 with the option [synthetic] | one more option forever | shows the engine's octave when the engine has one; adds nothing on real captures once 4 and 5 are in [owner] | `fix/no-calibration-blend` 608e797, `pr/...` c4f98c2 |
 | [Issue 1. Harmonic picker](proposals/issue-harmonic-picker/) | strong, as a report | clean 72 reads 48 at confidence 0.88 [synthetic] | none (no patch) | removing it does not help real captures yet | issue only |
-| [Pulse check](proposals/pulse-check/) | strong on known answers, not ready | no pulse: a number in 44 of 60 s on 0.14.0, 0 with the check [synthetic] | first number after 20 to 50 s; HRV, breathing withheld | failed its 10% bar on owner recordings (16.3%); needs a re-cut, real footage, a chest strap | method on `release/test-1` c85bc9b |
+| [Pulse check](proposals/pulse-check/) | strong on known answers, not ready | no pulse: a number in 44 of 60 s on 0.14.0, 0 with the check [synthetic] | first number after 18 to 29 s [synthetic], median 48.6 s [owner]; no number in 5,680 of 6,457 s, none at all in 10 of 50 recordings, and fewer right seconds than 0.14.0 (650 against 848) [owner]; HRV, breathing withheld | failed its 10% bar on owner recordings (16.3%), and those are in-sample (its constants were tuned on them); needs a re-cut, real footage, a chest strap | method on `release/test-1` c85bc9b |
 | [test.19's own changes](test-build/test19-audit.md) | ready to publish | 48 paired runs: every per-second read identical to test.18 at the defaults [synthetic] | none at the defaults | no browser or real-people run on test.19 | `release/test-1` c85bc9b |
 
 The `fix/*` branches are on the fork (`github.com/AMelhede/elata-bio-sdk`). The `pr/*` refs carry the same tree as
@@ -80,8 +80,12 @@ conflicts: [proposals/merge-plan.md](proposals/merge-plan.md).
 ## REPRODUCE
 
 You need Node 20 or later and this branch checked out. Every script prints a self-check line first: it checks its
-own generated input against the known answer with a separate DFT (or checks its folder), and throws if that fails.
-`SELFCHECK_BREAK=1` breaks the self-check on purpose, so you can watch it throw.
+own generated input against the known answer with a separate DFT (or checks its folder or the registry), and throws
+if that fails. To watch a self-check throw: `SELFCHECK_BREAK=1` for the single-check Node scripts;
+`BREAK=rate|window|nogate` for `05-no-rate-doubling/grey-suite.mjs` and `SELFCHECK_BREAK=rate|window|nogate` for
+`11-processor-colour-pulse/owner-recordings.mjs`; the bash scripts have no break switch. In `no-pulse-session.mjs` the
+self-check always checks the 72 bpm generator, also on a no-pulse run, because the no-pulse input is the same face
+with the pulse set to 0.
 
 ```
 git clone https://github.com/AMelhede/elata-bio-sdk && cd elata-bio-sdk && git checkout docs/evidence
