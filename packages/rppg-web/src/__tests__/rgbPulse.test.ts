@@ -167,6 +167,30 @@ describe("switch rgbPulse on: read once a second, not once", () => {
 		const row = readme.split(/\r?\n/).find((line) => line.startsWith("| `fixes.rgbPulse` |")) ?? "";
 		expect(row).toContain(`a 120 came out ${Math.round(m.bpm ?? 0)}`);
 	});
+
+	test("a clipped frame before the first colour sample still passes its level, as the README says", () => {
+		// The grey rule passes R = G = B through while no colour sample has arrived since the last reset, so a first
+		// frame clipped white is taken for a grey feed: its 255 sits in the window beside a pulse of about 0.01.
+		const row = readme.split(/\r?\n/).find((line) => line.startsWith("| `fixes.rgbPulse` |")) ?? "";
+		for (const bpm of [50, 72, 120]) {
+			const samples = feed(bpm, 30, 40);
+			samples[0] = { ...samples[0], r: 255, g: 255, b: 255 };
+			const p = new RppgProcessor(silentBackend, 30, 10, { fixes: ON as never });
+			const shown: number[] = [];
+			let next = 1000;
+			for (const x of samples) {
+				p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
+				if (x.t >= next) {
+					next += 1000;
+					const read = p.getMetrics().bpm;
+					if (x.t >= 16000 && read != null) shown.push(read);
+				}
+			}
+			expect(p.getTraceSnapshot(2000).points[0].intensity).toBe(255);
+			expect(shown).toEqual([]);
+		}
+		expect(row).toContain("one white first frame left 50, 72 and 120 with no rate shown");
+	});
 });
 
 describe("switch rgbPulse off (the default): the published path, exactly", () => {
