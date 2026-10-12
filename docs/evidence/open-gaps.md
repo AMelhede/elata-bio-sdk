@@ -8,7 +8,7 @@ needs the test build published on npm first.
 
 | Gap | What would close it | Who |
 |---|---|---|
-| No real-people evidence Elata can rerun. Every real-person number is either one person's own recordings (in-sample for the pulse check) or private | a chest-strap study: Polar H10 or equivalent, at least 30 paired readings across at least 10 people, spread of rates, scored per reading against the strap. **Status 2026-10-12: pending, not started.** The scorer is ready ([tools/strap-score/](tools/strap-score/), self-checked on synthetic examples); the readings need the test build on npm first | testers and Andreas, with a strap each |
+| No real-people evidence Elata can rerun. Every real-person number is either one person's own recordings (in-sample for the pulse check) or private | a chest-strap study: Polar H10 or equivalent, at least 30 paired readings across at least 10 people, spread of rates, scored per reading against the strap. **Status 2026-10-12: pending, not started.** The scorer is ready ([tools/strap-score/](tools/strap-score/), self-checked on synthetic examples); readings are taken with the demo app (its Save readings file), no npm release needed. One tester has a strap | the testers |
 | One webcam, one person behind the [owner] numbers | the same study on the testers' own cameras and phones | testers |
 | Darker skin and other ages not covered anywhere | recruit and record with a skin-tone measure | Andreas, with the testers |
 | The test build has not been run on a phone or a slow CPU since test.15 | open a tester app on two phones, log `RPPG_WEB_BUILD_VERSION` and the frame rate | testers |
