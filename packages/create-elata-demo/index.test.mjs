@@ -363,6 +363,155 @@ test('rppg template uses Vite URL assets instead of public pkg imports', () => {
   }
 });
 
+test('./run.sh unlink removes the link overrides pnpm link records, and only those', (t) => {
+  // `./run.sh link` runs `pnpm link`, which records the local build as a `link:` override in the
+  // app's pnpm-workspace.yaml (creating an override-only file when the app has none), or in
+  // package.json's pnpm.overrides when package.json has a "pnpm" field (pnpm 10). Every starter
+  // now ships its own pnpm-workspace.yaml, so unlink has to edit that file rather than delete it
+  // or leave it. This runs the repo's real `./run.sh unlink` with pnpm stubbed on PATH, so nothing
+  // is installed; the stub records that a reinstall was asked for.
+  if (spawnSync('bash', ['--version']).status !== 0) {
+    t.skip('needs bash');
+    return;
+  }
+  const runSh = join(__dirname, '..', '..', 'run.sh');
+  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-unlink-'));
+  try {
+    const bin = join(tmp, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'pnpm'), '#!/bin/sh\necho "pnpm $*" >> "$PNPM_LOG"\n', { mode: 0o755 });
+    const lines = (...rows) => `${rows.join('\n')}\n`;
+    const unlink = (name, files) => {
+      const app = join(tmp, name);
+      mkdirSync(app);
+      for (const [file, text] of Object.entries(files)) writeFileSync(join(app, file), text);
+      const log = join(tmp, `${name}.pnpm.log`);
+      const run = spawnSync('bash', [runSh, 'unlink', app], {
+        encoding: 'utf8',
+        timeout: 30_000,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PNPM_LOG: log },
+      });
+      const read = (file) => (existsSync(join(app, file)) ? readFileSync(join(app, file), 'utf8') : null);
+      return { run, read, reinstalled: existsSync(log) };
+    };
+    const ok = (result) => {
+      assert.equal(result.run.status, 0, result.run.stderr);
+      assert.ok(result.reinstalled, 'unlink did not reinstall');
+    };
+    const pkg = '{\n  "name": "app"\n}\n';
+
+    // A starter's own workspace file after `pnpm link`: the link goes, everything else stays.
+    const starter = unlink('starter', {
+      'package.json': pkg,
+      'pnpm-workspace.yaml': lines(
+        '# comment', 'packages:', '  - .', 'allowBuilds:', '  esbuild: true', 'overrides:',
+        "  '@elata-biosciences/rppg-web': link:../../elata-bio-sdk/packages/rppg-web",
+      ),
+    });
+    ok(starter);
+    assert.equal(
+      starter.read('pnpm-workspace.yaml'),
+      lines('# comment', 'packages:', '  - .', 'allowBuilds:', '  esbuild: true'),
+    );
+
+    // Another override in the same block is kept, with its key.
+    const mixed = unlink('mixed', {
+      'package.json': pkg,
+      'pnpm-workspace.yaml': lines(
+        'overrides:', '  foo: 1.2.3', "  '@elata-biosciences/eeg-web': link:../eeg-web", 'packages:', '  - .',
+      ),
+    });
+    ok(mixed);
+    assert.equal(mixed.read('pnpm-workspace.yaml'), lines('overrides:', '  foo: 1.2.3', 'packages:', '  - .'));
+
+    // The override-only file pnpm creates for an app without a workspace file is removed.
+    const only = unlink('only', {
+      'package.json': pkg,
+      'pnpm-workspace.yaml': lines('overrides:', "  '@elata-biosciences/rppg-web': link:../rppg-web"),
+    });
+    ok(only);
+    assert.equal(only.read('pnpm-workspace.yaml'), null);
+
+    // Blank lines and comments inside the block do not end it. This is the layout pnpm 10.33.2
+    // writes when the app's own overrides are separated by a blank line: the link sorts first and
+    // the blank line follows it. The other overrides stay under `overrides:`.
+    const blank = unlink('blank', {
+      'package.json': pkg,
+      'pnpm-workspace.yaml': lines(
+        'packages:', '  - .', 'allowBuilds:', '  esbuild: true', 'overrides:',
+        "  '@elata-biosciences/rppg-web': link:../rppg-web", '', '  react: 18.3.1', '  zod: 3.23.8',
+      ),
+    });
+    ok(blank);
+    assert.equal(
+      blank.read('pnpm-workspace.yaml'),
+      lines('packages:', '  - .', 'allowBuilds:', '  esbuild: true', 'overrides:', '', '  react: 18.3.1', '  zod: 3.23.8'),
+    );
+    const comment = unlink('comment', {
+      'package.json': pkg,
+      'pnpm-workspace.yaml': lines(
+        'overrides:', '# pinned on purpose', "  '@elata-biosciences/rppg-web': link:../rppg-web", '  zod: 3.23.8',
+        'packages:', '  - .',
+      ),
+    });
+    ok(comment);
+    assert.equal(
+      comment.read('pnpm-workspace.yaml'),
+      lines('overrides:', '# pinned on purpose', '  zod: 3.23.8', 'packages:', '  - .'),
+    );
+
+    // A comment after the key is still the key.
+    const keyComment = unlink('key-comment', {
+      'package.json': pkg,
+      'pnpm-workspace.yaml': lines(
+        'packages:', '  - .', 'overrides: # local builds', "  '@elata-biosciences/rppg-web': link:../rppg-web",
+      ),
+    });
+    ok(keyComment);
+    assert.equal(keyComment.read('pnpm-workspace.yaml'), lines('packages:', '  - .'));
+
+    // pnpm 10 writes the link into package.json's pnpm.overrides when package.json has a "pnpm"
+    // field. That link goes; the other override, the rest of the field, a dependency the app itself
+    // declares as link: and the file's indentation stay.
+    const withPnpmField = unlink('pnpm-field', {
+      'package.json': lines(
+        '{', '  "name": "app",', '  "dependencies": {', '    "local-thing": "link:../local-thing"', '  },',
+        '  "pnpm": {', '    "onlyBuiltDependencies": [', '      "esbuild"', '    ],', '    "overrides": {',
+        '      "@elata-biosciences/rppg-web": "link:../rppg-web",', '      "zod": "3.23.8"', '    }', '  }', '}',
+      ),
+    });
+    ok(withPnpmField);
+    assert.equal(
+      withPnpmField.read('package.json'),
+      lines(
+        '{', '  "name": "app",', '  "dependencies": {', '    "local-thing": "link:../local-thing"', '  },',
+        '  "pnpm": {', '    "onlyBuiltDependencies": [', '      "esbuild"', '    ],', '    "overrides": {',
+        '      "zod": "3.23.8"', '    }', '  }', '}',
+      ),
+    );
+
+    // An overrides object, and then a pnpm field, left empty are dropped, like the workspace key.
+    const pnpmFieldOnly = unlink('pnpm-field-only', {
+      'package.json':
+        '{\n\t"name": "app",\n\t"pnpm": {\n\t\t"overrides": {\n\t\t\t"@elata-biosciences/rppg-web": "link:../rppg-web"\n\t\t}\n\t}\n}\n',
+    });
+    ok(pnpmFieldOnly);
+    assert.equal(pnpmFieldOnly.read('package.json'), '{\n\t"name": "app"\n}\n');
+
+    // A link this cannot edit (overrides written inline) fails before reinstalling instead of
+    // reporting "Unlinked", and the file is left as it was.
+    const inlineFile = lines('packages:', '  - .', "overrides: { '@elata-biosciences/rppg-web': 'link:../rppg-web' }");
+    const inline = unlink('inline', { 'package.json': pkg, 'pnpm-workspace.yaml': inlineFile });
+    assert.notEqual(inline.run.status, 0, 'unlink reported success with an inline link override left in place');
+    assert.match(inline.run.stderr, /link:/);
+    assert.doesNotMatch(inline.run.stdout, /Unlinked/);
+    assert.equal(inline.reinstalled, false);
+    assert.equal(inline.read('pnpm-workspace.yaml'), inlineFile);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('fails on unknown template', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-'));
   try {

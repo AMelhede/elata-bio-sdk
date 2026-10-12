@@ -2562,13 +2562,6 @@ case "$cmd" in
         fi
         require_cmd "__definitely_missing_command__"
         ;;
-    __selftest_unlink_overrides)
-        RUN_SH_TASK="__selftest_unlink_overrides"
-        if [[ "${RUN_SH_INTERNAL_TEST:-0}" != "1" ]]; then
-            die "Internal self-test command is disabled." "Run via: RUN_SH_INTERNAL_TEST=1 ./run.sh __selftest_unlink_overrides <app-dir>"
-        fi
-        remove_pnpm_link_overrides "$2"
-        ;;
     help|-h|--help)
         RUN_SH_TASK="help"
         usage
