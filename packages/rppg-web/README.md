@@ -327,9 +327,10 @@ reading: `bpm: null`, `confidence: 0` and every other estimate cleared as for a
 failed backend, with reason code `no_face`; the rolling baseline and calibration
 state are kept. A shorter miss keeps the last reading. When the face returns
 after that second, the sample window and the engine pipeline start afresh, so
-the window's estimates use only frames from after the gap and the reading comes
-back once the window has refilled; the Bayesian tracker, the rate history,
-calibration and the baseline carry over. Pass `requireFace: false` to keep the
+the window's estimates use only frames from after the gap. A number comes back
+within a few seconds; the first ones come from a short window and can be off by
+several bpm until it fills. The Bayesian tracker, the rate history, calibration
+and the baseline carry over. Pass `requireFace: false` to keep the
 previous behaviour; `video_frame` mode and an explicit `roi` are unchanged.
 
 **FaceMesh fallback:** `faceMesh: "auto"` falls back to `video_frame` mode if
