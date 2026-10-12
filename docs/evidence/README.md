@@ -1,7 +1,7 @@
 # Evidence for the proposed changes to rppg-web and the starter tools
 
 This folder lets anyone check, from first principles, each change we propose to Elata's SDK. It is for Elata's
-maintainers, the outside reviewer (Morgan Hough) and the testers (Kyle, Namkhai, Alexander). Nothing here has been
+maintainers, the outside reviewer and the testers. Nothing here has been
 sent to Elata yet. Written 2026-10-12.
 
 ## How to read it
@@ -43,9 +43,9 @@ Every change goes through the same steps, in this order, and none is skipped:
    on/off switch, so a tester can turn one off and compare.
 3. **Testers in live apps.** Swap the test build into real apps with a one-line package alias, test with real people
    and a reference sensor, and log each result against the exact version.
-4. **Outside review.** Morgan Hough reviews the method ([methods.md](methods.md)).
-5. **Then one PR per change into Elata's SDK**, opened from a clean one-commit `pr/*` ref, only once Andreas, Kyle,
-   Namkhai and Alexander have tested it and decided together.
+4. **Outside review.** The outside reviewer checks the method ([methods.md](methods.md)).
+5. **Then one PR per change into Elata's SDK**, opened from a clean one-commit `pr/*` ref, only once the whole team
+   has tested it and decided together.
 
 Today we are between steps 2 and 3: test.19 is ready to publish and not yet published.
 

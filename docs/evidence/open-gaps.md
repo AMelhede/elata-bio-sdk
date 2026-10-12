@@ -1,6 +1,6 @@
 # Open gaps: what is not yet evidenced
 
-Each line says what is missing, what would close it, and who can do it. "Testers" means Kyle, Namkhai and Alexander
+Each line says what is missing, what would close it, and who can do it. "Testers" means the Elata team members testing the build
 using the test build in their own apps. Most real-people gaps close at step 3 of the release path (README.md), which
 needs the test build published on npm first.
 

@@ -83,7 +83,7 @@ no tests, no src, no CHANGELOG, no .env or keys in either. d.ts.map "sources": [
 Scan: fork's own release-scrub.cjs over every file (wasm via printable strings) plus extra greps (names, emails, token patterns, paths):
 ```
 ours  pkg/rppg_wasm_bg.wasm: absolute path: /root/  (string: the Rust toolchain folder/registry/src/index.crates.io-.../js-sys-0.3.106/src/futures/jspi.rs)
-elata pkg/rppg_wasm_bg.wasm: absolute path: /Users/khan/.cargo/registry/src/.../wasm-bindgen-0.2.117/src/externref.rs
+elata pkg/rppg_wasm_bg.wasm: absolute path: /Users/<login>/.cargo/registry/src/.../wasm-bindgen-0.2.117/src/externref.rs
 "commit hash" hit in both wasm = the public rustc toolchain hash /rustc/4a4ef493.../library/...
 text files: no dataset word, no person, no email, no secret pattern, no local path. App-name hits are upstream's own
   (TradeLock identifiers, "Peak times") and the author/fork URL, all intended.

@@ -273,5 +273,5 @@ that a pulse "keeps it near 3" holds for synthetic blood, not for this person's 
 See `case/pulsecheck-audit.md`, "Gaps". In short: re-cut the branch from the test build's method on Elata main with
 nothing else in it; add the session test of section 3.5a (written and run on the test build's tree, not yet on a
 branch); settle the face flicker ratio (section 4a); reproduce section 3 on the re-cut branch; outside review of the
-method (Morgan Hough, in progress); the test build in Kyle's, Namkhai's and Alexander's apps; and a decision on
+method (the outside reviewer, in progress); the test build in the testers' apps; and a decision on
 whether the owner's recordings may be shared.
