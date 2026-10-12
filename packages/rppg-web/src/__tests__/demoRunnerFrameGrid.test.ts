@@ -184,6 +184,17 @@ describe('the fuser sees the pulse in real time, whatever the camera rate', () =
     expect(ratio).toBeLessThan(1.2);
   });
 
+  test('a 72 bpm pulse filmed at 60 fps keeps its fused amplitude', async () => {
+    // Fed one sample per frame, the fuser reads 1.2 Hz as 0.6 Hz, below its 0.7 Hz high-pass
+    // corner, and keeps about 0.63 of the 30 fps amplitude. On the grid it sees 1.2 Hz.
+    const settled = (p: FusedPush) => p.t > 8000;
+    const at60 = await filmPulse(60, 72, 20);
+    const at30At72 = await filmPulse(30, 72, 20);
+    const ratio = amplitudeAt(at60.filter(settled), 72) / amplitudeAt(at30At72.filter(settled), 72);
+    expect(ratio).toBeGreaterThan(0.8);
+    expect(ratio).toBeLessThan(1.2);
+  });
+
   test('the fused signal quality warms up in the same real time at 15 fps as at 30 fps', () => {
     const firstQuality = (pushes: FusedPush[]) => pushes.find((p) => p.snr > 0)?.t ?? Number.NaN;
     expect(Number.isFinite(firstQuality(at30))).toBe(true);
