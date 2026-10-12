@@ -1,0 +1,125 @@
+# Evidence for the proposed changes to rppg-web and the starter tools
+
+This folder lets anyone check, from first principles, each change we propose to Elata's SDK. It is for Elata's
+maintainers, the outside reviewer (Morgan Hough) and the testers (Kyle, Namkhai, Alexander). Nothing here has been
+sent to Elata yet. Written 2026-10-12.
+
+## How to read it
+
+- **One folder per change** under [proposals/](proposals/). Each holds a short `README.md` (problem, fix, verdict,
+  strongest evidence, cost, what is still open, where the code is), the full PR text (`pr.md`), and small scripts
+  that reproduce the problem on the published package and show the change.
+- **Audits** under [audits/](audits/): a reviewer playing an Elata maintainer, looking for reasons not to merge.
+  Each audit covers several changes and ends with a "Closed" section: every objection raised, what was done about
+  it, and whether it closed. Fixes 1, 3 and 4 share `runner.md`; 2 and the issue `core.md`; 5 and 13
+  `estimators.md`; 11 and 12 `processor.md`; 6, 7 and 8 `tooling.md` and `cross-os.md`; 9 and 10 `runtime.md`.
+- **The test build** under [test-build/](test-build/): the audits of `@amelhede/rppg-web` 0.15.0-test.17 to test.19
+  (the build testers install), the behaviour difference against 0.14.0, and the package-tool checks.
+- [methods.md](methods.md): how the pulse check works, every constant and its source.
+- [open-gaps.md](open-gaps.md): everything not yet evidenced, what would close it, and who can.
+
+Labels on every number:
+
+- **[synthetic]**: generated input with a known answer. Anyone can rerun it with the named script.
+- **[owner]**: private, owner recordings. One person's own webcam captures, each with one typed reference rate. The
+  recordings are not in this repository. Scripts that use them take a `RECORDINGS_DIR` argument.
+- Some PR texts and audits mention **private** context: recordings whose licence does not allow us to share them or
+  any number from them. Those numbers are removed from this copy. A private appendix holds them: ask Andreas
+  Melhede.
+
+Words: **0.14.0** is the published `@elata-biosciences/rppg-web`; **main** is Elata's main at 49fdb41; **right**
+means within 5 bpm unless a row says otherwise; **red on main, green on the branch** means a test that fails on
+Elata's code and passes with the change. `S/` in the audits is the private working folder; files there are not in
+this repository unless copied here. Paths like `scratch/...` were temporary work folders, since deleted. One
+upstream identifier prefix is written `PREFIX_` in quoted error messages.
+
+## The release path
+
+Every change goes through the same steps, in this order, and none is skipped:
+
+1. **Fork.** Build it in the fork (`AMelhede/elata-bio-sdk`), one change per commit, each with a test that fails
+   without it.
+2. **npm test build.** Publish the fork as `@amelhede/rppg-web` with a `-test.N` version, every change behind its own
+   on/off switch, so a tester can turn one off and compare.
+3. **Testers in live apps.** Swap the test build into real apps with a one-line package alias, test with real people
+   and a reference sensor, and log each result against the exact version.
+4. **Outside review.** Morgan Hough reviews the method ([methods.md](methods.md)).
+5. **Then one PR per change into Elata's SDK**, opened from a clean one-commit `pr/*` ref, only once Andreas, Kyle,
+   Namkhai and Alexander have tested it and decided together.
+
+Today we are between steps 2 and 3: test.19 is ready to publish and not yet published.
+
+## The changes at a glance
+
+Verdict words: **strong** = beats leaving the code alone on evidence anyone can rerun; **narrow** = true but smaller
+than first claimed; **withdrawn** = do not send the code.
+
+| Change | Verdict | Strongest evidence | Cost | Still open | Branch, one-commit ref |
+|---|---|---|---|---|---|
+| [1. No face, no reading](proposals/01-no-face-no-reading/) | strong | wall gap: a number in 10 of 10 s on 0.14.0, 1 then nothing with the fix [synthetic] | no number while no face is in view | moving people not measured | `fix/no-face-no-reading` 21b7326, `pr/no-face-no-reading` 6950c68 |
+| [2. Core colour projection sign](proposals/02-rust-colour-projection-sign/) | strong | true 90 under a lamp at 60 reads 67 on 0.14.0, about 90 with the fix [synthetic] | camera-colour path shows more numbers, some wrong (issue 1) | no shareable real-capture check | `fix/rust-colour-projection-sign` 06f93f6, `pr/...` b527385 |
+| [3. Real frame rate](proposals/03-real-frame-rate/) | narrow | quality at 15 fps 0.19 of its 30 fps value with fix 4 alone, 1.00 with fix 3 [synthetic] | `getMetrics()` 142 against 57 ms at 15 fps | changes no rate once fix 4 is in; keep as a quality fix or drop | `fix/real-frame-rate` bd72c7e, `pr/...` ff1cc00 |
+| [4. POS in the fuser](proposals/04-pos-in-fuser/) | strong | true 120 right in 0 of 150 s on 0.14.0, 150 of 150 with POS [synthetic] | default output of every face-mesh session changes | breathing under POS not measured | `fix/pos-in-fuser` 564d589, `pr/...` deca8d7 |
+| [5. No rate doubling](proposals/05-no-rate-doubling/) | keep, narrower | 105 clean resting pulses: 69 right on 0.14.0, 105 with the fix [synthetic] | 10 more no-pulse seconds with a number of 432 | gains on real captures only with fix 13 [owner] | `fix/no-rate-doubling` ea12c6b, `pr/...` 1a73b09 |
+| [6. Maker crashes](proposals/06-create-elata-demo-starts/) | strong | 11 published versions crash; fixed on Windows, macOS, Linux | about 1 s more to pack | CI green only with fix 7 | `fix/create-elata-demo-starts` fef0a51, `pr/...` 8b8ecad |
+| [7. Starters build](proposals/07-starters-build-and-install/) | strong | of 50 tool and starter cells, none works on main and breaks with the fix | pnpm 9 needs `-w` | other awk versions, Intel macOS, PowerShell | `fix/starters-build-and-install` b94551e, `pr/...` aeb6d5b |
+| [8. Peer ranges](proposals/08-eeg-web-ble-peer-range/) | strong | npm install fails today, packed fix installs clean | one manual release check | provable on npm only after publishing | `fix/eeg-web-ble-peer-range` 1c4d1fe, `pr/...` 2d3d672 |
+| [9. Monitor timers](proposals/09-app-monitor-timers/) | strong | `start()` throws in 8 of 8 browser setups on 0.14.0 | none | Firefox, Safari not run | `fix/app-monitor-timers` 93db1f3, `pr/...` 9132e83 |
+| [10. Engine load errors](proposals/10-report-wasm-load-failure/) | strong | one fixed 85-character sentence on 0.14.0; each URL and its error with the fix | longer message, carries host names | docs correction bundled | `fix/report-wasm-load-failure` 82ff7e0, `pr/...` 962299d |
+| [11. Processor colour path](proposals/11-processor-colour-pulse/) | strong | spectral 84.0 for every true rate on 0.14.0; right with the option [synthetic] | opt-in, so nobody benefits by default | band-pass corner near 50 bpm | `fix/processor-colour-pulse` b748546, `pr/...` 9828923 |
+| [12. Engine fallback](proposals/12-no-engine-fallback/) | withdrawn, issue only | `fused_bpm` already gives the checked rate in 5,440 of 5,440 reads | none (not sent) | none | `fix/no-engine-fallback` 6894d3a, `pr/...` 13793e5 |
+| [13. Calibration blend](proposals/13-no-calibration-blend/) | modest | true 120 shows 116.4 on 0.14.0, 120.0 with the option [synthetic] | one more option forever | adds nothing on real captures once 4 and 5 are in [owner] | `fix/no-calibration-blend` 608e797, `pr/...` c4f98c2 |
+| [Issue 1. Harmonic picker](proposals/issue-harmonic-picker/) | strong, as a report | clean 72 reads 48 at confidence 0.88 [synthetic] | none (no patch) | removing it does not help real captures yet | issue only |
+| [Pulse check](proposals/pulse-check/) | strong on known answers, not ready | no pulse: a number in 44 of 60 s on 0.14.0, 0 with the check [synthetic] | first number after 20 to 50 s; HRV, breathing withheld | failed its 10% bar on owner recordings (16.3%); needs a re-cut, real footage, a chest strap | method on `release/test-1` c85bc9b |
+| [test.19's own changes](test-build/test19-audit.md) | ready to publish | 48 paired runs: every per-second read identical to test.18 at the defaults [synthetic] | none at the defaults | no browser or real-people run on test.19 | `release/test-1` c85bc9b |
+
+The `fix/*` branches are on the fork (`github.com/AMelhede/elata-bio-sdk`). The `pr/*` refs carry the same tree as
+the branch tip on a single commit on 49fdb41; they are local until Andreas pushes them. Merge order and the known
+conflicts: [proposals/merge-plan.md](proposals/merge-plan.md).
+
+## REPRODUCE
+
+You need Node 20 or later and this branch checked out. Every script prints a self-check line first: it checks its
+own generated input against the known answer with a separate DFT (or checks its folder), and throws if that fails.
+`SELFCHECK_BREAK=1` breaks the self-check on purpose, so you can watch it throw.
+
+```
+git clone https://github.com/AMelhede/elata-bio-sdk && cd elata-bio-sdk && git checkout docs/evidence
+mkdir -p /tmp/p14 && (cd /tmp/p14 && npm init -y >/dev/null && npm install @elata-biosciences/rppg-web@0.14.0)
+P14=/tmp/p14/node_modules/@elata-biosciences/rppg-web     # the published package
+T=packages/rppg-web                                         # the test build, built files committed on this branch
+E=docs/evidence/proposals
+
+node $E/pulse-check/no-pulse-session.mjs $P14               # no pulse: a number in 44 of 60 s
+node $E/pulse-check/no-pulse-session.mjs $T 0 check         # with the check: 0 of 60
+node $E/01-no-face-no-reading/face-gap.mjs $P14 gap 10      # a number in 10/10 s of a wall gap
+node $E/01-no-face-no-reading/face-gap.mjs $T gap 10        # 1/10, then right 65/65
+node $E/02-rust-colour-projection-sign/lamp.mjs $P14 90 60  # lamp wins: 67
+node $E/02-rust-colour-projection-sign/lamp.mjs $T 90 60    # pulse wins: about 90
+node $E/03-real-frame-rate/grid-amp.mjs $P14                # 0.48, 0.63, 6.93 s
+node $E/04-pos-in-fuser/fuser.mjs $P14                      # 99, 50, 67, 109, 63 for a true 72
+node $E/04-pos-in-fuser/fuser.mjs $T                        # 72 five times
+node $E/05-no-rate-doubling/doubling.mjs $P14               # 132 for a true 65
+node $E/10-report-wasm-load-failure/repro.mjs $P14          # 85 characters, no URLs
+node $E/11-processor-colour-pulse/colour-path.mjs $P14      # spectral 84.0 for 50, 72, 120
+node $E/12-no-engine-fallback/fallback.mjs $P14             # bpm 88 with no pulse, fused_bpm null
+node $E/13-no-calibration-blend/blend.mjs $P14              # 95.7 rising to 116.4 for a true 120
+node $E/issue-harmonic-picker/picker.mjs $P14               # 72 reads 48
+bash $E/06-create-elata-demo-starts/repro.sh                # exit 1, missing app-metrics metadata
+bash $E/08-eeg-web-ble-peer-range/repro.sh                  # ERESOLVE, ETARGET, ETARGET
+SELFCHECK_BREAK=1 node $E/04-pos-in-fuser/fuser.mjs $P14    # must throw "self-check failed"
+```
+
+Fixes 12 and 13 are not in the test build, and the `fix/*` branches do not commit their built files. To see a fix
+branch's own "with" numbers: check it out, run `pnpm install && pnpm --filter @elata-biosciences/rppg-web build`,
+and pass `packages/rppg-web`. A source build has no `pkg/` (the WASM): copy it from 0.14.0, except for fix 2,
+which changes the WASM and needs a wasm-bindgen build of `crates/elata-rppg-wasm` (its PR text, "Package-level
+script", says how).
+
+The scripts were run as written from a clean checkout of this branch on 2026-10-12; the outputs matched the comments
+above.
+
+## What this folder does not contain
+
+No recordings, no video, nothing that identifies a person, and no number from recordings we may not share. No
+dataset names. The full methods packet with the private evaluation is kept outside any repository.
