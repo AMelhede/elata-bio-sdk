@@ -101,22 +101,20 @@ chance that consumers follow an internal or legacy-looking path:
   - recommended default
   - only use the alternative when a specific repo-maintainer or advanced-integration condition applies
 - For browser rPPG work, start with `createRppgSession()` and only drop to generated WASM bindings if you are intentionally debugging the SDK itself.
-- If a reported consumer issue might actually be workspace coupling, check the `pnpm --ignore-workspace` caveat before concluding that the scaffold or template is broken.
+- If a reported consumer issue might actually be workspace coupling, check that the app still has the `pnpm-workspace.yaml` the scaffolder ships (starters from create-elata-demo 0.12.1 and earlier have none) before concluding that the scaffold or template is broken.
 
 ## Important Gotcha: Scaffolding Inside This Repo
 
-If a scaffolded app is created inside this repository, `pnpm install` from that
-app directory may still bind to the parent workspace defined in
+A scaffolded app ships its own `pnpm-workspace.yaml`, so even inside this
+repository it installs as its own project, with its own `node_modules` and
+lockfile, rather than binding to the parent workspace defined in
 [pnpm-workspace.yaml](pnpm-workspace.yaml).
 
-That means the app may not get its own `node_modules` if it is not included in
-the workspace globs.
-
-Use one of these instead:
+From the repository root:
 
 ```bash
-pnpm --dir my-app --ignore-workspace install
-pnpm --dir my-app --ignore-workspace run dev
+pnpm --dir my-app install
+pnpm --dir my-app run dev
 ```
 
 Or use `npm install` / `npm run dev` from inside the scaffolded app.

@@ -52,11 +52,11 @@ Other headsets can be integrated by contributors or app authors using the same
 
 - Generated scaffolded apps work with `pnpm` or `npm`.
 - This repo prefers `pnpm` for local development.
-- If you scaffold an app inside another `pnpm` workspace and do not add it to the workspace globs, use:
+- A scaffolded app ships its own `pnpm-workspace.yaml`, so inside another `pnpm` workspace it still installs as its own project:
 
 ```bash
-pnpm --dir my-app --ignore-workspace install
-pnpm --dir my-app --ignore-workspace run dev
+pnpm --dir my-app install
+pnpm --dir my-app run dev
 ```
 
 ## Related Guides

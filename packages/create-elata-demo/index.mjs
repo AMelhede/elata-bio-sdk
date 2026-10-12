@@ -414,10 +414,13 @@ const parentWorkspaceDir = findParentPnpmWorkspace(dirname(targetDir));
 if (parentWorkspaceDir) {
   console.log('Note: this app was created inside an existing pnpm workspace.\n');
   console.log(
-    'If the new app is not added to that workspace, use one of these install flows:\n',
+    'It has its own pnpm-workspace.yaml, so it installs as its own project:\n',
   );
-  console.log(`  pnpm --dir ${projectName} --ignore-workspace install`);
-  console.log(`  pnpm --dir ${projectName} --ignore-workspace run dev`);
+  console.log(`  pnpm --dir ${projectName} install`);
+  console.log(`  pnpm --dir ${projectName} run dev`);
   console.log('  # or');
   console.log(`  cd ${projectName} && npm install && npm run dev\n`);
+  console.log(
+    "To make it part of the parent workspace instead, delete its pnpm-workspace.yaml and allow esbuild's build script in the parent's.\n",
+  );
 }

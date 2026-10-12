@@ -2,12 +2,15 @@
 
 ## `pnpm install` did not create `node_modules` in my scaffolded app
 
-You likely created the app inside another `pnpm` workspace. Run from the parent
-directory:
+You likely created the app inside another `pnpm` workspace with
+create-elata-demo 0.12.1 or earlier, whose starters have no `pnpm-workspace.yaml`
+of their own, so pnpm binds them to the parent. Add the file current starters
+ship (see [create-elata-demo.md](../create-elata-demo.md#starters-made-by-create-elata-demo-0121-and-earlier)),
+then run from the parent directory:
 
 ```bash
-pnpm --dir my-app --ignore-workspace install
-pnpm --dir my-app --ignore-workspace run dev
+pnpm --dir my-app install
+pnpm --dir my-app run dev
 ```
 
 ## Web Bluetooth is unavailable
