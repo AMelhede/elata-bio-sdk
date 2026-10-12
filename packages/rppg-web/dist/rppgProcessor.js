@@ -909,8 +909,8 @@ export class RppgProcessor {
         const cameraCandidate = lowConfidenceGate
             ? null
             : this.fixes.noCalibrationBlend
-                ? resolvedBpm ?? base.bpm ?? null
-                : calibratedBpm ?? resolvedBpm ?? base.bpm ?? null;
+                ? (resolvedBpm ?? base.bpm ?? null)
+                : (calibratedBpm ?? resolvedBpm ?? base.bpm ?? null);
         const cameraQuality = clamp(((base.signal_quality || 0) + (analysis.quality || 0)) * 50, 0, 100) * (lowConfidenceGate ? 0.45 : 1);
         this.fusion.updateCamera(cameraCandidate, cameraQuality, analysis.nowMs);
         const fused = this.fusion.fuse(cameraCandidate, cameraQuality, analysis.nowMs);
