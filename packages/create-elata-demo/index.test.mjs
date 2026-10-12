@@ -777,3 +777,141 @@ test('fails on unknown template', () => {
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('a semver release bump moves the peer ranges that name the bumped packages', () => {
+  // `./run.sh release minor` bumps every package in the `all` set with `pnpm version`
+  // (bump_publish_packages in scripts/run-lib.sh), which rewrites only each package's own version.
+  // Below 1.0 a caret range takes one minor version, so a peer range left behind refuses the new
+  // version and `npm install` stops (ERESOLVE) for any app installing eeg-web-ble or ppg-web beside
+  // its peers, the eeg-ble, eeg-demo and ppg-demo templates included. This runs the repo's own bump
+  // and release commit on a copy of every workspace manifest, one minor release on.
+  const repo = join(__dirname, '..', '..');
+  const root = mkdtempSync(join(tmpdir(), 'create-elata-demo-peers-'));
+  try {
+    mkdirSync(join(root, 'scripts'));
+    cpSync(join(repo, 'scripts', 'run-lib.sh'), join(root, 'scripts', 'run-lib.sh'));
+    const before = new Map();
+    for (const dir of readdirSync(join(repo, 'packages'))) {
+      const manifest = join(repo, 'packages', dir, 'package.json');
+      if (!existsSync(manifest)) continue;
+      mkdirSync(join(root, 'packages', dir), { recursive: true });
+      cpSync(manifest, join(root, 'packages', dir, 'package.json'));
+      const { name, version } = JSON.parse(readFileSync(manifest, 'utf8'));
+      before.set(name, version);
+    }
+    // Stands in for `pnpm version minor`, which rewrites the version of the package it runs in.
+    const pnpmVersion = join(root, 'pnpm-version.cjs');
+    writeFileSync(
+      pnpmVersion,
+      [
+        "const fs = require('node:fs');",
+        "const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));",
+        "const [major, minor] = pkg.version.split('.').map(Number);",
+        'pkg.version = `${major}.${minor + 1}.0`;',
+        "fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, '\\t')}\\n`);",
+      ].join('\n'),
+    );
+    const env = {
+      ...process.env,
+      PNPM_VERSION_STUB: pnpmVersion,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_AUTHOR_NAME: 'test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'test',
+      GIT_COMMITTER_EMAIL: 'test@example.com',
+    };
+    const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8', env });
+    assert.equal(git('init', '-q').status, 0);
+    assert.equal(git('add', '-A').status, 0);
+    assert.equal(git('commit', '-qm', 'base').status, 0);
+    // A package that is not committed yet (a release run with ALLOW_DIRTY=1) is not part of the
+    // release, even when it peers on a bumped package.
+    mkdirSync(join(root, 'packages', 'zz-uncommitted'));
+    writeFileSync(
+      join(root, 'packages', 'zz-uncommitted', 'package.json'),
+      `${JSON.stringify(
+        {
+          name: '@elata-biosciences/zz-uncommitted',
+          version: '0.0.0',
+          peerDependencies: {
+            '@elata-biosciences/eeg-web': `^${before.get('@elata-biosciences/eeg-web')}`,
+          },
+        },
+        null,
+        '\t',
+      )}\n`,
+    );
+    // Uncommitted edits to committed manifests (also only possible with ALLOW_DIRTY=1) stay out of
+    // the release commit too: app-state, which no bump touches, and biosignal-analytics, whose rppg-web
+    // peer the release moves. Only the peer range goes into the commit; the edit stays in the tree.
+    const localEdit = (dir) => {
+      const file = join(root, 'packages', dir, 'package.json');
+      const text = readFileSync(file, 'utf8');
+      const edited = text.replace(/("description": ")/, '$1local edit, ');
+      assert.notEqual(edited, text);
+      writeFileSync(file, edited);
+    };
+    localEdit('app-state');
+    localEdit('biosignal-analytics');
+
+    const release = spawnSync(
+      'bash',
+      [
+        '-c',
+        [
+          'source scripts/run-lib.sh',
+          'pnpm() { if [[ "$1" == version && "$2" == minor ]]; then node "$PNPM_VERSION_STUB"; fi; }',
+          'git() { if [[ "$1" == push ]]; then return 0; fi; command git "$@"; }',
+          'bump_publish_packages minor',
+          'release_commit_and_push_version_changes all latest',
+        ].join('\n'),
+      ],
+      { cwd: root, encoding: 'utf8', env },
+    );
+    assert.equal(release.status, 0, release.stderr);
+
+    const after = new Map();
+    for (const dir of readdirSync(join(root, 'packages'))) {
+      const manifest = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8'));
+      after.set(manifest.name, manifest);
+    }
+    const stale = [];
+    let checked = 0;
+    for (const manifest of after.values()) {
+      for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
+        const sibling = after.get(name);
+        if (!sibling || sibling.version === before.get(name)) continue;
+        checked += 1;
+        // ^<new version>, as `changeset version` writes; for a new 0.x minor such as 0.13.0 it is
+        // also the only caret range that takes it.
+        if (range !== `^${sibling.version}`) {
+          stale.push(`${manifest.name}: peer ${name} ${range} does not take the new ${sibling.version}`);
+        }
+      }
+    }
+    assert.ok(checked > 0, 'no workspace peer names a bumped package');
+    assert.deepEqual(stale, []);
+    assert.equal(
+      git('status', '--porcelain').stdout,
+      [
+        ' M packages/app-state/package.json',
+        ' M packages/biosignal-analytics/package.json',
+        '?? packages/zz-uncommitted/',
+        '',
+      ].join('\n'),
+      'the release commit must take every manifest the release edited, and nothing it did not edit',
+    );
+    const committed = (dir) => JSON.parse(git('show', `HEAD:packages/${dir}/package.json`).stdout);
+    assert.doesNotMatch(committed('app-state').description, /local edit/);
+    const analytics = committed('biosignal-analytics');
+    assert.doesNotMatch(analytics.description, /local edit/);
+    assert.equal(
+      analytics.peerDependencies['@elata-biosciences/rppg-web'],
+      `^${after.get('@elata-biosciences/rppg-web').version}`,
+    );
+    assert.match(after.get('@elata-biosciences/biosignal-analytics').description, /^local edit, /);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
