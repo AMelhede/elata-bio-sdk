@@ -168,20 +168,25 @@ describe("RgbPulseExtractor", () => {
 		expect(Math.abs(out[11])).toBeLessThan(1);
 	});
 
-	test("is POS and then the fuser's 0.7 to 4 Hz band-pass, value for value", () => {
-		const samples = feed(72, 30, 5);
-		const x = new RgbPulseExtractor();
-		const pos = new PosPulseModel();
-		let bp: Bandpass | null = null;
-		samples.forEach((s, i) => {
-			const h = pos.process(s.r, s.g, s.b);
-			const got = x.process(s.t, s.r, s.g, s.b);
-			if (i < 9) return expect(got).toBe(0);
-			bp ??= new Bandpass(30, 0.7, 4.0);
-			expect(got).toBeCloseTo(bp.process(h), 12);
-		});
-		expect(x.filterRate).toBeCloseTo(30, 9);
-	});
+	test.each([30, 20])(
+		"is POS and then the fuser's 0.7 to 4 Hz band-pass designed at the arrival rate, value for value (%i a second)",
+		(fps) => {
+			// A clean synthetic pulse reads through a band-pass designed for the wrong rate too, so the
+			// filter itself is pinned here, at a rate other than the usual 30 as well.
+			const samples = feed(72, fps, 5);
+			const x = new RgbPulseExtractor();
+			const pos = new PosPulseModel();
+			let bp: Bandpass | null = null;
+			samples.forEach((s, i) => {
+				const h = pos.process(s.r, s.g, s.b);
+				const got = x.process(s.t, s.r, s.g, s.b);
+				if (i < 9) return expect(got).toBe(0);
+				bp ??= new Bandpass(fps, 0.7, 4.0);
+				expect(got).toBeCloseTo(bp.process(h), 12);
+			});
+			expect(x.filterRate).toBeCloseTo(fps, 9);
+		},
+	);
 
 	test("designs its band-pass for the rate the samples arrive at", () => {
 		const x = new RgbPulseExtractor();
