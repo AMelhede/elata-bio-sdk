@@ -345,6 +345,15 @@ test('the publish check refuses a package that cannot scaffold from its packed f
     const leftOver = check(unfilled);
     assert.notStrictEqual(leftOver.status, 0);
     assert.match(leftOver.stderr, /pulse-game: __BIOSIGNAL_SESSION_VERSION__/);
+
+    // A global that Vite's define replaces at build time (written __NAME__ by convention) lives in
+    // module code, where the CLI fills nothing. It is not a placeholder and must not stop a release.
+    const defineGlobal = join(tmp, 'define-global');
+    copyPackedFiles(__dirname, defineGlobal);
+    const gameEntry = join(defineGlobal, 'templates', 'pulse-game', 'src', 'game', 'main.tsx');
+    writeFileSync(gameEntry, `${readFileSync(gameEntry, 'utf8')}console.log(__APP_VERSION__);\n`);
+    const defined = check(defineGlobal);
+    assert.strictEqual(defined.status, 0, defined.stderr);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

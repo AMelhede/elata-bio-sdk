@@ -31,6 +31,10 @@ const manifest = JSON.parse(
 	readFileSync(path.join(packageDir, "package.json"), "utf8"),
 );
 const placeholder = /__[A-Z][A-Z0-9_]*__/;
+// Module code is not scanned: a template may use a global that Vite's define replaces at build
+// time, and those are written __NAME__ by convention (__APP_VERSION__). The CLI's own placeholders
+// that can break an install sit in package.json, HTML and Markdown, which define never touches.
+const moduleCode = /\.[cm]?[jt]sx?$/;
 
 function* filesUnder(dir) {
 	for (const entry of readdirSync(dir)) {
@@ -80,6 +84,9 @@ try {
 			continue;
 		}
 		for (const file of filesUnder(path.join(work, app))) {
+			if (moduleCode.test(file)) {
+				continue;
+			}
 			const left = readFileSync(file, "utf8").match(placeholder);
 			if (left) {
 				problems.push(
