@@ -9,6 +9,14 @@ alone would carry it into main unless the merger edits it (the commits would als
 every claim below was re-run, and three commits were added on top: two test commits (5 new tests, 9 in all) and
 one that corrects the code comment and the changeset.
 
+**What this PR claims, narrowed after review (2026-10-12).** The doubling rule is a defect on synthetic known
+answers: removing it takes 105 clean resting pulses from 69 right to 105 right, and HRV within 30% from 19 to 105
+cases. On real camera recordings it does not, on its own, give more right seconds: on our own 50 recordings it
+changes nothing measurable (1,296 against 1,289 right seconds of 6,679, p 0.87), and it gains only together with
+fix 13's `calibrationBlend: false` (1,625 against 1,653, p 0.05). Those recordings are one person's and cannot be
+shared, so they are context. If fix 13's option is not taken, this PR rests on the synthetic cases and the HRV
+result, and claims no real-world gain.
+
 ## Issue
 
 **Title:** `estimateDominantBpm` turns a correct resting rate into twice that rate when the pulse has a normal second harmonic
@@ -226,15 +234,11 @@ no new format findings (`pulseAnalysis.ts` carries the same 29 lines of format d
 changesets are outside Biome's scope). Not run: Rust tests (no Rust change) and the Playwright e2e (no rate
 assertions, demo untouched).
 
-**Our own observation (not reproducible from the PR):** replaying real recordings we hold with finger-sensor
-truth, judged per second, on a build equal to Elata main, removing the rule alone made no measurable difference:
--0.7 points of right seconds (95% range -1.9 to +0.9) on one set of 90 recordings, +0.8 (-0.5 to +2.5) on a set of
-42, 0.0 on the first set slowed to 16 frames a second. Seconds reading double fell (140 to 124, 13 to 11). With two
-other proposed fixes in place (the real frame rate, and POS in the multi-region fuser), removing it added +1.6 (-0.6
-to +3.8) and +2.5 (+0.3 to +5.5); an earlier, less careful run on that stack gave about +5. So on real recordings
-the value shows only alongside the fuser change, and alone it costs nothing measurable.
+**Our own observation (not reproducible from the PR):** on private recordings with a contact sensor as truth,
+whose licence does not allow sharing their numbers, removing the rule alone made no measurable difference either;
+the numbers are in the private appendix (ask Andreas Melhede).
 
-A second set, 50 phone and laptop camera recordings of one person with a reference rate each (45 of them under 85
+Our own 50 phone and laptop camera recordings of one person [owner] with a reference rate each (45 of them under 85
 bpm), each recording's three face-region colours fed as the session path's three regions (`DemoRunner` with the
 fuser, tracker on), main's build with the published core, `bpm` read once a second from 20 s. The harmonic ratio
 figures in the issue come from this set. Removing the rule alone: 1,296 -> 1,289 right seconds of 6,679 (155 lost, 148 gained; 18 recordings better, 20 worse, sign test p 0.87); seconds reading double 33 -> 15. By the rule we wrote

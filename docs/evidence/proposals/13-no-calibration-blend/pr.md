@@ -305,4 +305,7 @@ on top of the option: 60 lost, 88 gained, 19 recordings better, 8 worse). Privat
 On the merged tree (all twelve and this one): rppg-web jest 55 suites, 461 tests; `tsc` both configs and Biome lint
 clean. With the processor made to ignore the option there, 5 tests turn red (the 72 case cannot fail there, for the
 reason above). Fix 12's `engineFallback: false` and this option act on different reads (refused and passed) and
-combine without interaction.
+combine without interaction. (Fix 12 is now withdrawn as code and sent as an issue; this note stays as a record.)
+First round, 2026-10-12: the eleven fixes being proposed (without the held fix 3 and the withdrawn fix 12), this
+branch last, merged onto 49fdb41 with no conflict for it: rppg-web jest 53 suites, 437 tests pass; `tsc` both
+configs and Biome lint clean.

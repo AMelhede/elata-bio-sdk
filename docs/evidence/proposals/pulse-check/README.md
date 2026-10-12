@@ -6,9 +6,14 @@
 - **Verdict.** Strong on known answers; not ready to send.
 - **Strongest evidence** [synthetic]. A face with no pulse through the SDK's own session path: a number in 44 of 60 s
   on 0.14.0, 0 with the check. A true 50, 72 or 120 at 30 fps and 50 or 72 at 15 fps: right, from 18 to 22 s.
-- **Cost.** First number after about 20 to 50 s instead of 1 to 3. Needs a face mesh (Elata's quick start turns it
+- **Cost.** First number after 18 to 22 s [synthetic, Node], 23.6 to 28.5 s [synthetic, browser], median 48.6 s
+  [owner], instead of 1 to 3 s. Needs a face mesh (Elata's quick start turns it
   off). HRV and breathing withheld while on. About 22 KB gzipped. [owner] wrong on 16.3% of the seconds it showed
   (0.14.0: 85.6%), against a bar of 10% set in advance: **that bar failed**.
+- **Limit** [synthetic, 2026-10-12]. With no wall in view, a lamp whose colour change looks like blood (or is
+  green, red or opposite to blood) is shown in about 42 of 60 s. Three pre-registered rules were tried and none
+  qualified; the one lead (timing spread across face regions) was chosen after looking and fails once the camera
+  reads the cheeks a few ms after the forehead (rolling shutter). See [../../open-gaps.md](../../open-gaps.md).
 - **Still open.** A branch cut fresh onto Elata main; real-people evidence Elata can check (chest strap or testers);
   real filmed lamp and nod footage; the face flicker constant from 10 to 7; about 2,000 lines with no split plan.
 - **Where.** Method on `release/test-1` c85bc9b (test.19). The older `feat/pulse-check-on-main` is withdrawn.

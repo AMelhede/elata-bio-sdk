@@ -352,7 +352,7 @@ fn sweep() {
 # Issue draft 2: the fused pulse is divided by its own near-zero average
 
 Status: issue only, not opened. Measured 2026-10-10 on Elata main 49fdb41. Also present on our test build
-(release/test-1), whose per-sample pass-through keeps "the same per-window normalisation" (re-checked 2026-10-11:
+(the `@amelhede/rppg-web` test builds, branch `release/test-1` on our fork; not something to review), whose per-sample pass-through keeps "the same per-window normalisation" (re-checked 2026-10-11:
 the table below reproduces there exactly).
 
 ## Title

@@ -455,7 +455,7 @@ It is red without the line (the nine values carry the band-pass state from befor
 Whichever lands second carries it.
 
 Fix 5 changes the number the default path's spectral estimate gets stuck on (84 on main, 42 with fix 5); the
-changeset avoids the number for that reason. Fix 3's grid sends colour samples through the same
+changeset avoids the number for that reason. Fix 3's grid (held from the first round) sends colour samples through the same
 `pushSampleRgbMeta`, at camera or grid timestamps; the extractor measures the rate from whichever it gets.
 
 On the merged tree (the ten fixes, the face-gap grid test, this branch, and the `resetSignal` line with its test):
@@ -466,3 +466,8 @@ configs and Biome lint clean, and the first version's grey rule put back there t
 there on purpose, each turns its tests red: the processor ignoring the option (11), `ChromPulseModel` in the
 extractor (9), raw green in the warm-up (15), the fixed-30 band-pass (1), `resetSignal` without the line (1), the
 session dropping the option (1).
+
+First round, 2026-10-12: the eleven fixes being proposed (without the held fix 3 and the withdrawn fix 12) merged
+onto 49fdb41 with this branch tenth, plus the `resetSignal` line and the test above: rppg-web jest 53 suites, 437
+tests pass; `tsc` both configs and Biome lint clean; the line removed there turns the test red, and it is green again
+with it.

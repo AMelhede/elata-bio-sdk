@@ -2,8 +2,9 @@
 
 - **Problem.** The multi-region fuser assumes 30 frames a second whatever the camera delivers.
 - **Fix.** Put the frames on a steady 30-a-second grid before the fuser.
-- **Verdict.** Narrow. Once fix 4 is in it changes no rate anyone reads; it corrects a quality score. Keep it as a
-  quality-score fix after fix 4, or drop it.
+- **Verdict.** Narrow, and **held from the first round** (not withdrawn). Once fix 4 is in it changes no rate anyone
+  reads; it corrects a quality score. It comes back only with a pre-registered test on recordings nobody has looked
+  at; if it does, it lands after fix 4 (merge plan, section 2).
 - **Strongest evidence** [synthetic]. 160 bpm at 15 fps keeps 0.48 of its 30 fps amplitude on 0.14.0 and 0.93 to
   0.94 with the grid; first quality score at 15 fps 6.93 s against 3.47 s. On the merged tree the quality test is
   red with fix 4 alone (0.19 and 2.77 of the 30 fps value) and green with fix 3 (1.00 and 1.00).
@@ -17,5 +18,6 @@ Files: [pr.md](pr.md), audit [../../audits/runner.md](../../audits/runner.md), [
 
 ```
 node grid-amp.mjs <0.14.0 dir>        # 0.48, 0.63, 6.93 s
-node grid-amp.mjs packages/rppg-web   # about 0.93, 1.01, 3.47 s
+node grid-amp.mjs packages/rppg-web   # the test build: 0.93, 1.01, 3.47 s (rerun 2026-10-12); the fix branch's own build
+                                      # prints 0.94, 1.04, 3.47 s (pr.md); both carry the grid, the two builds differ elsewhere
 ```

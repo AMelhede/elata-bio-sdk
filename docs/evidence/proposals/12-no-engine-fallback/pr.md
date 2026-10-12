@@ -1,5 +1,10 @@
 # Fix 12: `bpm` shows the core's raw rate after the processor's own checks refused one
 
+> **Withdrawn as code (2026-10-12, the owner's recommended default, reversible).** No pull request is opened for
+> this branch. What is sent is the issue in `issue-fused-bpm-fallback.md`, written from the Issue section below. The
+> branch (`fix/no-engine-fallback` 6894d3a) and the local `pr/no-engine-fallback` (13793e5) stay as the record; the
+> rest of this file is kept unchanged as the record of what was measured.
+
 Branch: `fix/no-engine-fallback` on github.com/AMelhede/elata-bio-sdk, tip 6894d3a, three commits on Elata main
 49fdb41 (pushed 2026-10-12). Every commit message follows the repo's convention and none quotes private data, so
 the branch itself can be opened; the local one-commit ref `pr/no-engine-fallback` (13793e5, same tree, parent

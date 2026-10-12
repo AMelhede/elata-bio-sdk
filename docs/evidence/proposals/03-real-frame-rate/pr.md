@@ -1,3 +1,13 @@
+> **Held from the first round (2026-10-12, the owner's recommended default, reversible).** This PR is not opened
+> with the others. Once fix 4 is in, it changes no heart rate anyone reads; its measured gain is the fused quality
+> figure (0.19 and 2.77 of the 30 fps value with fix 4 alone, 1.00 and 1.00 with this fix, on the merged tree), for
+> 237 lines and 2.5 times the read cost at 15 fps. What would bring it back: a pre-registered test on recordings
+> nobody has looked at, showing that the grid makes the package show fewer but more often right numbers (seen so
+> far only after the fact, on our own recordings: a number in 80.7% against 86.5% of seconds, right in 31.6% against
+> 27.5% of those, p 0.2). The text below is kept as written, for that day. If it
+> is reopened later, it lands after fix 4 and carries all five fix 1 and fix 4 hunks itself (merge-plan.md,
+> section 2), plus `demoRunnerFaceGapGrid.test.ts` and `demoRunnerFrameGridQuality.test.ts`.
+
 ## Issue: the multi-region fuser runs at the camera's frame rate, not the `sampleRate` it is designed for
 
 `MultiRoiRppgFuser` is a fixed-rate block. Everything in it is counted in samples at the `fs` it is built with (`DemoRunner` passes `sampleRate`, 30 by default):

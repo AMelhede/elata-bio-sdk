@@ -11,7 +11,8 @@ sent to Elata yet. Written 2026-10-12.
   that reproduce the problem on the published package and show the change.
 - **Audits** under [audits/](audits/): a reviewer playing an Elata maintainer, looking for reasons not to merge.
   Each audit covers several changes and ends with a "Closed" section: every objection raised, what was done about
-  it, and whether it closed. Fixes 1, 3 and 4 share `runner.md`; 2 and the issue `core.md`; 5 and 13
+  it, and whether it closed. Audits are dated records; where a later measurement moved a verdict, the proposal's
+  README, its `pr.md` and [open-gaps.md](open-gaps.md) carry the current state. Fixes 1, 3 and 4 share `runner.md`; 2 and the issue `core.md`; 5 and 13
   `estimators.md`; 11 and 12 `processor.md`; 6, 7 and 8 `tooling.md` and `cross-os.md`; 9 and 10 `runtime.md`.
 - **The test build** under [test-build/](test-build/): the audits of `@amelhede/rppg-web` 0.15.0-test.17 to test.19
   (the build testers install), the behaviour difference against 0.14.0, and the package-tool checks.
@@ -58,26 +59,28 @@ than first claimed; **withdrawn** = do not send the code.
 
 | Change | Verdict | Strongest evidence | Cost | Still open | Branch, one-commit ref |
 |---|---|---|---|---|---|
-| [1. No face, no reading](proposals/01-no-face-no-reading/) | strong | wall gap: a number in 10 of 10 s on 0.14.0, 1 then nothing with the fix [synthetic] | no number while no face is in view | moving people not measured | `fix/no-face-no-reading` 21b7326, `pr/no-face-no-reading` 6950c68 |
+| [1. No face, no reading](proposals/01-no-face-no-reading/) | strong | wall gap: a number in 10 of 10 s on 0.14.0, 1 then nothing with the fix [synthetic] | no number while no face is in view | real moving people not measured; on a synthetic moving head the 1 s hold beats main (440 against 774 wrong seconds) and a 2 s hold beats 1 s (325); 1 s kept for now | `fix/no-face-no-reading` 21b7326, `pr/no-face-no-reading` 6950c68 |
 | [2. Core colour projection sign](proposals/02-rust-colour-projection-sign/) | strong | true 90 under a lamp at 60 reads 67 on 0.14.0, about 90 with the fix [synthetic] | camera-colour path shows more numbers, some wrong (issue 1) | no shareable real-capture check | `fix/rust-colour-projection-sign` 06f93f6, `pr/...` b527385 |
-| [3. Real frame rate](proposals/03-real-frame-rate/) | narrow | quality at 15 fps 0.19 of its 30 fps value with fix 4 alone, 1.00 with fix 3 [synthetic] | `getMetrics()` 142 against 57 ms at 15 fps | changes no rate once fix 4 is in; keep as a quality fix or drop | `fix/real-frame-rate` bd72c7e, `pr/...` ff1cc00 |
+| [3. Real frame rate](proposals/03-real-frame-rate/) | narrow, **held** from the first round | quality at 15 fps 0.19 of its 30 fps value with fix 4 alone, 1.00 with fix 3 [synthetic] | `getMetrics()` 142 against 57 ms at 15 fps | changes no rate once fix 4 is in; comes back only with a pre-registered test on unseen recordings | `fix/real-frame-rate` bd72c7e, `pr/...` ff1cc00 |
 | [4. POS in the fuser](proposals/04-pos-in-fuser/) | strong | true 120 right in 0 of 150 s on 0.14.0, 150 of 150 with POS [synthetic] | default output of every face-mesh session changes | breathing under POS not measured | `fix/pos-in-fuser` 564d589, `pr/...` deca8d7 |
 | [5. No rate doubling](proposals/05-no-rate-doubling/) | keep, narrower | 105 clean resting pulses: 69 right on 0.14.0, 105 with the fix [synthetic] | 10 more no-pulse seconds with a number of 432 | gains on real captures only with fix 13 [owner] | `fix/no-rate-doubling` ea12c6b, `pr/...` 1a73b09 |
-| [6. Maker crashes](proposals/06-create-elata-demo-starts/) | strong | 11 published versions crash; fixed on Windows, macOS, Linux | about 1 s more to pack | CI green only with fix 7 | `fix/create-elata-demo-starts` fef0a51, `pr/...` 8b8ecad |
-| [7. Starters build](proposals/07-starters-build-and-install/) | strong | 19 of 25 tool and starter pairs fail on main, 3 with the fix (all fix 8's npm problem); none newly broken | pnpm 9 needs `-w` | other awk versions, Intel macOS, PowerShell | `fix/starters-build-and-install` b94551e, `pr/...` aeb6d5b |
+| [6. Maker crashes](proposals/06-create-elata-demo-starts/) | strong | 11 published versions crash; fixed on Windows, macOS, Linux | about 1 s more to pack | CI green only with fix 7; Windows, macOS and Linux closed ([cross-os.md](audits/cross-os.md)) | `fix/create-elata-demo-starts` fef0a51, `pr/...` 8b8ecad |
+| [7. Starters build](proposals/07-starters-build-and-install/) | strong | 19 of 25 tool and starter pairs fail on main, 3 with the fix (all fix 8's npm problem); none newly broken | pnpm 9 needs `-w` | other awk versions, Intel macOS, PowerShell (Windows, macOS arm64, Linux closed) | `fix/starters-build-and-install` b94551e, `pr/...` aeb6d5b |
 | [8. Peer ranges](proposals/08-eeg-web-ble-peer-range/) | strong | npm install fails today, packed fix installs clean | one manual release check | provable on npm only after publishing | `fix/eeg-web-ble-peer-range` 1c4d1fe, `pr/...` 2d3d672 |
 | [9. Monitor timers](proposals/09-app-monitor-timers/) | strong | `start()` throws in 8 of 8 browser setups on 0.14.0 | none | Firefox, Safari not run | `fix/app-monitor-timers` 93db1f3, `pr/...` 9132e83 |
 | [10. Engine load errors](proposals/10-report-wasm-load-failure/) | strong | one fixed 85-character sentence on 0.14.0; each URL and its error with the fix | longer message, carries host names | docs correction bundled | `fix/report-wasm-load-failure` 82ff7e0, `pr/...` 962299d |
 | [11. Processor colour path](proposals/11-processor-colour-pulse/) | strong | spectral 84.0 for every true rate on 0.14.0; right with the option [synthetic] | opt-in, so nobody benefits by default | band-pass corner near 50 bpm | `fix/processor-colour-pulse` b748546, `pr/...` 9828923 |
-| [12. Engine fallback](proposals/12-no-engine-fallback/) | withdrawn, issue only | `fused_bpm` already gives the checked rate in 5,440 of 5,440 reads | none (not sent) | none | `fix/no-engine-fallback` 6894d3a, `pr/...` 13793e5 |
+| [12. Engine fallback](proposals/12-no-engine-fallback/) | withdrawn, issue only ([issue.md](proposals/12-no-engine-fallback/issue.md)) | `fused_bpm` already gives the checked rate in 5,440 of 5,440 reads | none (not sent) | file the issue at step 5 | `fix/no-engine-fallback` 6894d3a, `pr/...` 13793e5 |
 | [13. Calibration blend](proposals/13-no-calibration-blend/) | modest | real engine, grey pulses: right in 1,813 of 2,592 s on 0.14.0, 2,053 with the option [synthetic] | one more option forever | shows the engine's octave when the engine has one; adds nothing on real captures once 4 and 5 are in [owner] | `fix/no-calibration-blend` 608e797, `pr/...` c4f98c2 |
 | [Issue 1. Harmonic picker](proposals/issue-harmonic-picker/) | strong, as a report | clean 72 reads 48 at confidence 0.88 [synthetic] | none (no patch) | removing it does not help real captures yet | issue only |
-| [Pulse check](proposals/pulse-check/) | strong on known answers, not ready | no pulse: a number in 44 of 60 s on 0.14.0, 0 with the check [synthetic] | first number after 18 to 29 s [synthetic], median 48.6 s [owner]; no number in 5,680 of 6,457 s, none at all in 10 of 50 recordings, and fewer right seconds than 0.14.0 (650 against 848) [owner]; HRV, breathing withheld | failed its 10% bar on owner recordings (16.3%), and those are in-sample (its constants were tuned on them); needs a re-cut, real footage, a chest strap | method on `release/test-1` c85bc9b |
+| [Pulse check](proposals/pulse-check/) | strong on known answers, not ready | no pulse: a number in 44 of 60 s on 0.14.0, 0 with the check [synthetic] | first number after 18 to 22 s in Node, 24 to 29 s in a browser [synthetic], median 48.6 s [owner]; no number in 5,680 of 6,457 s, none at all in 10 of 50 recordings, and fewer right seconds than 0.14.0 (650 against 848) [owner]; HRV, breathing withheld | failed its 10% bar on owner recordings (16.3%), and those are in-sample (its constants were tuned on them); with no wall in view, lamps whose colour change looks like blood get through (no rule found yet); needs a re-cut, real footage, a chest strap | method on `release/test-1` c85bc9b |
 | [test.19's own changes](test-build/test19-audit.md) | ready to publish | 48 paired runs: every per-second read identical to test.18 at the defaults [synthetic] | none at the defaults | no browser or real-people run on test.19 | `release/test-1` c85bc9b |
 
 The `fix/*` branches are on the fork (`github.com/AMelhede/elata-bio-sdk`). The `pr/*` refs carry the same tree as
-the branch tip on a single commit on 49fdb41; they are local until Andreas pushes them. Merge order and the known
-conflicts: [proposals/merge-plan.md](proposals/merge-plan.md).
+the branch tip on a single commit on 49fdb41; they are local until Andreas pushes them. Merge order, holds and the known
+conflicts: [proposals/merge-plan.md](proposals/merge-plan.md). The first round is eleven PRs (fixes 1, 2, 4 to 11 and
+13); fix 3 is held and fix 12 goes as an issue. Merged together onto 49fdb41 the eleven pass every rppg-web check
+(53 suites, 437 tests).
 
 ## REPRODUCE
 

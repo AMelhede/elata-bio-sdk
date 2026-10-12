@@ -1,21 +1,92 @@
-> Note for readers of this copy (2026-10-12): this plan predates the final verdicts. It still lists fix 12 in the
-> merge order (fix 12 is now an issue only) and its title still says ten fixes. The conflict notes are current.
-> `wip/all-fixes` is a local branch and is not on the fork.
+# Merging the SDK fixes together
 
-# Merging the ten SDK fixes together
+**Bottom line (final verdicts, 2026-10-12 evening).** Eleven PRs go in the first round, in the order below. Fix 3
+(real frame rate) is held from the first round. Fix 12 is withdrawn as code and goes as an issue only. The first
+round needs 3 conflict spots in 2 PRs, each one "keep both sides", plus one line in fix 11 that git does not flag.
+Merged together onto Elata's main (49fdb41) and tested as one tree, the eleven pass every rppg-web check, and two
+guards broken on purpose there still go red.
 
-**Bottom line.** The ten fixes work together. Merged one after another onto Elata's main (49fdb41) and tested as one tree, every suite they touch passes, nothing fails that passes on main, and each fix's own test still catches its bug when that fix is removed from the merged tree. Three PRs need a small update when the PR before them lands: 8 conflict spots in all, each one "keep both sides". Every merge order gives the same 8 (measured), so the order below follows what the fixes need from each other. It swaps fix 3 and fix 4 from the draft order, because fix 3 itself asks for fix 4 first, and the merged tree shows why (table in section 4).
+Nothing here is pushed to Elata, opened or published. The `pr/*` one-commit refs are local until Andreas pushes
+them.
 
-The merged branch is local only: `wip/all-fixes` in the upstream-tracking checkout, tip 5874216 (ten merges plus one new test) for the ten fixes, then 5e03d70 with fix 11 merged on top (section 1). Nothing was pushed, opened or published.
+## 0. First round
 
-## 1. Recommended order
+| # | change | branch (tip), one-commit ref | update when it lands |
+|---|---|---|---|
+| 1 | Fix 1, no face means no reading | `fix/no-face-no-reading` (21b7326), `pr/no-face-no-reading` 6950c68 | none |
+| 2 | Fix 2, Rust colour projection sign | `fix/rust-colour-projection-sign` (06f93f6), `pr/...` b527385 | none |
+| 3 | Fix 4, POS in the fuser | `fix/pos-in-fuser` (564d589), `pr/...` deca8d7 | 2 hunks with fix 1 (section 2) |
+| 4 | Fix 5, no rate doubling (claim narrowed: its real-camera gain shows only with fix 13's option) | `fix/no-rate-doubling` (ea12c6b), `pr/...` 1a73b09 | none |
+| 5 | Fix 6, starter maker crash | `fix/create-elata-demo-starts` (fef0a51), `pr/...` 8b8ecad | none |
+| 6 | Fix 7, starters build and install | `fix/starters-build-and-install` (b94551e), `pr/...` aeb6d5b | none |
+| 7 | Fix 8, peer ranges | `fix/eeg-web-ble-peer-range` (1c4d1fe), `pr/...` 2d3d672 | 1 hunk with fix 6 (section 2) |
+| 8 | Fix 9, app monitor timers | `fix/app-monitor-timers` (93db1f3), `pr/...` 9132e83 | none |
+| 9 | Fix 10, WASM load failure | `fix/report-wasm-load-failure` (82ff7e0), `pr/...` 962299d | none |
+| 10 | Fix 11, processor colour path (opt-in `rgbPulse: "pos"`) | `fix/processor-colour-pulse` (b748546), `pr/...` 9828923 | one line after fix 1, not flagged by git (section 1) |
+| 11 | Fix 13, show the resolved rate (opt-in `calibrationBlend: false`) | `fix/no-calibration-blend` (608e797), `pr/...` c4f98c2 | none |
+
+**Held, not withdrawn.** Fix 3, `fix/real-frame-rate` (bd72c7e), `pr/real-frame-rate` ff1cc00. Once fix 4 is in it
+changes no rate; its gain is the fused quality figure. It comes back only with a pre-registered test on recordings
+nobody has looked at (fix3.md, top). If it comes later, it lands after fix 4 and carries the 5 hunks and 3 wording
+edits in section 2, plus `demoRunnerFaceGapGrid.test.ts` and `demoRunnerFrameGridQuality.test.ts`.
+
+**Withdrawn as code, sent as an issue.** Fix 12, `fix/no-engine-fallback` (6894d3a), `pr/no-engine-fallback`
+13793e5: no PR. The issue is `issue-fused-bpm-fallback.md`. The existing field `fused_bpm` already carries the
+checked rate (5,440 of 5,440 reads).
+
+**Issues with no code.** Three: the harmonic picker and, in the same file, the fused pulse divided by its own
+near-zero average (`issue-rust-harmonic-picker.md`, drafts 1 and 2), and the fused-bpm fallback above.
+
+**Not in this round.** The pulse check: strong on known answers, not ready (no branch on Elata's main yet, its 10%
+bar failed on the owner's recordings, no real filmed lamp or nod).
+
+**Why this order.** Fix 1 first: the most visible bug, and it leaves fix 4 with two keep-both hunks. Fix 2 conflicts
+with nothing. Fix 6 before fix 8: fix 8's release docs describe fix 6's release order, and fix 8 carries the one
+import-line hunk. Fixes 9, 10, 11 and 13 merge cleanly in any position; fix 11 after fix 1 because it needs one
+line in fix 1's `resetSignal()`. Fix 5 and fix 13 are each worth less without the other on real camera signals,
+so they should be reviewed together, but neither needs the other to merge.
+
+**The first-round tree, measured 2026-10-12.** Local detached worktree, never pushed, built from 49fdb41 by merging
+the eleven tips above in this order (only fix 4 and fix 8 conflicted: 2 hunks and 1 hunk, resolved as in section 2,
+nothing else), then fix 11's `resetSignal` line and its test (section 1). Tip 2ef0bcc. Each `pr/*` ref above
+was checked the same day: one commit on 49fdb41 with the same tree as its branch tip, so merging the refs gives the
+same content.
+
+| check | result |
+|---|---|
+| rppg-web jest | 53 suites, 437 tests, all pass (85.6 s) |
+| rppg-web `tsc` (build config, and test config) | clean, clean |
+| rppg-web Biome lint | clean |
+| fix 11's `resetSignal` line removed | its test red (1), green again with the line |
+| fix 4 default set back to CHROM | 3 tests red, green again with POS |
+
+Not rerun on this tree, because fix 3 and fix 12 touch none of these: create-elata-demo `node --test` (25 of 25
+with fixes 6, 7 and 8 merged, section 3), the Rust tests (fix 2 only; section 8), and the cross-OS runs of fixes 6,
+7 and 8 (case/cross-os.md: Windows, macOS and Linux, Node 20 and 22, nothing passes on main and fails with the
+fixes).
+
+**Counts that changed with the holds.** The earlier plan said "8 conflict spots in 3 PRs, the same in every
+order". That was for ten fixes with fix 3 in. Without fix 3 the first round has 3 spots in 2 PRs (fix 4: 2, fix 8:
+1). The earlier "Always 7, whichever of the six orders" counts only the three PRs that share `demoRunner.ts`; with
+fix 8's one hunk that is the 8.
+
+---
+
+Everything below is the record of the full-set merge, measured before the final verdicts. It is kept because the
+conflict notes and interaction tables are what a later fix 3 needs. Where it says "ten fixes" it means fixes 1 to 10;
+fixes 11, 12 and 13 were added after.
+
+The merged branch is local only: `wip/all-fixes` in the upstream-tracking checkout, tip 5874216 (ten merges plus one new test) for
+the ten fixes, then 5e03d70 with fix 11 merged on top (section 1). Nothing was pushed, opened or published.
+
+## 1. Recommended order (full set, before the final verdicts)
 
 | # | fix | branch (tip) | conflicts when it lands |
 |---|---|---|---|
 | 1 | Fix 1, no face means no reading | `fix/no-face-no-reading` (21b7326; one-commit `pr/no-face-no-reading`) | none |
 | 2 | Fix 2, Rust colour projection sign | `fix/rust-colour-projection-sign` (06f93f6; one-commit `pr/rust-colour-projection-sign`) | none |
 | 3 | Fix 4, POS in the fuser | `fix/pos-in-fuser` (564d589; one-commit `pr/pos-in-fuser`) | 2 hunks with fix 1 |
-| 4 | Fix 3, real frame rate | `fix/real-frame-rate` (bd72c7e; one-commit `pr/real-frame-rate`) | 5 hunks (3 with fix 1, 2 with fix 4), plus 3 wording edits git does not flag |
+| 4 | Fix 3, real frame rate (**held** from the first round, section 0) | `fix/real-frame-rate` (bd72c7e; one-commit `pr/real-frame-rate`) | 5 hunks (3 with fix 1, 2 with fix 4), plus 3 wording edits git does not flag |
 | 5 | Fix 5, no rate doubling | `fix/no-rate-doubling` (ea12c6b) | none |
 | 6 | Fix 6, starter maker crash | `fix/create-elata-demo-starts` (fef0a51) | none |
 | 7 | Fix 7, starters build and install | `fix/starters-build-and-install` (b94551e) | none |
@@ -23,7 +94,7 @@ The merged branch is local only: `wip/all-fixes` in the upstream-tracking checko
 | 9 | Fix 9, app monitor timers | `fix/app-monitor-timers` (93db1f3) | none |
 | 10 | Fix 10, WASM load failure | `fix/report-wasm-load-failure` (82ff7e0) | none |
 | 11 | Fix 11, processor colour path (opt-in `rgbPulse: "pos"`) | `fix/processor-colour-pulse` (b748546) | none from git; one line git does not flag, after fix 1 (below) |
-| 12 | Fix 12, the processor's refusal can hold (opt-in `engineFallback: false`). Recommended after review: file the issue only, do not open the PR (fix12.md, top) | `fix/no-engine-fallback` (6894d3a) | none |
+| 12 | Fix 12, the processor's refusal can hold (opt-in `engineFallback: false`). **Withdrawn**: issue only, no PR (section 0) | `fix/no-engine-fallback` (6894d3a) | none |
 | 13 | Fix 13, `bpm` shows the resolved rate, not the calibration's blend (opt-in `calibrationBlend: false`) | `fix/no-calibration-blend` (608e797) | none |
 
 Fix 11 was added on 2026-10-12, after the ten above were measured together. It goes last because it needs nothing

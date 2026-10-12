@@ -9,7 +9,12 @@
   the gap, then nothing; right in 65 of 65 s after (test build, which also has POS in the fuser).
 - **Cost.** Apps lose the number while no face is in view (the point). New public surface: `no_face` drop reason,
   `requireFace`, `faceAbsentMs()`, `resetSignal()`; minor bump.
-- **Still open.** The 1 s hold rests on captures of still people; moving people are not measured.
+- **Moving heads** [synthetic, 2026-10-12]. A synthetic face turning away, nodding, or moving fast (135 runs, true
+  60, 72, 100, face lost 0.3 to 5 s): wrong numbers for 440 s with the 1 s hold against 774 s on main. A 2 s
+  hold does better (325 s), almost all from losses of 1 to 2 s, where the 1 s hold restarts and a restarted window
+  on a moving head is wrong for 1 to 11 s (median about 5). [owner] 1 of 20 real face-loss moments fell in that band.
+  The PR keeps 1 s for now; moving to 2 s is an open choice (it shows the old number one second longer).
+- **Still open.** Real people moving, turning and leaving have not been measured; only the synthetic head above.
 - **Where.** Branch `fix/no-face-no-reading` 21b7326; one-commit review ref `pr/no-face-no-reading` 6950c68 (local,
   not yet pushed). In the test build: switch `noFaceNoReading`.
 

@@ -197,7 +197,9 @@ synthetic known answers above, which anyone can rerun.
 
 Re-checked on 2026-10-12 with this branch at 564d589 (the `"chrom"` golden test added): merged into a scratch copy of the local merged tree with the updated fix 1 (21b7326) and fix 3 (bd72c7e), no conflicts; rppg-web jest 57 suites, 467 tests pass, the golden test included; `tsc` and Biome lint clean.
 
-All ten proposed fixes were merged together locally and tested as one tree. Recommended order: this PR third, after the no-face fix (`fix/no-face-no-reading`), whose lines it shares, and before the real frame rate (`fix/real-frame-rate`), which asks for this PR first. Every merge order gives the same 8 conflict hunks in 3 PRs, so nothing is saved by another order.
+Recommended order: this PR third, after the no-face fix (`fix/no-face-no-reading`), whose lines it shares, and after the Rust sign fix. The real frame rate (`fix/real-frame-rate`), which asks for this PR first, is held from the first round. In the first round this PR is one of two that need an update (2 hunks here, 1 in the peer-range PR).
+
+The first round (the eleven fixes being proposed, without the held frame-rate fix and the withdrawn fix 12) was merged in that order onto 49fdb41 and tested as one tree on 2026-10-12: rppg-web jest 53 suites, 437 tests pass; `tsc` both configs and Biome lint clean; with the fuser's default set back to CHROM there, 3 tests turn red. The earlier full-set checks (all ten fixes, then thirteen) are around this paragraph.
 
 Update after `fix/no-face-no-reading` has merged: merge main into this branch (one commit on top, no force push) and resolve two hunks, both by keeping the two sides:
 
@@ -210,4 +212,4 @@ On the merged tree:
 
 - Every test this PR adds passes and goes red when its part is removed: CHROM as the default again (5 red), the POS output not negated (1), `DemoRunner` ignoring `fusionProjection` (1), the session not passing it (1). The no-face fix's multi-region gap test now runs on POS and passes.
 - End to end through a WASM core built from the merged tree: POS against CHROM in the fuser, the core's own rate within 5 bpm in 77 of 108 reads against 14 of 108 (54 to 140 bpm, 30 and 15 fps, three seeds, reads at 15, 20 and 25 s), the same with the Rust sign fix and with main's Rust core. Polled once a second, as apps do, the reported rate with POS is within 5 bpm of the truth in 113 of 120 seconds from 20 to 39 s (114 and 140 bpm, three seeds each).
-- With the frame-rate fix's grid, the slow-camera loss that PR measured goes away: see its section for the table.
+- With the frame-rate fix's grid (held from the first round), the slow-camera loss that PR measured goes away: see its section for the table.

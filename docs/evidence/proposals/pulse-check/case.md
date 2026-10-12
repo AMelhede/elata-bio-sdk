@@ -75,8 +75,8 @@ one 71 or 72, from 19 s. The longer harness behind the tables below
   RQ-36 in the same file calls the SDK's 193 ms RMSSD implausible for a still adult.
 
 **Why the estimator fixes do not cover this.** Proposals 1 to 13 make the engine's rate right more often; none
-makes it know when there is no pulse. Fix 12 (`engineFallback: false`) removes one source of no-pulse numbers but
-stays opt-in because it costs right readings. A presence decision is a separate job.
+makes it know when there is no pulse. Fix 12 (`engineFallback: false`) would remove one source of no-pulse numbers, but
+it is withdrawn as code: `fused_bpm` already gives the same value, and the issue says so. A presence decision is a separate job.
 
 ## 2. What the PR would contain
 
