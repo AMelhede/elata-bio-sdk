@@ -13,7 +13,7 @@ them.
 
 | # | change | branch (tip), one-commit ref | update when it lands |
 |---|---|---|---|
-| 1 | Fix 1, no face means no reading | `fix/no-face-no-reading` (21b7326), `pr/no-face-no-reading` 6950c68 | none |
+| 1 | Fix 1, no face means no reading | `fix/no-face-no-reading` (0b60181), `pr/no-face-no-reading` 5d944c6 | none |
 | 2 | Fix 2, Rust colour projection sign | `fix/rust-colour-projection-sign` (06f93f6), `pr/...` b527385 | none |
 | 3 | Fix 4, POS in the fuser | `fix/pos-in-fuser` (564d589), `pr/...` deca8d7 | 2 hunks with fix 1 (section 2) |
 | 4 | Fix 5, no rate doubling (claim narrowed: its real-camera gain shows only with fix 13's option) | `fix/no-rate-doubling` (ea12c6b), `pr/...` 1a73b09 | none |
@@ -83,7 +83,7 @@ the ten fixes, then 5e03d70 with fix 11 merged on top (section 1). Nothing was p
 
 | # | fix | branch (tip) | conflicts when it lands |
 |---|---|---|---|
-| 1 | Fix 1, no face means no reading | `fix/no-face-no-reading` (21b7326; one-commit `pr/no-face-no-reading`) | none |
+| 1 | Fix 1, no face means no reading | `fix/no-face-no-reading` (0b60181; one-commit `pr/no-face-no-reading`) | none |
 | 2 | Fix 2, Rust colour projection sign | `fix/rust-colour-projection-sign` (06f93f6; one-commit `pr/rust-colour-projection-sign`) | none |
 | 3 | Fix 4, POS in the fuser | `fix/pos-in-fuser` (564d589; one-commit `pr/pos-in-fuser`) | 2 hunks with fix 1 |
 | 4 | Fix 3, real frame rate (**held** from the first round, section 0) | `fix/real-frame-rate` (bd72c7e; one-commit `pr/real-frame-rate`) | 5 hunks (3 with fix 1, 2 with fix 4), plus 3 wording edits git does not flag |
@@ -218,7 +218,7 @@ With every fix in place again, all of these are green.
 
 ## 4. Interactions with no textual conflict
 
-**The frame grid (fix 3) and the no-face restart (fix 1).** Both act on DemoRunner's multi-region frames. They work together: when the face returns after 1 s or more, fix 1 resets the fuser and the processor, and fix 3's 250 ms stall rule restarts the grid, so no sample is interpolated across the gap. That relies on the stall limit (250 ms) staying below the hold (1 s). New test `demoRunnerFaceGapGrid.test.ts` (3 tests, at 15 fps so the grid fills in samples): no sample is drawn across a 1.5 s gap and the first sample after it is the returning frame's own; a 120 ms miss (200 ms between face frames) is filled in, a 600 ms miss is not, and neither restarts the signal; a 66 bpm pulse reads within 3 of 66 before and after a 10 s gap. Red when the stall limit is raised to 5 s (2 tests), when the restart is removed (2), when the grid never bridges (1). One consequence for fix 1's text: on the multi-region path a face-finder miss of 250 ms or less between face frames is now filled in rather than left as a hole.
+**The frame grid (fix 3) and the no-face restart (fix 1).** Both act on DemoRunner's multi-region frames. They work together: when the face returns after 2 s or more (the hold, `FACE_GONE_RESET_MS`), fix 1 resets the fuser and the processor, and fix 3's 250 ms stall rule restarts the grid, so no sample is interpolated across the gap. That relies on the stall limit (250 ms) staying below the hold (2 s). New test `demoRunnerFaceGapGrid.test.ts` (3 tests, at 15 fps so the grid fills in samples): no sample is drawn across a gap of the hold plus 500 ms (2.5 s; the test takes it from `FACE_GONE_RESET_MS`) and the first sample after it is the returning frame's own; a 120 ms miss (200 ms between face frames) is filled in, a 600 ms miss is not, and neither restarts the signal; a 66 bpm pulse reads within 3 of 66 before and after a 10 s gap. Red when the stall limit is raised to 5 s (2 tests), when the restart is removed (2), when the grid never bridges (1); the same three counts again with fix 1 at 0b60181 (section 9). One consequence for fix 1's text: on the multi-region path a face-finder miss of 250 ms or less between face frames is now filled in rather than left as a hole.
 
 **POS in the fuser (fix 4), the Rust sign fix (fix 2) and the fuser's zero-mean output.** The WASM core was built twice from the merged tree, with fix 2 and with main's `pipeline.rs`, and driven through the merged DemoRunner and RppgProcessor: synthetic face frames, a chromatic pulse 0.4% deep with one grey level of sensor noise, 54 to 140 bpm, POS and CHROM, three seeds; 144 runs at 30 and 15 fps read at 15, 20 and 25 s, and 72 runs at 30 fps read every second from 5 to 12 s, across the switch from camera RGB to fused samples.
 
@@ -279,3 +279,14 @@ merge 8fdcb11) without conflicts: `cargo test -p elata-rppg --all-targets` 30/30
 `-D warnings` clean, elata-rppg-ffi and elata-rppg-wasm pass. `wip/all-fixes` itself was not changed. Section 4's
 "identical with and without fix 2 in all 216 runs" holds a fortiori: fused windows are now bit-identical too.
 
+## 9. Fix 1's hold moved from 1 s to 2 s (2026-10-12)
+
+Fix 1 moved forward two commits (0b60181, pushed fast-forward to the fork): `FACE_GONE_RESET_MS` 1000 -> 2000, with
+the tests and README stating 2 s. The reason is moving heads: on a synthetic face (180 runs) the 2 s hold showed 388
+wrong and 3428 right seconds against 539 and 3177 for 1 s, almost all from face losses of 1 to 2 s (fix 1's PR text,
+"Why 2 s"). Its one-commit `pr/no-face-no-reading` ref was regenerated (5d944c6, same tree as 0b60181, parent 49fdb41,
+local only). Merged with fix 4 (564d589) and fix 3 (bd72c7e) into a scratch copy of `wip/all-fixes` (32ce8b1) without
+conflicts; with `demoRunnerFrameGridQuality.test.ts` added as in section 7, rppg-web jest 57 suites, 468 tests (467
+with fix 1 at 21b7326, rerun the same way); `tsc` both configs and Biome lint clean. The grid test above follows the
+hold by itself and keeps its three red counts. Conflicts against 49fdb41 are the same at 0b60181 as at 21b7326 (`git merge-tree`: 3
+hunks with fix 3, 2 with fix 4), so the merge order is unchanged. `wip/all-fixes` itself was not changed. The test build (`release/test-1`) still holds 1 s (open-gaps.md).
