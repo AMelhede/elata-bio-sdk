@@ -603,6 +603,15 @@ available:
 For most browser apps, prefer `createRppgSession()` and only drop lower if you
 need custom lifecycle or rendering behavior.
 
+When the processor's own checks refuse a rate (its estimators disagree, the
+signal is too weak or the motion too high), `getMetrics().bpm` shows the WASM
+core's raw rate instead, with `confidence` at most 0.3, and it does the same
+while the processor has under 24 samples. The core gives a rate on almost any
+input, so with no pulse in view `bpm` is still often a number. Pass
+`{ engineFallback: false }` as `RppgProcessor`'s fourth argument, or to
+`createRppgSession`, to get `bpm: null` in those reads. The fallback stays the
+default because on recorded captures many of the rates it shows were right.
+
 ## Version Compatibility
 
 `@elata-biosciences/rppg-web` and `@elata-biosciences/eeg-web` are tested in
