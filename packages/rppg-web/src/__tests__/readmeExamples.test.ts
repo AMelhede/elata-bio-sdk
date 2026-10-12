@@ -20,7 +20,7 @@ const docs: Array<[string, string]> = [
 
 /** Each fenced code block that builds a session, as its text. */
 function sessionExamples(text: string): string[] {
-	const blocks = text.match(/```[a-z]*\n[\s\S]*?```/g) ?? [];
+	const blocks = text.match(/```[a-z]*\r?\n[\s\S]*?```/g) ?? [];
 	return blocks.filter((b) => /create(Managed)?RppgSession\(/.test(b));
 }
 
@@ -48,7 +48,7 @@ const ts = require("typescript") as typeof import("typescript");
 
 /** The fenced TypeScript blocks that open the camera themselves. */
 function wholePrograms(text: string): string[] {
-	return [...text.matchAll(/```(?:ts|typescript)\n([\s\S]*?)```/g)]
+	return [...text.matchAll(/```(?:ts|typescript)\r?\n([\s\S]*?)```/g)]
 		.map((m) => m[1])
 		.filter((b) => /getUserMedia\(/.test(b));
 }
@@ -86,6 +86,19 @@ describe("README whole-program examples", () => {
 
 	it("has the quick start to check", () => {
 		expect(programs.length).toBeGreaterThan(0);
+	});
+
+	// Git for Windows checks text files out with CRLF line ends by default (core.autocrlf), and this repo
+	// has no .gitattributes to stop it. On such a checkout a fence read as "```ts\n" matched nothing, so
+	// "has session examples to check" and "has the quick start to check" failed and the examples went
+	// unchecked (test.19 audit, a CRLF clone of release/test-1).
+	it("finds the same examples when the files have Windows line ends", () => {
+		for (const [, file] of docs) {
+			const text = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+			const crlf = text.replace(/\n/g, "\r\n");
+			expect(sessionExamples(crlf).length).toBe(sessionExamples(text).length);
+			expect(wholePrograms(crlf).length).toBe(wholePrograms(text).length);
+		}
 	});
 
 	it("the checker catches a variable kept only for commented-out code", () => {
