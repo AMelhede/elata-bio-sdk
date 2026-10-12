@@ -203,8 +203,8 @@ export class RppgSession {
 
 	getMetrics(): Metrics {
 		const metrics = this.processor.getMetrics();
-		// No face for a second (face tracking on): nothing to report, not the last number.
-		// One second rides out a brief face-finder miss without dropping a real reading.
+		// No face for FACE_GONE_RESET_MS (2 s, face tracking on): nothing to report, not the last number.
+		// Two seconds ride out face-finder misses and a turn of the head without dropping a real reading.
 		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
 			// Every estimate, not only the headline one: the intermediate estimates and the window's
 			// quality figures would otherwise keep describing the last face.
