@@ -14,8 +14,9 @@ import { RppgProcessor } from "../rppgProcessor";
 // processor's colour step passes them unchanged. The pulse has a second harmonic at 0.4
 // of the fundamental. On it the autocorrelation reads a clean 120 at 60 (its doubling-lag
 // test compares confidences clamped at 1, so it halves every clean rate over 110), and
-// the spectral estimate reads a 72 at 144 (its doubling rule fires below 85 bpm), so both
-// disagreements an app meets are here.
+// the spectral estimate reads a 72 at 144 (its doubling rule fires below 85 bpm). The
+// blend's own values are pinned only for the first kind: the doubling rule has its own
+// fix, which makes the 72 read 72 on both paths.
 
 function engineAt(bpm: number | null) {
 	return {
@@ -83,7 +84,6 @@ describe("RppgProcessor calibrationBlend", () => {
 	test.each([
 		[120, 30, 95.7],
 		[140, 30, 114.1],
-		[72, 30, 98.3],
 	])("by default, the blend: a clean %i at %i a second shows %f on one read", (bpm, fs, blend) => {
 		for (const calibrationBlend of [undefined, true]) {
 			const [last] = run(bpm, fs, { calibrationBlend });
