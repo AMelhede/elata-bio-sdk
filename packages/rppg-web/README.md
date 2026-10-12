@@ -600,6 +600,16 @@ available:
 - `RppgProcessor` for direct sample ingestion
 - `DemoRunner`, `MediaPipeFrameSource`, and `MediaPipeFaceFrameSource` for advanced browser control
 
+`RppgProcessor` passes colour samples (`pushSampleRgb`, `pushSampleRgbMeta`) to
+the WASM core and also reads them with its own estimators. Pass
+`{ rgbPulse: "pos" }` as its fourth argument, or to `createRppgSession`, to
+build the pulse those estimators read with POS and a 0.7 to 4 Hz band-pass at
+the rate the samples arrive at. The default, `"chrom"`, keeps the previous
+signal, which reads a clean synthetic pulse at the wrong rate; it stays the
+default because with no pulse at all `"pos"` reports a rate in more seconds. A
+session feeds colour samples for every frame it does not fuse (no face mesh,
+`multiRoiFusion` or `useSkinMask` off, or no face region with skin).
+
 For most browser apps, prefer `createRppgSession()` and only drop lower if you
 need custom lifecycle or rendering behavior.
 
