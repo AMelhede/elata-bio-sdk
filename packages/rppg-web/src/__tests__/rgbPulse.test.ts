@@ -106,6 +106,55 @@ describe("processor colour path: known answers (switch rgbPulse on)", () => {
 	});
 });
 
+// The README's rgbPulse row gives the known answers above as read once a second, as an app polling getMetrics()
+// does. Read only once, with no rate history, the processor's fusion of its estimators decides alone: its
+// autocorrelation reads this 120 at half the rate, and the untrained calibration blends that with the engine's
+// rate. With the packed WASM core of 0.15.0-test.19 in Node (a 120 at 30 frames a second, 0.05 grey levels of
+// noise, a separately written feed; test.19 audit) the one read gave 95.7, calibrated_bpm 95.7, acf_bpm 60 and
+// resolved_bpm 120; an engine that reports the true rate, as here, gives the same 95.7. The README names it, and
+// this keeps its number the code's.
+declare const require: (id: string) => any;
+declare const __dirname: string;
+const fs = require("fs") as { readFileSync: (p: string, enc: string) => string };
+const path = require("path") as { join: (...p: string[]) => string };
+const readme = fs.readFileSync(path.join(__dirname, "..", "..", "README.md"), "utf8");
+
+/** An engine that reports the true rate on every read, as the WASM core does on this feed. */
+const rightEngine = (bpm: number) => ({
+	newPipeline: () => ({
+		push_sample_rgb() {},
+		push_sample_rgb_meta() {},
+		get_metrics: () => ({ bpm, confidence: 0.9, signal_quality: 0.8 }),
+	}),
+});
+
+describe("switch rgbPulse on: read once a second, not once", () => {
+	test("a 120 read only once after 30 s comes out low, as the README says; read once a second it reads 120", () => {
+		const samples = feed(120, 30, 30);
+		const once = new RppgProcessor(rightEngine(120), 30, 10, { fixes: ON as never });
+		for (const x of samples) once.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
+		const m = once.getMetrics();
+		expect(Math.abs((m.acf_bpm ?? 0) - 60)).toBeLessThanOrEqual(2);
+		expect(m.bpm).toBe(m.calibrated_bpm);
+		expect(m.bpm ?? 0).toBeGreaterThan(90);
+		expect(m.bpm ?? 200).toBeLessThan(100);
+
+		const polled = new RppgProcessor(rightEngine(120), 30, 10, { fixes: ON as never });
+		let next = 1000;
+		for (const x of samples) {
+			polled.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
+			if (x.t >= next) {
+				next += 1000;
+				polled.getMetrics();
+			}
+		}
+		expect(Math.abs((polled.getMetrics().bpm ?? 0) - 120)).toBeLessThanOrEqual(3);
+
+		const row = readme.split(/\r?\n/).find((line) => line.startsWith("| `fixes.rgbPulse` |")) ?? "";
+		expect(row).toContain(`a 120 came out ${Math.round(m.bpm ?? 0)}`);
+	});
+});
+
 describe("switch rgbPulse off (the default): the published path, exactly", () => {
 	test("off unless set to true", () => {
 		expect(resolveFixSwitches().rgbPulse).toBe(false);
