@@ -297,9 +297,11 @@ const interval = setInterval(() => {
   }
 }, 1000);
 
-// 4. Cleanup
-// clearInterval(interval);
-// await session.stop();
+// 4. Cleanup when the page goes away
+window.addEventListener("pagehide", () => {
+  clearInterval(interval);
+  void session.stop();
+});
 ```
 
 Expect 20 to 40 seconds of a still, lit face before the first BPM: the pulse

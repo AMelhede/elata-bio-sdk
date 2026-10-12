@@ -36,3 +36,65 @@ describe.each(docs)("%s examples", (_name, file) => {
 		expect(dead).toEqual([]);
 	});
 });
+
+// The quick start is the one example written as a whole program (it opens the camera itself), so a
+// new developer pastes it as is. `npm create vite@latest -- --template vanilla-ts` (create-vite
+// 9.2.1, Vite 8, TypeScript 6) builds with `tsc && vite build` and turns on noUnusedLocals and
+// noUnusedParameters. The quick start kept `const interval` only for a commented-out cleanup, so
+// pasted into that app, `npm run build` stopped at TS6133 before Vite ran, on test.18 and on the
+// published 0.14.0 alike (fresh-app check, 2026-10-11). Imports are left unresolved here on purpose:
+// only the unused-code checks are asked for, and they need no types from the package.
+const ts = require("typescript") as typeof import("typescript");
+
+/** The fenced TypeScript blocks that open the camera themselves. */
+function wholePrograms(text: string): string[] {
+	return [...text.matchAll(/```(?:ts|typescript)\n([\s\S]*?)```/g)]
+		.map((m) => m[1])
+		.filter((b) => /getUserMedia\(/.test(b));
+}
+
+/** TS6133 and its kin, under the unused-code flags of Vite's TypeScript starter. */
+function unusedCodeErrors(source: string): string[] {
+	const options = {
+		noUnusedLocals: true,
+		noUnusedParameters: true,
+		strict: true,
+		noEmit: true,
+		target: ts.ScriptTarget.ES2022,
+		module: ts.ModuleKind.ESNext,
+		moduleResolution: ts.ModuleResolutionKind.Bundler,
+		lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
+		types: [],
+	};
+	const name = "/quick-start.ts";
+	const host = ts.createCompilerHost(options);
+	const readSource = host.getSourceFile.bind(host);
+	const exists = host.fileExists.bind(host);
+	host.getSourceFile = (file, lang, ...rest) =>
+		file === name ? ts.createSourceFile(file, source, lang) : readSource(file, lang, ...rest);
+	host.fileExists = (file) => file === name || exists(file);
+	const program = ts.createProgram([name], options, host);
+	const unused = new Set([6133, 6138, 6192, 6196, 6198, 6199, 6205]);
+	return ts
+		.getPreEmitDiagnostics(program, program.getSourceFile(name))
+		.filter((d) => unused.has(d.code))
+		.map((d) => `TS${d.code}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
+}
+
+describe("README whole-program examples", () => {
+	const programs = wholePrograms(fs.readFileSync(docs[0][1], "utf8"));
+
+	it("has the quick start to check", () => {
+		expect(programs.length).toBeGreaterThan(0);
+	});
+
+	it("the checker catches a variable kept only for commented-out code", () => {
+		expect(unusedCodeErrors("const kept = 1;\n// console.log(kept);\nexport {};\n")).toEqual([
+			"TS6133: 'kept' is declared but its value is never read.",
+		]);
+	});
+
+	it.each(programs.map((p, i) => [i, p]))("example %i builds under Vite's unused-code checks", (_i, program) => {
+		expect(unusedCodeErrors(program as string)).toEqual([]);
+	});
+});
