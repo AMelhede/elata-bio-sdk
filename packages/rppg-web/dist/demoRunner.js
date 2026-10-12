@@ -14,6 +14,26 @@ export const FACE_GONE_RESET_MS = 1000;
  * a straight line across it would stand in for a third of a beat or more.
  */
 const GRID_MAX_GAP_MS = 250;
+/**
+ * Push one sample through the richest push API the processor has. DemoRunner
+ * duck-types its processor, so this order is part of its contract, on the fusion
+ * grid as on every other path.
+ */
+function pushToProcessor(proc, s) {
+    if (typeof proc.pushSampleRgbMeta === "function") {
+        proc.pushSampleRgbMeta(s.t, s.rgb.r, s.rgb.g, s.rgb.b, s.skinRatio, s.motion, s.clipRatio);
+        return "rgb_meta";
+    }
+    if (typeof proc.pushSampleRgb === "function") {
+        proc.pushSampleRgb(s.t, s.rgb.r, s.rgb.g, s.rgb.b, s.skinRatio);
+        return "rgb";
+    }
+    if (typeof proc.pushSample === "function") {
+        proc.pushSample(s.t, s.intensity);
+        return "intensity";
+    }
+    throw new TypeError("processor has no push sample API");
+}
 function interpolateGrid(a, b, t) {
     const w = (t - a.t) / (b.t - a.t);
     const mix = (x, y) => x + w * (y - x);
@@ -40,6 +60,7 @@ function interpolateGrid(a, b, t) {
             g: mix(a.rgb.g, b.rgb.g),
             b: mix(a.rgb.b, b.rgb.b),
         },
+        intensity: mix(a.intensity, b.intensity),
     };
 }
 export class DemoRunner {
@@ -88,6 +109,8 @@ export class DemoRunner {
         /** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
         this.gridPrev = null;
         this.gridNextT = 0;
+        /** Whether the latest grid sample reached the processor as a fused one. */
+        this.gridFused = false;
         /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
         this.wallTracker = new WallTracker();
         this.lastOpinionMs = null;
@@ -338,7 +361,7 @@ export class DemoRunner {
             this.gridPrev = null;
         try {
             if (fusionSamples) {
-                this.pushOnGrid(proc, { t: ts, regions: fusionSamples, rgb }, skinRatio, motion, clipRatio);
+                this.pushOnGrid(proc, { t: ts, regions: fusionSamples, rgb, intensity }, skinRatio, motion, clipRatio);
             }
             else if (fusionResult?.valid &&
                 typeof proc.pushFusedSample === "function") {
@@ -351,20 +374,15 @@ export class DemoRunner {
                 this.diagnostics.lastFusionWeights = fusionResult.weights;
                 this.diagnostics.lastFusedSnr = fusionResult.fusedSnr;
             }
-            else if (typeof proc.pushSampleRgbMeta === "function") {
-                proc.pushSampleRgbMeta(ts, rgb.r, rgb.g, rgb.b, skinRatio, motion, clipRatio);
-                this.diagnostics.lastProcessorMethod = "rgb_meta";
-            }
-            else if (typeof proc.pushSampleRgb === "function") {
-                proc.pushSampleRgb(ts, rgb.r, rgb.g, rgb.b, skinRatio);
-                this.diagnostics.lastProcessorMethod = "rgb";
-            }
-            else if (typeof proc.pushSample === "function") {
-                proc.pushSample(ts, intensity);
-                this.diagnostics.lastProcessorMethod = "intensity";
-            }
             else {
-                throw new TypeError("processor has no push sample API");
+                this.diagnostics.lastProcessorMethod = pushToProcessor(proc, {
+                    t: ts,
+                    rgb,
+                    intensity,
+                    skinRatio,
+                    motion,
+                    clipRatio,
+                });
             }
         }
         catch (error) {
@@ -406,15 +424,24 @@ export class DemoRunner {
         }
     }
     /**
-     * Feed the fuser and the processor on the evenly spaced grid they were built
-     * for (`sampleRate`, 30 by default). Both read their input as one sample per
-     * 1/sampleRate seconds, so a camera that delivers fewer frames (15 to 25 a
-     * second on a laptop in dim light) would scale every rate they report by
-     * delivered/assumed. Each grid time between the previous frame and this one
-     * gets the two frames' region means, linearly interpolated, so a slowed
-     * camera reads close to the same rate as a full-rate one. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow camera:
-     * the grid restarts at the new frame instead of drawing a line across it. So does a timestamp that does not increase or
-     * is not a number; that frame is pushed at its own timestamp.
+     * Feed the fuser on the even `sampleRate` grid it is designed for, and hand
+     * the processor one sample per grid time. The fuser's band-pass, its
+     * spectral SNR (region weights and `fusedSnr`), its projection window and
+     * its warm-up are all counted in samples at `sampleRate`, but camera frames
+     * do not arrive at that rate: a UVC camera with auto-exposure priority may
+     * lower its frame rate to lengthen exposure (USB Video Class 1.5,
+     * Auto-Exposure Priority Control), and requestVideoFrameCallback skips
+     * frames the page was too busy to take (WICG video-rvfc, presentedFrames).
+     * The processor itself reads time from timestamps (the WASM core resamples
+     * by timestamp, resample_rgb_into in crates/elata-rppg/src/pipeline.rs, and
+     * analyzePulseWindow takes its rate from the window's timestamps). So each
+     * grid time between the previous frame and this one gets the two frames'
+     * values, linearly interpolated. At exactly `sampleRate` that is one sample
+     * per frame. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow
+     * camera: the grid restarts at the new frame instead of drawing a line
+     * across it. So does a timestamp that does not increase or is not a number;
+     * that frame is pushed at its own timestamp. Whichever push API the
+     * processor has takes the samples the fuser does not (see pushToProcessor).
      */
     pushOnGrid(proc, cur, skinRatio, motion, clipRatio) {
         const step = 1000 / (this.opts.sampleRate ?? 30);
@@ -442,15 +469,27 @@ export class DemoRunner {
                 // straight to spectral BPM/HRV, with the fused SNR as quality.
                 proc.pushFusedSample(tick.t, fused.fused, fused.fusedSnr);
                 this.diagnostics.lastProcessorMethod = "fused";
-                this.diagnostics.framesWithFusion += 1;
                 this.diagnostics.lastFusionWeights = fused.weights;
                 this.diagnostics.lastFusedSnr = fused.fusedSnr;
+                this.gridFused = true;
             }
-            else if (typeof proc.pushSampleRgbMeta === "function") {
-                proc.pushSampleRgbMeta(tick.t, tick.rgb.r, tick.rgb.g, tick.rgb.b, skinRatio, motion, clipRatio);
-                this.diagnostics.lastProcessorMethod = "rgb_meta";
+            else {
+                this.diagnostics.lastProcessorMethod = pushToProcessor(proc, {
+                    t: tick.t,
+                    rgb: tick.rgb,
+                    intensity: tick.intensity,
+                    skinRatio,
+                    motion,
+                    clipRatio,
+                });
+                this.gridFused = false;
             }
         }
+        // framesWithFusion counts frames, not grid samples. A frame between two grid times
+        // (frames faster than `sampleRate`) adds no sample of its own; it still went through
+        // the fuser's grid, and the processor's latest sample is still the fused one.
+        if (this.gridFused)
+            this.diagnostics.framesWithFusion += 1;
     }
     /**
      * Per-region skin-masked RGB for the fuser. The sub-ROIs arrive ordered as

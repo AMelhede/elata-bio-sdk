@@ -40,6 +40,13 @@ export class MultiRoiRppgFuser {
         this.fusedSnr = 0;
         this.frame = 0;
     }
+    /**
+     * Push one sample per region. The band-pass, the spectral SNR behind the
+     * weights and `fusedSnr`, the projection window and the warm-up are all
+     * counted in samples at `fs`, so call this once every 1/fs seconds on an even
+     * grid. Camera frames are not on one; `DemoRunner` interpolates them onto it
+     * (`realFrameRate` fix switch).
+     */
     pushFrame(samples) {
         this.frame++;
         const filtered = {

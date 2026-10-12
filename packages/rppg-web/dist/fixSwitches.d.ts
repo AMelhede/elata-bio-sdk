@@ -25,10 +25,12 @@ export type RppgFixSwitches = {
      */
     colourProjectionFix?: boolean;
     /**
-     * Fix 3. The multi-region fuser and the processor are fed on the evenly spaced sample grid
-     * they assume (`sampleRate`, 30 a second by default), interpolating between camera frames,
-     * so a camera that delivers fewer frames does not scale every rate. Gaps over 250 ms are a
-     * stall and are not bridged. Off: each camera frame is pushed as it arrives, as published.
+     * Fix 3. The multi-region fuser is fed on the evenly spaced sample grid its filters and
+     * weights are designed for (`sampleRate`, 30 a second by default), interpolating between
+     * camera frames, and the processor gets one sample per grid time through whichever push API
+     * it has. Before, a camera that delivered 15 frames a second moved the fuser's pass band to
+     * about 21 to 120 bpm and doubled its warm-up. Gaps over 250 ms are a stall and are not
+     * bridged. Off: each camera frame is pushed as it arrives, as published.
      */
     realFrameRate?: boolean;
     /**
