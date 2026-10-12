@@ -129,9 +129,15 @@ export type DemoRunnerError = {
 /**
  * How long without a face (face tracking on) before the session stops reporting; when the face
  * returns after at least this long, the signal starts afresh. Long enough to ride out a face
- * finder's brief misses on a face that is still in view.
+ * finder's brief misses and a turn of the head on a face that is still in view.
+ *
+ * Measured on synthetic moving heads through the real engine (turns, nods, fast movement; true
+ * 60, 72 and 100 bpm; face lost 0.3 to 5 s; 180 runs): wrong / right seconds shown were 539 / 3177
+ * at 1000 ms and 388 / 3428 at 2000 ms. A restart on a head still settling showed wrong numbers
+ * for 1 to 11 s (median about 5 s), so riding out a 1 to 2 s loss beats restarting. Holding off
+ * the number after a 1 s restart instead (3 to 12 s) lost more right seconds than it saved.
  */
-export const FACE_GONE_RESET_MS = 1000;
+export const FACE_GONE_RESET_MS = 2000;
 
 export class DemoRunner {
 	private running = false;

@@ -322,11 +322,11 @@ sample count if you want to show a progress indicator.
 **No face, no reading:** in `face_mesh` mode (without an explicit `roi`), a frame
 in which the face finder found no face is dropped (`lastDropReason: "no_face"`,
 `roiSource: null`, no `onStats` call) instead of being read from the centre of
-the frame. After one second with no face, `session.getMetrics()` reports no
+the frame. After two seconds with no face, `session.getMetrics()` reports no
 reading: `bpm: null`, `confidence: 0` and every other estimate cleared as for a
 failed backend, with reason code `no_face`; the rolling baseline and calibration
 state are kept. A shorter miss keeps the last reading. When the face returns
-after that second, the sample window and the engine pipeline start afresh, so
+after those two seconds, the sample window and the engine pipeline start afresh, so
 the window's estimates use only frames from after the gap. A number comes back
 within a few seconds; the first ones come from a short window and can be off by
 several bpm until it fills. The Bayesian tracker, the rate history, calibration

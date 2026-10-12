@@ -135,8 +135,9 @@ describe("RppgSession with the real processor and no face in view", () => {
 		const pushedWithFace = pipeline.push_sample_rgb_meta.mock.calls.length;
 		const before = session.getMetrics().bpm;
 		expect(before).not.toBeNull();
-		for (let i = 0; i < 15; i++, t += 1000 / 30) src.emit(frame(t, false, seed));
-		// Under a second: a brief face-finder miss, the reading is held.
+		for (let i = 0; i < 45; i++, t += 1000 / 30) src.emit(frame(t, false, seed));
+		// A face lost for 1.5 s (a turn of the head, a burst of finder misses) is held, not reset:
+		// on moving heads a restart there showed wrong numbers for about 5 s afterwards.
 		expect(session.getMetrics().bpm).toBe(before);
 		for (let i = 0; i < 30; i++, t += 1000 / 30) src.emit(frame(t, false, seed));
 		const gone = session.getMetrics();

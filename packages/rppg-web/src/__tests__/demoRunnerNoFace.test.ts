@@ -23,7 +23,7 @@ async function feedWall(requireFace: boolean | undefined) {
   const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
   const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, ...(requireFace === undefined ? {} : { requireFace }) });
   await runner.start();
-  for (let i = 0; i < 60; i++) src.emit(wallFrame(1000 + i * 33.3));
+  for (let i = 0; i < 75; i++) src.emit(wallFrame(1000 + i * 33.3));
   return { src, proc, runner };
 }
 
@@ -46,9 +46,9 @@ describe('DemoRunner with no face in view', () => {
     expect(proc.pushSampleRgbMeta).toHaveBeenCalled();
   });
 
-  test('starts the signal afresh when the face returns after a second or more', async () => {
+  test('starts the signal afresh when the face returns after two seconds or more', async () => {
     const { src, proc, runner } = await feedWall(true);
-    src.emit({ ...wallFrame(1000 + 60 * 33.3), roi: { x: 0, y: 0, w: 30, h: 30 } });
+    src.emit({ ...wallFrame(1000 + 75 * 33.3), roi: { x: 0, y: 0, w: 30, h: 30 } });
     expect(proc.resetSignal).toHaveBeenCalledTimes(1);
     expect(proc.pushSampleRgbMeta).toHaveBeenCalledTimes(1);
     expect(runner.faceAbsentMs()).toBe(0);
@@ -66,6 +66,16 @@ describe('DemoRunner with no face in view', () => {
     await runner.start();
     for (let i = 0; i < 10; i++) src.emit(wallFrame(1000 + i * 33.3));
     src.emit({ ...wallFrame(1400), roi: { x: 0, y: 0, w: 30, h: 30 } });
+    expect(proc.resetSignal).not.toHaveBeenCalled();
+  });
+
+  test('a face lost for 1.5 s (a turn of the head) does not restart the analysis', async () => {
+    const src = new MockFrameSource();
+    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
+    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
+    await runner.start();
+    for (let i = 0; i < 45; i++) src.emit(wallFrame(1000 + i * 33.3));
+    src.emit({ ...wallFrame(2500), roi: { x: 0, y: 0, w: 30, h: 30 } });
     expect(proc.resetSignal).not.toHaveBeenCalled();
   });
 
