@@ -292,7 +292,10 @@ export class DemoRunner {
 			// window still holding the frames before the face was lost.
 			if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
 				this.fuser?.reset();
-				this.processor.resetSignal();
+				// Checked like every other processor call here: a processor without it keeps its
+				// window across the gap, as before this option existed.
+				const processor = this.processor as any;
+				if (typeof processor.resetSignal === "function") processor.resetSignal();
 			}
 			this.noFaceSinceMs = null;
 		}

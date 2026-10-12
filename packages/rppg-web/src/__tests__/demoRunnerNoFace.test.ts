@@ -69,6 +69,24 @@ describe('DemoRunner with no face in view', () => {
     expect(proc.resetSignal).not.toHaveBeenCalled();
   });
 
+  test('a processor without resetSignal keeps being fed after the face returns', async () => {
+    // Every other processor call in the runner is checked with typeof first, so a processor written
+    // against the older interface must not break the runner when the face comes back.
+    const src = new MockFrameSource();
+    const proc = { pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn() };
+    const onError = jest.fn();
+    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true, onError });
+    await runner.start();
+    for (let i = 0; i < 60; i++) src.emit(wallFrame(1000 + i * 33.3));
+    const face = (t: number) => ({ ...wallFrame(t), roi: { x: 0, y: 0, w: 30, h: 30 } });
+    expect(() => {
+      for (let i = 60; i < 90; i++) src.emit(face(1000 + i * 33.3));
+    }).not.toThrow();
+    expect(proc.pushSampleRgbMeta).toHaveBeenCalledTimes(30);
+    expect(runner.faceAbsentMs()).toBe(0);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   test('an empty frame is reported as invalid, not as no face', async () => {
     const src = new MockFrameSource();
     const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn() };
