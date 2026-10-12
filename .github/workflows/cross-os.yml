@@ -53,7 +53,18 @@ jobs:
       - name: create-elata-demo test suite
         if: ${{ !cancelled() }}
         timeout-minutes: 40
-        run: pnpm --dir packages/create-elata-demo test
+        working-directory: packages/create-elata-demo
+        # The package's own test script (node --test index.test.mjs), plus a TAP copy
+        # so the failing test names can be reported as one annotation.
+        run: |
+          W=$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
+          set +e
+          node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$W/tap.txt" index.test.mjs
+          code=$?
+          summary=$(grep -E '^# (tests|pass|fail|skipped|cancelled) ' "$W/tap.txt" | tr '\n' ' ')
+          failed=$(awk '/^not ok /{sub(/^not ok [0-9]* - /,""); n=$0; m=0; next} n!="" && /^  error: /{e=$0; sub(/^  error: /,"",e); if (e=="|-" || e==">-") {m=1; next} printf "%s :: %s%%0A", n, substr(e,1,240); n=""; next} m==1{e=$0; gsub(/^ +/,"",e); printf "%s :: %s%%0A", n, substr(e,1,240); n=""; m=0}' "$W/tap.txt")
+          echo "::notice title=SUITE ${{ matrix.os }} node ${{ matrix.node }}::exit=$code $summary%0A$failed"
+          exit $code
 
       - name: Pack the CLI
         id: pack
@@ -71,6 +82,7 @@ jobs:
           REPO=$(pwd)
           TGZ=$(cd "$W/cli" && ls *.tgz | head -1)
           fail=0
+          res=""
           for t in rppg-demo eeg-demo eeg-ble ppg-demo pulse-game; do
             cd "$W/cli"
             app="npm-$t"
@@ -78,15 +90,17 @@ jobs:
             cli=packed
             if ! npx --yes --package="./$TGZ" create-elata-demo "$app" --template "$t"; then
               cli=in-repo
-              node "$REPO/packages/create-elata-demo/index.mjs" "$app" --template "$t" || { echo "RESULT npm $t scaffold=fail cli=both"; fail=1; continue; }
+              node "$REPO/packages/create-elata-demo/index.mjs" "$app" --template "$t" || { echo "RESULT npm $t scaffold=fail cli=both"; res="$res npm:$t:scaffold=fail%0A"; fail=1; continue; }
               fail=1
             fi
             cd "$app"
             if npm install --no-audit --no-fund; then inst=ok; else inst=fail; fail=1; fi
             if npm run build; then build=ok; else build=fail; fail=1; fi
             echo "RESULT npm $t cli=$cli install=$inst build=$build"
+            res="$res npm:$t:cli=$cli,install=$inst,build=$build%0A"
             echo "| npm | $t | $cli | $inst | $build |" >> "$GITHUB_STEP_SUMMARY"
           done
+          echo "::notice title=STARTERS ${{ matrix.os }} node ${{ matrix.node }}::$res"
           exit $fail
 
       - name: Starters from the packed CLI, pnpm
@@ -97,6 +111,7 @@ jobs:
           TGZ=$(cd "$W/cli" && ls *.tgz | head -1)
           pnpm --version
           fail=0
+          res=""
           for t in rppg-demo eeg-demo eeg-ble ppg-demo pulse-game; do
             cd "$W/cli"
             app="pnpm-$t"
@@ -104,12 +119,14 @@ jobs:
             cli=packed
             if ! npx --yes --package="./$TGZ" create-elata-demo "$app" --template "$t"; then
               cli=in-repo
-              node "$REPO/packages/create-elata-demo/index.mjs" "$app" --template "$t" || { echo "RESULT pnpm $t scaffold=fail cli=both"; fail=1; continue; }
+              node "$REPO/packages/create-elata-demo/index.mjs" "$app" --template "$t" || { echo "RESULT pnpm $t scaffold=fail cli=both"; res="$res pnpm:$t:scaffold=fail%0A"; fail=1; continue; }
               fail=1
             fi
             if pnpm --dir "$app" install; then inst=ok; else inst=fail; fail=1; fi
             if pnpm --dir "$app" run build; then build=ok; else build=fail; fail=1; fi
             echo "RESULT pnpm $t cli=$cli install=$inst build=$build"
+            res="$res pnpm:$t:cli=$cli,install=$inst,build=$build%0A"
             echo "| pnpm | $t | $cli | $inst | $build |" >> "$GITHUB_STEP_SUMMARY"
           done
+          echo "::notice title=STARTERS ${{ matrix.os }} node ${{ matrix.node }}::$res"
           exit $fail
