@@ -49,6 +49,8 @@ function feed(
 	return out;
 }
 
+const READ_EVERY_MS = 5000;
+
 // An engine that takes every sample and never has a rate.
 const silentBackend = {
 	newPipeline: () => ({
@@ -67,14 +69,15 @@ function run(
 		rgbPulse: opts.rgbPulse,
 	});
 	// Read along the way, as an app does: the rate history and the tracker move with the reads.
-	// Every 2 s rather than every second gives the same answers on these feeds, and each read runs
-	// the whole window analysis, which is slow under jest.
-	let next = 2000;
+	// Every 5 s rather than every second keeps every answer asserted below on these feeds (each read
+	// runs the whole window analysis, which is slow under jest); only the true 120 at 30 a second
+	// withholds bpm at the end, which its test allows.
+	let next = READ_EVERY_MS;
 	for (const x of samples) {
 		if (opts.meta) p.pushSampleRgbMeta(x.t, x.r, x.g, x.b, 1, 0, 0);
 		else p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
 		if (x.t >= next) {
-			next += 2000;
+			next += READ_EVERY_MS;
 			p.getMetrics();
 		}
 	}
