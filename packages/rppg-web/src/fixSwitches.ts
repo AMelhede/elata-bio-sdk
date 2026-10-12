@@ -74,7 +74,7 @@ export type RppgFixSwitches = {
 	 * alone, a model never trained against another sensor. Untrained it is their plain mean, so when they disagree it
 	 * shows a number neither measured (a clean 120 whose autocorrelation reads 60 showed 95.7 on one read); it then
 	 * learns toward the resolved rate by a small step per read (95.7, 104.1, 109.5, 113.1 ... 119.7 over 14 reads).
-	 * With the pulse check on (a session's default) the rate shown is the check's own, so this changes nothing there.
+	 * With the pulse check on (a session's default) the rate shown is the check's own, so `bpm` does not change.
 	 * Off by default by the rule set before the runs (no more than 1% of right seconds lost): on recorded camera
 	 * captures with a reference rate it was level with the blend through this build's session path with the check off,
 	 * and right more often through Elata main's, but on both it also lost right seconds along with those it gained.
