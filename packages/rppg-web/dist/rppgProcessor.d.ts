@@ -204,6 +204,8 @@ export declare class RppgProcessor {
     private readonly bayesTracker;
     private readonly channelGain;
     private readonly chromPulse;
+    /** The colour path's pulse signal with the switch rgbPulse on (see computeLocalRgbIntensity). */
+    private readonly rgbPulse;
     private fusedQuality;
     private captureScorer;
     private lastCapture;
@@ -225,7 +227,7 @@ export declare class RppgProcessor {
     private disposed;
     private readonly sampleRate;
     private readonly windowSec;
-    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling). */
+    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling, steadyAnalysis, rgbPulse). */
     readonly fixes: ResolvedRppgFixSwitches;
     /** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
     private trackerSettings;
@@ -309,6 +311,13 @@ export declare class RppgProcessor {
     private failBackend;
     private releasePipeline;
     private pushLocalSample;
+    /**
+     * The pulse value the processor keeps for its own window analysis from one colour sample. Switch rgbPulse on:
+     * RgbPulseExtractor (POS, then the fuser's band-pass at the measured sample rate). Off, as published: channel
+     * gain then ChromPulseModel, whose X and Y keep an offset of about 1, so alpha's sample-to-sample wander lands in
+     * the band; and while that model has no value (its first nine samples) or one near zero, raw green, about a
+     * hundred grey levels beside a pulse of about 0.01, a step that stays in the 45 s window.
+     */
     private computeLocalRgbIntensity;
     /** analyzePulseWindow over the samples, computed once per set of samples (see windowAnalysis). */
     private analyseWindow;

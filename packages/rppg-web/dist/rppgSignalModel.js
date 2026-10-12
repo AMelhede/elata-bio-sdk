@@ -245,6 +245,80 @@ export function zeroPhaseBandpass(values, sampleRate, lowHz = 0.7, highHz = 3.5)
     b.reverse();
     return b;
 }
+/** An interval longer than this is a camera stall, not the frame rate: the runner's own bound (GRID_MAX_GAP_MS). */
+const RGB_PULSE_STALL_MS = 250;
+/** Timestamps the rate is measured over: the projection's own window (PosPulseModel, 45 samples). */
+const RGB_PULSE_RATE_WINDOW = 45;
+/** Samples before there is a pulse value: PosPulseModel gives 0 below 10. */
+const RGB_PULSE_WARMUP = 10;
+/**
+ * The band-pass is designed afresh when the measured rate moves by more than this share. A 10% rate error moves both
+ * band edges by 10%, which changes the gain at 50 bpm (0.83 Hz) by under 1 dB: the second-order Butterworth
+ * high-pass gives -1.8 dB there with its cut-off at 0.70 Hz and -2.4 dB at 0.77 Hz.
+ */
+const RGB_PULSE_REDESIGN = 0.1;
+/**
+ * The processor's own pulse signal from camera colour (switch `rgbPulse`): POS ({@link PosPulseModel}), then the
+ * 0.7 to 4 Hz band-pass the multi-region fuser applies to each region, so the processor's window estimators get from
+ * a colour feed the same kind of signal the fuser gives them. The fuser runs on the runner's even sample grid; colour
+ * pushed to the processor directly arrives at the camera's own rate, so the band-pass is designed for the rate
+ * measured from the timestamps: intervals per second of the intervals over the last 45 samples, leaving out stalls
+ * over 250 ms (the mean, not the median: camera frames come on a 16 ms clock, 32, 48 or 64 ms apart, where the median
+ * interval sits a few frames a second off the real rate).
+ *
+ * Until the projection has 10 samples the value is 0, the projection's own neutral value, never a colour level. A
+ * sample with R = G = B is already one value (the WASM core's colour projection fix treats it the same way) and
+ * passes unchanged.
+ */
+export class RgbPulseExtractor {
+    constructor() {
+        this.pos = new PosPulseModel();
+        this.band = null;
+        this.bandRate = 0;
+        this.times = [];
+    }
+    /** The sample rate the band-pass is designed for; 0 until it is designed. */
+    get filterRate() {
+        return this.bandRate;
+    }
+    reset() {
+        this.pos.reset();
+        this.band = null;
+        this.bandRate = 0;
+        this.times = [];
+    }
+    process(timestampMs, r, g, b) {
+        if (r === g && g === b)
+            return g;
+        this.times.push(timestampMs);
+        if (this.times.length > RGB_PULSE_RATE_WINDOW)
+            this.times.shift();
+        const pulse = this.pos.process(r, g, b);
+        if (this.times.length < RGB_PULSE_WARMUP)
+            return 0;
+        const rate = this.measuredRate();
+        if (!(rate > 0))
+            return 0;
+        if (this.band == null || Math.abs(rate - this.bandRate) > RGB_PULSE_REDESIGN * this.bandRate) {
+            this.band = new Bandpass(rate, 0.7, 4.0);
+            this.bandRate = rate;
+        }
+        const out = this.band.process(pulse);
+        return Number.isFinite(out) ? out : 0;
+    }
+    measuredRate() {
+        let count = 0;
+        let total = 0;
+        for (let i = 1; i < this.times.length; i++) {
+            const d = this.times[i] - this.times[i - 1];
+            if (d > 0 && d <= RGB_PULSE_STALL_MS) {
+                count += 1;
+                total += d;
+            }
+        }
+        return count > 0 ? (1000 * count) / total : 0;
+    }
+}
 /**
  * In-band spectral SNR (linear): peak power in the cardiac band divided by the
  * band's mean power, via a Hann-windowed DFT evaluated on a coarse frequency

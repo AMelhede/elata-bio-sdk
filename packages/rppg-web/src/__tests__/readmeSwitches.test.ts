@@ -1,4 +1,4 @@
-import { FIX_SWITCH_NAMES } from "../fixSwitches";
+import { FIX_SWITCH_NAMES, FIX_SWITCHES_OFF_BY_DEFAULT } from "../fixSwitches";
 import { HEAD_LANDMARKS, PULSE_CHECK_RULE_NAMES, headCentre } from "../pulseCheck";
 
 // Testers log every result against the switches the README lists. In 0.15.0-test.5 the README
@@ -23,9 +23,10 @@ describe("README Switches section", () => {
 		expect(example.length).toBeGreaterThan(0);
 	});
 
-	it.each([...FIX_SWITCH_NAMES])("has a row for fixes.%s and shows it on in the example", (name) => {
+	it.each([...FIX_SWITCH_NAMES])("has a row for fixes.%s and shows it at its default in the example", (name) => {
 		expect(switches).toMatch(new RegExp(`^\\| \`fixes\\.${name}\` \\|`, "m"));
-		expect(example).toMatch(new RegExp(`\\b${name}: true,`));
+		const byDefault = !FIX_SWITCHES_OFF_BY_DEFAULT.includes(name);
+		expect(example).toMatch(new RegExp(`\\b${name}: ${byDefault},`));
 	});
 
 	it.each([...PULSE_CHECK_RULE_NAMES])("names pulse-check rule %s in the table and the example", (name) => {

@@ -165,6 +165,7 @@ export {
 	ChromPulseModel,
 	computeSignalSnrDb,
 	PosPulseModel,
+	RgbPulseExtractor,
 	spectralSnr,
 	zeroPhaseBandpass,
 } from "./rppgSignalModel";
@@ -380,6 +381,7 @@ export {
 } from "./chestBreathing";
 export {
 	FIX_SWITCH_NAMES,
+	FIX_SWITCHES_OFF_BY_DEFAULT,
 	type ResolvedRppgFixSwitches,
 	type RppgFixesOption,
 	type RppgFixSwitches,

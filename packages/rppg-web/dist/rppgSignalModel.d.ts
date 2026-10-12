@@ -53,5 +53,29 @@ export declare class Bandpass {
  * not shifted by the filter — at the cost of being offline (whole-buffer).
  */
 export declare function zeroPhaseBandpass(values: number[], sampleRate: number, lowHz?: number, highHz?: number): number[];
+/**
+ * The processor's own pulse signal from camera colour (switch `rgbPulse`): POS ({@link PosPulseModel}), then the
+ * 0.7 to 4 Hz band-pass the multi-region fuser applies to each region, so the processor's window estimators get from
+ * a colour feed the same kind of signal the fuser gives them. The fuser runs on the runner's even sample grid; colour
+ * pushed to the processor directly arrives at the camera's own rate, so the band-pass is designed for the rate
+ * measured from the timestamps: intervals per second of the intervals over the last 45 samples, leaving out stalls
+ * over 250 ms (the mean, not the median: camera frames come on a 16 ms clock, 32, 48 or 64 ms apart, where the median
+ * interval sits a few frames a second off the real rate).
+ *
+ * Until the projection has 10 samples the value is 0, the projection's own neutral value, never a colour level. A
+ * sample with R = G = B is already one value (the WASM core's colour projection fix treats it the same way) and
+ * passes unchanged.
+ */
+export declare class RgbPulseExtractor {
+    private readonly pos;
+    private band;
+    private bandRate;
+    private times;
+    /** The sample rate the band-pass is designed for; 0 until it is designed. */
+    get filterRate(): number;
+    reset(): void;
+    process(timestampMs: number, r: number, g: number, b: number): number;
+    private measuredRate;
+}
 export declare function spectralSnr(signal: number[], sampleRate: number, minHz?: number, maxHz?: number): number;
 //# sourceMappingURL=rppgSignalModel.d.ts.map

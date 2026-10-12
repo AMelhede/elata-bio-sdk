@@ -5,10 +5,13 @@ export const FIX_SWITCH_NAMES = [
     "posFusion",
     "noRateDoubling",
     "steadyAnalysis",
+    "rgbPulse",
     "analysisWidth",
     "analysisWorker",
     "faceFinderTrial",
 ];
+/** Switches that stay off unless set to `true` (each one's comment says why). */
+export const FIX_SWITCHES_OFF_BY_DEFAULT = ["rgbPulse"];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
 export function resolveFixSwitches(option) {
     const all = option !== false;
@@ -16,7 +19,8 @@ export function resolveFixSwitches(option) {
     const out = {};
     for (const name of FIX_SWITCH_NAMES) {
         const v = given[name];
-        out[name] = typeof v === "boolean" ? v : all;
+        out[name] =
+            typeof v === "boolean" ? v : all && !FIX_SWITCHES_OFF_BY_DEFAULT.includes(name);
     }
     return out;
 }

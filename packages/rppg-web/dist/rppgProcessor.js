@@ -1,5 +1,5 @@
 import { BpmBayesTracker, } from "./bpmBayesTracker.js";
-import { ChannelGainController, ChromPulseModel, } from "./rppgSignalModel.js";
+import { ChannelGainController, ChromPulseModel, RgbPulseExtractor, } from "./rppgSignalModel.js";
 import { analyzePulseWindow, } from "./pulseAnalysis.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ANALYSIS_EVERY_MS } from "./processorWorkerProtocol.js";
@@ -238,6 +238,8 @@ export class RppgProcessor {
         this.fusion = new MuseFusionCalibrator();
         this.channelGain = new ChannelGainController();
         this.chromPulse = new ChromPulseModel();
+        /** The colour path's pulse signal with the switch rgbPulse on (see computeLocalRgbIntensity). */
+        this.rgbPulse = new RgbPulseExtractor();
         // Quality scalar supplied by an external multi-ROI fuser (see pushFusedSample).
         // When set, it overrides the backend's RGB-derived signal_quality, because the
         // fused path bypasses the backend CHROM stage. Cleared by any non-fused push.
@@ -419,7 +421,7 @@ export class RppgProcessor {
             this.pushSample(timestampMs, g);
             return;
         }
-        this.pushLocalSample(timestampMs, this.computeLocalRgbIntensity(r, g, b), r, g, b, safeSkinRatio, 0, 0);
+        this.pushLocalSample(timestampMs, this.computeLocalRgbIntensity(timestampMs, r, g, b), r, g, b, safeSkinRatio, 0, 0);
     }
     pushSampleRgbMeta(timestampMs, r, g, b, skinRatio = 1.0, motion = 0.0, clipRatio = 0.0) {
         this.fusedQuality = null; // non-fused RGB path → use backend quality
@@ -456,7 +458,7 @@ export class RppgProcessor {
             this.pushSampleRgb(timestampMs, r, g, b, safeSkinRatio);
             return;
         }
-        this.pushLocalSample(timestampMs, this.computeLocalRgbIntensity(r, g, b), r, g, b, safeSkinRatio, safeMotion, safeClipRatio);
+        this.pushLocalSample(timestampMs, this.computeLocalRgbIntensity(timestampMs, r, g, b), r, g, b, safeSkinRatio, safeMotion, safeClipRatio);
     }
     updateMuseMetrics(bpm, quality = 0, timestampMs = Date.now()) {
         this.fusion.updateMuse(bpm, quality, timestampMs);
@@ -481,6 +483,7 @@ export class RppgProcessor {
         this.analysed = null;
         this.channelGain.reset();
         this.chromPulse.reset();
+        this.rgbPulse.reset();
         this.fusedQuality = null;
         this.releasePipeline();
         try {
@@ -505,6 +508,7 @@ export class RppgProcessor {
         this.bayesTracker.reset();
         this.channelGain.reset();
         this.chromPulse.reset();
+        this.rgbPulse.reset();
         this.fusedQuality = null;
         this.captureScorer?.reset();
         this.lastCapture = null;
@@ -749,7 +753,16 @@ export class RppgProcessor {
             this.samples.shift();
         }
     }
-    computeLocalRgbIntensity(r, g, b) {
+    /**
+     * The pulse value the processor keeps for its own window analysis from one colour sample. Switch rgbPulse on:
+     * RgbPulseExtractor (POS, then the fuser's band-pass at the measured sample rate). Off, as published: channel
+     * gain then ChromPulseModel, whose X and Y keep an offset of about 1, so alpha's sample-to-sample wander lands in
+     * the band; and while that model has no value (its first nine samples) or one near zero, raw green, about a
+     * hundred grey levels beside a pulse of about 0.01, a step that stays in the 45 s window.
+     */
+    computeLocalRgbIntensity(timestampMs, r, g, b) {
+        if (this.fixes.rgbPulse)
+            return this.rgbPulse.process(timestampMs, r, g, b);
         if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
             return Number.isFinite(g) ? g : 0;
         }
