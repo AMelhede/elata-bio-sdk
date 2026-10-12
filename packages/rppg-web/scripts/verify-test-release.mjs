@@ -20,8 +20,11 @@
 //      analysis runs once per 250 ms of samples, two passes as the worker's answer did (at 30 fps the
 //      first frame 250 ms on is the 8th: 225 steps, 450 passes) with steadyAnalysis on, and on every read
 //      (1,800 times) with it off, and the known 72 still reads 72.
+//   9. noEngineFallback (off by default) on the packed processor and the real core: a clean 72 whose every sample
+//      carries motion 0.5, which the processor's gate refuses, shows the engine's rate in every read from 2 s with
+//      the switch at its default and no rate with it on.
 // BREAK=3 makes check 7 expect 20 breaths a minute instead of 15; BREAK=4 makes check 8 expect 1,800
-// analyses with the switch on.
+// analyses with the switch on; BREAK=5 makes check 9 expect a rate with noEngineFallback on.
 // BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red; BREAK=2 makes check 6
 // expect the nod's 60 to show with headMotion on.
 import { spawnSync } from "node:child_process";
@@ -91,6 +94,7 @@ assert.equal(pipe.colour_projection_fix(), false, "switch reaches the core");
 assert.deepEqual(Object.keys(sdk.resolveFixSwitches()).sort(), [...sdk.FIX_SWITCH_NAMES].sort());
 const offByDefault = new Set(sdk.FIX_SWITCHES_OFF_BY_DEFAULT);
 assert.ok(offByDefault.has("rgbPulse"), "rgbPulse is off by default");
+assert.ok(offByDefault.has("noEngineFallback"), "noEngineFallback is off by default");
 for (const [name, on] of Object.entries(sdk.resolveFixSwitches()))
   assert.equal(on, !offByDefault.has(name), "default of fix " + name);
 assert.deepEqual(Object.keys(sdk.resolvePulseCheckRules()).sort(), [...sdk.PULSE_CHECK_RULE_NAMES].sort());
@@ -180,9 +184,24 @@ const steadyWant = process.env.BREAK === "4" ? 1800 : 2 * Math.ceil(1800 / Math.
 assert.ok(Math.abs(steadyOn.calls - steadyWant) <= 1, "steadyAnalysis on: " + steadyWant + " analyses expected, ran " + steadyOn.calls);
 assert.equal(steadyOff.calls, 1800, "steadyAnalysis off: one analysis per read");
 assert.ok(steadyOn.last != null && Math.abs(steadyOn.last - 72) <= 2, "steadyAnalysis on: 72 should read 72, read " + steadyOn.last);
+// Check 9: noEngineFallback. Every sample of a clean 72 carries motion 0.5; the gate refuses any read whose mean
+// motion is over 0.22, so what shows is the fallback or nothing.
+function refusedReads(fixes) {
+  const p = new sdk.RppgProcessor(backend, 30, 10, { fixes });
+  const shown = [];
+  for (let i = 0; i < 600; i++) { const t = (i * 1000) / 30; const s = Math.sin((2 * Math.PI * 72 * t) / 60000);
+    p.pushSampleRgbMeta(t, 0.62 * (1 - 0.003 * s), 0.45 * (1 - 0.01 * s), 0.38 * (1 - 0.002 * s), 1, 0.5, 0);
+    if (i % 30 === 29 && i >= 59) shown.push(p.getMetrics().bpm); }
+  return shown;
+}
+const fallbackShown = refusedReads({});
+const fallbackHeld = refusedReads({ noEngineFallback: true });
+assert.ok(fallbackShown.every((v) => v != null), "noEngineFallback at its default: the engine's rate shows in every refused read, got " + fallbackShown.join(","));
+if (process.env.BREAK === "5") assert.ok(fallbackHeld.some((v) => v != null), "BREAK=5: a rate expected with noEngineFallback on");
+assert.ok(fallbackHeld.every((v) => v == null), "noEngineFallback on: no rate in a refused read, got " + fallbackHeld.join(","));
 const off = read(120, { colourProjectionFix: false });
 assert.ok(off == null || Math.abs(off - 120) > 2, "colourProjectionFix:false should give the published core's answer, read " + off);
-console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line; steady analysis: " + steadyOn.calls + " analyses read on every frame (off: " + steadyOff.calls + "), 72 read " + steadyOn.last + ".");
+console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line; steady analysis: " + steadyOn.calls + " analyses read on every frame (off: " + steadyOff.calls + "), 72 read " + steadyOn.last + "; refused reads: " + fallbackShown.length + " show the engine's rate at the default, none with noEngineFallback on.");
 `,
 	);
 	console.log(run(process.execPath, ["app.mjs"], app).trim());
