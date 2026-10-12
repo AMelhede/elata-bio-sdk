@@ -6,8 +6,9 @@
 - **Verdict.** Strong.
 - **Strongest evidence** [synthetic]. A true 72 through the fuser, five noise seeds: 0.14.0 reads 99, 50, 67, 109, 63;
   POS reads 72 five times. With the real engine a true 120 is right in 0 of 150 s on 0.14.0 and 150 of 150 with POS.
-  HRV on a steady pulse (true RMSSD about 0): 14 to 20 ms against 113 to 179 ms. A golden test pins `"chrom"` to
-  main's output.
+  HRV on a steady pulse (true RMSSD about 0): 14 to 20 ms against 113 to 179 ms. That is a large drop, but 14 to 20 ms
+  of error is still about the size of a real resting RMSSD, so this alone does not make HRV usable. A golden test
+  pins `"chrom"` to main's output.
 - **Cost.** The default rate, `signal_quality` and HRV of every face-mesh session change; minor bump.
 - **Still open.** Breathing under POS has no known-answer test yet. A number still shows in about half of no-pulse
   seconds (that belongs to the estimator; the pulse check addresses it). Default against opt-in is Elata's call.

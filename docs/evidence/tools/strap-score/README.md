@@ -1,5 +1,11 @@
 # strap-score: the demo page against a chest strap
 
+**Which page.** The demo app `AMelhede/rppg-demo-sandbox`, branch `chore/demo-test-19` (on test.20 since
+2026-10-12). Its **Save readings** button writes the rate the page shows (`session.getMetrics()`). Its `main` is still
+on 0.14.0 with no such button, and the SDK's own `packages/rppg-web/demo` page has only "Download session", which
+records the engine's unchecked rate (`processor.getMetrics()`), not the shown one. Score only Save readings files,
+and check the `library_version` column says the test build.
+
 A tester wears a chest strap while the demo page runs, then sends two kinds of file: the page's
 **Save readings** file (one row per second: `epoch_ms,iso_time,bpm_shown,confidence,library_version`) and the
 strap app's export. This script lines them up by clock time and says, second by second, whether the page was
