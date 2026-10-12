@@ -61,9 +61,39 @@ before the first real file is opened, and say so in the commit.
   results per person (one person must not carry the pooled number).
 - **Refused files** (no time overlap, lag not found) are counted and listed, never dropped silently. `--lag 0` is
   allowed only if stated per file.
-- **Candidate rules** from the owner-recording miss analysis (smooth the 8 s follower; ask for a fresh proof when
-  the shown rate moves more than 6 bpm from the proven one) may be tested on these files only if they are built as
-  switches and their exact settings are written here before the first file is opened.
+- **Candidate rules for dim light, fixed 2026-10-12 before any strap file exists.** Built on branch
+  `night/dim-candidates` (commit c98cf18, from test.20), each a `pulseCheckRules` switch, OFF by default, each with a
+  test that goes red without its code. Settings, not to be changed once a strap file is opened:
+  - `followerMedian`: the rate shown is the median of the last 3 follower values (`FOLLOWER_MEDIAN_K = 3`).
+  - `reproveOnDrift`: a hold more than 6 bpm from its last fresh proof ends (`REPROVE_DRIFT_BPM = 6`).
+  - `tooDark`: no rate while the newest 4 windows' mean SNR is below -4 dB (`TOO_DARK_SNR_DB = -4`).
+  - `anchorDrift`: a run of shown rates ends, and the evidence starts over, once it moves more than 6 bpm from where
+    it was first proven (`ANCHOR_DRIFT_BPM = 6`).
+
+  How they were set: 3 and -4 dB on generated dim and lit faces by rules written before the run; 6 is the check's
+  own agreement band. The generated faces did not reproduce the dim failure (the check stayed silent rather than
+  wrong on them), so they could only choose the least costly setting, not show a gain. `reproveOnDrift` never acted
+  on the owner's recordings [owner]; `anchorDrift` was designed after looking at one of them, so only this study can
+  test it.
+- **Each candidate is scored on the same seconds as the default.** The Save readings file holds only the number
+  shown, so it cannot say what a switched-off rule would have shown. Either the page also saves the check's inputs
+  (per-frame region colours, wall and head rows) and every arm is replayed offline on the same captures (preferred),
+  or testers run the dim condition once per arm, alternating, and arms are compared per person. Without one of the
+  two, no candidate can be judged and all stay off.
+- **A candidate goes on by default only if**, alone, against the default on the same strap captures:
+  1. at least 5 people have a dim-light capture and at least 600 dim seconds are shown by either arm (else: not
+     decided, it stays off);
+  2. in dim light its wrong seconds per 100 shown are lower than the default's, and the 95% interval of that
+     difference (bootstrap over people, 2,000 resamples, seed 1) lies wholly above zero;
+  3. in dim light it removes more wrong seconds than right ones;
+  4. in normal light and after stairs, separately, its wrong per 100 shown is at most 1 point above the default's and
+     its right seconds are at least 95 percent of the default's;
+  5. rules 2 (the direction) and 3 still hold with any one person's files removed.
+
+  Meeting the 10 per 100 bar in dim light is reported, not required. If more than one passes, the passers together
+  go on only if the combination also passes 1 to 5 and its dim wrong share is within 1 point of the best single
+  passer's; otherwise only the passer with the lowest dim wrong share goes on. Four candidates on one data set:
+  rules 2 and 5 are the guard against a lucky pass. A pass turns the switch on in the test build only.
 
 ## Process gaps
 
