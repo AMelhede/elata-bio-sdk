@@ -1,5 +1,6 @@
 import { resolveFixSwitches } from "../fixSwitches";
 import { RppgProcessor } from "../rppgProcessor";
+import { RppgSession } from "../rppgSession";
 import { Bandpass, ChannelGainController, ChromPulseModel, PosPulseModel, RgbPulseExtractor } from "../rppgSignalModel";
 
 // Known answers for the processor's own colour path (pushSampleRgb / pushSampleRgbMeta), the one an app takes
@@ -166,6 +167,22 @@ describe("switch rgbPulse off (the default): the published path, exactly", () =>
 		expect(new RppgProcessor(silentBackend, 30, 10).fixes.rgbPulse).toBe(false);
 	});
 
+	test("a session reports the switch its processor runs, so a result is logged against the right build", () => {
+		// getBuildSwitches() takes the processor's own rgbPulse, as it does colourProjectionFix and noRateDoubling: an
+		// app that hands the session its own RppgProcessor with rgbPulse on, under a runner at the defaults, runs it on.
+		const session = (processorFixes: object) =>
+			new RppgSession(
+				{} as never,
+				{ fixes: resolveFixSwitches(processorFixes as never) } as never,
+				{ fixes: resolveFixSwitches() } as never,
+				"wasm",
+				"face_mesh",
+				{},
+			);
+		expect(session({ rgbPulse: true }).getBuildSwitches().fixes.rgbPulse).toBe(true);
+		expect(session({}).getBuildSwitches().fixes.rgbPulse).toBe(false);
+	});
+
 	test("raw green for the first nine samples, then channel gain and CHROM, value for value", () => {
 		const samples = feed(72, 30, 5);
 		const trace = run(samples, 30, { fixes: {} }).getTraceSnapshot(1000).points;
@@ -213,6 +230,22 @@ describe("RgbPulseExtractor", () => {
 		expect(x.filterRate).toBeCloseTo(30, 9);
 	});
 
+	test("at 20 frames a second the band-pass is the one designed for 20, value for value", () => {
+		// filterRate alone cannot tell a filter designed for the measured rate from one designed for 30 and labelled 20;
+		// the values can.
+		const samples = feed(72, 20, 5);
+		const x = new RgbPulseExtractor();
+		const pos = new PosPulseModel();
+		const bp = new Bandpass(20, 0.7, 4.0);
+		samples.forEach((s, i) => {
+			const h = pos.process(s.r, s.g, s.b);
+			const got = x.process(s.t, s.r, s.g, s.b);
+			if (i < 9) return expect(got).toBe(0);
+			expect(got).toBeCloseTo(bp.process(h), 12);
+		});
+		expect(x.filterRate).toBeCloseTo(20, 9);
+	});
+
 	test("designs its band-pass for the rate the samples arrive at", () => {
 		const x = new RgbPulseExtractor();
 		push(x, Array.from({ length: 60 }, (_, i) => i * 50));
@@ -237,12 +270,36 @@ describe("RgbPulseExtractor", () => {
 		expect(x.filterRate).toBeCloseTo(30.03, 1);
 	});
 
+	test("designs its band-pass afresh when the camera's rate moves by more than a tenth, and not for less", () => {
+		// RGB_PULSE_REDESIGN: a camera that halves its rate to lengthen its exposure gets a filter for the new rate
+		// (within a tenth of it, the redesign step), while a 5% wander keeps the filter it has.
+		const at = (fps: number, n: number, from: number) => Array.from({ length: n }, (_, i) => from + ((i + 1) * 1000) / fps);
+		const x = new RgbPulseExtractor();
+		const steady = [0, ...at(30, 59, 0)];
+		push(x, steady);
+		expect(x.filterRate).toBeCloseTo(30, 6);
+		const wander = at(28.5, 60, steady[steady.length - 1]);
+		push(x, wander);
+		expect(x.filterRate).toBeCloseTo(30, 6);
+		push(x, at(15, 60, wander[wander.length - 1]));
+		expect(x.filterRate).toBeGreaterThanOrEqual(15);
+		expect(x.filterRate).toBeLessThanOrEqual(15 * 1.1);
+	});
+
 	test("reset starts it afresh", () => {
 		const x = new RgbPulseExtractor();
 		push(x, Array.from({ length: 30 }, (_, i) => i * 33.3));
 		x.reset();
 		expect(x.filterRate).toBe(0);
 		expect(push(x, Array.from({ length: 9 }, (_, i) => 5000 + i * 33.3))).toEqual(Array(9).fill(0));
+	});
+
+	test("resetCalibration starts it afresh too, as it does the published path's channel gain and CHROM", () => {
+		const p = run(feed(72, 30, 5), 30);
+		p.resetCalibration();
+		for (const x of feed(72, 30, 1).map((s) => ({ ...s, t: s.t + 10000 }))) p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
+		const trace = p.getTraceSnapshot(1000).points;
+		expect(trace.slice(-30, -21).map((x) => x.intensity)).toEqual(Array(9).fill(0));
 	});
 
 	test("the processor starts it afresh with the signal (resetSignal)", () => {
