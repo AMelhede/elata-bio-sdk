@@ -502,6 +502,8 @@ export class RppgProcessor {
 	private readonly samples: Sample[] = [];
 	private readonly bpmHistory: number[] = [];
 	private readonly cameraCalibration = new MuseCalibrationModel();
+	/** See the constructor's `calibrationBlend` option. */
+	private readonly calibrationBlend: boolean;
 	private readonly fusion = new MuseFusionCalibrator();
 	private readonly bayesTracker: BpmBayesTracker;
 	private readonly channelGain = new ChannelGainController();
@@ -524,8 +526,6 @@ export class RppgProcessor {
 	private disposed = false;
 	private readonly sampleRate: number;
 	private readonly windowSec: number;
-	/** See the constructor's `calibrationBlend` option. */
-	private readonly calibrationBlend: boolean;
 
 	constructor(
 		private backend: Backend,
