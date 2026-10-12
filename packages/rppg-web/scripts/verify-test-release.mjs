@@ -6,8 +6,8 @@
 //   2. the `pkg/` subpath resolves through the package's exports under both names;
 //   3. the packed WASM loads, and the colour-projection switch reaches it (on by default);
 //   4. known answers: a clean colour pulse at 60, 72 and 120 bpm reads within 2 bpm with every
-//      fix on; with `colourProjectionFix: false` the 120 does not (the published core), which
-//      proves the switch changes what the WASM does;
+//      fix at its default and with `rgbPulse` on too; with `colourProjectionFix: false` the 120 does
+//      not (the published core), which proves the switch changes what the WASM does;
 //   5. the packed file list holds only dist/, pkg/, README.md, llms.txt, LICENSE and package.json,
 //      and LICENSE is the repo root's MIT notice, byte for byte;
 //   6. the packed PulseCheck on generated scenes with known answers: a pulse at 72 shows 72; no
@@ -85,24 +85,32 @@ const pipe = new glue.WasmRppgPipeline(30, 10);
 assert.equal(pipe.colour_projection_fix(), true, "fix on by default in the core");
 pipe.set_colour_projection_fix(false);
 assert.equal(pipe.colour_projection_fix(), false, "switch reaches the core");
-// Every fix switch on by default, and every pulse-check light rule on by default (read from the
-// package's own lists so a new switch cannot be missed the way the count of five once went stale).
+// Every fix switch at its default (on, but for FIX_SWITCHES_OFF_BY_DEFAULT), and every pulse-check light
+// rule on by default (read from the package's own lists so a new switch cannot be missed the way the count
+// of five once went stale).
 assert.deepEqual(Object.keys(sdk.resolveFixSwitches()).sort(), [...sdk.FIX_SWITCH_NAMES].sort());
+const offByDefault = new Set(sdk.FIX_SWITCHES_OFF_BY_DEFAULT);
+assert.ok(offByDefault.has("rgbPulse"), "rgbPulse is off by default");
 for (const [name, on] of Object.entries(sdk.resolveFixSwitches()))
-  assert.equal(on, true, "default of fix " + name);
+  assert.equal(on, !offByDefault.has(name), "default of fix " + name);
 assert.deepEqual(Object.keys(sdk.resolvePulseCheckRules()).sort(), [...sdk.PULSE_CHECK_RULE_NAMES].sort());
 assert.ok(Object.values(sdk.resolvePulseCheckRules()).every((v) => v === true), "every light rule on by default");
-function read(bpm, fixes) {
+// everySecond: read once a second as an app does (the processor's rate history and tracker move with its reads);
+// otherwise once, at the end.
+function read(bpm, fixes, everySecond = false) {
   const p = new sdk.RppgProcessor(backend, 30, 10, fixes === undefined ? {} : { fixes });
   let seed = 7; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) - 0.5;
   for (let i = 0; i < 900; i++) { const t = (i * 1000) / 30; const s = Math.sin((2 * Math.PI * bpm * t) / 60000);
-    p.pushSampleRgbMeta(t, 0.62 * (1 - 0.003 * s) + 0.0005 * rnd(), 0.45 * (1 - 0.01 * s) + 0.0005 * rnd(), 0.38 * (1 - 0.002 * s) + 0.0005 * rnd(), 1, 0, 0); }
+    p.pushSampleRgbMeta(t, 0.62 * (1 - 0.003 * s) + 0.0005 * rnd(), 0.45 * (1 - 0.01 * s) + 0.0005 * rnd(), 0.38 * (1 - 0.002 * s) + 0.0005 * rnd(), 1, 0, 0);
+    if (everySecond && i % 30 === 29) p.getMetrics(); }
   return p.getMetrics().bpm;
 }
 const expect72 = process.env.BREAK === "1" ? 90 : 72;
 for (const [bpm, want] of [[60, 60], [72, expect72], [120, 120]]) {
   const got = read(bpm);
   assert.ok(got != null && Math.abs(got - want) <= 2, "true " + bpm + " read " + got + " (fixes on)");
+  const own = read(bpm, { rgbPulse: true }, true);
+  assert.ok(own != null && Math.abs(own - want) <= 2, "true " + bpm + " read " + own + " (rgbPulse on)");
 }
 // Check 6: the packed PulseCheck on generated scenes. Three regions and the wall, each channel on
 // 0..1, 30 frames a second; the head at 190 px between the cheekbones. A pulse and the light both
