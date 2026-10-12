@@ -524,6 +524,8 @@ export class RppgProcessor {
 	private disposed = false;
 	private readonly sampleRate: number;
 	private readonly windowSec: number;
+	/** See the constructor's `calibrationBlend` option. */
+	private readonly calibrationBlend: boolean;
 
 	constructor(
 		private backend: Backend,
@@ -531,6 +533,19 @@ export class RppgProcessor {
 		windowSec = 5,
 		options: {
 			bpmTrackerConfig?: BpmTrackerConfigV1;
+			/**
+			 * What `bpm` (and `fused_bpm` without a Muse) shows when the processor's
+			 * gate passes. `true`, the default: the camera calibration's prediction
+			 * from the spectral and autocorrelation rates. That model is never
+			 * trained against another sensor: until a read passes with a resolved
+			 * confidence of 0.55 it is their plain mean, and then it moves toward
+			 * the resolved rate by a small step per read, so when the two disagree
+			 * it shows a rate neither measured. `false`: the resolved rate, the one
+			 * the resolver and tracker chose from the engine's, spectral,
+			 * autocorrelation and peak rates. `calibrated_bpm` reports the
+			 * prediction either way.
+			 */
+			calibrationBlend?: boolean;
 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 		} = {},
 	) {
@@ -543,6 +558,7 @@ export class RppgProcessor {
 			options.bpmTrackerConfig,
 			options.bpmEvidenceQualityProvider,
 		);
+		this.calibrationBlend = options.calibrationBlend !== false;
 		this.pipeline = this.backend.newPipeline(sampleRate, windowSec);
 	}
 
@@ -1191,9 +1207,14 @@ export class RppgProcessor {
 			analysis.snrDb < -4.5 ||
 			analysis.motionMean > 0.22 ||
 			(resolved.aliasFlag && estimatorSpread > 28);
+		// With calibrationBlend (the default) the camera rate is the calibration's
+		// prediction, a blend of the spectral and autocorrelation rates; without it,
+		// the resolved rate (see the constructor's option).
 		const cameraCandidate = lowConfidenceGate
 			? null
-			: calibratedBpm ?? resolvedBpm ?? base.bpm ?? null;
+			: this.calibrationBlend
+				? (calibratedBpm ?? resolvedBpm ?? base.bpm ?? null)
+				: (resolvedBpm ?? base.bpm ?? null);
 		const cameraQuality = clamp(
 			((base.signal_quality || 0) + (analysis.quality || 0)) * 50,
 			0,

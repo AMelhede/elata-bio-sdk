@@ -112,6 +112,13 @@ export type CreateRppgSessionOptions = Omit<
 	};
 	sampleRate?: number;
 	windowSec?: number;
+	/**
+	 * What `getMetrics().bpm` shows when the processor's checks pass: the camera
+	 * calibration's blend of the spectral and autocorrelation rates (`true`, the
+	 * default) or the processor's resolved rate (`false`). See `RppgProcessor`'s
+	 * option of the same name.
+	 */
+	calibrationBlend?: boolean;
 	backend?: RppgSessionBackendPreference;
 	/**
 	 * Face ROI mode.
@@ -397,6 +404,7 @@ export async function createRppgSession(
 		windowSec,
 		{
 			bpmTrackerConfig: options.bpmTrackerConfig,
+			calibrationBlend: options.calibrationBlend,
 			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
 		},
 	);

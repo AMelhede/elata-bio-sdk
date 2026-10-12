@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
 }));
 
 import { createRppgSession } from "../rppgSession";
+import { DemoRunner } from "../demoRunner";
 import { loadFaceLandmarker } from "../mediapipeLoader";
 import { ensureVideoPlaying } from "../videoPlayback";
 import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
@@ -111,6 +112,38 @@ describe("createRppgSession lifecycle", () => {
 		expect(mockedMediaPipeFrameSource).toHaveBeenCalledTimes(1);
 		expect(session.faceTrackingMode).toBe("video_frame");
 		expect(runnerStart).toHaveBeenCalledTimes(1);
+	});
+
+	test("passes calibrationBlend through to the processor", async () => {
+		// An engine that reports 120 and a grey 120 pulse whose autocorrelation reads 60:
+		// the blend shows 95.7 on one read, the resolved rate 120.
+		const backend = {
+			newPipeline: () => ({
+				push_sample_rgb_meta: jest.fn(),
+				get_metrics: jest.fn(() => ({ bpm: 120, confidence: 0.8, signal_quality: 0.9 })),
+				free: jest.fn(),
+			}),
+		} as any;
+		const shown = async (calibrationBlend?: boolean) => {
+			mockedLoadWasmBackend.mockResolvedValueOnce(backend);
+			(DemoRunner as unknown as jest.Mock).mockClear();
+			await createRppgSession({
+				video: document.createElement("video"),
+				faceMesh: "off",
+				ensureVideoPlayback: false,
+				calibrationBlend,
+			});
+			const processor = (DemoRunner as unknown as jest.Mock).mock.calls[0][1];
+			for (let i = 0; i < 900; i++) {
+				const ph = (2 * Math.PI * 2 * i) / 30;
+				const v = 0.5 + 0.02 * (Math.sin(ph) + 0.4 * Math.sin(2 * ph + 0.8));
+				processor.pushSampleRgbMeta((i * 1000) / 30, v, v, v, 1, 0, 0);
+			}
+			return processor.getMetrics().bpm;
+		};
+
+		expect(Math.abs((await shown()) - 95.7)).toBeLessThan(0.1);
+		expect(Math.abs((await shown(false)) - 120)).toBeLessThanOrEqual(1);
 	});
 
 	test("skips video playback coordination when ensureVideoPlayback is false", async () => {
