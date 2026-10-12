@@ -129,6 +129,19 @@ describe('processor colour path with rgbPulse: "pos": known answers', () => {
 		expect(near(p.getMetrics().bpm, 72)).toBe(true);
 	});
 
+	test("one clipped frame in a colour stream puts no raw level in the window and still reads", () => {
+		// A frame clipped white (255, 255, 255) is R = G = B but carries no colour: it gives
+		// the projection's neutral 0, not its own level beside a pulse of about 0.01.
+		const samples = feed(72, 30, 30);
+		samples[300] = { ...samples[300], r: 255, g: 255, b: 255 };
+		const p = run(samples, 30);
+		const trace = p.getTraceSnapshot(2000).points;
+		expect(trace.length).toBe(900);
+		expect(trace[300].intensity).toBe(0);
+		expect(Math.max(...trace.map((x) => Math.abs(x.intensity)))).toBeLessThan(1);
+		expect(near(p.getMetrics().bpm, 72)).toBe(true);
+	});
+
 	test("resetCalibration starts the colour pulse afresh", () => {
 		const p = run(feed(72, 30, 5), 30);
 		p.resetCalibration();
@@ -210,6 +223,18 @@ describe("RgbPulseExtractor", () => {
 		const x = new RgbPulseExtractor();
 		push(x, times);
 		expect(x.filterRate).toBeCloseTo(30.03, 1);
+	});
+
+	test("passes an R = G = B sample through only while the stream has been grey", () => {
+		const x = new RgbPulseExtractor();
+		expect(x.process(0, 120, 120, 120)).toBe(120);
+		expect(x.process(33, 121, 121, 121)).toBe(121);
+		const colour = push(x, Array.from({ length: 30 }, (_, i) => 66 + i * 33.3));
+		expect(Math.abs(colour[29])).toBeLessThan(1);
+		expect(x.process(2000, 255, 255, 255)).toBe(0);
+		expect(x.process(2033, 1, 1, 1)).toBe(0);
+		x.reset();
+		expect(x.process(5000, 120, 120, 120)).toBe(120);
 	});
 
 	test("reset starts it afresh", () => {
