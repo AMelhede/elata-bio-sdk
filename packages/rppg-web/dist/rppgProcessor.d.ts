@@ -227,7 +227,7 @@ export declare class RppgProcessor {
     private disposed;
     private readonly sampleRate;
     private readonly windowSec;
-    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling, steadyAnalysis, rgbPulse). */
+    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling, steadyAnalysis, rgbPulse, noEngineFallback). */
     readonly fixes: ResolvedRppgFixSwitches;
     /** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
     private trackerSettings;
@@ -322,6 +322,12 @@ export declare class RppgProcessor {
     /** analyzePulseWindow over the samples, computed once per set of samples (see windowAnalysis). */
     private analyseWindow;
     private computeAdvancedMetrics;
+    /**
+     * A read with too few samples for the processor's own analysis (under 24, or no window). Published, it shows
+     * the engine's raw rate, which the engine gives from 10 samples on. noEngineFallback: no rate, since nothing of
+     * the processor's own has checked it (`calibrated_bpm` keeps the engine's value as a diagnostic, as published).
+     */
+    private withoutAnalysis;
     private updateBaseline;
 }
 /**

@@ -785,29 +785,11 @@ export class RppgProcessor {
         return result;
     }
     computeAdvancedMetrics(base) {
-        if (this.samples.length < 24) {
-            return {
-                calibrated_bpm: base.bpm ?? null,
-                fused_bpm: base.bpm ?? null,
-                fused_source: base.bpm == null ? "none" : "camera",
-                bayes_bpm: null,
-                bayes_confidence: 0,
-                calibration_trained: this.cameraCalibration.isTrained(),
-                baseline_bpm: this.baselineBpm,
-            };
-        }
+        if (this.samples.length < 24)
+            return this.withoutAnalysis(base);
         const analysis = this.analyseWindow();
-        if (!analysis) {
-            return {
-                calibrated_bpm: base.bpm ?? null,
-                fused_bpm: base.bpm ?? null,
-                fused_source: base.bpm == null ? "none" : "camera",
-                bayes_bpm: null,
-                bayes_confidence: 0,
-                calibration_trained: this.cameraCalibration.isTrained(),
-                baseline_bpm: this.baselineBpm,
-            };
-        }
+        if (!analysis)
+            return this.withoutAnalysis(base);
         const spectral = analysis.spectral;
         const acf = analysis.acf;
         const peaks = analysis.peaks;
@@ -914,7 +896,13 @@ export class RppgProcessor {
         }
         this.updateBaseline(fused.bpm, resolvedConfidence, base.signal_quality, analysis.nowMs);
         return {
-            bpm: fused.bpm ?? cameraCandidate ?? base.bpm ?? null,
+            // The published chain ends in the engine's raw rate, so a read the gate above refused still shows the
+            // engine's number (on noise it nearly always has one). noEngineFallback: the refusal holds; a fresh Muse
+            // rate (another sensor) still comes through `fused`. (`cameraCandidate` adds nothing here: when the gate
+            // passes, `fused.bpm` is it.)
+            bpm: this.fixes.noEngineFallback
+                ? (fused.bpm ?? null)
+                : (fused.bpm ?? cameraCandidate ?? base.bpm ?? null),
             confidence: lowConfidenceGate
                 ? Math.min(Math.max(base.confidence || 0, resolvedConfidence || 0), 0.3)
                 : Math.max(base.confidence || 0, resolvedConfidence || 0),
@@ -942,6 +930,24 @@ export class RppgProcessor {
             hrv_rmssd: analysis.hrvRmssd,
             respiration_rate: analysis.respiration,
             respiration_confidence: analysis.respirationConfidence,
+        };
+    }
+    /**
+     * A read with too few samples for the processor's own analysis (under 24, or no window). Published, it shows
+     * the engine's raw rate, which the engine gives from 10 samples on. noEngineFallback: no rate, since nothing of
+     * the processor's own has checked it (`calibrated_bpm` keeps the engine's value as a diagnostic, as published).
+     */
+    withoutAnalysis(base) {
+        const shown = this.fixes.noEngineFallback ? null : (base.bpm ?? null);
+        return {
+            ...(this.fixes.noEngineFallback ? { bpm: null } : {}),
+            calibrated_bpm: base.bpm ?? null,
+            fused_bpm: shown,
+            fused_source: shown == null ? "none" : "camera",
+            bayes_bpm: null,
+            bayes_confidence: 0,
+            calibration_trained: this.cameraCalibration.isTrained(),
+            baseline_bpm: this.baselineBpm,
         };
     }
     updateBaseline(bpm, confidence, signalQuality, nowMs) {

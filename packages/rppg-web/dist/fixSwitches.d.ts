@@ -68,6 +68,18 @@ export type RppgFixSwitches = {
      */
     rgbPulse?: boolean;
     /**
+     * Fix 8, OFF unless set to true. When the processor's own checks refuse a rate (its low-confidence gate: the
+     * estimators disagree, the SNR is under -4.5 dB, the motion is high, or an alias with a wide spread), `bpm` is
+     * null, and so it is while the processor has under 24 samples to analyse. A fresh Muse rate (another sensor)
+     * still shows, and every read the gate passes is unchanged. Off, as published: `bpm` falls back to the
+     * engine's raw rate in both cases, which the engine gives on almost any input (it withholds only when its peak
+     * is under 1.3 times its noise floor), while `confidence` says at most 0.3. Off by default because that
+     * fallback is right more often than chance on real captures: fed to the processor directly, 50 recorded
+     * captures with a reference rate had 1,400 right seconds, 1,300 of them through the fallback (779 of 1,967
+     * with rgbPulse on), so turning it on loses those along with 2,304 wrong ones.
+     */
+    noEngineFallback?: boolean;
+    /**
      * Speed 2. Frames are read at most 640 wide (same aspect), and the face finder reads that
      * same image, so landmarks and pixels come from one frame. Off: the full camera frame, and
      * the face finder reads the live video, as published.
@@ -94,7 +106,7 @@ export type RppgFixSwitches = {
  */
 export type RppgFixesOption = boolean | RppgFixSwitches;
 export type ResolvedRppgFixSwitches = Required<RppgFixSwitches>;
-export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "steadyAnalysis", "rgbPulse", "analysisWidth", "analysisWorker", "faceFinderTrial"];
+export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "steadyAnalysis", "rgbPulse", "noEngineFallback", "analysisWidth", "analysisWorker", "faceFinderTrial"];
 /** Switches that stay off unless set to `true` (each one's comment says why). */
 export declare const FIX_SWITCHES_OFF_BY_DEFAULT: readonly (keyof RppgFixSwitches)[];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */

@@ -6,12 +6,16 @@ export const FIX_SWITCH_NAMES = [
     "noRateDoubling",
     "steadyAnalysis",
     "rgbPulse",
+    "noEngineFallback",
     "analysisWidth",
     "analysisWorker",
     "faceFinderTrial",
 ];
 /** Switches that stay off unless set to `true` (each one's comment says why). */
-export const FIX_SWITCHES_OFF_BY_DEFAULT = ["rgbPulse"];
+export const FIX_SWITCHES_OFF_BY_DEFAULT = [
+    "rgbPulse",
+    "noEngineFallback",
+];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
 export function resolveFixSwitches(option) {
     const all = option !== false;
