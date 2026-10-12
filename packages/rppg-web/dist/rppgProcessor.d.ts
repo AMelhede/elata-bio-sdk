@@ -227,7 +227,7 @@ export declare class RppgProcessor {
     private disposed;
     private readonly sampleRate;
     private readonly windowSec;
-    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling, steadyAnalysis, rgbPulse). */
+    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling, steadyAnalysis, rgbPulse, noCalibrationBlend). */
     readonly fixes: ResolvedRppgFixSwitches;
     /** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
     private trackerSettings;

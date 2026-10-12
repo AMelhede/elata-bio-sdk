@@ -901,9 +901,16 @@ export class RppgProcessor {
             analysis.snrDb < -4.5 ||
             analysis.motionMean > 0.22 ||
             (resolved.aliasFlag && estimatorSpread > 28);
+        // Fix 9 (switch noCalibrationBlend, off by default): the camera rate is the resolved rate, the resolver's
+        // and tracker's choice. As published it is the camera calibration's prediction, which is never trained against
+        // another sensor: untrained it is the plain mean of the spectral and autocorrelation rates (a 120 whose
+        // autocorrelation reads 60 shows 90), and it then learns toward the resolved rate by a small step per read, so
+        // it shows a blend neither estimator measured, or the resolved rate late (see noCalibrationBlend.test.ts).
         const cameraCandidate = lowConfidenceGate
             ? null
-            : calibratedBpm ?? resolvedBpm ?? base.bpm ?? null;
+            : this.fixes.noCalibrationBlend
+                ? resolvedBpm ?? base.bpm ?? null
+                : calibratedBpm ?? resolvedBpm ?? base.bpm ?? null;
         const cameraQuality = clamp(((base.signal_quality || 0) + (analysis.quality || 0)) * 50, 0, 100) * (lowConfidenceGate ? 0.45 : 1);
         this.fusion.updateCamera(cameraCandidate, cameraQuality, analysis.nowMs);
         const fused = this.fusion.fuse(cameraCandidate, cameraQuality, analysis.nowMs);

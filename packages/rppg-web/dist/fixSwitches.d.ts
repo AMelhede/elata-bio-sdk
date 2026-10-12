@@ -68,6 +68,19 @@ export type RppgFixSwitches = {
      */
     rgbPulse?: boolean;
     /**
+     * Fix 9, OFF unless set to true. The rate the processor shows (`bpm`, and `fused_bpm` without a Muse) is its
+     * resolved rate, the choice its resolver and rate tracker make among the engine's, spectral, autocorrelation and
+     * peak rates. Off, as published: the camera calibration's prediction from the spectral and autocorrelation rates
+     * alone, a model never trained against another sensor. Untrained it is their plain mean, so when they disagree it
+     * shows a number neither measured (a clean 120 whose autocorrelation reads 60 showed 95.7 on one read); it then
+     * learns toward the resolved rate by a small step per read (95.7, 104.1, 109.5, 113.1 ... 119.7 over 14 reads).
+     * With the pulse check on (a session's default) the rate shown is the check's own, so this changes nothing there.
+     * Off by default by the rule set before the runs (no more than 1% of right seconds lost): on recorded camera
+     * captures with a reference rate it was level with the blend through this build's session path with the check off,
+     * and right more often through Elata main's, but on both it also lost right seconds along with those it gained.
+     */
+    noCalibrationBlend?: boolean;
+    /**
      * Speed 2. Frames are read at most 640 wide (same aspect), and the face finder reads that
      * same image, so landmarks and pixels come from one frame. Off: the full camera frame, and
      * the face finder reads the live video, as published.
@@ -94,7 +107,7 @@ export type RppgFixSwitches = {
  */
 export type RppgFixesOption = boolean | RppgFixSwitches;
 export type ResolvedRppgFixSwitches = Required<RppgFixSwitches>;
-export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "steadyAnalysis", "rgbPulse", "analysisWidth", "analysisWorker", "faceFinderTrial"];
+export declare const FIX_SWITCH_NAMES: readonly ["noFaceNoReading", "colourProjectionFix", "realFrameRate", "posFusion", "noRateDoubling", "steadyAnalysis", "rgbPulse", "noCalibrationBlend", "analysisWidth", "analysisWorker", "faceFinderTrial"];
 /** Switches that stay off unless set to `true` (each one's comment says why). */
 export declare const FIX_SWITCHES_OFF_BY_DEFAULT: readonly (keyof RppgFixSwitches)[];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
