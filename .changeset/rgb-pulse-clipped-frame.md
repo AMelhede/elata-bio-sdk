@@ -1,0 +1,5 @@
+---
+"@elata-biosciences/rppg-web": patch
+---
+
+`fixes.rgbPulse` (off by default): a frame with R = G = B in a colour feed, such as one clipped white (255, 255, 255), gives the projection's neutral 0 and stays out of POS and the rate clock. It used to pass its own level into the processor's window, about a hundred grey levels beside a pulse of about 0.01, and that one frame stayed in the 45 s window. On the synthetic face of the rgbPulse tests (30 frames a second, read once a second, seconds 16 to 40), one clipped frame at 10 s left 50, 72 and 120 with no rate shown in any of the 24 seconds, and five clipped frames read 60 for a 72 (0 of 24 right) and 60 for a 50 (2 of 24); with the rule every one of those reads within 5 in 24 of 24, as with no clipped frame. A feed that has been R = G = B since the last reset (a signal already extracted, or a grey camera) still passes its values through. The cost: a colour feed that turns grey for good gives 0 from then on, so it shows no rate once its window no longer holds colour, where the old rule passed the grey values through. With the switch off nothing changes.
