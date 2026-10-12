@@ -471,6 +471,9 @@ fn resample_rgb_into(
     r_out.len() >= 10
 }
 
+/// Colour projection over overlapping windows: POS (Wang et al. 2017) on window-normalised
+/// channels, X = G - B and Y = -2R + G + B, combined as S = X + (sd X / sd Y) * Y. A window of
+/// pre-extracted samples (R = G = B) keeps the projection it had before POS was used here.
 #[allow(clippy::too_many_arguments)]
 fn pos_from_rgb_windowed_into(
     r: &[f32],
@@ -508,6 +511,15 @@ fn pos_from_rgb_windowed_into(
             start += step;
             continue;
         }
+        // A window with no colour difference in it (every sample R = G = B, as push_sample stores
+        // one value, for example the multi-region fuser's pulse) has nothing for a colour
+        // projection to separate, and POS's axes are zero on it. Such a window keeps the
+        // projection it always had, so readings from these samples stay bit for bit the same.
+        let pre_extracted = r_win
+            .iter()
+            .zip(g_win)
+            .zip(b_win)
+            .all(|((rv, gv), bv)| rv == gv && gv == bv);
         x_buf.clear();
         y_buf.clear();
         x_buf.reserve(win_len);
@@ -516,8 +528,16 @@ fn pos_from_rgb_windowed_into(
             let rn = r_win[i] / mean_r - 1.0;
             let gn = g_win[i] / mean_g - 1.0;
             let bn = b_win[i] / mean_b - 1.0;
-            x_buf.push(3.0 * rn - 2.0 * gn);
-            y_buf.push(1.5 * rn + gn - 1.5 * bn);
+            if pre_extracted {
+                x_buf.push(3.0 * rn - 2.0 * gn);
+                y_buf.push(1.5 * rn + gn - 1.5 * bn);
+            } else {
+                // POS (Wang et al. 2017): both axes are orthogonal to (1, 1, 1), so a brightness
+                // change, equal on R, G and B after normalisation, is zero in each of them
+                // whatever alpha is, and S = X + alpha * Y moves with the green intensity.
+                x_buf.push(gn - bn);
+                y_buf.push(-2.0 * rn + gn + bn);
+            }
         }
         let std_x = stddev(x_buf);
         let std_y = stddev(y_buf);
@@ -576,6 +596,230 @@ fn median_excluding(powers: &[f32], fmin: f32, df: f32, f0: f32, radius: isize, 
 mod tests {
     use super::*;
     use std::f32::consts::PI;
+
+    /// Colour projection of 10 s of input at 30 Hz, in full.
+    fn project(rgb: impl Fn(f32) -> (f32, f32, f32)) -> Vec<f32> {
+        let (mut r, mut g, mut b) = (vec![], vec![], vec![]);
+        for i in 0..300 {
+            let (ri, gi, bi) = rgb(i as f32 / 30.0);
+            r.push(ri);
+            g.push(gi);
+            b.push(bi);
+        }
+        let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
+        assert!(pos_from_rgb_windowed_into(
+            &r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6
+        ));
+        out
+    }
+
+    fn rms(v: &[f32]) -> f32 {
+        (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt()
+    }
+
+    /// Blue-channel disturbance (the noisiest channel of a webcam under warm light), 2% of its level.
+    fn blue_disturbance(t: f32) -> f32 {
+        0.02 * (2.0 * PI * 2.3 * t).sin()
+    }
+
+    /// POS (Wang et al. 2017) projects onto two axes that are both orthogonal to brightness, so a lamp
+    /// cancels in each axis on its own, whatever alpha the window gets. CHROM's axes both carry
+    /// brightness and cancel it only through X - alpha * Y when alpha is near 1; here alpha comes from
+    /// unfiltered windows, so a disturbance in one channel moves it and the lamp leaks through.
+    #[test]
+    fn colour_projection_ignores_brightness_whatever_the_channel_noise() {
+        let lamp = |t: f32| 1.0 + 0.01 * (2.0 * PI * 1.2 * t).sin();
+        let with_lamp = project(|t| {
+            let k = lamp(t);
+            (
+                150.0 * k,
+                120.0 * k,
+                100.0 * k * (1.0 + blue_disturbance(t)),
+            )
+        });
+        let without = project(|t| (150.0, 120.0, 100.0 * (1.0 + blue_disturbance(t))));
+        let leak: Vec<f32> = with_lamp.iter().zip(&without).map(|(a, b)| a - b).collect();
+        let lamp_rms = 0.01 / 2.0_f32.sqrt();
+        assert!(
+            rms(&leak) < 0.05 * lamp_rms,
+            "lamp leaks {} into the projection (lamp itself {lamp_rms})",
+            rms(&leak)
+        );
+    }
+
+    /// A blood-volume pulse (R : G : B about 0.33 : 0.77 : 0.53, de Haan & van Leest 2014) must survive
+    /// the projection, with the sign of the green intensity, which is also the sign of the
+    /// R = G = B windows the fused path sends, so overlapping windows of the two kinds add up.
+    #[test]
+    fn colour_projection_keeps_the_pulse_with_the_sign_of_green() {
+        let a = 0.004 / 0.77;
+        let pulse = |t: f32| (2.0 * PI * 1.2 * t).sin();
+        let out = project(|t| {
+            let p = pulse(t);
+            (
+                150.0 * (1.0 - 0.33 * a * p),
+                120.0 * (1.0 - 0.77 * a * p),
+                100.0 * (1.0 - 0.53 * a * p),
+            )
+        });
+        let green: Vec<f32> = (0..300)
+            .map(|i| -0.77 * a * pulse(i as f32 / 30.0))
+            .collect();
+        let dot: f32 = out.iter().zip(&green).map(|(o, g)| o * g).sum();
+        let corr = dot / (rms(&out) * rms(&green) * 300.0);
+        assert!(
+            rms(&out) > 0.5 * rms(&green) && corr > 0.9,
+            "pulse projected to rms {} (green {}), correlation with green {corr}",
+            rms(&out),
+            rms(&green)
+        );
+    }
+
+    /// Known answer through the public API: a 90 bpm pulse in blood-volume-pulse colour (0.4% in green)
+    /// under a lamp flickering by 1% at 60 or 120 a minute must read the pulse, not the lamp.
+    #[test]
+    fn rgb_input_reads_the_pulse_not_the_lamp() {
+        let fs = 30.0_f32;
+        for &lamp_bpm in &[60.0_f32, 120.0] {
+            let mut p = RppgPipeline::new(fs, 10.0);
+            for i in 0..(12.0 * fs) as usize {
+                let t = i as f32 / fs;
+                let pulse = (2.0 * PI * 1.5 * t).sin();
+                let lamp = 1.0 + 0.01 * (2.0 * PI * lamp_bpm / 60.0 * t + 0.7).sin();
+                let a = 0.004 / 0.77;
+                p.push_sample_rgb(
+                    (t * 1000.0) as i64,
+                    150.0 * lamp * (1.0 - 0.33 * a * pulse),
+                    120.0 * lamp * (1.0 - 0.77 * a * pulse),
+                    100.0 * lamp * (1.0 - 0.53 * a * pulse),
+                    1.0,
+                );
+            }
+            let got = p.get_metrics().bpm;
+            assert!(
+                got.is_some_and(|b| (b - 90.0).abs() <= 3.0),
+                "lamp {lamp_bpm}: read {got:?}, true pulse 90"
+            );
+        }
+    }
+
+    /// A window of push_sample values (R = G = B) is projected exactly as before this change,
+    /// X + (sd X / sd Y) * Y on the old axes, so readings made only from such samples (the default
+    /// fused path) stay bit for bit what they were. POS's axes are zero on such a window.
+    #[test]
+    fn pre_extracted_window_is_projected_as_before() {
+        let fs = 30.0_f32;
+        let n = (1.6 * fs).round() as usize; // exactly one analysis window
+        let v: Vec<f32> = (0..n)
+            .map(|i| 100.0 + (2.0 * PI * 1.5 * i as f32 / fs).sin())
+            .collect();
+        let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
+        assert!(pos_from_rgb_windowed_into(
+            &v, &v, &v, &mut out, &mut x, &mut y, &mut w, fs, 1.6
+        ));
+        assert_eq!(out.len(), n);
+        let mean = v.iter().sum::<f32>() / n as f32;
+        let xs: Vec<f32> = v
+            .iter()
+            .map(|s| {
+                let c = s / mean - 1.0;
+                3.0 * c - 2.0 * c
+            })
+            .collect();
+        let ys: Vec<f32> = v
+            .iter()
+            .map(|s| {
+                let c = s / mean - 1.0;
+                1.5 * c + c - 1.5 * c
+            })
+            .collect();
+        let alpha = stddev(&xs) / stddev(&ys);
+        for i in 0..n {
+            let before = xs[i] + alpha * ys[i];
+            assert_eq!(
+                out[i].to_bits(),
+                before.to_bits(),
+                "sample {i}: {} against {before}",
+                out[i]
+            );
+        }
+    }
+
+    /// The fused path (push_sample, R = G = B) must read a pulse at its rate as before, alone and
+    /// after a stretch of camera RGB inside the analysed window.
+    #[test]
+    fn fused_samples_keep_their_rate() {
+        let fs = 30.0_f32;
+        // 72, 90, 110 and 140 are rates the fused path, including its per-window normalisation,
+        // reads within 5 bpm, before this change and after it. Not every rate between them does,
+        // on either (74 reads 48.6, 114 reads 106.8). With RGB in the window, 140 reads as none
+        // before this change too, so that case is left out rather than pinned.
+        let cases: [(f32, &[f32]); 4] = [
+            (72.0, &[0.0, 7.0]),
+            (90.0, &[0.0, 7.0]),
+            (110.0, &[0.0, 7.0]),
+            (140.0, &[0.0]),
+        ];
+        for &(bpm, firsts) in &cases {
+            for &rgb_first_s in firsts {
+                let mut p = RppgPipeline::new(fs, 10.0);
+                for i in 0..(14.0 * fs) as usize {
+                    let t = i as f32 / fs;
+                    let v = (2.0 * PI * bpm / 60.0 * t).sin();
+                    let ts = (t * 1000.0) as i64;
+                    if t < rgb_first_s {
+                        p.push_sample_rgb(
+                            ts,
+                            150.0 * (1.0 - 0.001 * v),
+                            120.0 * (1.0 - 0.003 * v),
+                            100.0 * (1.0 - 0.0018 * v),
+                            1.0,
+                        );
+                    } else {
+                        p.push_sample(ts, v);
+                    }
+                }
+                let got = p.get_metrics().bpm;
+                assert!(
+                    got.is_some_and(|b| (b - bpm).abs() <= 5.0),
+                    "true {bpm} (RGB first {rgb_first_s} s) read {got:?}"
+                );
+            }
+        }
+    }
+
+    /// A window that holds camera RGB and then the first fused samples (the moment a runner switches
+    /// to the fuser) must still read the pulse.
+    #[test]
+    fn switch_from_camera_rgb_to_fused_reads_the_pulse() {
+        let fs = 30.0_f32;
+        for &bpm in &[66.0_f32, 90.0, 120.0] {
+            let mut p = RppgPipeline::new(fs, 10.0);
+            // 14 s with a 10 s window: camera RGB for the first 9 s of the window, fused for 1 s.
+            for i in 0..(14.0 * fs) as usize {
+                let t = i as f32 / fs;
+                let v = (2.0 * PI * bpm / 60.0 * t).sin();
+                let ts = (t * 1000.0) as i64;
+                if t < 13.0 {
+                    let a = 0.004 / 0.77;
+                    p.push_sample_rgb(
+                        ts,
+                        150.0 * (1.0 - 0.33 * a * v),
+                        120.0 * (1.0 - 0.77 * a * v),
+                        100.0 * (1.0 - 0.53 * a * v),
+                        1.0,
+                    );
+                } else {
+                    p.push_sample(ts, v);
+                }
+            }
+            let got = p.get_metrics().bpm;
+            assert!(
+                got.is_some_and(|b| (b - bpm).abs() <= 3.0),
+                "true {bpm}: read {got:?} across the switch to fused samples"
+            );
+        }
+    }
 
     #[test]
     fn mean_over_window() {
