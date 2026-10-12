@@ -2,6 +2,13 @@ import { DemoRunner } from '../demoRunner';
 import { FrameSource, Frame } from '../frameSource';
 import { MultiRoiRppgFuser } from '../multiRoiFusion';
 
+// Jest provides require and __dirname; this package's tests carry no Node type declarations.
+declare const require: (id: string) => any;
+declare const __dirname: string;
+const fs = require('fs') as { readFileSync: (p: string, enc: string) => string };
+const path = require('path') as { join: (...p: string[]) => string };
+const readme = fs.readFileSync(path.join(__dirname, '..', '..', 'README.md'), 'utf8');
+
 // The multi-region fuser's band-pass, its spectral SNR, its projection window and its warm-up
 // are all counted in samples at `sampleRate`. Camera frames arrive at whatever rate the camera
 // and the page manage, so with `realFrameRate` on (the default) DemoRunner interpolates each
@@ -305,7 +312,7 @@ describe('the fuser sees the pulse in real time, whatever the camera rate', () =
   });
 
   test('with realFrameRate off, as published, the 15 fps pulse loses about half and the warm-up doubles', async () => {
-    // The README's numbers for the switch off (0.50 of the fused strength, 6.9 s against 3.5 s).
+    // The README's numbers for the switch off, and its figure for the switch on, are these runs' own.
     const off30 = await filmPulse(30, BPM, 20, false);
     const off15 = await filmPulse(15, BPM, 20, false);
     const settled = (p: FusedPush) => p.t > 8000;
@@ -315,5 +322,10 @@ describe('the fuser sees the pulse in real time, whatever the camera rate', () =
     const firstQuality = (pushes: FusedPush[]) => pushes.find((p) => p.snr > 0)?.t ?? Number.NaN;
     expect(firstQuality(off30)).toBeCloseTo(3467, -1);
     expect(firstQuality(off15)).toBeCloseTo(6933, -1);
+    const onRatio = amplitudeAt(at15.filter(settled), BPM) / amplitudeAt(at30.filter(settled), BPM);
+    const row = readme.split(/\r?\n/).find((line) => line.startsWith('| `fixes.realFrameRate` |')) ?? '';
+    expect(row).toContain(
+      `a ${BPM} bpm pulse keeps ${ratio.toFixed(2)} of its fused strength (${onRatio.toFixed(2)} with the switch on) and the signal quality first shows after ${(firstQuality(off15) / 1000).toFixed(1)} s instead of ${(firstQuality(off30) / 1000).toFixed(1)} s`,
+    );
   });
 });
