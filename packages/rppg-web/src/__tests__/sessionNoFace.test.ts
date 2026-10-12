@@ -1,6 +1,6 @@
 import { RppgSession } from "../rppgSession";
 
-// With face tracking on, once no face has been in view for a second the session reports no heart
+// With face tracking on, once no face has been in view for two seconds the session reports no heart
 // rate (and no HRV or breathing), instead of the last number or one read off the wall.
 const processorMetrics = { bpm: 84, confidence: 0.6, signal_quality: 0.3, hrv_rmssd: 180, respiration_rate: 12, respiration_confidence: 1, spectral_bpm: 84, acf_bpm: 83, peaks_bpm: 85, bayes_bpm: 84, resolved_bpm: 84, resolved_confidence: 0.7, bayes_confidence: 0.65, baseline_bpm: 70, baseline_delta: 14, agreement: 0.9, winning_sources: ["spectral" as const, "acf" as const], alias_flag: true, bayes_ambiguity: 0.2, snr: 6, skin_ratio_mean: 0.8, motion_mean: 0.1, clip_mean: 0.02, calibration_trained: true, bayes_tracker_config_id: "cfg", capture_confidence: 0.7, reason_codes: ["LOW_SNR"] };
 const make = (goneMs: number) =>
@@ -13,8 +13,8 @@ const make = (goneMs: number) =>
 	);
 
 describe("RppgSession with no face in view", () => {
-	it("reports no heart rate once the face has been gone for a second", () => {
-		const m = make(1000).getMetrics();
+	it("reports no heart rate once the face has been gone for two seconds", () => {
+		const m = make(2000).getMetrics();
 		expect(m.bpm).toBeNull();
 		expect(m.hrv_rmssd).toBeNull();
 		expect(m.respiration_rate).toBeNull();
@@ -35,8 +35,9 @@ describe("RppgSession with no face in view", () => {
 		expect(m.capture_confidence).toBe(0.7);
 		expect(m.reason_codes).toEqual(["LOW_SNR", "no_face"]);
 	});
-	it("keeps the rate through a face-finder blip shorter than a second", () => {
+	it("keeps the rate through a face loss shorter than two seconds", () => {
 		expect(make(400).getMetrics().bpm).toBe(84);
+		expect(make(1500).getMetrics().bpm).toBe(84);
 	});
 	it("is unchanged while a face is in view", () => {
 		expect(make(0).getMetrics()).toEqual(processorMetrics);

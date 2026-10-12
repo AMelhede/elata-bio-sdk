@@ -116,7 +116,7 @@ describe("DemoRunner and RppgProcessor across a face gap, multi-region path", ()
 });
 
 describe("RppgSession with the real processor and no face in view", () => {
-	test("no face for a second means no reading; a brief miss holds it; the face back reads again", async () => {
+	test("no face for two seconds means no reading; a shorter loss holds it; the face back reads again", async () => {
 		const pipeline = {
 			push_sample: jest.fn(),
 			push_sample_rgb_meta: jest.fn(),
