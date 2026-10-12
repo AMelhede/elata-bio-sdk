@@ -82,13 +82,18 @@ export type PulseCheckState = {
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
  * So at the proven rate, each region's relative colour is split into brightness (the part
  * common to all three channels) and colour (the rest), and the pooled brightness / colour
- * amplitude ratio is judged. A blood-volume pulse keeps it near 3 (de Haan & van Leest 2014,
- * the PBV signature), as in the achromatic lighting test of Elata's perception lab. Withheld when the ratio exceeds this in each of the last
- * OWN_PULSE_STRONG_STREAK one-second windows, judged at once like the wall check.
+ * amplitude ratio is judged. A synthetic blood-volume pulse in the PBV direction (de Haan &
+ * van Leest 2014) reads about 3; real captures read higher and wider (median 1.3, 99th
+ * percentile 8.5 on recorded captures against a reference pulse), so the bar sits above that.
+ * Withheld when the ratio exceeds this in each of the last OWN_PULSE_STRONG_STREAK one-second
+ * windows, judged at once like the wall check.
  *
- * Value chosen by measurement on recorded captures against a reference pulse.
+ * Value chosen by measurement: 7 withholds a lamp whose blood-coloured part is 0.1 of its
+ * brightness swing (10 showed it in 35 to 40 of 60 s) and showed the same right and wrong
+ * seconds as 10 on recorded captures against a reference pulse; 5 cost 9 right seconds.
+ * A lamp whose colour part is 0.15 or more still passes this rule; only the wall rules see it.
  */
-export declare const FACE_FLICKER_RATIO = 10;
+export declare const FACE_FLICKER_RATIO = 7;
 /**
  * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
  * moves the proven rate trails it. Once proven, the shown rate is the line in the newest 12 s
