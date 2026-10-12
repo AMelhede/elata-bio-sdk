@@ -506,6 +506,8 @@ export class RppgProcessor {
 	private readonly bayesTracker: BpmBayesTracker;
 	private readonly channelGain = new ChannelGainController();
 	private readonly chromPulse = new ChromPulseModel();
+	/** See the constructor's `engineFallback` option. */
+	private readonly engineFallback: boolean;
 	// Quality scalar supplied by an external multi-ROI fuser (see pushFusedSample).
 	// When set, it overrides the backend's RGB-derived signal_quality, because the
 	// fused path bypasses the backend CHROM stage. Cleared by any non-fused push.
@@ -532,8 +534,20 @@ export class RppgProcessor {
 		options: {
 			bpmTrackerConfig?: BpmTrackerConfigV1;
 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+			/**
+			 * What `bpm` shows when the processor's own checks refuse a rate (its
+			 * low-confidence gate: the estimators disagree, the SNR is under
+			 * -4.5 dB, the motion is high, or an alias with a wide spread), and
+			 * while it has under 24 samples to analyse. `true`, the default: the
+			 * engine's raw rate, which the WASM engine gives on almost any input (it
+			 * withholds only when its peak is under 1.3 times its noise floor), with
+			 * `confidence` at most 0.3. `false`: null. A fresh Muse rate shows either
+			 * way.
+			 */
+			engineFallback?: boolean;
 		} = {},
 	) {
+		this.engineFallback = options.engineFallback !== false;
 		this.sampleRate = sampleRate;
 		this.windowSec = windowSec;
 		this.bayesTracker = new BpmBayesTracker(
@@ -1044,30 +1058,10 @@ export class RppgProcessor {
 	}
 
 	private computeAdvancedMetrics(base: Metrics): Partial<Metrics> {
-		if (this.samples.length < 24) {
-			return {
-				calibrated_bpm: base.bpm ?? null,
-				fused_bpm: base.bpm ?? null,
-				fused_source: base.bpm == null ? "none" : "camera",
-				bayes_bpm: null,
-				bayes_confidence: 0,
-				calibration_trained: this.cameraCalibration.isTrained(),
-				baseline_bpm: this.baselineBpm,
-			};
-		}
+		if (this.samples.length < 24) return this.withoutAnalysis(base);
 
 		const analysis = analyzePulseWindow(this.samples);
-		if (!analysis) {
-			return {
-				calibrated_bpm: base.bpm ?? null,
-				fused_bpm: base.bpm ?? null,
-				fused_source: base.bpm == null ? "none" : "camera",
-				bayes_bpm: null,
-				bayes_confidence: 0,
-				calibration_trained: this.cameraCalibration.isTrained(),
-				baseline_bpm: this.baselineBpm,
-			};
-		}
+		if (!analysis) return this.withoutAnalysis(base);
 
 		const spectral = analysis.spectral;
 		const acf = analysis.acf;
@@ -1219,7 +1213,14 @@ export class RppgProcessor {
 		);
 
 		return {
-			bpm: fused.bpm ?? cameraCandidate ?? base.bpm ?? null,
+			// With engineFallback (the default) a read the gate above refused still
+			// shows the engine's raw rate, which it has on almost any input. Without
+			// it the refusal holds; a fresh Muse rate (another sensor) still comes
+			// through `fused`. (`cameraCandidate` adds nothing here: when the gate
+			// passes, `fused.bpm` is it.)
+			bpm: this.engineFallback
+				? (fused.bpm ?? cameraCandidate ?? base.bpm ?? null)
+				: (fused.bpm ?? null),
 			confidence: lowConfidenceGate
 				? Math.min(Math.max(base.confidence || 0, resolvedConfidence || 0), 0.3)
 				: Math.max(base.confidence || 0, resolvedConfidence || 0),
@@ -1248,6 +1249,27 @@ export class RppgProcessor {
 			hrv_rmssd: analysis.hrvRmssd,
 			respiration_rate: analysis.respiration,
 			respiration_confidence: analysis.respirationConfidence,
+		};
+	}
+
+	/**
+	 * A read with too few samples for the processor's own analysis (under 24, or
+	 * no window). With engineFallback it shows the engine's raw rate, which the
+	 * engine gives from 10 samples on; without it, no rate, since nothing of the
+	 * processor's own has checked it (`calibrated_bpm` keeps the engine's value
+	 * either way).
+	 */
+	private withoutAnalysis(base: Metrics): Partial<Metrics> {
+		const shown = this.engineFallback ? (base.bpm ?? null) : null;
+		return {
+			...(this.engineFallback ? {} : { bpm: null }),
+			calibrated_bpm: base.bpm ?? null,
+			fused_bpm: shown,
+			fused_source: shown == null ? "none" : "camera",
+			bayes_bpm: null,
+			bayes_confidence: 0,
+			calibration_trained: this.cameraCalibration.isTrained(),
+			baseline_bpm: this.baselineBpm,
 		};
 	}
 

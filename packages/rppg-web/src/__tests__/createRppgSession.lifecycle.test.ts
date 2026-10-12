@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
 }));
 
 import { createRppgSession } from "../rppgSession";
+import { DemoRunner } from "../demoRunner";
 import { loadFaceLandmarker } from "../mediapipeLoader";
 import { ensureVideoPlaying } from "../videoPlayback";
 import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
@@ -219,5 +220,33 @@ describe("createRppgSession lifecycle", () => {
 		expect(session.getModelDiagnostics()?.modelStatus).toBe("ready");
 		await session.dispose();
 		expect(model.dispose).toHaveBeenCalledTimes(2);
+	});
+
+	test("passes engineFallback through to the processor", async () => {
+		// An engine that always answers 88; with 15 samples (under the processor's 24)
+		// the processor has no analysis of its own, so only the fallback can show it.
+		const backend = {
+			newPipeline: () => ({
+				push_sample_rgb: jest.fn(),
+				get_metrics: jest.fn(() => ({ bpm: 88, confidence: 0.9, signal_quality: 0.8 })),
+				free: jest.fn(),
+			}),
+		} as any;
+		const earlyBpm = async (engineFallback?: boolean) => {
+			mockedLoadWasmBackend.mockResolvedValueOnce(backend);
+			(DemoRunner as unknown as jest.Mock).mockClear();
+			await createRppgSession({
+				video: document.createElement("video"),
+				faceMesh: "off",
+				ensureVideoPlayback: false,
+				engineFallback,
+			});
+			const processor = (DemoRunner as unknown as jest.Mock).mock.calls[0][1];
+			for (let i = 0; i < 15; i++) processor.pushSampleRgb(i * 33.3, 120, 120, 120, 1);
+			return processor.getMetrics().bpm;
+		};
+
+		expect(await earlyBpm()).toBe(88);
+		expect(await earlyBpm(false)).toBeNull();
 	});
 });

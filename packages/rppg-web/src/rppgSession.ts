@@ -104,6 +104,13 @@ export type CreateRppgSessionOptions = Omit<
 	video: HTMLVideoElement;
 	bpmTrackerConfig?: BpmTrackerConfigV1;
 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+	/**
+	 * What `getMetrics().bpm` shows when the processor's own checks refuse a
+	 * rate, and while it has too few samples to analyse: the engine's raw rate
+	 * (`true`, the default) or none (`false`). See `RppgProcessor`'s option of the
+	 * same name.
+	 */
+	engineFallback?: boolean;
 	experimental?: {
 		waveformReconstructor: WaveformReconstructor;
 		inferenceIntervalMs?: number;
@@ -398,6 +405,7 @@ export async function createRppgSession(
 		{
 			bpmTrackerConfig: options.bpmTrackerConfig,
 			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+			engineFallback: options.engineFallback,
 		},
 	);
 	applyTrackerConfiguration(processor, enableTracker);
