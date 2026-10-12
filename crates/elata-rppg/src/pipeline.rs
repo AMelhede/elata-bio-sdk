@@ -151,8 +151,9 @@ impl RppgPipeline {
     }
 
     /// Push one pre-extracted value, such as a fused pulse or a green-only intensity. It is
-    /// stored with R = G = B, and an analysis window made only of such samples is used as is
-    /// rather than colour-projected: there is no colour difference to separate.
+    /// stored with R = G = B, and an analysis window made only of such samples is not
+    /// colour-separated (there is no colour difference to separate): it is projected as it was
+    /// before the CHROM sign fix, so readings from such samples did not change.
     pub fn push_sample(&mut self, timestamp_ms: i64, intensity: f32) {
         // Backwards-compatible: green-only intensity.
         self.push_sample_rgb(timestamp_ms, intensity, intensity, intensity, 1.0);
@@ -213,7 +214,7 @@ impl RppgPipeline {
 
     /// Compute rPPG metrics over the current window.
     /// - Projects RGB to a pulse signal with CHROM over 1.6 s windows (a window of
-    ///   [`push_sample`](Self::push_sample) values, R = G = B, is used as is)
+    ///   [`push_sample`](Self::push_sample) values, R = G = B, keeps the pre-fix projection)
     /// - Applies temporal normalization
     /// - Runs bandpass filter
     /// - Computes a simple periodogram over candidate HR band and returns peak BPM
@@ -531,8 +532,10 @@ fn pos_from_rgb_windowed_into(
         let alpha = if std_y > 1e-6 { std_x / std_y } else { 0.0 };
         // A window with no colour difference in it (every sample R = G = B, as push_sample sends
         // one value, for example the multi-region fuser's pulse) has nothing for a colour
-        // projection to separate: X = Y there, so X - alpha * Y would cancel it. Such a window is
-        // used as is (X is then the normalised value itself, as the GREEN method would use it).
+        // projection to separate: X = Y there, so X - alpha * Y would cancel it. Such a window
+        // keeps the expression it had before the sign fix, X + alpha * Y: that is 2X up to
+        // rounding (the normalised value itself, scaled, as the GREEN method would use it), and
+        // keeping it rather than X leaves readings from these samples bit for bit unchanged.
         // A window with any camera colour in it goes through CHROM whole, which also cancels the
         // jump where camera RGB meets pre-extracted values: normalisation makes it equal on R, G
         // and B, which is brightness. Decided per sample instead, that jump stays in the signal.
@@ -543,7 +546,7 @@ fn pos_from_rgb_windowed_into(
             .all(|((rv, gv), bv)| rv == gv && gv == bv);
         for i in 0..win_len {
             out[start + i] += if pre_extracted {
-                x_buf[i]
+                x_buf[i] + alpha * y_buf[i]
             } else {
                 x_buf[i] - alpha * y_buf[i]
             };
@@ -639,6 +642,34 @@ mod tests {
             lamp < 0.1 * pulse,
             "lamp {lamp} should cancel, pulse {pulse}"
         );
+    }
+
+    /// A window of push_sample values (R = G = B) is projected exactly as before the sign fix,
+    /// X + (sd X / sd Y) * Y, so readings made only from such samples (the default fused path)
+    /// stay bit for bit what they were. X = Y there only up to rounding, so X alone, although
+    /// equal to half of it in exact arithmetic, moved near-tied readings downstream.
+    #[test]
+    fn pre_extracted_window_is_projected_as_before() {
+        let fs = 30.0_f32;
+        let n = (1.6 * fs).round() as usize; // exactly one analysis window
+        let v: Vec<f32> = (0..n)
+            .map(|i| 100.0 + (2.0 * PI * 1.5 * i as f32 / fs).sin())
+            .collect();
+        let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
+        assert!(pos_from_rgb_windowed_into(
+            &v, &v, &v, &mut out, &mut x, &mut y, &mut w, fs, 1.6
+        ));
+        assert_eq!((out.len(), x.len()), (n, n));
+        let alpha = stddev(&x) / stddev(&y);
+        for i in 0..n {
+            let before = x[i] + alpha * y[i];
+            assert_eq!(
+                out[i].to_bits(),
+                before.to_bits(),
+                "sample {i}: {} against {before}",
+                out[i]
+            );
+        }
     }
 
     /// The fused path (push_sample, R = G = B) must read a pulse at its rate as before, alone and
