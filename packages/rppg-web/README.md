@@ -235,6 +235,14 @@ If you want to inject your own backend, it must expose
 `newPipeline(sampleRate, windowSec)` and return an object with `push_sample`
 and `get_metrics` or camelCase equivalents.
 
+When the processor's checks pass, `getMetrics().bpm` is its camera calibration's
+prediction from the spectral and autocorrelation rates, which starts as their
+plain mean and learns toward the processor's own resolved rate a little with each
+read. When those two rates disagree (a clean 120 whose autocorrelation reads 60),
+`bpm` is a blend neither measured (95.7 on one read). Pass
+`{ calibrationBlend: false }` as `RppgProcessor`'s fourth argument, or to
+`createRppgSession`, to show the resolved rate (`resolved_bpm`) instead.
+
 ## Key Exports
 
 - `createRppgSession`
