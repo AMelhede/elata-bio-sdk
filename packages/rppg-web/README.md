@@ -4,7 +4,7 @@
 (`@elata-biosciences/rppg-web`, MIT licence) as Elata's main branch stood on 2026-07-26: the
 published 0.14.0 plus five changes Elata made after it and has not released yet (versioned
 face-region profiles, waveform reconstruction, tracker configuration). On top of that it adds
-seven fixes to the heart-rate pipeline (one of them off by default), three speed changes and a
+eight fixes to the heart-rate pipeline (two of them off by default), three speed changes and a
 real-pulse check. Every fix,
 speed change and rule of the check has its own on/off switch, so an app can compare each one
 against the published behaviour: with every fix and the check off, the heart rate it reports
@@ -34,7 +34,7 @@ the same `exports` map. To go back, put the official version back in that line.
 
 ## Switches
 
-All of them but `rgbPulse` are ON by default in this build (its row says why). Each one set to `false` gives back exactly what
+All of them but `rgbPulse` and `noCalibrationBlend` are ON by default in this build (their rows say why). Each one set to `false` gives back exactly what
 the published 0.14.0 does for that part, so "off" is the comparison. Set them on
 `createRppgSession(...)` (or on `DemoRunner` / `RppgProcessor` when used directly):
 
@@ -42,7 +42,7 @@ the published 0.14.0 does for that part, so "off" is the comparison. Set them on
 const session = await createRppgSession({
   video,
   faceMesh: "auto",
-  // the defaults: every fix and speed change on but rgbPulse; `fixes: false` turns every one off
+  // the defaults: every fix and speed change on but rgbPulse and noCalibrationBlend; `fixes: false` turns every one off
   fixes: {
     noFaceNoReading: true,
     colourProjectionFix: true,
@@ -51,6 +51,7 @@ const session = await createRppgSession({
     noRateDoubling: true,
     steadyAnalysis: true,
     rgbPulse: false, // off by default: see its row
+    noCalibrationBlend: false, // off by default: see its row
     analysisWidth: true,
     analysisWorker: true,
     faceFinderTrial: true,
@@ -79,6 +80,7 @@ console.log(session.getBuildSwitches()); // what this session actually runs
 | `fixes.noRateDoubling` | The rate estimator keeps the strongest rhythm it finds. | The published rule that, below 85 bpm, replaces the strongest rate with twice that rate whenever a pulse wave's own second harmonic is strong, so a resting 65 can read 130. |
 | `fixes.steadyAnalysis` | The heart-rate analysis runs once per 250 ms of signal, exactly as the analysis worker's answers did (so with the worker on, no number changes), and every read in between gets that answer: the rate no longer depends on how often an app (or the SDK's own diagnostics) asks for it, and a managed session on the main thread no longer analyses on every camera frame. | As published, every read runs the whole analysis again, and the rate tracker takes the same stretch of signal once per read: a managed session on the main thread analyses on every camera frame, and the analysis worker reads twice per answer, so the reported rate depends on how often it is read. |
 | `fixes.rgbPulse` | Off unless set to `true`. The processor's own colour path: what `pushSampleRgb` and `pushSampleRgbMeta` take, which is how an app that drives `RppgProcessor` directly gives it a face's colour, and what the runner feeds when the multi-region fusion is off or has no region. The pulse signal the processor analyses is built with POS and then the same 0.7 to 4 Hz band-pass the fusion applies, designed for the rate the samples actually arrive at. On a synthetic face (a pulse in the colour direction blood gives, with camera noise) it reads 50, 72 and 120 within 5 bpm in every second from 16 s on, at 20 and 30 frames a second and into a processor built for 30 fed at 20, where the published path reads 0 to 75% of them; on recorded camera captures with a reference rate it was right more often than the published path. Those are reads once a second, as the quick start polls: read only once after 30 s, with no rate history, a 120 came out 96, because the processor's autocorrelation read it at half the rate (60) and the untrained calibration blended the two. Off by default because with no pulse at all the repaired estimators agree on noise more often: on synthetic noise at 30 frames a second the processor shows a rate in 72% of seconds against 19% published, though none at a `confidence` of 0.7 or more in the same test. | As published: CHROM with an offset kept, so the wander of its weight lands in the heart-rate band, and raw green (about a hundred grey levels) in place of the projection for its first nine samples, a step a thousand times the pulse that stays in the 45 s window. The processor's own estimators read neither: a synthetic 72 reads about 110. |
+| `fixes.noCalibrationBlend` | Off unless set to `true`. When the processor's own checks pass, `bpm` is its resolved rate: the one its resolver and rate tracker choose from the engine's, spectral, autocorrelation and peak rates. With the pulse check on (the default for a session) the rate shown is the check's own, so this changes nothing there unless `pulseCheckAgreement` is on. With an engine that reports 120 and a clean 120 pulse whose autocorrelation reads 60 (it halves clean rates over 110), one read after 30 s shows 120, where the published blend shows 95.7. Off by default by the rule set before the runs (at most 1% of right seconds lost): on recorded camera captures with a reference rate it was level with the blend through this build's session path with the check off, and right more often through Elata main's, where the two rates disagree far more; on both it also lost right seconds along with the ones it gained. | As published: the camera calibration's prediction from the spectral and autocorrelation rates, a model never trained against another sensor. Untrained it is their plain mean, and it then learns toward the resolved rate by a small step per read, so when the two disagree it shows a rate neither measured, for 10 s or more: 95.7, 104.1, 109.5, 113.1 and on to 119.7 for that 120 read once a second. |
 | `fixes.analysisWidth` | Speed. Each camera frame is read at most 640 pixels wide (same shape), and the face finder reads that same smaller picture, so the face points and the colours come from one frame. A cheek patch still averages thousands of pixels at that size, far more than the pulse needs. | The full camera frame, with the face finder reading the live video, as published. On a 1280x960 camera that cut the frames analysed to about 7 a second. |
 | `fixes.analysisWorker` | Speed. The heart-rate analysis runs in a Web Worker, so it never holds up the camera frames. It runs on the main thread instead when a worker or the WASM core inside it cannot start, or when `wasmImporter` or `bpmEvidenceQualityProvider` is set (a function cannot be sent to a worker). The session option `analysisWorker`, when given, wins over this switch. Reads answer from the worker's latest message, so `getTraceSnapshot()` returns at most its newest 300 points (about 10 s at 30 a second) whatever it is asked for. | The analysis runs on the main thread, as published, and camera frames that arrive while it runs are skipped. |
 | `fixes.faceFinderTrial` | Speed. With `faceMesh: "auto"`, the face finder is built on the GPU and on the CPU, each is timed on the live video for a few frames, and the faster is kept (a laptop's CPU alone can hold the camera to a few frames a second; a software GPU can be slower than the CPU, so the clock decides). A finder whose GPU context dies, or that finds no face for 2 s after the page comes back from hidden, is rebuilt. `session.getFaceFinder()` says which delegate won and what each cost. An app that passes its own `faceMesh` is unaffected. | The CPU delegate only, as published, and no rebuild. |
