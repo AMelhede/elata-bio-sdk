@@ -1,6 +1,6 @@
 {
   "name": "@amelhede/create-elata-demo",
-  "version": "0.12.2-test.2",
+  "version": "0.12.2-test.3",
   "description": "Test build of Elata's create-elata-demo 0.12.1 that starts again, whose five starters install with npm and pnpm and build, and whose heart-rate starter uses the rppg-web test build and shows only the checked rate; for testing only.",
   "license": "MIT",
   "author": "Elata",
@@ -27,7 +27,7 @@
   "elataSdkVersions": {
     "eegWeb": "0.12.0",
     "eegWebBle": "0.12.0",
-    "rppgWeb": "npm:@amelhede/rppg-web@0.15.0-test.18",
+    "rppgWeb": "npm:@amelhede/rppg-web@0.15.0-test.19",
     "ppgWeb": "0.12.0",
     "appMetrics": "0.5.0"
   },
