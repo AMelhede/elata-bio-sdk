@@ -97,6 +97,13 @@ Things to know while testing:
   light, movement, a turned head). Expect most of a minute of a still face before a number, and
   for many faces none at all: the check refuses rather than guesses. A number that never comes is
   worth reporting, with the light and the camera used.
+- **Below 58 beats a minute, the forehead and both cheeks must each carry the pulse.** Above it,
+  two of the three agreeing are enough (both values set by measurement on recorded captures
+  against a reference pulse). A person resting under 58 whose forehead cannot be read (a fringe, a
+  cap, glare) gets no number. On a generated face with the pulse on the cheeks only, 70 showed
+  after 24 s and 50 never did in 120 s, while `getPulseCheck().windowBpm` read 49 in every second
+  after the first 30 and `streak` stayed at 0 or 1; with the pulse on the forehead too, 50 showed
+  after 28 s.
 - **The colour swap has no switch of its own.** When the camera's colour is too damaged to read,
   the check reads green minus the wall beside the face; `darkWall` only limits that to walls that
   show the light on the face, it does not turn the swap off.

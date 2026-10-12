@@ -1,5 +1,6 @@
 import { FIX_SWITCH_NAMES, FIX_SWITCHES_OFF_BY_DEFAULT } from "../fixSwitches";
 import { HEAD_LANDMARKS, PULSE_CHECK_RULE_NAMES, headCentre } from "../pulseCheck";
+import { OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_MIN_AGREEING, REGIONS } from "../pulseCheckCore";
 
 // Testers log every result against the switches the README lists. In 0.15.0-test.5 the README
 // still listed five fix switches ("`fixes: false` turns all five off") while the build had seven
@@ -59,6 +60,21 @@ describe("README Things to know", () => {
 		expect(headCentre(mesh(highest), 640, 480)).toBeNull();
 		expect(headCentre(mesh(highest + 1), 640, 480)).not.toBeNull();
 		expect(headCentre(mesh(468), 640, 480)).not.toBeNull();
+	});
+
+	// A fresh app on a generated face with the pulse on the cheeks only (2026-10-11) showed 70 after
+	// 24 s and never showed 50 in 120 s, while the check's own one-second line sat at 49 with room to
+	// spare: below OWN_PULSE_LOW_BAND_BPM a window counts only when every region carries the line, and
+	// that face's forehead carried none. The table row says "forehead and both cheeks agree", which
+	// is that low-band rule; above it two regions suffice. Testers meet the difference on people
+	// resting under the bar whose forehead cannot be read, so the README names it, with the code's
+	// numbers.
+	it("names the rate below which every region must carry the pulse, and how many suffice above it", () => {
+		const words = ["no", "one", "two", "three", "four"];
+		const flat = things.replace(/\s+/g, " ");
+		expect(REGIONS).toEqual(["forehead", "leftCheek", "rightCheek"]);
+		expect(flat).toContain(`Below ${OWN_PULSE_LOW_BAND_BPM} beats a minute, the forehead and both cheeks must each carry the pulse.`);
+		expect(flat).toContain(`Above it, ${words[OWN_PULSE_MIN_AGREEING]} of the ${words[REGIONS.length]} agreeing are enough`);
 	});
 });
 
