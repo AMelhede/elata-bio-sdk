@@ -19,9 +19,12 @@
 //   8. the packed processor with the real WASM core, read on every frame for 60 s at 30 fps: the
 //      analysis runs once per 250 ms of samples, two passes as the worker's answer did (at 30 fps the
 //      first frame 250 ms on is the 8th: 225 steps, 450 passes) with steadyAnalysis on, and on every read
-//      (1,800 times) with it off, and the known 72 still reads 72.
+//      (1,800 times) with it off, and the known 72 still reads 72;
+//   9. noCalibrationBlend is off by default and reaches the packed processor: read once after 30 s with rgbPulse on,
+//      a clean 120 (whose autocorrelation reads 60) shows the calibration's blend, more than 5 away from 120, with
+//      the switch off and 120 within 2 with it on.
 // BREAK=3 makes check 7 expect 20 breaths a minute instead of 15; BREAK=4 makes check 8 expect 1,800
-// analyses with the switch on.
+// analyses with the switch on; BREAK=6 makes check 9 expect 90 with noCalibrationBlend on.
 // BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red; BREAK=2 makes check 6
 // expect the nod's 60 to show with headMotion on.
 import { spawnSync } from "node:child_process";
@@ -180,9 +183,16 @@ const steadyWant = process.env.BREAK === "4" ? 1800 : 2 * Math.ceil(1800 / Math.
 assert.ok(Math.abs(steadyOn.calls - steadyWant) <= 1, "steadyAnalysis on: " + steadyWant + " analyses expected, ran " + steadyOn.calls);
 assert.equal(steadyOff.calls, 1800, "steadyAnalysis off: one analysis per read");
 assert.ok(steadyOn.last != null && Math.abs(steadyOn.last - 72) <= 2, "steadyAnalysis on: 72 should read 72, read " + steadyOn.last);
+// Check 9: noCalibrationBlend, off by default; read once (no rate history), as an app reads after a pause.
+assert.ok(offByDefault.has("noCalibrationBlend"), "noCalibrationBlend is off by default");
+const blendOnce = read(120, { rgbPulse: true });
+const resolvedOnce = read(120, { rgbPulse: true, noCalibrationBlend: true });
+const resolvedWant = process.env.BREAK === "6" ? 90 : 120;
+assert.ok(blendOnce != null && Math.abs(blendOnce - 120) > 5, "noCalibrationBlend off: the blend expected more than 5 from 120, read " + blendOnce);
+assert.ok(resolvedOnce != null && Math.abs(resolvedOnce - resolvedWant) <= 2, "noCalibrationBlend on: 120 should read " + resolvedWant + ", read " + resolvedOnce);
 const off = read(120, { colourProjectionFix: false });
 assert.ok(off == null || Math.abs(off - 120) > 2, "colourProjectionFix:false should give the published core's answer, read " + off);
-console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line; steady analysis: " + steadyOn.calls + " analyses read on every frame (off: " + steadyOff.calls + "), 72 read " + steadyOn.last + ".");
+console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line; steady analysis: " + steadyOn.calls + " analyses read on every frame (off: " + steadyOff.calls + "), 72 read " + steadyOn.last + "; read once, a 120 shows " + blendOnce.toFixed(1) + " with the calibration's blend and " + resolvedOnce.toFixed(1) + " with noCalibrationBlend.");
 `,
 	);
 	console.log(run(process.execPath, ["app.mjs"], app).trim());
