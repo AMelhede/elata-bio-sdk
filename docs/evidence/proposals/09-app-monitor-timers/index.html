@@ -1,0 +1,23 @@
+<!doctype html>
+<!--
+  Fix 9, the app monitor crashes in browsers. Serve this folder after
+    npm init -y && npm install @elata-biosciences/rppg-web@0.14.0
+  with any static server (for example: npx --yes serve .), open it, and read the page.
+  0.14.0 prints "TypeError: Illegal invocation". Good is "started" and "stopped".
+  Self-check: the page first calls window.setInterval directly, so a browser that cannot run timers at all is
+  told apart from the defect.
+-->
+<meta charset="utf-8" />
+<title>App monitor timers</title>
+<pre id="out"></pre>
+<script type="module">
+  const out = document.getElementById("out");
+  const say = (s) => { out.textContent += `${s}\n`; console.log(s); };
+  const id = window.setInterval(() => {}, 1000);
+  window.clearInterval(id);
+  say("self-check ok: window.setInterval works in this browser");
+  const { createRppgAppMonitor } = await import("./node_modules/@elata-biosciences/rppg-web/dist/index.js");
+  const monitor = createRppgAppMonitor({}, { emitImmediately: false });
+  try { monitor.start(); say("started"); monitor.stop(); say("stopped"); }
+  catch (e) { say(`${e.name}: ${e.message}`); }
+</script>
