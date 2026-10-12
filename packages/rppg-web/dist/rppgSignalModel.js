@@ -267,8 +267,11 @@ const RGB_PULSE_REDESIGN = 0.1;
  * interval sits a few frames a second off the real rate).
  *
  * Until the projection has 10 samples the value is 0, the projection's own neutral value, never a colour level. A
- * sample with R = G = B is already one value (the WASM core's colour projection fix treats it the same way) and
- * passes unchanged.
+ * sample with R = G = B carries no colour to project. While every sample since the last reset has been like that (a
+ * signal already extracted, or a grey camera, pushed as g, g, g) it is already one value (the WASM core's colour
+ * projection fix treats it the same way) and passes unchanged. Once a colour sample has arrived, one is a clipped or
+ * dropped frame: it gives 0 and does not enter the projection or the rate clock, since its own level would sit about a
+ * hundred grey levels beside a pulse of about 0.01 for the whole of the processor's window.
  */
 export class RgbPulseExtractor {
     constructor() {
@@ -276,6 +279,7 @@ export class RgbPulseExtractor {
         this.band = null;
         this.bandRate = 0;
         this.times = [];
+        this.seenColour = false;
     }
     /** The sample rate the band-pass is designed for; 0 until it is designed. */
     get filterRate() {
@@ -286,10 +290,12 @@ export class RgbPulseExtractor {
         this.band = null;
         this.bandRate = 0;
         this.times = [];
+        this.seenColour = false;
     }
     process(timestampMs, r, g, b) {
         if (r === g && g === b)
-            return g;
+            return this.seenColour ? 0 : g;
+        this.seenColour = true;
         this.times.push(timestampMs);
         if (this.times.length > RGB_PULSE_RATE_WINDOW)
             this.times.shift();

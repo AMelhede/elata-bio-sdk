@@ -63,14 +63,18 @@ export declare function zeroPhaseBandpass(values: number[], sampleRate: number, 
  * interval sits a few frames a second off the real rate).
  *
  * Until the projection has 10 samples the value is 0, the projection's own neutral value, never a colour level. A
- * sample with R = G = B is already one value (the WASM core's colour projection fix treats it the same way) and
- * passes unchanged.
+ * sample with R = G = B carries no colour to project. While every sample since the last reset has been like that (a
+ * signal already extracted, or a grey camera, pushed as g, g, g) it is already one value (the WASM core's colour
+ * projection fix treats it the same way) and passes unchanged. Once a colour sample has arrived, one is a clipped or
+ * dropped frame: it gives 0 and does not enter the projection or the rate clock, since its own level would sit about a
+ * hundred grey levels beside a pulse of about 0.01 for the whole of the processor's window.
  */
 export declare class RgbPulseExtractor {
     private readonly pos;
     private band;
     private bandRate;
     private times;
+    private seenColour;
     /** The sample rate the band-pass is designed for; 0 until it is designed. */
     get filterRate(): number;
     reset(): void;
