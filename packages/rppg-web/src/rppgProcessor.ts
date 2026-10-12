@@ -506,8 +506,6 @@ export class RppgProcessor {
 	private readonly bayesTracker: BpmBayesTracker;
 	private readonly channelGain = new ChannelGainController();
 	private readonly chromPulse = new ChromPulseModel();
-	/** See the constructor's `engineFallback` option. */
-	private readonly engineFallback: boolean;
 	// Quality scalar supplied by an external multi-ROI fuser (see pushFusedSample).
 	// When set, it overrides the backend's RGB-derived signal_quality, because the
 	// fused path bypasses the backend CHROM stage. Cleared by any non-fused push.
@@ -520,6 +518,8 @@ export class RppgProcessor {
 	private baselineBpm: number | null = null;
 	private baselineDeviationStartMs: number | null = null;
 	private lastBayesUpdateMs: number | null = null;
+	/** See the constructor's `engineFallback` option. */
+	private readonly engineFallback: boolean;
 	private totalSamplesReceived = 0;
 	private failedBackendError: Error | null = null;
 	private failedOperation: string | null = null;
@@ -532,8 +532,6 @@ export class RppgProcessor {
 		sampleRate = 30,
 		windowSec = 5,
 		options: {
-			bpmTrackerConfig?: BpmTrackerConfigV1;
-			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 			/**
 			 * What `bpm` shows when the processor's own checks refuse a rate (its
 			 * low-confidence gate: the estimators disagree, the SNR is under
@@ -545,11 +543,13 @@ export class RppgProcessor {
 			 * way.
 			 */
 			engineFallback?: boolean;
+			bpmTrackerConfig?: BpmTrackerConfigV1;
+			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 		} = {},
 	) {
-		this.engineFallback = options.engineFallback !== false;
 		this.sampleRate = sampleRate;
 		this.windowSec = windowSec;
+		this.engineFallback = options.engineFallback !== false;
 		this.bayesTracker = new BpmBayesTracker(
 			BPM_MIN,
 			BPM_MAX,
