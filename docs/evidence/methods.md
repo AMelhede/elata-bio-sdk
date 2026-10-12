@@ -287,8 +287,10 @@ more people including darker skin, recorded with a skin-tone measure; then the r
 - **The raw processor's colour path.** Colour goes through `ChromPulseModel` with the offset above, and while that
   model returns about 0 (its first nine samples) the processor stores raw green (about 120) beside pulse values of
   about 0.01. [synthetic] Share of seconds within 5 bpm at 30 fps, true 50 / 72 / 120: as shipped 13 / 10 / 29%,
-  with POS and no raw-green step 100 / 100 / 100%. [owner] as shipped 1,414 of 6,679 seconds (21.2%), with the
-  `rgbPulse` fix 2,002 (30.0%), 33 recordings better and 13 worse. The switch is off by default in the test build:
+  with POS and no raw-green step 100 / 100 / 100%. [owner] re-run with `proposals/11-processor-colour-pulse/owner-recordings.mjs` on 2026-10-12:
+  published 0.14.0 right on 1,044 of 6,679 seconds (15.6%), the test build with `rgbPulse` on 2,002 (30.0%), 43
+  recordings better and 7 worse. (An earlier report gave 1,414 for the shipped path with a different harness; the
+  difference was not traced.) The switch is off by default in the test build:
   with no pulse it shows a number in 72% of seconds against 19% shipped [synthetic]. See proposal 11.
 - **test.19 against test.18.** The method is byte-identical. 48 paired runs through the session path gave identical
   per-second reads; the only difference is a runner diagnostic away from 30 fps. See `test-build/test19-audit.md`.

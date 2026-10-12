@@ -8,7 +8,10 @@
   main and 87 to 90 of 90 with the option. 14 break-on-purpose mutations all go red.
 - **Cost.** No measurable speed cost; the suite runs 56 s against 34 s. Opt-in, so nobody benefits until they switch.
   On by default it fails the stated rule: with no pulse it shows a number in 72% of seconds against 19%.
-- **Still open.** [owner] main 1,044 of 6,679 seconds right against 1,692 with the option. The band-pass corner
+- **Real recordings** [owner]. `owner-recordings.mjs`, re-run 2026-10-12: published 0.14.0 right on 1,044 of 6,679
+  seconds, the test build with the switch on 2,002, better in 43 of 50 recordings and worse in 7. The audit scored
+  the fix branch itself at 1,692 with its own harness; why the two differ was not traced.
+- **Still open.** The band-pass corner
   reads 54 to 56 for a true 50 in 3 of 10 seeds.
 - **Where.** Branch `fix/processor-colour-pulse` b748546; `pr/processor-colour-pulse` 9828923 (local). Test build:
   `fixes: { rgbPulse: true }` (off by default).
