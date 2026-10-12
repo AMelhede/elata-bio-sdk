@@ -99,6 +99,69 @@ export class ChromPulseModel {
 	}
 }
 
+/**
+ * POS, "plane orthogonal to skin" (Wang, den Brinker, Stuijk and de Haan,
+ * "Algorithmic principles of remote PPG", IEEE TBME 64(7), 2017), streaming over
+ * the same 45-sample window as {@link ChromPulseModel} and returning the newest
+ * sample. On window-mean-normalised channels, S1 = G - B, S2 = G + B - 2R and the
+ * pulse is h = S1 + (sd S1 / sd S2) S2.
+ *
+ * Each normalised channel averages exactly 1 over the window, so each axis
+ * averages the sum of its weights. POS's weights sum to zero, so S1 and S2 have
+ * no constant part, and a brightness change (all channels scaled together)
+ * cancels. The weight sd S1 / sd S2 is re-estimated on every frame; here its
+ * frame-to-frame change only rescales a pulse-sized deviation. CHROM's axes
+ * (3R - 2G and 1.5R + G - 1.5B) each sum to 1, so ChromPulseModel's X - aY
+ * carries a term (1 - a): every frame-to-frame change in a reaches the output
+ * at full size, and the part inside the heart-rate band passes the band-pass that
+ * follows. The paper version of CHROM band-passes X and Y before combining them,
+ * which removes that constant; ChromPulseModel combines them unfiltered.
+ */
+export class PosPulseModel {
+	private rQueue: number[] = [];
+	private gQueue: number[] = [];
+	private bQueue: number[] = [];
+
+	constructor(private readonly windowSize = 45) {}
+
+	reset() {
+		this.rQueue = [];
+		this.gQueue = [];
+		this.bQueue = [];
+	}
+
+	process(r: number, g: number, b: number): number {
+		this.rQueue.push(r);
+		this.gQueue.push(g);
+		this.bQueue.push(b);
+		if (this.rQueue.length > this.windowSize) {
+			this.rQueue.shift();
+			this.gQueue.shift();
+			this.bQueue.shift();
+		}
+		const len = this.rQueue.length;
+		if (len < 10) return 0;
+		const meanR = mean(this.rQueue) || 1;
+		const meanG = mean(this.gQueue) || 1;
+		const meanB = mean(this.bQueue) || 1;
+		const s1: number[] = [];
+		const s2: number[] = [];
+		for (let i = 0; i < len; i++) {
+			const rn = this.rQueue[i] / meanR;
+			const gn = this.gQueue[i] / meanG;
+			const bn = this.bQueue[i] / meanB;
+			s1.push(gn - bn);
+			s2.push(gn + bn - 2 * rn);
+		}
+		const sd2 = standardDeviation(s2);
+		const alpha = sd2 > 1e-9 ? standardDeviation(s1) / sd2 : 1;
+		// Negated so the waveform keeps the orientation ChromPulseModel gives the same pulse
+		// (CHROM's X - aY comes out opposite in sign to POS's S1 + aS2): peak detection and beat
+		// timing downstream were built on that orientation.
+		return -(s1[len - 1] + alpha * s2[len - 1]);
+	}
+}
+
 export function computeSignalSnrDb(values: number[]): number {
 	if (values.length < 8) return -100;
 
@@ -275,6 +338,91 @@ export function zeroPhaseBandpass(
 	const b = a.map((v) => backward.process(v));
 	b.reverse();
 	return b;
+}
+
+/**
+ * An interval longer than this is a stall (a hidden tab, a camera hiccup), not the
+ * frame rate: 250 ms is 4 frames a second, too slow to sample the 4 Hz top of the
+ * cardiac band at all (that needs more than 8 a second).
+ */
+const RGB_PULSE_STALL_MS = 250;
+/** Timestamps the rate is measured over: the projection's own window (PosPulseModel, 45 samples). */
+const RGB_PULSE_RATE_WINDOW = 45;
+/** Samples before there is a pulse value: PosPulseModel gives 0 below 10. */
+const RGB_PULSE_WARMUP = 10;
+/**
+ * The band-pass is designed afresh when the measured rate moves by more than this
+ * share. A 10% rate error moves both band edges by 10%, which changes the gain at
+ * 50 bpm (0.83 Hz) by under 1 dB: the second-order Butterworth high-pass gives
+ * -1.75 dB there with its cut-off at 0.70 Hz and -2.38 dB at 0.77 Hz.
+ */
+const RGB_PULSE_REDESIGN = 0.1;
+
+/**
+ * The pulse signal RppgProcessor analyses from camera colour (`pushSampleRgb`,
+ * `pushSampleRgbMeta`): POS ({@link PosPulseModel}), then the same 0.7 to 4 Hz
+ * band-pass the multi-region fuser applies to each region, so the processor's
+ * window estimators get a pulse-sized, zero-mean signal from a colour feed too.
+ * Colour pushed to the processor arrives at the camera's own rate, which can
+ * differ from the processor's nominal `sampleRate`, so the band-pass is designed
+ * for the rate measured from the timestamps: intervals per second over the last
+ * 45 samples, leaving out stalls over 250 ms. The mean interval, not the median:
+ * camera frames arrive on a 16 ms clock, 32, 48 or 64 ms apart, where the median
+ * interval can sit several frames a second off the real rate.
+ *
+ * Until the projection has 10 samples the value is 0, the projection's own
+ * neutral value, never a colour level. A sample with R = G = B carries no colour
+ * to project and passes its own value unchanged.
+ */
+export class RgbPulseExtractor {
+	private readonly pos = new PosPulseModel();
+	private band: Bandpass | null = null;
+	private bandRate = 0;
+	private times: number[] = [];
+
+	/** The sample rate the band-pass is designed for; 0 until it is designed. */
+	get filterRate(): number {
+		return this.bandRate;
+	}
+
+	reset() {
+		this.pos.reset();
+		this.band = null;
+		this.bandRate = 0;
+		this.times = [];
+	}
+
+	process(timestampMs: number, r: number, g: number, b: number): number {
+		if (r === g && g === b) return g;
+		this.times.push(timestampMs);
+		if (this.times.length > RGB_PULSE_RATE_WINDOW) this.times.shift();
+		const pulse = this.pos.process(r, g, b);
+		if (this.times.length < RGB_PULSE_WARMUP) return 0;
+		const rate = this.measuredRate();
+		if (!(rate > 0)) return 0;
+		if (
+			this.band == null ||
+			Math.abs(rate - this.bandRate) > RGB_PULSE_REDESIGN * this.bandRate
+		) {
+			this.band = new Bandpass(rate, 0.7, 4.0);
+			this.bandRate = rate;
+		}
+		const out = this.band.process(pulse);
+		return Number.isFinite(out) ? out : 0;
+	}
+
+	private measuredRate(): number {
+		let count = 0;
+		let total = 0;
+		for (let i = 1; i < this.times.length; i++) {
+			const d = this.times[i] - this.times[i - 1];
+			if (d > 0 && d <= RGB_PULSE_STALL_MS) {
+				count += 1;
+				total += d;
+			}
+		}
+		return count > 0 ? (1000 * count) / total : 0;
+	}
 }
 
 /**

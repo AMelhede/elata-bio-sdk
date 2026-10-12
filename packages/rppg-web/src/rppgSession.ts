@@ -104,6 +104,15 @@ export type CreateRppgSessionOptions = Omit<
 	video: HTMLVideoElement;
 	bpmTrackerConfig?: BpmTrackerConfigV1;
 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+	/**
+	 * How the processor turns colour samples into the pulse it analyses: `"pos"`
+	 * or `"chrom"` (the default). See `RppgProcessor`'s option of the same name.
+	 * The session feeds the processor colour samples for every frame it does not
+	 * fuse: with no face mesh (`faceMesh: "off"`, or MediaPipe did not load),
+	 * with `multiRoiFusion` or `useSkinMask` off, and on a frame where no face
+	 * region has skin. Fused samples never take this path.
+	 */
+	rgbPulse?: "pos" | "chrom";
 	experimental?: {
 		waveformReconstructor: WaveformReconstructor;
 		inferenceIntervalMs?: number;
@@ -398,6 +407,7 @@ export async function createRppgSession(
 		{
 			bpmTrackerConfig: options.bpmTrackerConfig,
 			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+			rgbPulse: options.rgbPulse,
 		},
 	);
 	applyTrackerConfiguration(processor, enableTracker);

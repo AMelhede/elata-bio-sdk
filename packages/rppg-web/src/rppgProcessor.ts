@@ -11,6 +11,7 @@ import {
 import {
 	ChannelGainController,
 	ChromPulseModel,
+	RgbPulseExtractor,
 } from "./rppgSignalModel";
 import {
 	analyzePulseWindow,
@@ -506,6 +507,9 @@ export class RppgProcessor {
 	private readonly bayesTracker: BpmBayesTracker;
 	private readonly channelGain = new ChannelGainController();
 	private readonly chromPulse = new ChromPulseModel();
+	/** The colour path's pulse signal with `rgbPulse: "pos"` (see computeLocalRgbIntensity). */
+	private readonly rgbPulseExtractor = new RgbPulseExtractor();
+	private readonly rgbPulse: "pos" | "chrom";
 	// Quality scalar supplied by an external multi-ROI fuser (see pushFusedSample).
 	// When set, it overrides the backend's RGB-derived signal_quality, because the
 	// fused path bypasses the backend CHROM stage. Cleared by any non-fused push.
@@ -532,8 +536,26 @@ export class RppgProcessor {
 		options: {
 			bpmTrackerConfig?: BpmTrackerConfigV1;
 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+			/**
+			 * How colour samples (`pushSampleRgb`, `pushSampleRgbMeta`) become the
+			 * pulse signal the processor's own window analysis reads (its spectral,
+			 * autocorrelation and peak rates, and HRV). `"pos"`: POS, then the
+			 * 0.7 to 4 Hz band-pass at the rate the samples arrive at
+			 * ({@link RgbPulseExtractor}). `"chrom"`, the default: channel gain,
+			 * then `ChromPulseModel`, with the raw green value kept for the first
+			 * nine samples and whenever CHROM gives about 0, as before. Those raw
+			 * values are about a hundred grey levels beside a pulse of about 0.01
+			 * and stay in the 45 s window, and CHROM's axes keep a constant part,
+			 * so its per-sample weight puts noise in the heart-rate band: on a
+			 * clean synthetic pulse the processor's own rate is wrong with
+			 * `"chrom"` and right with `"pos"`. `"chrom"` stays the default
+			 * because with no pulse at all `"pos"` lets the estimators agree on
+			 * noise more often, so `bpm` is reported in more of those seconds.
+			 */
+			rgbPulse?: "pos" | "chrom";
 		} = {},
 	) {
+		this.rgbPulse = options.rgbPulse === "pos" ? "pos" : "chrom";
 		this.sampleRate = sampleRate;
 		this.windowSec = windowSec;
 		this.bayesTracker = new BpmBayesTracker(
@@ -695,7 +717,7 @@ export class RppgProcessor {
 		}
 		this.pushLocalSample(
 			timestampMs,
-			this.computeLocalRgbIntensity(r, g, b),
+			this.computeLocalRgbIntensity(timestampMs, r, g, b),
 			r,
 			g,
 			b,
@@ -764,7 +786,7 @@ export class RppgProcessor {
 		}
 		this.pushLocalSample(
 			timestampMs,
-			this.computeLocalRgbIntensity(r, g, b),
+			this.computeLocalRgbIntensity(timestampMs, r, g, b),
 			r,
 			g,
 			b,
@@ -783,6 +805,7 @@ export class RppgProcessor {
 		this.bayesTracker.reset();
 		this.channelGain.reset();
 		this.chromPulse.reset();
+		this.rgbPulseExtractor.reset();
 		this.fusedQuality = null;
 		this.captureScorer?.reset();
 		this.lastCapture = null;
@@ -1031,7 +1054,15 @@ export class RppgProcessor {
 		}
 	}
 
-	private computeLocalRgbIntensity(r: number, g: number, b: number): number {
+	private computeLocalRgbIntensity(
+		timestampMs: number,
+		r: number,
+		g: number,
+		b: number,
+	): number {
+		if (this.rgbPulse === "pos") {
+			return this.rgbPulseExtractor.process(timestampMs, r, g, b);
+		}
 		if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
 			return Number.isFinite(g) ? g : 0;
 		}

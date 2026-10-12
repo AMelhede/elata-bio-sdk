@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
 }));
 
 import { createRppgSession } from "../rppgSession";
+import { DemoRunner } from "../demoRunner";
 import { loadFaceLandmarker } from "../mediapipeLoader";
 import { ensureVideoPlaying } from "../videoPlayback";
 import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
@@ -181,6 +182,38 @@ describe("createRppgSession lifecycle", () => {
 		await session.dispose();
 
 		expect(free).toHaveBeenCalledTimes(1);
+	});
+
+	test("passes rgbPulse through to the processor's colour path", async () => {
+		const backend = {
+			newPipeline: () => ({
+				push_sample_rgb: jest.fn(),
+				get_metrics: jest.fn(() => ({ bpm: null, confidence: 0, signal_quality: 0 })),
+				free: jest.fn(),
+			}),
+		} as any;
+		const firstValues = async (rgbPulse?: "pos" | "chrom") => {
+			mockedLoadWasmBackend.mockResolvedValueOnce(backend);
+			(DemoRunner as unknown as jest.Mock).mockClear();
+			await createRppgSession({
+				video: document.createElement("video"),
+				faceMesh: "off",
+				ensureVideoPlayback: false,
+				rgbPulse,
+			});
+			const processor = (DemoRunner as unknown as jest.Mock).mock.calls[0][1];
+			for (let i = 0; i < 12; i++) {
+				processor.pushSampleRgb(i * 33.3, 170 + Math.sin(i), 120 + Math.cos(i), 100, 1);
+			}
+			return processor
+				.getTraceSnapshot(100)
+				.points.slice(0, 9)
+				.map((p: { intensity: number }) => Math.round(p.intensity));
+		};
+
+		// POS gives its neutral 0 while it warms up; the default keeps raw green there.
+		expect(await firstValues("pos")).toEqual(Array(9).fill(0));
+		expect((await firstValues()).every((v: number) => v >= 119 && v <= 121)).toBe(true);
 	});
 
 	test("stops and reinitializes an experimental model with the session", async () => {
