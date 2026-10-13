@@ -508,6 +508,7 @@ export class PulseCheck {
         };
         /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
         this.unsupported = 0;
+        this.evaluationCount = 0;
         this.agreement = opts.agreement === true;
         this.rules = resolvePulseCheckRules(opts.rules);
     }
@@ -706,6 +707,7 @@ export class PulseCheck {
         this.state.provenBpm = this.provenBpm;
         this.state.anchorBpm = this.anchorBpm;
         this.state.anchorEnded = anchorEnded;
+        this.evaluationCount += 1;
     }
     /**
      * The rate to show once one is proven: the line in the newest OWN_PULSE_SUPPORT_S seconds when it sits
@@ -745,6 +747,14 @@ export class PulseCheck {
     }
     getState() {
         return this.state;
+    }
+    /**
+     * How many times the check has judged a window (about once a second while frames arrive), counting
+     * from its creation; a reset does not clear it. A replay reads it to know which pushes produced a new
+     * state. Nothing in the check reads it.
+     */
+    get evaluations() {
+        return this.evaluationCount;
     }
     reset() {
         this.samples = [];

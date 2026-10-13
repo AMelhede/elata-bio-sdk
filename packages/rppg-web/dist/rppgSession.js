@@ -2,6 +2,7 @@ import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { loadFaceLandmarker, loadTrialFaceFinder } from "./mediapipeLoader.js";
 import { PulseCheck, } from "./pulseCheck.js";
+import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
 import { ChestMotion } from "./chestBreathing.js";
 import { TrialFaceFinder } from "./faceFinderTrial.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
@@ -59,11 +60,11 @@ export class RppgSession {
         // The engine failed: the runner has stopped, so no frame reaches the engine or the pulse
         // check again and both keep their last state. Their last numbers are not a reading.
         if (this.failed())
-            return clearedMetrics(metrics, "processor_failed");
+            return this.noteRead(clearedMetrics(metrics, "processor_failed"), "processor_failed");
         // No face for a second (face tracking on): nothing to report, not the last number.
         // One second rides out a brief face-finder miss without dropping a real reading.
         if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS)
-            return clearedMetrics(metrics, "no_face");
+            return this.noteRead(clearedMetrics(metrics, "no_face"), "no_face");
         const check = this.internals.pulseCheck;
         if (!check)
             return metrics;
@@ -73,13 +74,29 @@ export class RppgSession {
         // the pulse proven (synthetic face, rate proven at 70, no breathing in the video: breathing
         // read 14 to 21 in 42 of 42 seconds). Each comes back when it has a check of its own.
         const state = check.getState();
-        return {
+        return this.noteRead({
             ...metrics,
             bpm: state.verdict === "measured" ? state.bpm : null,
             hrv_rmssd: null,
             respiration_rate: null,
             respiration_confidence: null,
-        };
+        }, null);
+    }
+    /** With `recordPulseCheckInputs`, files this read with the check's inputs; returns the metrics unchanged. */
+    noteRead(metrics, reason) {
+        const check = this.internals.pulseCheck;
+        if (check instanceof RecordingPulseCheck)
+            check.noteRead(metrics.bpm ?? null, reason);
+        return metrics;
+    }
+    /**
+     * What the pulse check was fed, and every `getMetrics()` read, for replay with `replayPulseCheck`
+     * (`recordPulseCheckInputs`); a copy, the newest events within the recording's bound. Null when the
+     * option or the check is off.
+     */
+    getPulseCheckRecording() {
+        const check = this.internals.pulseCheck;
+        return check instanceof RecordingPulseCheck ? check.getRecording() : null;
     }
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck() {
@@ -351,12 +368,7 @@ export async function createRppgSession(options) {
     const waveformController = options.experimental
         ? new WaveformReconstructionController(options.experimental.waveformReconstructor, options.experimental.inferenceIntervalMs)
         : undefined;
-    const pulseCheck = options.pulseCheck !== false
-        ? new PulseCheck({
-            agreement: options.pulseCheckAgreement === true,
-            rules: options.pulseCheckRules,
-        })
-        : null;
+    const pulseCheck = sessionPulseCheck(options);
     const chestMotion = wantsChestMotion(options) ? new ChestMotion() : null;
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
@@ -433,6 +445,20 @@ export async function createRppgSession(options) {
         await session.start();
     }
     return session;
+}
+/**
+ * The pulse check a session runs with these options: none with `pulseCheck: false`; one that also
+ * records its inputs with `recordPulseCheckInputs` (RecordingPulseCheck); else a plain PulseCheck,
+ * so with recording off the session runs exactly the check it ran before the option existed.
+ */
+export function sessionPulseCheck(options) {
+    if (options.pulseCheck === false)
+        return null;
+    const opts = { agreement: options.pulseCheckAgreement === true, rules: options.pulseCheckRules };
+    const rec = options.recordPulseCheckInputs;
+    if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
+        return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds });
+    return new PulseCheck(opts);
 }
 async function resolveFaceMesh(faceMeshOption, delegateTrial = false) {
     if (faceMeshOption && faceMeshOption !== "auto" && faceMeshOption !== "off") {

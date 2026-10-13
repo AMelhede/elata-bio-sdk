@@ -389,6 +389,13 @@ export declare class PulseCheck {
     /** A frame in which no face (no forehead and cheeks) was found. */
     faceLost(timestampMs: number): void;
     getState(): PulseCheckState;
+    /**
+     * How many times the check has judged a window (about once a second while frames arrive), counting
+     * from its creation; a reset does not clear it. A replay reads it to know which pushes produced a new
+     * state. Nothing in the check reads it.
+     */
+    get evaluations(): number;
+    private evaluationCount;
     reset(): void;
 }
 /**
