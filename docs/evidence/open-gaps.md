@@ -53,7 +53,20 @@ Written 2026-10-12, before any real strap file exists; the git date of this sect
 before the first real file is opened, and say so in the commit.
 
 - **What is scored.** The pulse-checked rate the demo app shows (its Save readings file), once per second, against
-  the strap's 5 s mean rate, with `strap-score` as it is on this branch. Results are split by `library_version`.
+  the strap's 5 s mean rate computed from its RR beat times, with `strap-score` as it is on this branch. Results are
+  split by `library_version`.
+- **The strap records beat times (RR intervals), not only heart rate.** Added 2026-10-13, before any real strap
+  file exists. Use Polar Sensor Logger's RR file, HRV Logger, or any app that exports RR; a Polar Flow session export
+  holds only a per-second heart rate and is not enough. Why: Elata's perception lab (2026-10-07 report) found a
+  Polar H10's own per-second heart rate within 5 bpm of the same strap's ECG only about 302 of 419 times (median gap
+  2.72 bpm), while its RR beat times matched the ECG to about 1 ms; a right answer that is itself off by half the
+  5 bpm bar cannot judge the page. `strap-score` refuses a heart-rate-only file; scored anyway with
+  `--allow-strap-hr`, every line says "weaker reference (strap HR, not beat times)", and such a file is reported,
+  never counted toward the bars or the candidate rule below. If beats are ever taken from a raw ECG instead, check
+  the beat finder first: a simple one can count the T wave (the heart's recovery bump after each beat) as a second
+  beat, which shows as intervals that alternate short and long or halve the neighbouring ones. `strap-score`'s
+  artefact rule (an interval more than 20 percent from its neighbours is dropped and counted) catches that pattern;
+  a file with more than 5 in 100 beats dropped is checked by eye before it is scored.
 - **Conditions.** Calm and seated in normal room light; seated in dim light (one lamp or less, no window light);
   after climbing stairs. At least 2 minutes each.
 - **Primary bar.** Wrong (outside both 5 bpm and 10 percent) on at most 10 of every 100 shown seconds, pooled over

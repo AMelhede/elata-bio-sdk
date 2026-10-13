@@ -25,6 +25,9 @@ node strap-score.mjs --strap <strap export> --tz <phone's time zone> calm.csv st
   writes UTC. Without `--tz` the script stops and says so rather than guess.
 - `--start 2026-10-12T14:03:05+02:00` is for strap files with no clock times (Kubios, a plain RR list).
 - `--lag 0` skips the lag search (see "Refused" below). `--json out.json` also writes the numbers as JSON.
+- `--allow-strap-hr` scores a strap file that has only a heart-rate column and no beat times. Without it such a file
+  is refused (see "The right answer is the beat times" below); with it, every scored line, the verdict and every JSON
+  row say `weaker reference (strap HR, not beat times)`.
 - Exit code: 0 scored, 2 refused or needs input, 1 error or a failed self-check.
 
 Try it on the synthetic example (a known answer: laptop 2 s behind the phone, calm with 8 wrong seconds, stairs
@@ -45,8 +48,8 @@ format from known beats and reads it back.
 
 | App | What the file holds | Clock time |
 | --- | --- | --- |
-| Polar Flow CSV (also Polar Beat sessions, once synced to Flow) | line 1 `Name,Sport,Date,Start time,...`, then `Sample rate,Time,HR (bpm),...`, one HR per second | `Date` (dd-mm-yyyy) + `Start time`, local, no zone |
-| Polar Sensor Logger | `Phone timestamp;RR-interval [ms]`, one row per beat (or `HR [bpm]` rows) | per beat, local, no zone |
+| Polar Flow CSV (also Polar Beat sessions, once synced to Flow) | line 1 `Name,Sport,Date,Start time,...`, then `Sample rate,Time,HR (bpm),...`, one HR per second, **no beat times: refused unless `--allow-strap-hr`** | `Date` (dd-mm-yyyy) + `Start time`, local, no zone |
+| Polar Sensor Logger | `Phone timestamp;RR-interval [ms]`, one row per beat (its `HR [bpm]` file has no beat times: refused unless `--allow-strap-hr`) | per beat, local, no zone |
 | HRV Logger | `date,rr,since start` (newer: `timestamp`), one row per beat, RR in ms | per beat, local unless the stamp carries a zone |
 | Elite HRV | `.txt`, one RR per line | only the file name: `2015-05-12 07-48-32.txt`, local |
 | Kubios | report with an `RR Intervals` section, or a series export with `#` lines | none: pass `--start` |
@@ -61,12 +64,24 @@ pass `--start`.
 
 ## What it does, and why
 
-1. **Reference heart rate per second.** From RR intervals: the mean of the strap's beats over the last 5 s
-   (60000 / mean RR). Not the beat-to-beat rate: breathing alone swings that by several bpm in a calm person, and
-   the page itself estimates over several seconds, so the beat-to-beat rate would mark a correct page wrong. The
-   beat-to-beat result is printed as a second line anyway. From Polar Flow's per-second HR: used as written (Polar's
-   own averaging, not documented). Beats outside 250 to 2000 ms, or more than 20 percent from their neighbours, are
-   dropped as artefacts and counted.
+1. **Reference heart rate per second, from the strap's beat times.** From RR intervals (the time between two
+   heartbeats): the mean of the strap's beats over the last 5 s (60000 / mean RR). Not the beat-to-beat rate:
+   breathing alone swings that by several bpm in a calm person, and the page itself estimates over several seconds,
+   so the beat-to-beat rate would mark a correct page wrong. The beat-to-beat result is printed as a second line
+   anyway. Beats outside 250 to 2000 ms, or more than 20 percent from their neighbours, are dropped as artefacts and
+   counted; the same neighbour rule removes a doubled beat (one interval split in two), which is what a beat finder
+   that mistakes a T wave for a beat produces.
+
+   **The right answer is the beat times, not the strap app's heart-rate number.** Elata's perception lab
+   (2026-10-07 report) recorded a Polar H10's own per-second heart rate next to the same strap's ECG: the two agreed
+   within 5 bpm only about 302 of 419 times (median gap 2.72 bpm), while the strap's RR beat times matched the ECG
+   to about 1 ms. A 2.7 bpm error in the right answer is about half of this script's 5 bpm bar, so scoring against it
+   would mark right pages wrong and wrong pages right. So a strap file with only a heart-rate column (Polar Flow's
+   per-second HR, a Polar Sensor Logger HR file) is **refused**, with a message saying to record RR. With
+   `--allow-strap-hr` it is scored "as written" (the strap app's own averaging, not documented), and every scored
+   line, the verdict and every JSON row carry `weaker reference (strap HR, not beat times)`. In replay mode the arms
+   are then reported but the decision rule is not applied, because the rule in open-gaps.md is scored against beat
+   times.
 2. **Lag.** The page's number at second s is compared with the strap at s + lag, for every lag from -15 to +15 s.
    The best lag is the one with the smallest mean difference (each second capped at 20 bpm). The lag is the clock
    difference **plus how late the page is**; with both clocks on automatic time, most of it is the page. So the
@@ -130,6 +145,8 @@ curve (not from the script's own reference code):
 | shift | laptop 11 s ahead, strap through the HRV Logger reader: lag -11, all 190 right | `SELFCHECK_BREAK=shift` |
 | overlap | a page file an hour after the strap stopped is refused | `SELFCHECK_BREAK=overlap` |
 | flat | a constant heart rate is refused (lag cannot be told apart) | `SELFCHECK_BREAK=flat` |
+| rr60 | RR exactly 1000 ms (60 bpm) through the Polar Sensor Logger reader, against a page reading 60, at lag 0: 200 of 200 s right, mean error 0, bias 0 | `SELFCHECK_BREAK=rr60` (page reads 61) |
+| strap-hr | a Polar Flow file with only per-second HR is refused without `--allow-strap-hr`; with it, every scored line and the verdict carry the weaker-reference label | `SELFCHECK_BREAK=strap-hr` (flag passed silently); also checked by deleting the label from one line |
 | replay-generator | with `--library`: the synthetic capture below carries 72 bpm, read by the independent DFT in `../selfcheck.mjs` | `SELFCHECK_BREAK=replay-generator` |
 | replay-known | with `--library`: a synthetic capture (the library's own RecordingPulseCheck fed a chromatic pulse at 72, saved as the page saves it) replays to 72 plus or minus 2 from second 30 in every arm; with no pulse, no number in any arm | `SELFCHECK_BREAK=replay-known` |
 | replay-exact | with `--library`: the default arm gives back every number the synthetic page showed, exactly; rows pointing one second late are refused | `SELFCHECK_BREAK=replay-exact` |
@@ -146,5 +163,7 @@ Each was run once with its break set and threw; `node strap-score.mjs --selfchec
 - Tested on synthetic files only. No real strap file has been through it yet; the first one is the real test of
   the readers, and a format surprise should fail loudly (unknown format, unreadable time) rather than score.
 - The t rule's 3 and the 10 s block are choices, checked only on the synthetic cases above.
-- With Polar Flow per-second HR the lag also absorbs Polar's own averaging delay, so its lag is not comparable
+- With `--allow-strap-hr` the lag also absorbs the strap app's own averaging delay, so its lag is not comparable
   with an RR file's.
+- The replay path's weaker-reference branch (arms reported, decision not applied) has no self-check of its own; it
+  is a two-line branch on the label the strap-hr check covers.

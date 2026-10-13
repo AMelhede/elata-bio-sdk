@@ -64,6 +64,13 @@ const MIN_OVERLAP_S = 30;
 
 const DEMO_HEADER = 'epoch_ms,iso_time,bpm_shown,confidence,library_version';
 
+/** The label on every scored line when the right answer is the strap app's own per-second heart rate instead of its
+ * beat times. Why that is weaker: Elata's perception lab (2026-10-07 report) recorded a Polar H10's per-second heart
+ * rate next to the same strap's ECG and found them within 5 bpm only 302 of 419 times (median gap 2.72 bpm), while
+ * the strap's RR beat times matched the ECG to about 1 ms. The per-second number is the strap app's own undocumented
+ * averaging; beat times are the measurement. So an HR-only file is refused unless --allow-strap-hr is passed. */
+export const WEAKER_REFERENCE = 'weaker reference (strap HR, not beat times)';
+
 // ---------------------------------------------------------------------------------------------------------------
 // Time zones. Strap apps write local clock time, usually with no zone; the page writes UTC epoch milliseconds.
 
@@ -231,7 +238,7 @@ export function readStrap(text, file, opts = {}) {
 			const sec = Math.floor((start + ((+tt[1] * 60 + +tt[2]) * 60 + +tt[3]) * 1000) / 1000);
 			hr.set(sec, bpm);
 		}
-		return { format: 'Polar Flow CSV (per-second HR)', hr };
+		return { format: 'Polar Flow CSV (per-second HR only, no beat times)', hr };
 	}
 
 	const sep = head.includes(';') ? ';' : head.includes('\t') ? '\t' : ',';
@@ -256,7 +263,7 @@ export function readStrap(text, file, opts = {}) {
 			const a = acc.get(sec) || [0, 0];
 			acc.set(sec, [a[0] + v, a[1] + 1]);
 		}
-		return { format: 'Polar Sensor Logger HR', hr: new Map([...acc].map(([s, [sum, n]]) => [s, sum / n])) };
+		return { format: 'Polar Sensor Logger HR (no beat times)', hr: new Map([...acc].map(([s, [sum, n]]) => [s, sum / n])) };
 	}
 
 	// HRV Logger RR file: "date,rr,since start" (newer versions name the first column "timestamp"). One row per beat,
@@ -541,8 +548,20 @@ export function score(rows, ref, lag) {
 	return out;
 }
 
-/** The whole job: returns { refused } or { lag, perFile, all, curve }. */
-export function run({ strap, demos, maxLag = MAX_LAG_S, forceLag = null }) {
+/** The whole job: returns { refused } or { lag, perFile, all, curve }. A strap file with heart rate but no beat
+ * times is refused unless allowStrapHr; then the result carries weakerReference and every scored line says so. */
+export function run({ strap, demos, maxLag = MAX_LAG_S, forceLag = null, allowStrapHr = false }) {
+	if (strap.hr && !allowStrapHr)
+		return {
+			refused:
+				"the strap file has only a heart-rate column, no beat times (RR intervals). The strap app's own per-second " +
+				"heart rate is not a reliable right answer: next to the same strap's ECG it was within 5 bpm only about 302 " +
+				'of 419 times, while its beat times matched to about 1 ms. Record RR beat times (Polar Sensor Logger, HRV ' +
+				'Logger, or any RR export) and score that file. To score this file anyway, pass --allow-strap-hr; every ' +
+				`scored line is then labelled "${WEAKER_REFERENCE}".`,
+			refusedFor: 'strap-hr',
+		};
+	const weakerReference = strap.hr ? WEAKER_REFERENCE : null;
 	const ref = buildReference(strap);
 	const refSecs = [...ref.mean5.keys()];
 	if (refSecs.length === 0) return { refused: 'the strap file has no usable heart rate' };
@@ -580,6 +599,7 @@ export function run({ strap, demos, maxLag = MAX_LAG_S, forceLag = null }) {
 	});
 	return {
 		lag,
+		weakerReference,
 		forced: forceLag != null,
 		curve,
 		pick,
@@ -643,10 +663,16 @@ export function report(res, meta) {
 	if (res.refused) {
 		out.push(`REFUSED: ${res.refused}`);
 		if (res.curve) out.push(curveText(res.curve));
-		out.push('Nothing was scored. To score with the clocks exactly as recorded, rerun with --lag 0 (say so in any write-up).');
+		out.push(
+			res.refusedFor === 'strap-hr'
+				? 'Nothing was scored.'
+				: 'Nothing was scored. To score with the clocks exactly as recorded, rerun with --lag 0 (say so in any write-up).',
+		);
 		return out.join('\n');
 	}
-	out.push(`reference: ${res.ref.kind}`);
+	// With a strap-HR reference, every scored line and the verdict carry the label, so no line can be quoted without it.
+	const tag = res.weakerReference ? `[${res.weakerReference}] ` : '';
+	out.push(`reference: ${tag}${res.ref.kind}`);
 	out.push(
 		res.forced
 			? `lag: ${res.lag} s, FORCED by --lag (not searched)`
@@ -659,22 +685,22 @@ export function report(res, meta) {
 	if (res.pick) out.push(curveText(res.curve));
 	for (const p of res.perFile) {
 		out.push('');
-		out.push(line(p.name, p.s));
+		out.push(tag + line(p.name, p.s));
 		if (p.s.missingFromLog) out.push(`  ${p.s.missingFromLog} s missing from the page's log (tab hidden or paused?)`);
 		if (p.s.withRef < p.s.logged) out.push(`  ${p.s.logged - p.s.withRef} logged s had no strap reference (not counted)`);
 		if (p.ownLag?.lag != null && Math.abs(p.ownLag.lag - res.lag) > 2)
 			out.push(`  WARNING: this file alone points to lag ${p.ownLag.lag} s, not ${res.lag} s`);
 		if (p.s.instN)
 			out.push(`  against the instantaneous beat rate instead: within 5 bpm ${pct(p.s.instWithin5, p.s.instN)} of 100`);
-		out.push(`  at lag 0 (clocks as recorded): ${line('', p.s0).slice(2)}`);
+		out.push(`  at lag 0 (clocks as recorded): ${tag}${line('', p.s0).slice(2)}`);
 	}
 	out.push('');
-	out.push(line('ALL', res.all));
+	out.push(tag + line('ALL', res.all));
 	out.push(
 		'Limits are Bland-Altman 95% limits over seconds; neighbouring seconds are not independent, so treat them as a ' +
 			'description, not a confidence interval.',
 	);
-	out.push(verdict(res.all));
+	out.push(tag + verdict(res.all));
 	return out.join('\n');
 }
 
@@ -882,6 +908,52 @@ export function selfCheck({ quiet = false } = {}) {
 		assert(res.refused && /cannot be told apart/.test(res.refused), 'flat', `not refused (${res.refused ?? 'lag ' + res.lag})`);
 		say('self-check ok (flat): a lag that is not clearly better than its neighbours is refused');
 	}
+
+	// rr60: beats exactly 1000 ms apart (60 bpm), read back through the Polar Sensor Logger RR reader, against a page
+	// that reads 60 every second: zero error. A flat rate cannot place the lag, so it is scored at lag 0, as the study
+	// allows when stated. The break makes the page read 61.
+	{
+		const tz = 'Europe/Stockholm';
+		const sixty = () => 60;
+		const pageHr = brk('rr60') ? () => 61 : sixty;
+		const b60 = synthBeats(T0, 300, sixty);
+		assert(b60.every((b) => b.rr === 1000), 'rr60', 'generator did not make 1000 ms beats');
+		const strap = readStrap(polarLoggerText(b60, tz), 'polar-rr.txt', { tz });
+		const demo = readDemo(synthDemo({ physStart: T0 / 1000 + 60, n: 200, clockAhead: 0, hrAt: pageHr, t0: T0, blankFirst: 0 }), 'sixty.csv');
+		const res = run({ strap: { beats: cleanBeats(strap.beats).beats }, demos: [{ ...demo, name: 'sixty' }], forceLag: 0 });
+		assert(!res.refused, 'rr60', `refused: ${res.refused}`);
+		const s = res.all;
+		assert(s.withRef === 200 && s.shown === 200, 'rr60', `${s.shown} of ${s.withRef} s shown, expected 200 of 200`);
+		assert(s.mae === 0 && s.bias === 0 && s.wrong === 0 && s.within5 === 200, 'rr60', `mean error ${s.mae}, bias ${s.bias}, wrong ${s.wrong}, expected 0, 0, 0`);
+		assert(!res.weakerReference, 'rr60', 'an RR file was labelled a weaker reference');
+		say('self-check ok (rr60): RR at 60 bpm against a page reading 60 scores 200 of 200 s right, mean error 0');
+	}
+
+	// strap-hr: a file with only a per-second heart-rate column (Polar Flow) is refused without --allow-strap-hr, and
+	// with it every scored line and the verdict carry the weaker-reference label. The break passes the flag silently.
+	{
+		const tz = 'Europe/Stockholm';
+		const startL = new Date(T0 + tzOffsetMs(tz, T0));
+		const rows = [];
+		for (let i = 1; i <= 300; i++) rows.push(`1,${pad(Math.floor(i / 3600))}:${pad(Math.floor(i / 60) % 60)}:${pad(i % 60)},60,,,,,,,,`);
+		const flow = [
+			'Name,Sport,Date,Start time,Duration,Total distance (km),Average heart rate (bpm)',
+			`Someone,OTHER_INDOOR,${pad(startL.getUTCDate())}-${pad(startL.getUTCMonth() + 1)}-${startL.getUTCFullYear()},${pad(startL.getUTCHours())}:${pad(startL.getUTCMinutes())}:${pad(startL.getUTCSeconds())},00:05:00,,60`,
+			'Sample rate,Time,HR (bpm),Speed (km/h),Pace (min/km),Cadence,Altitude (m),Stride length (m),Distances (m),Temperatures (C),Power (W)',
+			...rows,
+		].join('\n');
+		const strap = readStrap(flow, 'flow.csv', { tz });
+		const demo = readDemo(synthDemo({ physStart: T0 / 1000 + 60, n: 200, clockAhead: 0, hrAt: () => 60, t0: T0, blankFirst: 0 }), 'sixty.csv');
+		const demos = [{ ...demo, name: 'sixty' }];
+		const refusedRun = run({ strap, demos, forceLag: 0, allowStrapHr: brk('strap-hr') });
+		assert(refusedRun.refused && /beat times/.test(refusedRun.refused), 'strap-hr', `an HR-only file was scored without --allow-strap-hr (${refusedRun.refused ?? 'scored'})`);
+		const allowed = run({ strap, demos, forceLag: 0, allowStrapHr: true });
+		assert(!allowed.refused && allowed.weakerReference === WEAKER_REFERENCE, 'strap-hr', 'with --allow-strap-hr the result is not labelled');
+		const text = report(allowed, { strapFormat: 'Polar Flow CSV', strapSize: '300 s' });
+		const scored = text.split('\n').filter((l) => /sixty: |at lag 0 |ALL: |VERDICT: /.test(l));
+		assert(scored.length === 4 && scored.every((l) => l.includes(WEAKER_REFERENCE)), 'strap-hr', `unlabelled lines: ${scored.filter((l) => !l.includes(WEAKER_REFERENCE)).join(' | ') || `${scored.length} scored lines, expected 4`}`);
+		say('self-check ok (strap-hr): an HR-only strap file is refused; with --allow-strap-hr every scored line says "weaker reference"');
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -930,6 +1002,9 @@ const HELP = `strap-score: score the demo page's "Save readings" files against a
   --tz          the phone's time zone, for strap files with local times (Europe/Stockholm, +02:00).
   --start       when the strap recording started, for files with no clock times (Kubios, plain RR).
   --lag         skip the lag search and use this lag (say so in any write-up).
+  --allow-strap-hr  score a strap file that has only a heart-rate column (Polar Flow, a Polar Sensor
+                Logger HR file). Refused without it: the strap app's per-second rate is a weaker
+                right answer than its beat times. Every scored line then says "${WEAKER_REFERENCE}".
   --max-lag     widen or narrow the lag search (default ${MAX_LAG_S} s).
   --replay      also replay every rule arm from the page's JSON files and apply the decision rule in
                 open-gaps.md; needs --library. Name each file person/condition=file (calm, dim, stairs).
@@ -950,6 +1025,7 @@ function parseArgs(argv) {
 		else if (a === '--lag') o.lag = Number(v());
 		else if (a === '--max-lag') o.maxLag = Number(v());
 		else if (a === '--json') o.json = v();
+		else if (a === '--allow-strap-hr') o.allowStrapHr = true;
 		else if (a === '--selfcheck') o.selfcheckOnly = true;
 		else if (a === '--replay') o.replay = true;
 		else if (a === '--library') o.library = v();
@@ -989,7 +1065,13 @@ async function main() {
 			const { name, person, condition, file } = conditionName(arg);
 			return { name, label: name, person, condition, ...readDemo(fs.readFileSync(file, 'utf8'), file) };
 		});
-		const res = run({ strap, demos, maxLag: o.maxLag, forceLag: Number.isFinite(o.lag) ? o.lag : null });
+		const res = run({
+			strap,
+			demos,
+			maxLag: o.maxLag,
+			forceLag: Number.isFinite(o.lag) ? o.lag : null,
+			allowStrapHr: Boolean(o.allowStrapHr),
+		});
 		const versions = [...new Set(demos.flatMap((d) => d.versions))];
 		console.log(`page library version: ${versions.join(', ') || 'unknown'}`);
 		console.log(
@@ -1004,13 +1086,17 @@ async function main() {
 		if (o.replay) {
 			if (res.refused) console.log('\nREPLAY not run: the shown numbers were refused above, so there is no lag to score the arms on.');
 			else {
-				replay = runReplay({ demos, ref: res.ref, lag: res.lag, judge: isRight, lib });
+				replay = runReplay({ demos, ref: res.ref, lag: res.lag, judge: isRight, lib, weakerReference: res.weakerReference });
 				console.log(replayReport(replay));
 			}
 		}
 		if (o.json) {
 			const { ref, ...rest } = res;
-			fs.writeFileSync(o.json, JSON.stringify({ ...rest, replay }, null, 2));
+			// The label goes on the summary and on every per-file row, so no row can be lifted out without it.
+			const label = res.weakerReference ?? null;
+			const perFile = rest.perFile?.map((p) => ({ reference: label ?? 'strap beat times (RR)', ...p }));
+			const all = rest.all && { reference: label ?? 'strap beat times (RR)', ...rest.all };
+			fs.writeFileSync(o.json, JSON.stringify({ ...rest, perFile, all, replay }, null, 2));
 		}
 		return res.refused ? 2 : 0;
 	} catch (e) {

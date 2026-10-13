@@ -307,7 +307,7 @@ export function decide(files, armCodes) {
 // ---------------------------------------------------------------------------------------------------------------
 // The whole replay: per file and per arm, scored on the shown-number run's lag, then the rule.
 
-export function runReplay({ demos, ref, lag, judge, lib }) {
+export function runReplay({ demos, ref, lag, judge, lib, weakerReference = null }) {
 	const usable = [];
 	const refused = [];
 	for (const d of demos) {
@@ -331,8 +331,9 @@ export function runReplay({ demos, ref, lag, judge, lib }) {
 		return { arm: a.name, by };
 	});
 	const missingPerson = files.filter((f) => !f.person).map((f) => f.name);
-	const decision = missingPerson.length ? null : decide(files, armCodes);
-	return { lag, library: lib.version, refused, files, table, decision, missingPerson };
+	// The pre-registered rule scores against the strap's beat times; a strap-HR reference is reported, never judged.
+	const decision = missingPerson.length || weakerReference ? null : decide(files, armCodes);
+	return { lag, library: lib.version, refused, files, table, decision, missingPerson, weakerReference };
 }
 
 const pct1 = (x) => (x == null ? 'n/a' : x.toFixed(1));
@@ -344,11 +345,18 @@ export function replayReport(res) {
 	out.push(`captures replayed: ${res.files.length}; refused: ${res.refused.length}`);
 	for (const r of res.refused) out.push(`  refused ${r.name}: ${r.why}`);
 	out.push('Per arm and condition: seconds shown / seconds with a strap reference, wrong per 100 shown (good is close to 0), right seconds.');
+	const tag = res.weakerReference ? `[${res.weakerReference}] ` : '';
 	for (const row of res.table) {
 		const parts = Object.entries(row.by).map(
 			([cls, t]) => `${cls} ${t.shown}/${t.withRef} shown, wrong ${pct1(per100(t))} per 100, ${t.right} right`,
 		);
-		out.push(`  ${row.arm.padEnd(15)} ${parts.join('; ') || 'no seconds'}`);
+		out.push(`  ${tag}${row.arm.padEnd(15)} ${parts.join('; ') || 'no seconds'}`);
+	}
+	if (res.weakerReference) {
+		out.push(
+			`DECISION: not applied. ${tag}The rule in open-gaps.md is scored against the strap's beat times; record RR and rescore.`,
+		);
+		return out.join('\n');
 	}
 	if (res.missingPerson.length) {
 		out.push(`DECISION: not applied. Name the person for every file (person/condition=file): ${res.missingPerson.join(', ')}`);
