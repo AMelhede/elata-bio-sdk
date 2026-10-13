@@ -26,8 +26,8 @@ function capture(opts: { bpm: number; blue: number; wall: boolean; seconds?: num
 
 // A region mean as the live check gets it: the average of about a thousand skin pixels, so
 // continuous, with little noise. `crushed`: a dark side camera whose blue sits at a few units of
-// 255, rounded to whole units and noisy. Measured colour damage: clean 7 to 11 (the MCD-rPPG
-// front camera's median is 14), crushed 39 to 52.
+// 255, rounded to whole units and noisy. Measured colour damage here: clean 7 to 11 (about what
+// a real front webcam shows), crushed 39 to 52.
 function camera(crushed: boolean) {
 	let s = 11;
 	const amp = crushed ? 1 : 0.1;

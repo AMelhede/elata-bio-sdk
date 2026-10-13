@@ -4,9 +4,9 @@ import { MultiRoiRppgFuser, type RoiRgbSample } from "../multiRoiFusion";
 // POS (Wang et al., IEEE TBME 2017): on mean-normalised channels, S1 = G - B and
 // S2 = G + B - 2R, h = S1 + (sd S1 / sd S2) S2. Its plane is orthogonal to the skin's
 // own colour, so a change that scales all three channels together (brightness) cannot
-// reach the output. Measured on 255 real recordings through the SDK's own pipeline
-// (MCD-rPPG, finger-sensor truth, frame grid on): CHROM right 29% of seconds, POS 49%;
-// held-out side cameras 23% vs 38%.
+// reach the output. Measured on real recordings through the SDK's own pipeline against a
+// finger-sensor truth (frame grid on): POS right on more seconds than CHROM, front and side
+// cameras (numbers kept outside the repo).
 
 const fs = 30;
 const corr = (a: number[], b: number[]) => {

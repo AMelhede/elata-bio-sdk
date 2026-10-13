@@ -1,8 +1,8 @@
 import { PulseCheck } from "../pulseCheck";
 import { type OwnPulseEstimate, ownPulseVerdict } from "../pulseCheckCore";
 
-// Two rules measured on 19 held-out MCD-rPPG people (never used for tuning), where the check was right
-// 89.7% of shown seconds against 99.1% on the recordings it was tuned on.
+// Two rules measured on held-out people (never used for tuning), where the check was right on fewer
+// shown seconds than on the recordings it was tuned on (numbers kept outside the repo).
 
 /** Seconds a number is shown from `fromS` to `toS`, for a pulse at 72 bpm that stops at `stopS`
  * (skin colour then carries sensor noise only), 30 fps, three regions. */

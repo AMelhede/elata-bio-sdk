@@ -2,9 +2,9 @@ import { agreementRate, AGREE_SECONDS } from "../pulseCheckCore";
 
 // The second way to a number: the SDK's own (fixed) rate and the check's own window rate, two
 // different estimators on the same face, agree within 3 bpm for 8 seconds running, the window
-// line at least -4 dB, the rate at least 58 bpm. Measured on five sets (MCD-rPPG three cameras and
-// side-camera re-records, UBFC-rPPG 42 people): +4 recordings with a number, +93 right seconds,
-// 0 wrong; no number on any no-pulse video.
+// line at least -4 dB, the rate at least 58 bpm. Measured on five sets of real recordings with a
+// finger-sensor truth (front and side cameras): more recordings with a number and more right
+// seconds, no wrong second added; no number on any no-pulse video (numbers kept outside the repo).
 
 const second = (sdk: number | null, win: number | null, winSnr: number | null) => ({ sdk, win, winSnr });
 const run = (n: number, s = second(80, 81, -3.5)) => Array.from({ length: n }, () => s);

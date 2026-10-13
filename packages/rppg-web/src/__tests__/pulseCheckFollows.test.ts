@@ -1,10 +1,10 @@
 import { PulseCheck } from "../pulseCheck";
 
 // Once a rate is proven, the shown number follows the newest 12 s while it stays within 4 bpm
-// of the proven rate, instead of the 16 s windows that proved it. On UBFC-rPPG, whose people
+// of the proven rate, instead of the 16 s windows that proved it. On real recordings whose people
 // play a stressful game, every wrong second the check showed was the true rate of up to 12 s
-// earlier. Scored on five sets (MCD-rPPG three cameras plus held-out side cameras, UBFC), wrong
-// seconds 0/0/13/6/53 -> 0/0/9/5/43, the seconds with a number unchanged.
+// earlier. Scored on five sets of real recordings (front and side cameras): fewer wrong seconds
+// on every set that had any, the seconds with a number unchanged (numbers kept outside the repo).
 
 /** Mean |shown - true| over each second a number is shown from `fromS`, for a pulse whose
  * rate follows `bpmAt(seconds)`, phase-continuous, 30 fps, three regions. */
