@@ -135,6 +135,10 @@ seconds are mostly reads where the gate now passes and the calibration blend is 
 better, 18 worse, p 0.53: nil), fix 4 and 13's option 2,282 (37 better, 8 worse, p under 0.001), all three 2,265
 (fix 5 on top: 17 better, 20 worse, nil). So fix 5 claims no real-camera gain (its PR text says so) and fix 13's
 option is a clear gain in this round. Neither needs the other to merge, and the order above does not change.
+Fix 13's gain depends on fix 3 staying out (measured 2026-10-13, private, context only): with fixes 1, 3 and 4 the
+option gives 1,942 -> 2,015 (25 better, 21 worse, p 0.66: nil), and test.19 with fix 3 switched off gives 1,902 ->
+2,114 (30 better, 15 worse, p 0.04: a gain again). Fix 3 is held, so this round is unaffected; if fix 3 returns,
+re-measure fix 13 then.
 
 **Why this order.**
 

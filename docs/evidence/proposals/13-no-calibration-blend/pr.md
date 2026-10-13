@@ -287,10 +287,15 @@ allows). In the reads where the default shows the blend, the blend was right in 
 On Elata main with fix 4 (POS in the fuser), through the same harness and recordings, the option took 1,895 to 2,282
 right seconds (37 recordings better, 8 worse, sign test p < 0.001), and with fixes 4 and 5 from 1,964 to 2,265 (38
 better, 11 worse, p < 0.001); seconds reading double the reference fell from 70 and 82 to 0. On our own test build
-(test.19), which carries other changes Elata main does not have, the option made no measurable difference (2,094
-against 2,047, 24 recordings better, 24 worse); that build is the wrong base for a claim about Elata main, and which
-of its changes absorbs the option's value is not known. The recordings cannot be shared, so this is context, not
-evidence for the PR.
+(test.19), which carries other changes Elata main does not have, the option did not help (2,047 right seconds with
+it against 2,094 without, 24 recordings better, 24 worse). The change that takes its value is fix 3 (real frame
+rate), shown both ways on 2026-10-13: adding fix 3 to Elata main with fixes 1 and 4 leaves the option no gain (1,942
+to 2,015, 25 better, 21 worse, p 0.66), and switching fix 3 off in test.19 brings the gain back (1,902 to 2,114, 30
+better, 15 worse, p 0.04). The recordings run at 15 to 29 frames a second; once fix 3 corrects for that, the blend
+is right about as often as the resolved rate the option shows, so there is nothing left for the option to correct.
+So the option helps on Elata main as it is and with fix 4, and adds nothing on these recordings once fix 3 lands.
+Fix 3 is held from the first round, so in that round the option keeps its value. The recordings cannot be shared,
+so this is context, not evidence for the PR.
 
 ### Merging with the other fixes
 

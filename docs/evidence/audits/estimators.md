@@ -179,4 +179,10 @@ suite made runnable.
 Later (2026-10-13): measured on Elata main with fix 4, the first round's base, fix 5 adds nothing on real captures
 with or without fix 13's option (1,895 to 1,964 at the defaults, 23 better and 18 worse; 2,282 to 2,265 with the
 option). So fix 5 rests on synthetic evidence and the HRV result in every case, and fix 13's option is a clear gain
-on its own (1,895 to 2,282, 37 better and 8 worse). The "2,094 vs 2,047" above was our test build test.19.
+on its own (1,895 to 2,282, 37 better and 8 worse). The "2,094 vs 2,047" above was our test build test.19, and
+2,094 is the blend, 2,047 the option.
+
+Later still (2026-10-13, pre-registered): what takes the option's value in test.19 is fix 3 (real frame rate). Added
+to Elata main with fixes 1 and 4, fix 3 leaves the option no gain (1,942 to 2,015, 25 better, 21 worse, p 0.66);
+switched off in test.19, the gain comes back (1,902 to 2,114, 30 better, 15 worse, p 0.04). Fix 3 is held from the
+first round, so fix 13 keeps its value there.

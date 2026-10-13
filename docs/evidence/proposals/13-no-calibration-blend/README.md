@@ -18,8 +18,10 @@
   off. To rerun: change the stub's `bpm: 120` in `blend.mjs` to 60 and read `resolved_bpm` on 0.14.0.
 - **Cost.** One more option kept forever; with it on, 23 session seconds lost and 4 more no-pulse seconds.
 - **Still open.** An engine an octave off is shown as is (limit above). [owner] 19.4% to 24.3% right on main; on Elata main with fix 4,
-  1,895 to 2,282 right seconds of 6,679 (37 recordings better, 8 worse). The earlier "adds nothing with fixes 4 and 5
-  in place" was measured on our test build (test.19), not on Elata main.
+  1,895 to 2,282 right seconds of 6,679 (37 recordings better, 8 worse). It depends on fix 3 being absent: with fix 3
+  (real frame rate) in, the blend is already about as right as the resolved rate and the option adds nothing (1,942
+  to 2,015, 25 better, 21 worse, p 0.66); taking fix 3 out of our test build brings the gain back. That is why our
+  test build (test.19) showed no gain. Fix 3 is held from the first round, so the option keeps its value there.
 - **Where.** Branch `fix/no-calibration-blend` 608e797; `pr/no-calibration-blend` c4f98c2 (local). Not in the test
   build: build the branch to see the "with" numbers.
 

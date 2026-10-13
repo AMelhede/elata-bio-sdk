@@ -12,6 +12,8 @@
   237 more lines. Alone, with CHROM, it reads resting rates worse at 15 to 24 fps.
 - **Still open.** "Fewer numbers, right more often" was seen after the fact, not pre-registered; a held-out check needs
   recordings nobody has looked at. [owner] with fix 4: 30.0% against 29.9% of windows right (p 0.76).
+  Interaction [owner, 2026-10-13]: with fix 3 in, fix 13's option adds nothing on the owner's recordings (the blend it
+  replaces is already about as right), so if fix 3 returns, fix 13 is re-measured with it.
 - **Where.** Branch `fix/real-frame-rate` bd72c7e; `pr/real-frame-rate` ff1cc00 (local). Test build: `realFrameRate`.
 
 Files: [pr.md](pr.md), audit [../../audits/runner.md](../../audits/runner.md), [grid-amp.mjs](grid-amp.mjs).
