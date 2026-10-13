@@ -2,8 +2,9 @@
 
 `@amelhede/rppg-web` 0.15.0-test.21, built 2026-10-13 on `release/test-1` (2a05313..6084d8d, pushed fast-forward).
 Not published. Tarball sha256 1ba551055c2fd611d1208a98ac8c3d3bc1d8bc01098c3baccdfdd6a18a2e116f (165 files, 3 more
-than test.20: `dist/pulseCheckRecording.*`). **The audit of test.21 is pending**; until it is written, these are the
-builder's own notes.
+than test.20: `dist/pulseCheckRecording.*`). These are the builder's own notes. **Audited 2026-10-13:
+[test21-audit.md](test21-audit.md).** The audit added five commits (to 84ff8b2), and the tarball is now
+b5a6bd5e..., which replaces 1ba55105... at the same version.
 
 ## Bottom line
 
@@ -49,8 +50,9 @@ checks ready. verify-test-release passes, with a new check: replays give back 43
 replayed with `headMotion` off shows the same 43 seconds at 60 as a live check. npm dry run ready; publint clean;
 attw the same single CJS warning as before.
 
-## Not run yet
+## Not run yet (at build time)
 
 npm 11 dry run, a CRLF clone, the packed starter matrix, a Vite consumer build, a real camera, a swap into a private
-app. The test.21 audit is expected to run them. None of the four dim rules is shown to help; only the strap study can
+app. The audit ran the npm 11 dry run and the CRLF clone, a private app's camera tests ran on it, and create-elata-demo
+test.4 ran the starter matrix; a real camera has still not been used. None of the four dim rules is shown to help; only the strap study can
 say.

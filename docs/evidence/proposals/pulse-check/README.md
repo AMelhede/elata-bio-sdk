@@ -13,7 +13,9 @@
 - **Limit** [synthetic, 2026-10-12]. With no wall in view, a lamp whose colour change looks like blood (or is
   green, red or opposite to blood) is shown in about 42 of 60 s. Three pre-registered rules were tried and none
   qualified; the one lead (timing spread across face regions) was chosen after looking and fails once the camera
-  reads the cheeks a few ms after the forehead (rolling shutter). See [../../open-gaps.md](../../open-gaps.md).
+  reads the cheeks a few ms after the forehead (rolling shutter). A pre-registered third round (2026-10-13), with
+  realistic delays on both sides, found that no timing bar can work: a lamp already shows 2 to 10 degrees of spread
+  and real blood can show less. So this stays a stated limit. See [../../open-gaps.md](../../open-gaps.md).
 - **Still open.** A branch cut fresh onto Elata main; real-people evidence Elata can check (chest strap or testers);
   real filmed lamp and nod footage; about 2,000 lines, with a split plan written but not cut
   ([split-plan.md](split-plan.md)). The face flicker constant is 7 since test.20 (set on the synthetic lamp sweep;
