@@ -323,6 +323,9 @@ export async function createRppgSession(options) {
     const backendPreference = options.backend ?? "auto";
     const enableTracker = options.enableTracker ?? true;
     const pendingErrors = [];
+    // Built first: a bad recordPulseCheckInputs length throws here, before a face finder, a worker or an
+    // engine exists, so a refused call leaves nothing running that the caller has no session to dispose.
+    const pulseCheck = sessionPulseCheck(options);
     const faceMeshResult = await resolveFaceMesh(options.faceMesh, resolveFixSwitches(options.fixes).faceFinderTrial);
     if (faceMeshResult.error)
         pendingErrors.push(faceMeshResult.error);
@@ -368,7 +371,6 @@ export async function createRppgSession(options) {
     const waveformController = options.experimental
         ? new WaveformReconstructionController(options.experimental.waveformReconstructor, options.experimental.inferenceIntervalMs)
         : undefined;
-    const pulseCheck = sessionPulseCheck(options);
     const chestMotion = wantsChestMotion(options) ? new ChestMotion() : null;
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
