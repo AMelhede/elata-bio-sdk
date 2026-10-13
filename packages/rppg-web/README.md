@@ -137,8 +137,9 @@ shown to work yet. What each costs, from how it works:
   line is strong, 16 in the dark path).
 - `tooDark`: no number while the pulse line is as weak as noise makes it, or while any of the
   newest 4 windows found no line at all. On generated dim faces it removed right seconds and no
-  wrong ones (one right second in six lost). On the owner's own recordings (described only, not a
-  test) it removed 7 wrong seconds and 23 right ones.
+  wrong ones (one right second in six lost). On recorded captures with a
+  reference pulse (described only, not a test) it removed about three right seconds for each
+  wrong one.
 
 A rule that was off cannot be judged from the numbers an app showed. So the session can keep
 exactly what the check was fed, and the check can be replayed offline with any rules:
