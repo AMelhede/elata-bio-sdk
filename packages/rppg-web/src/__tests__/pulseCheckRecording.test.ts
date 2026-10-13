@@ -286,6 +286,19 @@ describe("bounded memory", () => {
 		expect(r.dropped).toBe(0);
 	});
 
+	it("the session option's own length reaches the recording; left out or true, the default", () => {
+		const secondsOf = (o: Parameters<typeof sessionPulseCheck>[0]) => {
+			const c = sessionPulseCheck(o);
+			return c instanceof RecordingPulseCheck ? c.getRecording().seconds : c == null ? "no check" : "plain";
+		};
+		expect(secondsOf({ recordPulseCheckInputs: { seconds: 42 } })).toBe(42);
+		expect(secondsOf({ recordPulseCheckInputs: {} })).toBe(PULSE_CHECK_RECORDING_SECONDS);
+		expect(secondsOf({ recordPulseCheckInputs: true })).toBe(PULSE_CHECK_RECORDING_SECONDS);
+		expect(secondsOf({ recordPulseCheckInputs: false })).toBe("plain");
+		expect(secondsOf({})).toBe("plain");
+		expect(secondsOf({ pulseCheck: false, recordPulseCheckInputs: true })).toBe("no check");
+	});
+
 	it("refuses a length that is not a positive number of seconds", () => {
 		for (const s of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(() => new RecordingPulseCheck({ seconds: s })).toThrow(RangeError);
 	});

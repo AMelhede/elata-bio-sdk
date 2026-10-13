@@ -10,13 +10,13 @@ import {
 } from "../pulseCheck";
 import { OWN_PULSE_AGREE_BPM, OWN_PULSE_STRONG_STREAK, type OwnPulseEstimate, ownPulseVerdict } from "../pulseCheckCore";
 
-// Three candidate rules for dim light, each OFF unless set to true. In dim light the check is wrong far more often
+// Four candidate rules for dim light, each OFF unless set to true. In dim light the check is wrong far more often
 // than in normal light: a weak pulse line sits near the noise, the 8 s follower jitters, and a held rate can walk.
 // Their settings were fixed on generated faces before any chest-strap file existed; the strap study decides whether
 // any of them goes on.
 
 describe("the dim-light rules are off unless set", () => {
-	it("leaves all three off by default and turns each on alone", () => {
+	it("leaves all four off by default and turns each on alone", () => {
 		const r = resolvePulseCheckRules();
 		expect([r.followerMedian, r.reproveOnDrift, r.tooDark, r.anchorDrift]).toEqual([false, false, false, false]);
 		expect([...PULSE_CHECK_RULES_OFF_BY_DEFAULT].sort()).toEqual(["anchorDrift", "followerMedian", "reproveOnDrift", "tooDark"]);
@@ -252,5 +252,25 @@ describe("rule anchorDrift in the check: a run of measured seconds stays near wh
 		const on = run({ anchorDrift: true });
 		expect(on.most).toBeLessThanOrEqual(ANCHOR_DRIFT_BPM);
 		expect(on.ended).toBeGreaterThan(0);
+	});
+	it("with it, a run that ended needs a whole new streak: no rate for at least OWN_PULSE_STRONG_STREAK seconds", () => {
+		// The shortest proof the check has takes OWN_PULSE_STRONG_STREAK windows; an end that kept the old windows
+		// would let the dark path prove the moved rate again the next second.
+		const check = new PulseCheck({ rules: { anchorDrift: true } });
+		const gaps: number[] = [];
+		let sinceEnd: number | null = null;
+		dimFace(check, 120, climb, 1.0, 5, () => {
+			const s = check.getState();
+			if (s.anchorEnded) sinceEnd = 0;
+			else if (sinceEnd != null) {
+				sinceEnd++;
+				if (s.verdict === "measured" && s.bpm != null) {
+					gaps.push(sinceEnd);
+					sinceEnd = null;
+				}
+			}
+		});
+		expect(gaps.length).toBeGreaterThan(0);
+		expect(Math.min(...gaps)).toBeGreaterThanOrEqual(OWN_PULSE_STRONG_STREAK);
 	});
 });
