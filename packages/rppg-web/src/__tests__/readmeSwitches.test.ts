@@ -1,5 +1,5 @@
 import { FIX_SWITCH_NAMES, FIX_SWITCHES_OFF_BY_DEFAULT } from "../fixSwitches";
-import { HEAD_LANDMARKS, PULSE_CHECK_RULE_NAMES, headCentre } from "../pulseCheck";
+import { HEAD_LANDMARKS, PULSE_CHECK_RULES_OFF_BY_DEFAULT, PULSE_CHECK_RULE_NAMES, headCentre } from "../pulseCheck";
 import { OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_MIN_AGREEING, REGIONS } from "../pulseCheckCore";
 
 // Testers log every result against the switches the README lists. In 0.15.0-test.5 the README
@@ -32,7 +32,8 @@ describe("README Switches section", () => {
 
 	it.each([...PULSE_CHECK_RULE_NAMES])("names pulse-check rule %s in the table and the example", (name) => {
 		expect(switches).toMatch(new RegExp(`^\\| \`pulseCheckRules\` \\|.*\`${name}\``, "m"));
-		expect(example).toMatch(new RegExp(`\\b${name}: true,`));
+		const byDefault = !PULSE_CHECK_RULES_OFF_BY_DEFAULT.includes(name);
+		expect(example).toMatch(new RegExp(`\\b${name}: ${byDefault},`));
 	});
 
 	it.each([...PULSE_CHECK_RULE_NAMES])("llms.txt, read by tools and agents, names pulse-check rule %s", (name) => {

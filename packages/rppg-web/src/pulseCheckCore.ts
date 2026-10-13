@@ -736,15 +736,29 @@ export const OWN_PULSE_HOLD_MIN = 6;
 
 export type OwnPulseVerdict = "measured" | "not-measured" | "unknown";
 
+/**
+ * How a "measured" verdict was reached: "proof" (the streak, or the strong windows), "dark" (the dark
+ * entry), or "hold" (a rate measured before, still carried by most of the newest windows). The first two
+ * are fresh proofs; the hold is not.
+ */
+export type OwnPulseVerdictPath = "proof" | "dark" | "hold";
+
 export function ownPulseVerdict(
 	history: readonly (OwnPulseEstimate | null)[],
 	/** The rate the previous verdict was measured at, if it was; enables the hold. */
 	held: number | null = null,
+	/**
+	 * Rule reproveOnDrift (pulseCheck.ts): the rate of the last fresh proof, and how far a hold may move from it.
+	 * A hold further than `maxBpm` from `provenBpm` ends, and the rate needs a fresh proof. Left out: no limit.
+	 */
+	drift?: { provenBpm: number | null; maxBpm: number },
 ): {
 	verdict: OwnPulseVerdict;
 	bpm: number | null;
 	snrDb: number | null;
 	streak: number;
+	/** How a "measured" verdict was reached (OwnPulseVerdictPath); null otherwise. */
+	path: OwnPulseVerdictPath | null;
 } {
 	let streak = 0;
 	const rates: number[] = [];
@@ -773,6 +787,7 @@ export function ownPulseVerdict(
 			bpm: Math.round(avg(fines) * 10) / 10,
 			snrDb: Math.round(avg(snrs) * 10) / 10,
 			streak,
+			path: "proof",
 		};
 	}
 	// The dark entry: the same shape of streak, longer, at a lower bar, only from
@@ -805,6 +820,7 @@ export function ownPulseVerdict(
 				bpm: Math.round(avg(darkFines) * 10) / 10,
 				snrDb: Math.round(avg(darkSnrs) * 10) / 10,
 				streak: darkRates.length,
+				path: "dark",
 			};
 		}
 	}
@@ -822,12 +838,16 @@ export function ownPulseVerdict(
 			const bar = agreeing.every(slowedForLight)
 				? OWN_PULSE_DARK_HOLD_SNR_DB
 				: OWN_PULSE_MIN_SNR_DB;
-			if (avg(heldSnrs) >= bar) {
+			const bpm = Math.round(avg(heldRates) * 10) / 10;
+			const drifted =
+				drift != null && drift.provenBpm != null && Math.abs(bpm - drift.provenBpm) > drift.maxBpm;
+			if (avg(heldSnrs) >= bar && !drifted) {
 				return {
 					verdict: "measured",
-					bpm: Math.round(avg(heldRates) * 10) / 10,
+					bpm,
 					snrDb: Math.round(avg(heldSnrs) * 10) / 10,
 					streak,
+					path: "hold",
 				};
 			}
 		}
@@ -838,6 +858,7 @@ export function ownPulseVerdict(
 		bpm: null,
 		snrDb: null,
 		streak,
+		path: null,
 	};
 }
 

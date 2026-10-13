@@ -105,6 +105,19 @@ describe("processor colour path: known answers (switch rgbPulse on)", () => {
 		for (const x of trace) expect(x.intensity).toBe(x.g);
 		expect(Math.abs((p.getMetrics().bpm ?? 0) - 72)).toBeLessThanOrEqual(3);
 	});
+
+	test("one clipped frame in a colour stream puts no raw level in the window and still reads", () => {
+		// A frame clipped white (255, 255, 255) is R = G = B but carries no colour: it gives the projection's neutral
+		// 0, not its own level beside a pulse of about 0.01, which would sit in the 45 s window and lose the rate.
+		const samples = feed(72, 30, 40);
+		samples[300] = { ...samples[300], r: 255, g: 255, b: 255 };
+		const p = run(samples, 30);
+		const trace = p.getTraceSnapshot(2000).points;
+		expect(trace.length).toBe(1200);
+		expect(trace[300].intensity).toBe(0);
+		expect(Math.max(...trace.map((x) => Math.abs(x.intensity)))).toBeLessThan(1);
+		expect(Math.abs((p.getMetrics().bpm ?? 0) - 72)).toBeLessThanOrEqual(3);
+	});
 });
 
 // The README's rgbPulse row gives the known answers above as read once a second, as an app polling getMetrics()
@@ -153,6 +166,30 @@ describe("switch rgbPulse on: read once a second, not once", () => {
 
 		const row = readme.split(/\r?\n/).find((line) => line.startsWith("| `fixes.rgbPulse` |")) ?? "";
 		expect(row).toContain(`a 120 came out ${Math.round(m.bpm ?? 0)}`);
+	});
+
+	test("a clipped frame before the first colour sample still passes its level, as the README says", () => {
+		// The grey rule passes R = G = B through while no colour sample has arrived since the last reset, so a first
+		// frame clipped white is taken for a grey feed: its 255 sits in the window beside a pulse of about 0.01.
+		const row = readme.split(/\r?\n/).find((line) => line.startsWith("| `fixes.rgbPulse` |")) ?? "";
+		for (const bpm of [50, 72, 120]) {
+			const samples = feed(bpm, 30, 40);
+			samples[0] = { ...samples[0], r: 255, g: 255, b: 255 };
+			const p = new RppgProcessor(silentBackend, 30, 10, { fixes: ON as never });
+			const shown: number[] = [];
+			let next = 1000;
+			for (const x of samples) {
+				p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
+				if (x.t >= next) {
+					next += 1000;
+					const read = p.getMetrics().bpm;
+					if (x.t >= 16000 && read != null) shown.push(read);
+				}
+			}
+			expect(p.getTraceSnapshot(2000).points[0].intensity).toBe(255);
+			expect(shown).toEqual([]);
+		}
+		expect(row).toContain("one white first frame left 50, 72 and 120 with no rate shown");
 	});
 });
 
@@ -284,6 +321,18 @@ describe("RgbPulseExtractor", () => {
 		push(x, at(15, 60, wander[wander.length - 1]));
 		expect(x.filterRate).toBeGreaterThanOrEqual(15);
 		expect(x.filterRate).toBeLessThanOrEqual(15 * 1.1);
+	});
+
+	test("passes an R = G = B sample through only while the stream has been grey", () => {
+		const x = new RgbPulseExtractor();
+		expect(x.process(0, 120, 120, 120)).toBe(120);
+		expect(x.process(33, 121, 121, 121)).toBe(121);
+		const colour = push(x, Array.from({ length: 30 }, (_, i) => 66 + i * 33.3));
+		expect(Math.abs(colour[29])).toBeLessThan(1);
+		expect(x.process(2000, 255, 255, 255)).toBe(0);
+		expect(x.process(2033, 1, 1, 1)).toBe(0);
+		x.reset();
+		expect(x.process(5000, 120, 120, 120)).toBe(120);
 	});
 
 	test("reset starts it afresh", () => {

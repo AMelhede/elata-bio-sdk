@@ -24,6 +24,11 @@
 // analyses with the switch on.
 // BREAK=1 makes check 4 expect 90 bpm instead of 72, to see it go red; BREAK=2 makes check 6
 // expect the nod's 60 to show with headMotion on.
+//   9. the packed recording of what the check is fed (RecordingPulseCheck, recordPulseCheckInputs):
+//      written and read back as JSON and replayed with its own rules, a recorded scene gives back every
+//      number shown (a pulse at 72, the nod's silence); replayed with headMotion off, the nod's
+//      recording shows what a live check with headMotion off shows. BREAK=5 makes the replay of the
+//      nod use headMotion off where it should use the recording's own rules.
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -85,16 +90,19 @@ const pipe = new glue.WasmRppgPipeline(30, 10);
 assert.equal(pipe.colour_projection_fix(), true, "fix on by default in the core");
 pipe.set_colour_projection_fix(false);
 assert.equal(pipe.colour_projection_fix(), false, "switch reaches the core");
-// Every fix switch at its default (on, but for FIX_SWITCHES_OFF_BY_DEFAULT), and every pulse-check light
-// rule on by default (read from the package's own lists so a new switch cannot be missed the way the count
-// of five once went stale).
+// Every fix switch at its default (on, but for FIX_SWITCHES_OFF_BY_DEFAULT), and every pulse-check rule at
+// its default (on, but for PULSE_CHECK_RULES_OFF_BY_DEFAULT, the dim-light candidates) (read from the
+// package's own lists so a new switch cannot be missed the way the count of five once went stale).
 assert.deepEqual(Object.keys(sdk.resolveFixSwitches()).sort(), [...sdk.FIX_SWITCH_NAMES].sort());
 const offByDefault = new Set(sdk.FIX_SWITCHES_OFF_BY_DEFAULT);
 assert.ok(offByDefault.has("rgbPulse"), "rgbPulse is off by default");
 for (const [name, on] of Object.entries(sdk.resolveFixSwitches()))
   assert.equal(on, !offByDefault.has(name), "default of fix " + name);
 assert.deepEqual(Object.keys(sdk.resolvePulseCheckRules()).sort(), [...sdk.PULSE_CHECK_RULE_NAMES].sort());
-assert.ok(Object.values(sdk.resolvePulseCheckRules()).every((v) => v === true), "every light rule on by default");
+const rulesOff = new Set(sdk.PULSE_CHECK_RULES_OFF_BY_DEFAULT);
+assert.deepEqual([...rulesOff].sort(), ["anchorDrift", "followerMedian", "reproveOnDrift", "tooDark"], "the dim-light candidates, and only they, are off by default");
+for (const [name, on] of Object.entries(sdk.resolvePulseCheckRules()))
+  assert.equal(on, !rulesOff.has(name), "default of pulse-check rule " + name);
 // everySecond: read once a second as an app does (the processor's rate history and tracker move with its reads);
 // otherwise once, at the end.
 function read(bpm, fixes, everySecond = false) {
@@ -118,7 +126,7 @@ for (const [bpm, want] of [[60, 60], [72, expect72], [120, 120]]) {
 // changes the face's shading in time with it, the same way.
 function scene(o) {
   let s = 7; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5);
-  const c = new sdk.PulseCheck({ rules: o.rules ?? {} }); const shown = [];
+  const c = o.check ?? new sdk.PulseCheck({ rules: o.rules ?? {} }); const shown = [];
   for (let i = 0; i <= 60 * 30; i++) {
     const t = (i * 1000) / 30;
     const w = (bpm) => (bpm ? Math.sin((2 * Math.PI * bpm * t) / 60000) : 0);
@@ -129,7 +137,11 @@ function scene(o) {
     const wall = { r: 0.5 * (1 - 0.15 * l) + 0.0008 * rnd(), g: 0.5 * (1 - 0.5 * l) + 0.0008 * rnd(), b: 0.5 * (1 - 0.3 * l) + 0.0008 * rnd() };
     const head = { x: 320 + 0.6 * n + 0.05 * rnd(), y: 240 + 3 * n + 0.05 * rnd(), faceWidth: 190 };
     c.push(t, [reg(), reg(), reg()], wall, undefined, head);
-    if (i % 30 === 0 && i > 0) { const st = c.getState(); if (st.verdict === "measured" && st.bpm != null) shown.push(st.bpm); }
+    if (i % 30 === 0 && i > 0) {
+      const st = c.getState(); const bpm = st.verdict === "measured" ? st.bpm : null;
+      c.noteRead?.(bpm, null); // a RecordingPulseCheck (check 9) files the read as the session does
+      if (bpm != null) shown.push(bpm);
+    }
   }
   return shown;
 }
@@ -143,6 +155,24 @@ assert.equal(nodOn.length, 0, "a nod with no pulse should show nothing");
 assert.ok(near(scene({ nod: 60, rules: { headMotion: false } }), 60), "with headMotion off the nod should show its 60 (else the scene tests nothing)");
 assert.ok(near(scene({ pulse: 70, nod: 90 }), 70), "pulse 70 under a nod at 90 should show 70");
 assert.ok(near(scene({ pulse: 70, light: 96 }), 70), "pulse 70 under a light at 96 should show 70");
+// Check 9: the packed recording, replayed. Recorded scenes, written and read back as JSON.
+function recorded(o) {
+  const check = new sdk.RecordingPulseCheck({ rules: o.rules ?? {} });
+  const live = scene({ ...o, check });
+  return { live, rec: sdk.parsePulseCheckRecording(sdk.serializePulseCheckRecording(check.getRecording())) };
+}
+const shownOf = (replay) => replay.reads.flatMap((r) => (r.bpm != null ? [r.bpm] : []));
+const pulse72 = recorded({ pulse: 72 });
+assert.ok(near(pulse72.live, 72), "recording: the recorded pulse at 72 shows 72");
+assert.deepEqual(shownOf(sdk.replayPulseCheck(pulse72.rec)), pulse72.live, "recording: the replay gives back every 72 shown");
+assert.ok(sdk.replayPulseCheck(pulse72.rec).reads.every((r) => r.bpm === r.live), "recording: every read equals the live one");
+const nodRec = recorded({ nod: 60 });
+assert.equal(nodRec.live.length, 0, "recording: the recorded nod shows nothing");
+const nodReplay = sdk.replayPulseCheck(nodRec.rec, process.env.BREAK === "5" ? { rules: { headMotion: false } } : {});
+assert.deepEqual(shownOf(nodReplay), [], "recording: the nod's replay with its own rules shows nothing");
+const nodOffLive = scene({ nod: 60, rules: { headMotion: false } });
+assert.deepEqual(shownOf(sdk.replayPulseCheck(nodRec.rec, { rules: { headMotion: false } })), nodOffLive, "recording: replayed with headMotion off, the nod shows what a live check with it off shows");
+assert.ok(near(nodOffLive, 60), "recording: with headMotion off the nod shows its 60");
 // Check 7: the packed ChestMotion (experimentalVitals' breathing) on generated frames: a textured chest under a face,
 // moving half a pixel up and down 15 times a minute at 15 frames a second, reads 15; a still one gives
 // no clear line.
@@ -182,7 +212,7 @@ assert.equal(steadyOff.calls, 1800, "steadyAnalysis off: one analysis per read")
 assert.ok(steadyOn.last != null && Math.abs(steadyOn.last - 72) <= 2, "steadyAnalysis on: 72 should read 72, read " + steadyOn.last);
 const off = read(120, { colourProjectionFix: false });
 assert.ok(off == null || Math.abs(off - 120) > 2, "colourProjectionFix:false should give the published core's answer, read " + off);
-console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line; steady analysis: " + steadyOn.calls + " analyses read on every frame (off: " + steadyOff.calls + "), 72 read " + steadyOn.last + ".");
+console.log("[rppg-web test release] packed " + ${JSON.stringify(info.filename)} + ": imports under both names, pkg/ resolves, WASM switch works, known answers pass (on: 60/72/120 read right; core switch off: 120 read " + off + "); pulse check: 72 shown, no pulse / light / nod silent, 70 under a nod and under a light; chest motion: 15 a minute read " + breathing.rate.toFixed(1) + ", a still chest no clear line; steady analysis: " + steadyOn.calls + " analyses read on every frame (off: " + steadyOff.calls + "), 72 read " + steadyOn.last + "; recording: replays give back every number shown (" + pulse72.live.length + " at 72), and the nod replayed with headMotion off shows its " + nodOffLive.length + " seconds at 60 as a live check does.");
 `,
 	);
 	console.log(run(process.execPath, ["app.mjs"], app).trim());

@@ -1,6 +1,7 @@
 import type { FrameSource } from "./frameSource.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { PulseCheck, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
+import { type PulseCheckRecording } from "./pulseCheckRecording.js";
 import { ChestMotion, type ChestSample } from "./chestBreathing.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
 import { type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
@@ -81,6 +82,16 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * gain on new recordings, kept opt-in.
      */
     pulseCheckAgreement?: boolean;
+    /**
+     * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face,
+     * the SDK's own rate when `pulseCheckAgreement` is on) and every `getMetrics()` read, so the check
+     * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
+     * Off by default. `true` keeps the newest PULSE_CHECK_RECORDING_SECONDS (5 minutes); `{ seconds }`
+     * sets that. Recording changes no output; see pulseCheckRecording.ts for the format and the memory bound.
+     */
+    recordPulseCheckInputs?: boolean | {
+        seconds?: number;
+    };
     /**
      * Experimental, off by default. Hands over HRV and breathing in their own box,
      * `getExperimentalVitals()`, labelled experimental, for research and testing, not for showing a
@@ -216,6 +227,14 @@ export declare class RppgSession {
     get lastError(): RppgSessionError | null;
     get state(): RppgSessionState;
     getMetrics(): Metrics;
+    /** With `recordPulseCheckInputs`, files this read with the check's inputs; returns the metrics unchanged. */
+    private noteRead;
+    /**
+     * What the pulse check was fed, and every `getMetrics()` read, for replay with `replayPulseCheck`
+     * (`recordPulseCheckInputs`); a copy, the newest events within the recording's bound. Null when the
+     * option or the check is off.
+     */
+    getPulseCheckRecording(): PulseCheckRecording | null;
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
     /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */
@@ -275,5 +294,11 @@ export declare class RppgSession {
  * `wasmJsUrl` / `wasmBinaryUrl` when your bundler cannot resolve default paths.
  */
 export declare function createRppgSession(options: CreateRppgSessionOptions): Promise<RppgSession>;
+/**
+ * The pulse check a session runs with these options: none with `pulseCheck: false`; one that also
+ * records its inputs with `recordPulseCheckInputs` (RecordingPulseCheck); else a plain PulseCheck,
+ * so with recording off the session runs exactly the check it ran before the option existed.
+ */
+export declare function sessionPulseCheck(options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "pulseCheckAgreement" | "recordPulseCheckInputs">): PulseCheck | null;
 export {};
 //# sourceMappingURL=rppgSession.d.ts.map

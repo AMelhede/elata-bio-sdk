@@ -13,7 +13,7 @@ fields aside). It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.19` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.21` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
 - Everything below the "Switches" section is Elata's documentation from that same main
@@ -25,7 +25,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.19"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.21"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -57,7 +57,7 @@ const session = await createRppgSession({
   },
   pulseCheck: true, // the default in this build
   experimentalVitals: false, // experimental, off by default: HRV and chest breathing in their own box (getExperimentalVitals)
-  // every rule of the check on (the default); each one can be set to false on its own
+  // the defaults: every rule of the check on but the four dim-light candidates; each can be set on its own
   pulseCheckRules: {
     wallBandEdge: true,
     lightFamily: true,
@@ -65,6 +65,10 @@ const session = await createRppgSession({
     lightTaint: true,
     headMotion: true,
     darkWall: true,
+    followerMedian: false, // off by default: a dim-light candidate, see the pulseCheckRules row
+    reproveOnDrift: false, // off by default: a dim-light candidate
+    tooDark: false, // off by default: a dim-light candidate
+    anchorDrift: false, // off by default: a dim-light candidate
   },
 });
 console.log(session.getBuildSwitches()); // what this session actually runs
@@ -78,12 +82,12 @@ console.log(session.getBuildSwitches()); // what this session actually runs
 | `fixes.posFusion` | The step that blends forehead and both cheeks reads each region with POS (Wang et al. 2017), the method designed for its short windows (about 1.6 s). | CHROM, as published. An explicit `fusionProjection: "pos" \| "chrom"` option wins over this switch. |
 | `fixes.noRateDoubling` | The rate estimator keeps the strongest rhythm it finds. | The published rule that, below 85 bpm, replaces the strongest rate with twice that rate whenever a pulse wave's own second harmonic is strong, so a resting 65 can read 130. |
 | `fixes.steadyAnalysis` | The heart-rate analysis runs once per 250 ms of signal, exactly as the analysis worker's answers did (so with the worker on, no number changes), and every read in between gets that answer: the rate no longer depends on how often an app (or the SDK's own diagnostics) asks for it, and a managed session on the main thread no longer analyses on every camera frame. | As published, every read runs the whole analysis again, and the rate tracker takes the same stretch of signal once per read: a managed session on the main thread analyses on every camera frame, and the analysis worker reads twice per answer, so the reported rate depends on how often it is read. |
-| `fixes.rgbPulse` | Off unless set to `true`. The processor's own colour path: what `pushSampleRgb` and `pushSampleRgbMeta` take, which is how an app that drives `RppgProcessor` directly gives it a face's colour, and what the runner feeds when the multi-region fusion is off or has no region. The pulse signal the processor analyses is built with POS and then the same 0.7 to 4 Hz band-pass the fusion applies, designed for the rate the samples actually arrive at. On a synthetic face (a pulse in the colour direction blood gives, with camera noise) it reads 50, 72 and 120 within 5 bpm in every second from 16 s on, at 20 and 30 frames a second and into a processor built for 30 fed at 20, where the published path reads 0 to 75% of them; on recorded camera captures with a reference rate it was right more often than the published path. Those are reads once a second, as the quick start polls: read only once after 30 s, with no rate history, a 120 came out 96, because the processor's autocorrelation read it at half the rate (60) and the untrained calibration blended the two. Off by default because with no pulse at all the repaired estimators agree on noise more often: on synthetic noise at 30 frames a second the processor shows a rate in 72% of seconds against 19% published, though none at a `confidence` of 0.7 or more in the same test. | As published: CHROM with an offset kept, so the wander of its weight lands in the heart-rate band, and raw green (about a hundred grey levels) in place of the projection for its first nine samples, a step a thousand times the pulse that stays in the 45 s window. The processor's own estimators read neither: a synthetic 72 reads about 110. |
+| `fixes.rgbPulse` | Off unless set to `true`. The processor's own colour path: what `pushSampleRgb` and `pushSampleRgbMeta` take, which is how an app that drives `RppgProcessor` directly gives it a face's colour, and what the runner feeds when the multi-region fusion is off or has no region. The pulse signal the processor analyses is built with POS and then the same 0.7 to 4 Hz band-pass the fusion applies, designed for the rate the samples actually arrive at. On a synthetic face (a pulse in the colour direction blood gives, with camera noise) it reads 50, 72 and 120 within 5 bpm in every second from 16 s on, at 20 and 30 frames a second and into a processor built for 30 fed at 20, where the published path reads 0 to 75% of them; on recorded camera captures with a reference rate it was right more often than the published path. Those are reads once a second, as the quick start polls: read only once after 30 s, with no rate history, a 120 came out 96, because the processor's autocorrelation read it at half the rate (60) and the untrained calibration blended the two. Off by default because with no pulse at all the repaired estimators agree on noise more often: on synthetic noise at 30 frames a second the processor shows a rate in 72% of seconds against 19% published, though none at a `confidence` of 0.7 or more in the same test. A frame with R = G = B in a colour feed (one clipped white) gives 0, not its own level; a feed that has been R = G = B since the last reset (a signal already extracted) passes its values through, so a clipped frame before the first colour sample still passes its level: on the synthetic face, read by the processor's own estimators, one white first frame left 50, 72 and 120 with no rate shown from 16 to 40 s. | As published: CHROM with an offset kept, so the wander of its weight lands in the heart-rate band, and raw green (about a hundred grey levels) in place of the projection for its first nine samples, a step a thousand times the pulse that stays in the 45 s window. The processor's own estimators read neither: a synthetic 72 reads about 110. |
 | `fixes.analysisWidth` | Speed. Each camera frame is read at most 640 pixels wide (same shape), and the face finder reads that same smaller picture, so the face points and the colours come from one frame. A cheek patch still averages thousands of pixels at that size, far more than the pulse needs. | The full camera frame, with the face finder reading the live video, as published. On a 1280x960 camera that cut the frames analysed to about 7 a second. |
 | `fixes.analysisWorker` | Speed. The heart-rate analysis runs in a Web Worker, so it never holds up the camera frames. It runs on the main thread instead when a worker or the WASM core inside it cannot start, or when `wasmImporter` or `bpmEvidenceQualityProvider` is set (a function cannot be sent to a worker). The session option `analysisWorker`, when given, wins over this switch. Reads answer from the worker's latest message, so `getTraceSnapshot()` returns at most its newest 300 points (about 10 s at 30 a second) whatever it is asked for. | The analysis runs on the main thread, as published, and camera frames that arrive while it runs are skipped. |
 | `fixes.faceFinderTrial` | Speed. With `faceMesh: "auto"`, the face finder is built on the GPU and on the CPU, each is timed on the live video for a few frames, and the faster is kept (a laptop's CPU alone can hold the camera to a few frames a second; a software GPU can be slower than the CPU, so the clock decides). A finder whose GPU context dies, or that finds no face for 2 s after the page comes back from hidden, is rebuilt. `session.getFaceFinder()` says which delegate won and what each cost. An app that passes its own `faceMesh` is unaffected. | The CPU delegate only, as published, and no rebuild. |
 | `pulseCheck` | A heart rate is reported only while a real pulse is proven: forehead and both cheeks agree on one rate, clearly above the noise, over 8 one-second windows, and the newest 8 seconds still back it. The reported rate is the one the check measured. Only `bpm` is held back: the engine's own estimates (`spectral_bpm`, `fused_bpm` and the other `*_bpm` fields) and its `confidence` pass through as the engine reads them, so they are diagnostics, not a rate to show (on a generated face with no pulse, `fused_bpm` read 43 to 123 at a `confidence` up to 0.69 while `bpm` stayed empty). A patch of wall beside the face is checked too: a light that flickers at the same rhythm is refused. HRV and breathing are always withheld while it is on, because neither yet passes a known-answer test: from `getMetrics()` and from `getDebugSnapshot()` alike (of the session's reads, `experimentalVitals` is their one way out; `session.processor`, the raw engine, is not filtered). `session.getPulseCheck()` shows the check's state. | The SDK's own rate (with the fixes chosen above), HRV and breathing, as published. |
-| `pulseCheckRules` | Each of the check's rules can be turned off on its own, for testing one at a time: `wallBandEdge` (the wall's line is found even at the band's edge, a light folded to 180 a minute), `lightFamily` (a light's whole and half multiples are the light's too), `faceFlicker` (a rate the face flickers at in brightness far more than in colour is refused), `lightTaint` (a second the wall carries does not count toward proving a pulse), `headMotion` (a rate the head's own movement keeps time with, such as a nod, is the movement's: judged at that rate, by how far the movement stands above the head's other movement and by its size against the face's width; a second the head carries the rate is not evidence, nor is a second the face mesh did not see the head, and the rate is withheld once the head carries it for 4 seconds), `darkWall` (when the camera's colour is too damaged to read by colour, the pulse is read from green minus the wall beside the face, but only over a wall that shows the light on the face: the wall at least a tenth as bright as the face through nearly the whole window, whatever the colour scale or the camera's exposure; over a darker wall it is read by colour as usual, so a light on the face that the wall does not show, such as a screen, is not read as the pulse; `getPulseCheck().windowWallToFace` shows the wall against the face, `windowWallLevel` the wall's level as the camera sees it). All on unless set to false; `getBuildSwitches()` reports them. | Each rule off: the behaviour before it existed. |
+| `pulseCheckRules` | Each of the check's rules can be turned off on its own, for testing one at a time: `wallBandEdge` (the wall's line is found even at the band's edge, a light folded to 180 a minute), `lightFamily` (a light's whole and half multiples are the light's too), `faceFlicker` (a rate the face flickers at in brightness far more than in colour is refused), `lightTaint` (a second the wall carries does not count toward proving a pulse), `headMotion` (a rate the head's own movement keeps time with, such as a nod, is the movement's: judged at that rate, by how far the movement stands above the head's other movement and by its size against the face's width; a second the head carries the rate is not evidence, nor is a second the face mesh did not see the head, and the rate is withheld once the head carries it for 4 seconds), `darkWall` (when the camera's colour is too damaged to read by colour, the pulse is read from green minus the wall beside the face, but only over a wall that shows the light on the face: the wall at least a tenth as bright as the face through nearly the whole window, whatever the colour scale or the camera's exposure; over a darker wall it is read by colour as usual, so a light on the face that the wall does not show, such as a screen, is not read as the pulse; `getPulseCheck().windowWallToFace` shows the wall against the face, `windowWallLevel` the wall's level as the camera sees it). All on unless set to false; `getBuildSwitches()` reports them. Four more are **off unless set to `true`**: candidates for dim light, where the check is wrong far more often than in normal light, with their settings fixed (on generated faces, or from the check's own constants) before a chest-strap study judges them. `followerMedian` (the rate shown is the median of the last `FOLLOWER_MEDIAN_K` values of the newest 8 s line instead of the newest one: an 8 s window is coarse, so that line jitters around a right rate), `reproveOnDrift` (once proven, a rate is held while most of the newest windows sit near it, and the held rate is recomputed from them, so in weak light it can walk onto noise; a hold more than `REPROVE_DRIFT_BPM` from the rate of its last fresh proof ends until the pulse is proven again), `tooDark` (no rate while the mean signal-to-noise of the newest 4 windows is below `TOO_DARK_SNR_DB`, the level a face with no pulse reaches, or while any of those windows found no line; `getPulseCheck().tooDark` says so, so an app can ask for more light; the face's brightness is not used, as a camera's auto exposure raises a dark face's level and its noise together), `anchorDrift` (a run of shown rates ends, and the check's evidence starts over, once its rate has moved more than `ANCHOR_DRIFT_BPM` from where the run was first proven: in weak light the check's dark path re-proves every second, so a slowly moving noise line is re-proven at each new place, which a limit on the hold cannot see; a real rate that moves that far within one run also loses its number until a new streak proves it). `getPulseCheck().followerBpm` shows the newest 8 s line the rate follows. | Each rule off: the behaviour before it existed (for the four candidates, today's behaviour). |
 | `experimentalVitals` | Experimental, off by default. Hands over HRV and breathing in their own box, `session.getExperimentalVitals()` as `{ experimental: true, hrvRmssd, breathing }`, for research and testing, not for showing a person as a measurement. HRV has not passed a check against a reference: against an ECG it read several times too high. `breathing` is `{ rate, share }`: the breathing rate from the up-and-down motion of the chest and shoulders in a box below the chin (32-second window, 6 to 36 breaths a minute), and `share` near 1 for one clear rhythm, near 0 for noise; it needs the face mesh, a view of the chest and a still person, and is separate from the metrics' `respiration_rate`. It has so far been checked only on still people against a reference worked out from a finger sensor, not a breathing belt. `hrvRmssd` comes from the session's latest `getMetrics()` read, and only while a face is in view and the pulse check (when on) still shows the rate it proved; when a face comes back after a second away the engine's signal starts afresh (`resetSignal()`), so the HRV holds no samples from before it. With the pulse check off, the engine's own HRV, as published. With the pulse check on, `getMetrics()` and `getDebugSnapshot()` withhold HRV and breathing whether this option is on or off. | (default) `getExperimentalVitals()` returns null. |
 | `pulseCheckAgreement` | Off by default. With the check on, also report the SDK's own rate when it agrees with the check's latest window for 8 seconds running. | (default) |
 
@@ -118,6 +122,71 @@ Things to know while testing:
   `"clear"` or `"blind"`.
 - Every result worth keeping should be logged with `RPPG_WEB_BUILD_VERSION` and
   `session.getBuildSwitches()`.
+
+## Dim light: four candidate rules, and judging them on the same seconds
+
+In dim light the pulse check shows a wrong rate far more often than in normal light. Four rules
+that might help are in this build, each **off unless set to `true`** in `pulseCheckRules` (see its
+row above): `followerMedian`, `reproveOnDrift`, `tooDark` and `anchorDrift`. Their settings were
+fixed before any chest-strap data existed, so a chest-strap study can test them fairly. None is
+shown to work yet. What each costs, from how it works:
+
+- `followerMedian`: the shown rate trails a changing heart rate by about one more second.
+- `reproveOnDrift` and `anchorDrift`: a real heart rate that moves more than 6 bpm while it is
+  shown loses its number until the check proves it again (8 windows in normal light, 4 when the
+  line is strong, 16 in the dark path).
+- `tooDark`: no number while the pulse line is as weak as noise makes it, or while any of the
+  newest 4 windows found no line at all. On generated dim faces it removed right seconds and no
+  wrong ones (one right second in six lost). On recorded captures with a
+  reference pulse (described only, not a test) it removed about three right seconds for each
+  wrong one.
+
+A rule that was off cannot be judged from the numbers an app showed. So the session can keep
+exactly what the check was fed, and the check can be replayed offline with any rules:
+
+```ts
+const session = await createRppgSession({
+  video,
+  faceMesh: "auto",
+  recordPulseCheckInputs: true, // off by default; { seconds: 600 } keeps more
+});
+// ... after the capture, save the file
+const text = serializePulseCheckRecording(session.getPulseCheckRecording()!);
+```
+
+```ts
+// later, in Node or a page, with the same build
+const recording = parsePulseCheckRecording(text);
+const asShown = replayPulseCheck(recording); // every read's bpm equals its live value
+const withTooDark = replayPulseCheck(recording, { rules: { tooDark: true } });
+for (const read of withTooDark.reads) console.log(read.t, read.live, read.bpm);
+```
+
+- **What it keeps**, in order: every frame the check was handed (the colour of the forehead and
+  both cheeks, the wall beside the face as tracked and as the camera read it, why no wall was
+  found, the head's position or that none was found), every frame with no face, the SDK's own
+  rate when `pulseCheckAgreement` is on, and every `getMetrics()` read with the rate it showed.
+  No image is kept. The colour of the skin over time is enough to read a pulse from, so treat a
+  saved file as the person's data.
+- **Replay** runs the same `PulseCheck` code. `reads` has one entry per `getMetrics()` call: the
+  rate the session would have shown (`bpm`), the rate it did show (`live`), the session's own
+  reason for showing none (`"no_face"`, `"processor_failed"`) and the check's state.
+  `evaluations` has one entry per second the check judged. `rules` works like
+  `pulseCheckRules` (each left out takes its default); left out, the recording's own rules.
+- **It changes nothing.** With recording on, every read and every state of the check are the
+  same as with it off (tested through the session, and on the known-answer harness). With it
+  off, the session builds the same plain `PulseCheck` as before.
+- **Memory is bounded.** The newest 5 minutes are kept (`PULSE_CHECK_RECORDING_SECONDS`), and at
+  most 120 events a second of that. Measured at 30 frames a second with one read per frame:
+  18,000 events, about 7 MB held, 3.6 MB as JSON; a longer session stays at that, and
+  `dropped` counts what was let go. The time per frame did not change measurably.
+- **Exact only when complete.** A replay gives back every shown number only for a recording
+  with `dropped: 0`. One that let its start go replays as a check that began at its first kept
+  event, so its first numbers can differ. Save before the bound is reached, or set `seconds`.
+- **The format** is JSON with `format: "rppg-web/pulse-check-inputs"` and `version: 1`
+  (`PulseCheckRecording`, `PulseCheckInputEvent`). Use `serializePulseCheckRecording`, not
+  `JSON.stringify`: a frame can hand the check a number JSON cannot hold (not a number, an
+  infinity), and the replay must get it back. A replay refuses another format or version.
 
 ## What the original package is
 
