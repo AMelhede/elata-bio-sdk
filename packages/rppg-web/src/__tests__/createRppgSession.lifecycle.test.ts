@@ -325,4 +325,19 @@ describe("createRppgSession lifecycle", () => {
 			expect(mockedDemoRunner.mock.calls.map((call) => call[2].requireFace)).toEqual([false, true]);
 		});
 	});
+
+	// A bad recordPulseCheckInputs length is a caller's mistake found from the options alone: it is refused
+	// before the session loads a face finder or an engine, so nothing is left running that nobody can dispose.
+	test("refuses a bad recordPulseCheckInputs length before it loads anything", async () => {
+		for (const seconds of [0, -5, Number.NaN]) {
+			await expect(
+				createRppgSession({ video: document.createElement("video"), faceMesh: "auto", recordPulseCheckInputs: { seconds } }),
+			).rejects.toThrow(RangeError);
+		}
+		expect(loadTrialFaceFinder).not.toHaveBeenCalled();
+		expect(mockedLoadFaceMesh).not.toHaveBeenCalled();
+		expect(mockedLoadWasmBackend).not.toHaveBeenCalled();
+		expect(mockedMediaPipeFrameSource).not.toHaveBeenCalled();
+		expect(mockedMediaPipeFaceFrameSource).not.toHaveBeenCalled();
+	});
 });
