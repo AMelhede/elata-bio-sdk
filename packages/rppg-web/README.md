@@ -123,6 +123,68 @@ Things to know while testing:
 - Every result worth keeping should be logged with `RPPG_WEB_BUILD_VERSION` and
   `session.getBuildSwitches()`.
 
+## Dim light: four candidate rules, and judging them on the same seconds
+
+In dim light the pulse check shows a wrong rate far more often than in normal light. Four rules
+that might help are in this build, each **off unless set to `true`** in `pulseCheckRules` (see its
+row above): `followerMedian`, `reproveOnDrift`, `tooDark` and `anchorDrift`. Their settings were
+fixed before any chest-strap data existed, so a chest-strap study can test them fairly. None is
+shown to work yet. What each costs, from how it works:
+
+- `followerMedian`: the shown rate trails a changing heart rate by about one more second.
+- `reproveOnDrift` and `anchorDrift`: a real heart rate that moves more than 6 bpm while it is
+  shown loses its number until the check proves it again (8 windows in normal light, 16 in the
+  dark path).
+- `tooDark`: no number while the pulse line is as weak as noise makes it. On generated dim faces
+  it removed right seconds and no wrong ones (one right second in six lost).
+
+A rule that was off cannot be judged from the numbers an app showed. So the session can keep
+exactly what the check was fed, and the check can be replayed offline with any rules:
+
+```ts
+const session = await createRppgSession({
+  video,
+  faceMesh: "auto",
+  recordPulseCheckInputs: true, // off by default; { seconds: 600 } keeps more
+});
+// ... after the capture, save the file
+const text = serializePulseCheckRecording(session.getPulseCheckRecording()!);
+```
+
+```ts
+// later, in Node or a page, with the same build
+const recording = parsePulseCheckRecording(text);
+const asShown = replayPulseCheck(recording); // every read's bpm equals its live value
+const withTooDark = replayPulseCheck(recording, { rules: { tooDark: true } });
+for (const read of withTooDark.reads) console.log(read.t, read.live, read.bpm);
+```
+
+- **What it keeps**, in order: every frame the check was handed (the colour of the forehead and
+  both cheeks, the wall beside the face as tracked and as the camera read it, why no wall was
+  found, the head's position or that none was found), every frame with no face, the SDK's own
+  rate when `pulseCheckAgreement` is on, and every `getMetrics()` read with the rate it showed.
+  No image is kept. The colour of the skin over time is enough to read a pulse from, so treat a
+  saved file as the person's data.
+- **Replay** runs the same `PulseCheck` code. `reads` has one entry per `getMetrics()` call: the
+  rate the session would have shown (`bpm`), the rate it did show (`live`), the session's own
+  reason for showing none (`"no_face"`, `"processor_failed"`) and the check's state.
+  `evaluations` has one entry per second the check judged. `rules` works like
+  `pulseCheckRules` (each left out takes its default); left out, the recording's own rules.
+- **It changes nothing.** With recording on, every read and every state of the check are the
+  same as with it off (tested through the session, and on the known-answer harness). With it
+  off, the session builds the same plain `PulseCheck` as before.
+- **Memory is bounded.** The newest 5 minutes are kept (`PULSE_CHECK_RECORDING_SECONDS`), and at
+  most 120 events a second of that. Measured at 30 frames a second with one read per frame:
+  18,000 events, about 7 MB held, 3.6 MB as JSON; a longer session stays at that, and
+  `dropped` counts what was let go. The time per frame did not change measurably.
+- **Exact only when complete.** A replay gives back every shown number only for a recording
+  with `dropped: 0`. One that let its start go replays as a check that began at its first kept
+  event, so its first numbers can differ. Save before the bound is reached, or set `seconds`.
+- **The format** is JSON with `format: "rppg-web/pulse-check-inputs"` and `version: 1`
+  (`PulseCheckRecording`, `PulseCheckInputEvent`). Use `serializePulseCheckRecording`, not
+  `JSON.stringify`: a frame can hand the check a number JSON cannot hold (not a number, an
+  infinity), and the replay must get it back. A replay refuses another format or version.
+
 ## What the original package is
 
 TypeScript wrapper for the Elata rPPG pipeline.

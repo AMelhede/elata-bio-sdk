@@ -374,6 +374,23 @@ export {
 	headMatches,
 } from "./pulseCheck";
 export {
+	RecordingPulseCheck,
+	replayPulseCheck,
+	serializePulseCheckRecording,
+	parsePulseCheckRecording,
+	PULSE_CHECK_RECORDING_FORMAT,
+	PULSE_CHECK_RECORDING_VERSION,
+	PULSE_CHECK_RECORDING_SECONDS,
+	PULSE_CHECK_RECORDING_EVENTS_PER_SECOND,
+	type PulseCheckRecording,
+	type PulseCheckInputEvent,
+	type PulseCheckRgb,
+	type PulseCheckReadReason,
+	type PulseCheckReplay,
+	type PulseCheckReplayRead,
+	type PulseCheckReplayEvaluation,
+} from "./pulseCheckRecording";
+export {
 	breathingFromMotion,
 	ChestMotion,
 	type ChestSample,
