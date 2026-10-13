@@ -12,7 +12,7 @@ need the test build on npm first; the strap study does not, because the demo pag
 | One webcam, one person behind the [owner] numbers | the same study on the testers' own cameras and phones | testers |
 | Darker skin and other ages not covered anywhere | recruit and record with a skin-tone measure | Andreas, with the testers |
 | The test build has not been run on a phone or a slow CPU since test.15 | open a tester app on two phones, log `RPPG_WEB_BUILD_VERSION` and the frame rate | testers |
-| test.21 has run in a browser only on the demo page with a generated face (a true 70 read 69 to 72 from 21 s; no pulse gave no number in 75 of 75 s [synthetic]); its audit and a swap into a private app are pending | finish the test.21 audit; swap it in and run the app's own camera tests | Andreas |
+| test.21 has run in browsers only on generated faces: on the demo page (a true 70 read 69 to 72 from 21 s; no pulse gave no number in 75 of 75 s) and swapped into a private app, whose own camera tests pass as on test.20 (47 pass, 0 fail; its no-pulse test 4 of 4, its pulse test 2 of 2) [synthetic]. No real camera, no phone; its audit is pending | finish the test.21 audit; a real camera run | Andreas |
 | The test build is not on npm, so testers cannot install it with one line (the demo page does not need it: it installs test.21 from its tarball) | once the test.21 audit is done, publish `@amelhede/rppg-web@0.15.0-test.21` with the `test` tag (both release checks print ready on 6084d8d) | Andreas (his decision) |
 
 ## Per change
