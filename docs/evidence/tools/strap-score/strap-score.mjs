@@ -7,11 +7,15 @@
 //
 // Before it scores anything it runs its own self-checks on synthetic files with known answers (see selfCheck()).
 // SELFCHECK_BREAK=<name> breaks one check on purpose so it can be seen to fail. Names: known, shift, formats,
-// overlap, flat, tz.
+// overlap, flat, tz; with --library also replay-generator, replay-known, replay-exact, decide (see replay.mjs).
+//
+// Replay mode (--replay --library <dir>): the page's JSON file also holds what the library's pulse check was fed, so
+// every rule arm is replayed on the same seconds and the decision rule fixed in open-gaps.md is applied (replay.mjs).
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadLibrary, readDemoJson, replayReport, replaySelfCheck, runReplay } from './replay.mjs';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Constants, each with its reason.
@@ -355,7 +359,14 @@ export function buildReference(strap) {
 // ---------------------------------------------------------------------------------------------------------------
 // The page's file.
 
+/** Right or not by the meter bar (within 5 bpm or 10 percent, whichever is greater); replay.mjs judges with this too. */
+export function isRight(bpm, ref) {
+	return Math.abs(bpm - ref) <= Math.max(RIGHT_BPM, RIGHT_FRACTION * ref);
+}
+
 export function readDemo(text, file) {
+	// The page's JSON (Save readings since test.21): the same per-second rows plus the recorded pulse-check inputs.
+	if (text.replace(/^\uFEFF/, '').trimStart().startsWith('{')) return readDemoJson(text, file);
 	const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
 	if (lines[0]?.trim() !== DEMO_HEADER)
 		throw new Error(`${file} is not a demo "Save readings" file (first line must be ${DEMO_HEADER})`);
@@ -374,13 +385,24 @@ export function readDemo(text, file) {
 	return { rows, versions: [...versions] };
 }
 
-/** Condition name: "calm=file.csv" on the command line, else the file name without the page's default prefix. */
+/** Condition name: "calm=file.csv" or "person/calm=file.json" on the command line, else the file name without the
+ * page's default prefix. The person is needed only by the replay decision rule (it counts and resamples people). */
 function conditionName(arg) {
 	const eq = arg.indexOf('=');
-	if (eq > 0 && !fs.existsSync(arg)) return { name: arg.slice(0, eq), file: arg.slice(eq + 1) };
-	const stem = path.basename(arg).replace(/\.csv$/i, '');
+	if (eq > 0 && !fs.existsSync(arg)) {
+		const name = arg.slice(0, eq);
+		const slash = name.indexOf('/');
+		return {
+			name,
+			person: slash > 0 ? name.slice(0, slash) : null,
+			condition: slash > 0 ? name.slice(slash + 1) : name,
+			file: arg.slice(eq + 1),
+		};
+	}
+	const stem = path.basename(arg).replace(/\.(csv|json)$/i, '');
 	const m = /^demo-readings-.*?(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/.exec(stem);
-	return { name: m ? `started ${m[1].slice(11, 16).replace('-', ':')} UTC` : stem, file: arg };
+	const name = m ? `started ${m[1].slice(11, 16).replace('-', ':')} UTC` : stem;
+	return { name, person: null, condition: name, file: arg };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -496,7 +518,7 @@ export function score(rows, ref, lag) {
 		const a = Math.abs(d);
 		if (a <= RIGHT_BPM) out.within5++;
 		if (a <= RIGHT_FRACTION * v) out.within10pct++;
-		if (a <= Math.max(RIGHT_BPM, RIGHT_FRACTION * v)) out.right++;
+		if (isRight(r.bpm, v)) out.right++;
 		else out.wrong++;
 		const iv = ref.inst.get(r.s + lag);
 		if (iv != null) {
@@ -909,7 +931,12 @@ const HELP = `strap-score: score the demo page's "Save readings" files against a
   --start       when the strap recording started, for files with no clock times (Kubios, plain RR).
   --lag         skip the lag search and use this lag (say so in any write-up).
   --max-lag     widen or narrow the lag search (default ${MAX_LAG_S} s).
-  --selfcheck   run only the self-checks.  --write-examples <dir>  regenerate the example files.
+  --replay      also replay every rule arm from the page's JSON files and apply the decision rule in
+                open-gaps.md; needs --library. Name each file person/condition=file (calm, dim, stairs).
+  --library     the installed rppg-web test build the pages ran (the demo's
+                node_modules/@elata-biosciences/rppg-web); its version must match the recordings.
+  --selfcheck   run only the self-checks (with --library, the replay ones too).
+  --write-examples <dir>  regenerate the example files.
 Exit: 0 scored, 2 refused or needs input, 1 error or failed self-check.`;
 
 function parseArgs(argv) {
@@ -924,6 +951,8 @@ function parseArgs(argv) {
 		else if (a === '--max-lag') o.maxLag = Number(v());
 		else if (a === '--json') o.json = v();
 		else if (a === '--selfcheck') o.selfcheckOnly = true;
+		else if (a === '--replay') o.replay = true;
+		else if (a === '--library') o.library = v();
 		else if (a === '--write-examples') o.examples = v();
 		else if (a === '--help' || a === '-h') o.help = true;
 		else o.pages.push(a);
@@ -931,9 +960,13 @@ function parseArgs(argv) {
 	return o;
 }
 
-function main() {
+async function main() {
 	const o = parseArgs(process.argv.slice(2));
 	if (o.help) return console.log(HELP), 0;
+	if (o.replay && !o.library) return console.error('--replay needs --library <installed rppg-web test build folder>'), 1;
+	// The replay self-checks run on the library given, before anything is scored.
+	const lib = o.library ? await loadLibrary(o.library) : null;
+	if (lib) replaySelfCheck(lib);
 	if (o.selfcheckOnly) return 0;
 	if (o.examples) return writeExamples(o.examples), console.log(`examples written to ${o.examples}`), 0;
 	if (o.straps.length === 0 || o.pages.length === 0) return console.error(HELP), 1;
@@ -953,8 +986,8 @@ function main() {
 		const cleaned = cleanBeats(beats);
 		const strap = hr.size ? { hr } : { beats: cleaned.beats };
 		const demos = o.pages.map((arg) => {
-			const { name, file } = conditionName(arg);
-			return { name, ...readDemo(fs.readFileSync(file, 'utf8'), file) };
+			const { name, person, condition, file } = conditionName(arg);
+			return { name, label: name, person, condition, ...readDemo(fs.readFileSync(file, 'utf8'), file) };
 		});
 		const res = run({ strap, demos, maxLag: o.maxLag, forceLag: Number.isFinite(o.lag) ? o.lag : null });
 		const versions = [...new Set(demos.flatMap((d) => d.versions))];
@@ -967,9 +1000,17 @@ function main() {
 		);
 		if (!hr.size && cleaned.dropped > 0.05 * beats.length)
 			console.log(`WARNING: ${cleaned.dropped} of ${beats.length} beats dropped as artefacts; check the strap's contact.`);
+		let replay = null;
+		if (o.replay) {
+			if (res.refused) console.log('\nREPLAY not run: the shown numbers were refused above, so there is no lag to score the arms on.');
+			else {
+				replay = runReplay({ demos, ref: res.ref, lag: res.lag, judge: isRight, lib });
+				console.log(replayReport(replay));
+			}
+		}
 		if (o.json) {
 			const { ref, ...rest } = res;
-			fs.writeFileSync(o.json, JSON.stringify(rest, null, 2));
+			fs.writeFileSync(o.json, JSON.stringify({ ...rest, replay }, null, 2));
 		}
 		return res.refused ? 2 : 0;
 	} catch (e) {
@@ -985,7 +1026,7 @@ selfCheck({ quiet: !isMain });
 
 if (isMain) {
 	try {
-		process.exitCode = main();
+		process.exitCode = await main();
 	} catch (e) {
 		console.error(e.message);
 		process.exitCode = 1;

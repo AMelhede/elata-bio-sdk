@@ -1,14 +1,16 @@
 # strap-score: the demo page against a chest strap
 
-**Which page.** The demo app `AMelhede/rppg-demo-sandbox`, branch `chore/demo-test-19` (on test.20 since
-2026-10-12). Its **Save readings** button writes the rate the page shows (`session.getMetrics()`). Its `main` is still
+**Which page.** The demo app `AMelhede/rppg-demo-sandbox`, branch `chore/demo-test-19` (on test.21 since
+2026-10-13). Its **Save readings** button writes the rate the page shows (`session.getMetrics()`) and, since test.21,
+what the library's pulse check was fed, as one JSON file (see "Replay" below); **Save as table (CSV)** writes the
+per-second numbers alone, in the older CSV format, which this script still reads. Its `main` is still
 on 0.14.0 with no such button, and the SDK's own `packages/rppg-web/demo` page has only "Download session", which
 records the engine's unchecked rate (`processor.getMetrics()`), not the shown one. Score only Save readings files,
 and check the `library_version` column says the test build.
 
 A tester wears a chest strap while the demo page runs, then sends two kinds of file: the page's
-**Save readings** file (one row per second: `epoch_ms,iso_time,bpm_shown,confidence,library_version`) and the
-strap app's export. This script lines them up by clock time and says, second by second, whether the page was
+**Save readings** file (one row per second: `epoch_ms`, `bpm_shown`, `confidence`, `library_version`, in the JSON file's
+`readings`, or the CSV `epoch_ms,iso_time,bpm_shown,confidence,library_version`) and the strap app's export. This script lines them up by clock time and says, second by second, whether the page was
 right. It needs Node 18 or newer and nothing else.
 
 ## Run it
@@ -85,6 +87,36 @@ pass `--start`.
      Seconds are not independent, so the limits describe the spread; they are not a confidence interval.
    - A plain **VERDICT** line.
 
+## Replay: every rule arm on the same seconds
+
+```
+node strap-score.mjs --replay --library <demo checkout>/node_modules/@elata-biosciences/rppg-web \
+  --strap <strap export> --tz <zone> p01/calm=calm.json p01/dim=dim.json p01/stairs=stairs.json p02/dim=...
+```
+
+The page's JSON holds, besides the per-second rows, the library's own recording of what its pulse check was fed
+(`pulse_check_inputs`, made with `recordPulseCheckInputs`; format `rppg-web/pulse-check-inputs` version 1) and, per
+row, which session read (`read_index`, counting `getMetrics()` calls from 0) gave that row its number. `--replay`
+loads the library build the page ran (`--library`, its `dist/` folder; the version must match the recording's
+`build`) and replays every capture through its `replayPulseCheck` once per arm: the default (the four candidates
+off), `followerMedian`, `reproveOnDrift`, `tooDark`, `anchorDrift` each alone, and all four. Every arm is scored
+against the strap on the same seconds, at the lag found for the shown numbers. Then it applies the decision rule in
+[../../open-gaps.md](../../open-gaps.md) ("Strap study, fixed in advance") as written there, and prints which
+candidates, if any, go on.
+
+- **Name each file `person/condition=file`.** The rule counts and resamples people. Conditions judged: `calm`
+  (normal light), `dim`, `stairs`, optionally with a number (`dim2`). Any other name (a lamp behind, head movement)
+  is scored and reported, not judged. Without a person on every file the rule is not applied, and says so.
+- **A capture is refused for replay, and listed, never dropped silently,** when: it is a CSV (only the number shown);
+  it has no recording; it was recorded on another build; the recording let its start go (`dropped` above 0: the
+  page keeps 10 minutes); the page ran other rules than the default arm; or the default arm does not give back
+  every number the page showed, exactly. The last is the check that the replay is the page.
+- How the rule is applied, where open-gaps.md leaves a detail open: the bootstrap draws people with replacement
+  (seeded mulberry32, seed 1, 2,000 draws), pools their dim seconds, and takes the type 7 2.5 and 97.5 percent
+  quantiles of default minus arm wrong per 100 shown; wrong per 100 shown is 0 when nothing was shown; rule 4 is not
+  met when a condition has no seconds with a strap reference; "seconds shown by either arm" counts seconds with a
+  strap reference; a tie for the lowest dim wrong share goes to the candidate listed first in open-gaps.md.
+
 ## Self-checks
 
 They run every time the script loads, before anything is scored, on synthetic files built from a known heart-rate
@@ -98,11 +130,19 @@ curve (not from the script's own reference code):
 | shift | laptop 11 s ahead, strap through the HRV Logger reader: lag -11, all 190 right | `SELFCHECK_BREAK=shift` |
 | overlap | a page file an hour after the strap stopped is refused | `SELFCHECK_BREAK=overlap` |
 | flat | a constant heart rate is refused (lag cannot be told apart) | `SELFCHECK_BREAK=flat` |
+| replay-generator | with `--library`: the synthetic capture below carries 72 bpm, read by the independent DFT in `../selfcheck.mjs` | `SELFCHECK_BREAK=replay-generator` |
+| replay-known | with `--library`: a synthetic capture (the library's own RecordingPulseCheck fed a chromatic pulse at 72, saved as the page saves it) replays to 72 plus or minus 2 from second 30 in every arm; with no pulse, no number in any arm | `SELFCHECK_BREAK=replay-known` |
+| replay-exact | with `--library`: the default arm gives back every number the synthetic page showed, exactly; rows pointing one second late are refused | `SELFCHECK_BREAK=replay-exact` |
+| decide | with `--library`: a made-up six-person study gives its known outcome (two candidates pass and go on together, one fails rule 3, one rule 2) | `SELFCHECK_BREAK=decide` (four people: rule 1 fails) |
 
-Each was run once with its break set and threw; `node strap-score.mjs --selfcheck` runs them alone.
+Each was run once with its break set and threw; `node strap-score.mjs --selfcheck` runs them alone (add
+`--library <dir>` for the replay ones).
 
 ## Limits
 
+- Replay was run end to end once on the demo page's own saved files from a generated face (true 70, and no pulse),
+  with a synthetic strap at 70 and `--lag 0`: the default arm gave back every shown number, and with one person the
+  rule said "not decided". No real tester file has been replayed yet.
 - Tested on synthetic files only. No real strap file has been through it yet; the first one is the real test of
   the readers, and a format surprise should fail loudly (unknown format, unreadable time) rather than score.
 - The t rule's 3 and the 10 s block are choices, checked only on the synthetic cases above.
