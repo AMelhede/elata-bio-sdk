@@ -1,0 +1,428 @@
+From 13793e5c82f4c17c1ab32217701ca6aad6f27d8e Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 04:12:20 +0000
+Subject: [PATCH] feat(rppg-web): add engineFallback: false so bpm stays empty
+ when the processor refuses a rate
+
+Squashed from fix/no-engine-fallback at 6894d3a for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/processor-engine-fallback.md       |  16 ++
+ packages/rppg-web/README.md                   |   9 +
+ .../createRppgSession.lifecycle.test.ts       |  29 +++
+ .../__tests__/processorEngineFallback.test.ts | 174 ++++++++++++++++++
+ packages/rppg-web/src/rppgProcessor.ts        |  68 ++++---
+ packages/rppg-web/src/rppgSession.ts          |   8 +
+ 6 files changed, 281 insertions(+), 23 deletions(-)
+ create mode 100644 .changeset/processor-engine-fallback.md
+ create mode 100644 packages/rppg-web/src/__tests__/processorEngineFallback.test.ts
+
+diff --git a/.changeset/processor-engine-fallback.md b/.changeset/processor-engine-fallback.md
+new file mode 100644
+index 0000000..30c2bc7
+--- /dev/null
++++ b/.changeset/processor-engine-fallback.md
+@@ -0,0 +1,16 @@
++---
++"@elata-biosciences/rppg-web": minor
++---
++
++New `engineFallback` option on `RppgProcessor`, passed on by `createRppgSession`.
++When the processor's own checks refuse a rate (its low-confidence gate: the
++estimators disagree, the SNR is under -4.5 dB, the motion is high, or an alias
++with a wide spread), `bpm` has fallen back to the WASM core's raw rate, with
++`confidence` capped at 0.3, and with fewer than 24 samples it has been the
++core's raw rate outright. The core withholds a rate only when its peak is under
++1.3 times its noise floor, so with no pulse in view `bpm` was usually still a
++number. With `engineFallback: false`, `bpm` (and `fused_bpm`) is null in those
++reads; a fresh Muse rate still shows, and every read the gate passes is
++unchanged. `true`, the default, is the previous behaviour, unchanged: on the
++processor's colour path many of the core's rates in refused reads are right, so
++turning the fallback off also removes right readings.
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 9a34403..f7d308a 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -603,6 +603,15 @@ available:
+ For most browser apps, prefer `createRppgSession()` and only drop lower if you
+ need custom lifecycle or rendering behavior.
+ 
++When the processor's own checks refuse a rate (its estimators disagree, the
++signal is too weak or the motion too high), `getMetrics().bpm` shows the WASM
++core's raw rate instead, with `confidence` at most 0.3, and it does the same
++while the processor has under 24 samples. The core gives a rate on almost any
++input, so with no pulse in view `bpm` is still often a number. Pass
++`{ engineFallback: false }` as `RppgProcessor`'s fourth argument, or to
++`createRppgSession`, to get `bpm: null` in those reads. The fallback stays the
++default because on recorded captures many of the rates it shows were right.
++
+ ## Version Compatibility
+ 
+ `@elata-biosciences/rppg-web` and `@elata-biosciences/eeg-web` are tested in
+diff --git a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+index a309378..29d345d 100644
+--- a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
++++ b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
+ }));
+ 
+ import { createRppgSession } from "../rppgSession";
++import { DemoRunner } from "../demoRunner";
+ import { loadFaceLandmarker } from "../mediapipeLoader";
+ import { ensureVideoPlaying } from "../videoPlayback";
+ import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
+@@ -124,6 +125,34 @@ describe("createRppgSession lifecycle", () => {
+ 		expect(runnerStart).toHaveBeenCalledTimes(1);
+ 	});
+ 
++	test("passes engineFallback through to the processor", async () => {
++		// An engine that always answers 88; with 15 samples (under the processor's 24)
++		// the processor has no analysis of its own, so only the fallback can show it.
++		const backend = {
++			newPipeline: () => ({
++				push_sample_rgb: jest.fn(),
++				get_metrics: jest.fn(() => ({ bpm: 88, confidence: 0.9, signal_quality: 0.8 })),
++				free: jest.fn(),
++			}),
++		} as any;
++		const earlyBpm = async (engineFallback?: boolean) => {
++			mockedLoadWasmBackend.mockResolvedValueOnce(backend);
++			(DemoRunner as unknown as jest.Mock).mockClear();
++			await createRppgSession({
++				video: document.createElement("video"),
++				faceMesh: "off",
++				ensureVideoPlayback: false,
++				engineFallback,
++			});
++			const processor = (DemoRunner as unknown as jest.Mock).mock.calls[0][1];
++			for (let i = 0; i < 15; i++) processor.pushSampleRgb(i * 33.3, 120, 120, 120, 1);
++			return processor.getMetrics().bpm;
++		};
++
++		expect(await earlyBpm()).toBe(88);
++		expect(await earlyBpm(false)).toBeNull();
++	});
++
+ 	test("defers video playback coordination until manual start when autoStart is false", async () => {
+ 		const video = document.createElement("video");
+ 		const session = await createRppgSession({
+diff --git a/packages/rppg-web/src/__tests__/processorEngineFallback.test.ts b/packages/rppg-web/src/__tests__/processorEngineFallback.test.ts
+new file mode 100644
+index 0000000..b128994
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/processorEngineFallback.test.ts
+@@ -0,0 +1,174 @@
++import { type Metrics, RppgProcessor } from "../rppgProcessor";
++
++// When the processor's own checks refuse a rate (its low-confidence gate: the
++// estimators disagree, the SNR is under -4.5 dB, the motion is high, or an alias
++// with a wide spread), `bpm` falls back to the engine's raw rate
++// (`fused ?? candidate ?? engine`), and with fewer than 24 samples it is the
++// engine's raw rate outright. The WASM engine withholds only when its peak is
++// under 1.3 times its noise floor, so on noise it nearly always has a number: with
++// no pulse at all, `bpm` shows that number while `confidence` says at most 0.3.
++// With `engineFallback: false` the refusal holds and `bpm` is null.
++//
++// The engines here are stand-ins with a fixed answer, so the only thing that can
++// put their number in `bpm` with no pulse is the fallback. The feed is a region
++// mean of 170 / 120 / 100 grey levels; a pulse, when there is one, lies along the
++// blood-volume direction 0.33 / 0.77 / 0.53 (de Haan and van Leest 2014, Physiol.
++// Meas. 35:1913) at 1% scale, plus 0.05 grey levels of noise per channel.
++
++const PBV = [0.33, 0.77, 0.53];
++const BASE = [170, 120, 100];
++
++type Sample = { t: number; r: number; g: number; b: number };
++
++function feed(
++	bpm: number,
++	fps: number,
++	seconds: number,
++	opts: { grey?: boolean; noise?: number; seed?: number } = {},
++): Sample[] {
++	let s = (opts.seed ?? 12345) >>> 0;
++	const u = () => {
++		s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
++		return (s + 0.5) / 2 ** 32;
++	};
++	const gauss = () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u());
++	const noise = opts.noise ?? 0.05;
++	const out: Sample[] = [];
++	for (let i = 0; i < Math.round(seconds * fps); i++) {
++		const t = (i * 1000) / fps;
++		const p = bpm > 0 ? Math.sin((2 * Math.PI * bpm * t) / 60000) : 0;
++		const [r, g, b] = BASE.map((c, k) => c * (1 - 0.01 * PBV[k] * p) + noise * gauss());
++		out.push(opts.grey ? { t, r: g, g, b: g } : { t, r, g, b });
++	}
++	return out;
++}
++
++/** An engine that takes every sample and always answers `bpm` at `confidence`. */
++function engine(bpm: number | null, confidence: number) {
++	return {
++		newPipeline: () => ({
++			push_sample_rgb() {},
++			push_sample_rgb_meta() {},
++			get_metrics: () => ({ bpm, confidence, signal_quality: 0.8 }),
++		}),
++	};
++}
++
++type Extra = { muse?: { bpm: number; quality: number }; motion?: number };
++
++/** Every read an app polling once a second makes; `motion` goes with each sample (pushSampleRgbMeta). */
++function readEverySecond(
++	p: RppgProcessor,
++	samples: Sample[],
++	extra: Extra = {},
++): Metrics[] {
++	const out: Metrics[] = [];
++	let next = 1000;
++	for (const x of samples) {
++		if (extra.motion == null) p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
++		else p.pushSampleRgbMeta(x.t, x.r, x.g, x.b, 1, extra.motion, 0);
++		if (x.t >= next) {
++			next += 1000;
++			if (extra.muse) p.updateMuseMetrics(extra.muse.bpm, extra.muse.quality, x.t);
++			out.push(p.getMetrics());
++		}
++	}
++	return out;
++}
++
++const run = (
++	backend: ReturnType<typeof engine>,
++	samples: Sample[],
++	engineFallback: boolean,
++	extra: Extra = {},
++) =>
++	readEverySecond(
++		new RppgProcessor(backend, 30, 10, { engineFallback }),
++		samples,
++		extra,
++	);
++
++describe("engineFallback: false, the processor's own refusal holds", () => {
++	test("no pulse, an engine that always says 88: the fallback shows 88 in every read; without it, none", () => {
++		const samples = feed(0, 30, 20);
++		const fallback = run(engine(88, 0.2), samples, true);
++		const held = run(engine(88, 0.2), samples, false);
++		expect(fallback).toHaveLength(19);
++		// Every read refused by the processor (fused_source "none", confidence at
++		// most 0.3), and the engine's 88 shown anyway.
++		for (const m of fallback) {
++			expect(m.fused_source).toBe("none");
++			expect(m.confidence).toBeLessThanOrEqual(0.3);
++			expect(m.bpm).toBe(88);
++		}
++		for (const [i, m] of held.entries()) {
++			expect(m.bpm).toBeNull();
++			expect(m.fused_bpm).toBeNull();
++			// Every other field is what the fallback read says.
++			expect({ ...m, bpm: fallback[i].bpm }).toEqual(fallback[i]);
++		}
++	});
++
++	test("a clean pulse still reads: a read the gate passed is the same with and without the fallback", () => {
++		// Grey input (R = G = B) reaches the processor's estimators as is, so they
++		// read the 72 themselves.
++		const samples = feed(72, 30, 20, { grey: true });
++		const fallback = run(engine(88, 0.2), samples, true);
++		const held = run(engine(88, 0.2), samples, false);
++		let passed = 0;
++		for (const [i, m] of held.entries()) {
++			if (fallback[i].fused_source === "none") {
++				expect(fallback[i].bpm).toBe(88);
++				expect(m.bpm).toBeNull();
++			} else {
++				passed++;
++				expect(m).toEqual(fallback[i]);
++			}
++		}
++		expect(passed).toBeGreaterThanOrEqual(15);
++		expect(held.slice(-15).every((m) => m.bpm != null && Math.abs(m.bpm - 72) <= 1)).toBe(true);
++	});
++
++	test("a moving camera, which the gate refuses: the engine's 88 shown, without the fallback none, and a fresh Muse rate still shows", () => {
++		// A clean 72 the processor's own estimators read, but every sample carries motion 0.5 and the gate refuses
++		// any read whose mean motion is over 0.22.
++		const samples = feed(72, 30, 20, { grey: true });
++		const muse = { bpm: 64, quality: 90 };
++		expect(run(engine(88, 0.2), samples, true, { motion: 0.5 }).every((m) => m.fused_source === "none" && m.bpm === 88)).toBe(true);
++		expect(run(engine(88, 0.2), samples, false, { motion: 0.5 }).every((m) => m.bpm === null)).toBe(true);
++		// A fresh Muse rate is another sensor's measurement; the refusal is the camera's, so it still shows.
++		const withMuse = run(engine(88, 0.2), samples, false, { motion: 0.5, muse });
++		expect(withMuse.every((m) => m.fused_source === "none" && m.bpm === 64)).toBe(true);
++		expect(withMuse).toEqual(run(engine(88, 0.2), samples, true, { motion: 0.5, muse }));
++	});
++
++	test("fewer than 24 samples: the fallback shows the engine's raw rate; without it, none", () => {
++		const read = (engineFallback: boolean) => {
++			const p = new RppgProcessor(engine(88, 0.9), 30, 10, { engineFallback });
++			for (const x of feed(72, 30, 0.6, { grey: true })) p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
++			return p.getMetrics();
++		};
++		expect(read(true).bpm).toBe(88);
++		expect(read(true).fused_bpm).toBe(88);
++		const held = read(false);
++		expect(held.bpm).toBeNull();
++		expect(held.fused_bpm).toBeNull();
++		expect(held.fused_source).toBe("none");
++	});
++
++	test.each([1, 2, 3])("no read shows a rate the processor refused (noise, seed %i)", (seed) => {
++		for (const m of run(engine(88, 0.2), feed(0, 20, 30, { seed, noise: 0.5 }), false)) {
++			if (m.bpm != null) expect(m.fused_source).not.toBe("none");
++		}
++	});
++
++	test("an engine with no rate: the option changes nothing", () => {
++		const samples = feed(72, 30, 20, { grey: true });
++		expect(run(engine(null, 0), samples, false)).toEqual(run(engine(null, 0), samples, true));
++	});
++
++	test("left out, the published fallback", () => {
++		const reads = readEverySecond(new RppgProcessor(engine(88, 0.2), 30, 10), feed(0, 30, 5));
++		expect(reads.every((m) => m.bpm === 88)).toBe(true);
++	});
++});
+diff --git a/packages/rppg-web/src/rppgProcessor.ts b/packages/rppg-web/src/rppgProcessor.ts
+index 74b3146..a046b24 100644
+--- a/packages/rppg-web/src/rppgProcessor.ts
++++ b/packages/rppg-web/src/rppgProcessor.ts
+@@ -518,6 +518,8 @@ export class RppgProcessor {
+ 	private baselineBpm: number | null = null;
+ 	private baselineDeviationStartMs: number | null = null;
+ 	private lastBayesUpdateMs: number | null = null;
++	/** See the constructor's `engineFallback` option. */
++	private readonly engineFallback: boolean;
+ 	private totalSamplesReceived = 0;
+ 	private failedBackendError: Error | null = null;
+ 	private failedOperation: string | null = null;
+@@ -530,12 +532,24 @@ export class RppgProcessor {
+ 		sampleRate = 30,
+ 		windowSec = 5,
+ 		options: {
++			/**
++			 * What `bpm` shows when the processor's own checks refuse a rate (its
++			 * low-confidence gate: the estimators disagree, the SNR is under
++			 * -4.5 dB, the motion is high, or an alias with a wide spread), and
++			 * while it has under 24 samples to analyse. `true`, the default: the
++			 * engine's raw rate, which the WASM engine gives on almost any input (it
++			 * withholds only when its peak is under 1.3 times its noise floor), with
++			 * `confidence` at most 0.3. `false`: null. A fresh Muse rate shows either
++			 * way.
++			 */
++			engineFallback?: boolean;
+ 			bpmTrackerConfig?: BpmTrackerConfigV1;
+ 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+ 		} = {},
+ 	) {
+ 		this.sampleRate = sampleRate;
+ 		this.windowSec = windowSec;
++		this.engineFallback = options.engineFallback !== false;
+ 		this.bayesTracker = new BpmBayesTracker(
+ 			BPM_MIN,
+ 			BPM_MAX,
+@@ -1044,30 +1058,10 @@ export class RppgProcessor {
+ 	}
+ 
+ 	private computeAdvancedMetrics(base: Metrics): Partial<Metrics> {
+-		if (this.samples.length < 24) {
+-			return {
+-				calibrated_bpm: base.bpm ?? null,
+-				fused_bpm: base.bpm ?? null,
+-				fused_source: base.bpm == null ? "none" : "camera",
+-				bayes_bpm: null,
+-				bayes_confidence: 0,
+-				calibration_trained: this.cameraCalibration.isTrained(),
+-				baseline_bpm: this.baselineBpm,
+-			};
+-		}
++		if (this.samples.length < 24) return this.withoutAnalysis(base);
+ 
+ 		const analysis = analyzePulseWindow(this.samples);
+-		if (!analysis) {
+-			return {
+-				calibrated_bpm: base.bpm ?? null,
+-				fused_bpm: base.bpm ?? null,
+-				fused_source: base.bpm == null ? "none" : "camera",
+-				bayes_bpm: null,
+-				bayes_confidence: 0,
+-				calibration_trained: this.cameraCalibration.isTrained(),
+-				baseline_bpm: this.baselineBpm,
+-			};
+-		}
++		if (!analysis) return this.withoutAnalysis(base);
+ 
+ 		const spectral = analysis.spectral;
+ 		const acf = analysis.acf;
+@@ -1219,7 +1213,14 @@ export class RppgProcessor {
+ 		);
+ 
+ 		return {
+-			bpm: fused.bpm ?? cameraCandidate ?? base.bpm ?? null,
++			// With engineFallback (the default) a read the gate above refused still
++			// shows the engine's raw rate, which it has on almost any input. Without
++			// it the refusal holds; a fresh Muse rate (another sensor) still comes
++			// through `fused`. (`cameraCandidate` adds nothing here: when the gate
++			// passes, `fused.bpm` is it.)
++			bpm: this.engineFallback
++				? (fused.bpm ?? cameraCandidate ?? base.bpm ?? null)
++				: (fused.bpm ?? null),
+ 			confidence: lowConfidenceGate
+ 				? Math.min(Math.max(base.confidence || 0, resolvedConfidence || 0), 0.3)
+ 				: Math.max(base.confidence || 0, resolvedConfidence || 0),
+@@ -1251,6 +1252,27 @@ export class RppgProcessor {
+ 		};
+ 	}
+ 
++	/**
++	 * A read with too few samples for the processor's own analysis (under 24, or
++	 * no window). With engineFallback it shows the engine's raw rate, which the
++	 * engine gives from 10 samples on; without it, no rate, since nothing of the
++	 * processor's own has checked it (`calibrated_bpm` keeps the engine's value
++	 * either way).
++	 */
++	private withoutAnalysis(base: Metrics): Partial<Metrics> {
++		const shown = this.engineFallback ? (base.bpm ?? null) : null;
++		return {
++			...(this.engineFallback ? {} : { bpm: null }),
++			calibrated_bpm: base.bpm ?? null,
++			fused_bpm: shown,
++			fused_source: shown == null ? "none" : "camera",
++			bayes_bpm: null,
++			bayes_confidence: 0,
++			calibration_trained: this.cameraCalibration.isTrained(),
++			baseline_bpm: this.baselineBpm,
++		};
++	}
++
+ 	private updateBaseline(
+ 		bpm: number | null,
+ 		confidence: number,
+diff --git a/packages/rppg-web/src/rppgSession.ts b/packages/rppg-web/src/rppgSession.ts
+index 491836a..67f76cd 100644
+--- a/packages/rppg-web/src/rppgSession.ts
++++ b/packages/rppg-web/src/rppgSession.ts
+@@ -102,6 +102,13 @@ export type CreateRppgSessionOptions = Omit<
+ 	"onDiagnostics" | "onError"
+ > & {
+ 	video: HTMLVideoElement;
++	/**
++	 * What `getMetrics().bpm` shows when the processor's own checks refuse a
++	 * rate, and while it has too few samples to analyse: the engine's raw rate
++	 * (`true`, the default) or none (`false`). See `RppgProcessor`'s option of the
++	 * same name.
++	 */
++	engineFallback?: boolean;
+ 	bpmTrackerConfig?: BpmTrackerConfigV1;
+ 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+ 	experimental?: {
+@@ -396,6 +403,7 @@ export async function createRppgSession(
+ 		sampleRate,
+ 		windowSec,
+ 		{
++			engineFallback: options.engineFallback,
+ 			bpmTrackerConfig: options.bpmTrackerConfig,
+ 			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+ 		},

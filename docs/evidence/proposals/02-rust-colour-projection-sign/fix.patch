@@ -1,0 +1,332 @@
+From b527385384d3fac24e6b0fbb878cbd1000519392 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 13:06:59 +0000
+Subject: [PATCH] fix(rppg): subtract in the CHROM projection so brightness
+ cancels and the pulse survives
+
+Squashed from fix/rust-colour-projection-sign at 06f93f6 for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/rust-colour-projection-sign.md     |   5 +
+ crates/elata-rppg/src/pipeline.rs             | 207 +++++++++++++++++-
+ docs/implementation-plan-rppg.md              |  11 +-
+ docs/rppg-multi-roi-learned-reconstruction.md |   8 +-
+ 4 files changed, 222 insertions(+), 9 deletions(-)
+ create mode 100644 .changeset/rust-colour-projection-sign.md
+
+diff --git a/.changeset/rust-colour-projection-sign.md b/.changeset/rust-colour-projection-sign.md
+new file mode 100644
+index 0000000..c023a81
+--- /dev/null
++++ b/.changeset/rust-colour-projection-sign.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/rppg-web": patch
++---
++
++Fix the WASM core following a flickering light instead of the pulse when the multi-region fuser is not in use (`video_frame` mode, including the fallback when MediaPipe does not load, `multiRoiFusion: false`, the skin mask off, and direct `RppgProcessor.pushSampleRgb*` calls). Its CHROM colour step added its two axes where CHROM subtracts them, which kept brightness changes and cancelled the pulse. The core's rate and the `getMetrics()` fields that come from it (`snr`, `signal_quality`, `confidence`, and its share of `resolved_bpm` and `bpm`) now follow the pulse, and across the switch from camera colour to the fuser the core reads the pulse instead of the jump between the two. Readings made only from fused samples are unchanged.
+diff --git a/crates/elata-rppg/src/pipeline.rs b/crates/elata-rppg/src/pipeline.rs
+index 062a862..ecca531 100644
+--- a/crates/elata-rppg/src/pipeline.rs
++++ b/crates/elata-rppg/src/pipeline.rs
+@@ -150,6 +150,10 @@ impl RppgPipeline {
+         self.tracker = None;
+     }
+ 
++    /// Push one pre-extracted value, such as a fused pulse or a green-only intensity. It is
++    /// stored with R = G = B, and an analysis window made only of such samples is not
++    /// colour-separated (there is no colour difference to separate): it is projected as it was
++    /// before the CHROM sign fix, so readings from such samples did not change.
+     pub fn push_sample(&mut self, timestamp_ms: i64, intensity: f32) {
+         // Backwards-compatible: green-only intensity.
+         self.push_sample_rgb(timestamp_ms, intensity, intensity, intensity, 1.0);
+@@ -209,6 +213,8 @@ impl RppgPipeline {
+     }
+ 
+     /// Compute rPPG metrics over the current window.
++    /// - Projects RGB to a pulse signal with CHROM over 1.6 s windows (a window of
++    ///   [`push_sample`](Self::push_sample) values, R = G = B, keeps the pre-fix projection)
+     /// - Applies temporal normalization
+     /// - Runs bandpass filter
+     /// - Computes a simple periodogram over candidate HR band and returns peak BPM
+@@ -471,6 +477,8 @@ fn resample_rgb_into(
+     r_out.len() >= 10
+ }
+ 
++/// Colour projection with CHROM's axes (de Haan & Jeanne 2013): X = 3R - 2G and
++/// Y = 1.5R + G - 1.5B on window-normalised channels, combined as S = X - (sd X / sd Y) * Y.
+ #[allow(clippy::too_many_arguments)]
+ fn pos_from_rgb_windowed_into(
+     r: &[f32],
+@@ -522,8 +530,26 @@ fn pos_from_rgb_windowed_into(
+         let std_x = stddev(x_buf);
+         let std_y = stddev(y_buf);
+         let alpha = if std_y > 1e-6 { std_x / std_y } else { 0.0 };
++        // A window with no colour difference in it (every sample R = G = B, as push_sample sends
++        // one value, for example the multi-region fuser's pulse) has nothing for a colour
++        // projection to separate: X = Y there, so X - alpha * Y would cancel it. Such a window
++        // keeps the expression it had before the sign fix, X + alpha * Y: that is 2X up to
++        // rounding (the normalised value itself, scaled, as the GREEN method would use it), and
++        // keeping it rather than X leaves readings from these samples bit for bit unchanged.
++        // A window with any camera colour in it goes through CHROM whole, which also cancels the
++        // jump where camera RGB meets pre-extracted values: normalisation makes it equal on R, G
++        // and B, which is brightness. Decided per sample instead, that jump stays in the signal.
++        let pre_extracted = r_win
++            .iter()
++            .zip(g_win)
++            .zip(b_win)
++            .all(|((rv, gv), bv)| rv == gv && gv == bv);
+         for i in 0..win_len {
+-            out[start + i] += x_buf[i] + alpha * y_buf[i];
++            out[start + i] += if pre_extracted {
++                x_buf[i] + alpha * y_buf[i]
++            } else {
++                x_buf[i] - alpha * y_buf[i]
++            };
+             w_buf[start + i] += 1.0;
+         }
+         start += step;
+@@ -577,6 +603,185 @@ mod tests {
+     use super::*;
+     use std::f32::consts::PI;
+ 
++    /// RMS of the colour projection for 10 s of input at 30 Hz.
++    fn projection_rms(rgb: impl Fn(f32) -> (f32, f32, f32)) -> f32 {
++        let n = 300;
++        let (mut r, mut g, mut b) = (vec![], vec![], vec![]);
++        for i in 0..n {
++            let (ri, gi, bi) = rgb(i as f32 / 30.0);
++            r.push(ri);
++            g.push(gi);
++            b.push(bi);
++        }
++        let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
++        assert!(pos_from_rgb_windowed_into(
++            &r, &g, &b, &mut out, &mut x, &mut y, &mut w, 30.0, 1.6
++        ));
++        (out.iter().map(|v| v * v).sum::<f32>() / n as f32).sqrt()
++    }
++
++    /// CHROM (de Haan & Jeanne 2013) is S = X - (sd X / sd Y) * Y. A lamp scales R, G and B alike,
++    /// so after normalisation it moves X and Y by the same amount and the subtraction cancels it
++    /// (adding doubled it). A blood-volume pulse moves X and Y in opposite directions, so the
++    /// subtraction keeps it (adding cancelled it).
++    #[test]
++    fn projection_cancels_brightness_and_keeps_pulse_colour() {
++        let lamp = projection_rms(|t| {
++            let k = 1.0 + 0.01 * (2.0 * PI * 1.2 * t).sin();
++            (150.0 * k, 120.0 * k, 100.0 * k)
++        });
++        let pulse = projection_rms(|t| {
++            let p = (2.0 * PI * 1.2 * t).sin();
++            (
++                150.0 * (1.0 - 0.001 * p),
++                120.0 * (1.0 - 0.003 * p),
++                100.0 * (1.0 - 0.0018 * p),
++            )
++        });
++        assert!(
++            lamp < 0.1 * pulse,
++            "lamp {lamp} should cancel, pulse {pulse}"
++        );
++    }
++
++    /// A window of push_sample values (R = G = B) is projected exactly as before the sign fix,
++    /// X + (sd X / sd Y) * Y, so readings made only from such samples (the default fused path)
++    /// stay bit for bit what they were. X = Y there only up to rounding, so X alone, although
++    /// equal to half of it in exact arithmetic, moved near-tied readings downstream.
++    #[test]
++    fn pre_extracted_window_is_projected_as_before() {
++        let fs = 30.0_f32;
++        let n = (1.6 * fs).round() as usize; // exactly one analysis window
++        let v: Vec<f32> = (0..n)
++            .map(|i| 100.0 + (2.0 * PI * 1.5 * i as f32 / fs).sin())
++            .collect();
++        let (mut out, mut x, mut y, mut w) = (vec![], vec![], vec![], vec![]);
++        assert!(pos_from_rgb_windowed_into(
++            &v, &v, &v, &mut out, &mut x, &mut y, &mut w, fs, 1.6
++        ));
++        assert_eq!((out.len(), x.len()), (n, n));
++        let alpha = stddev(&x) / stddev(&y);
++        for i in 0..n {
++            let before = x[i] + alpha * y[i];
++            assert_eq!(
++                out[i].to_bits(),
++                before.to_bits(),
++                "sample {i}: {} against {before}",
++                out[i]
++            );
++        }
++    }
++
++    /// The fused path (push_sample, R = G = B) must read a pulse at its rate as before, alone and
++    /// after a stretch of camera RGB inside the analysed window (DemoRunner sends camera RGB on
++    /// frames the fuser cannot use, for example before it has face regions): the window covers
++    /// the last 10 of 14 s, so RGB until 7 s puts 3 s of it in.
++    #[test]
++    fn fused_samples_keep_their_rate() {
++        let fs = 30.0_f32;
++        // 72, 90, 110 and 140 are rates the fused path, including its per-window normalisation,
++        // reads within 5 bpm, before this change and after it. Not every rate between them does,
++        // on either (74 reads 48.6, 114 reads 106.8). With RGB in the window, 140 reads as none
++        // before this change too, so that case is left out rather than pinned.
++        let cases: [(f32, &[f32]); 4] = [
++            (72.0, &[0.0, 7.0]),
++            (90.0, &[0.0, 7.0]),
++            (110.0, &[0.0, 7.0]),
++            (140.0, &[0.0]),
++        ];
++        for &(bpm, firsts) in &cases {
++            for &rgb_first_s in firsts {
++                let mut p = RppgPipeline::new(fs, 10.0);
++                for i in 0..(14.0 * fs) as usize {
++                    let t = i as f32 / fs;
++                    let v = (2.0 * PI * bpm / 60.0 * t).sin();
++                    let ts = (t * 1000.0) as i64;
++                    if t < rgb_first_s {
++                        p.push_sample_rgb(
++                            ts,
++                            150.0 * (1.0 - 0.001 * v),
++                            120.0 * (1.0 - 0.003 * v),
++                            100.0 * (1.0 - 0.0018 * v),
++                            1.0,
++                        );
++                    } else {
++                        p.push_sample(ts, v);
++                    }
++                }
++                let got = p.get_metrics().bpm;
++                assert!(
++                    got.is_some_and(|b| (b - bpm).abs() <= 5.0),
++                    "true {bpm} (RGB first {rgb_first_s} s) read {got:?}"
++                );
++            }
++        }
++    }
++
++    /// Known answer through the public API: a 90 bpm pulse under a lamp flickering by 1% at 60 or
++    /// 120 a minute. The projection must follow the pulse, not the lamp. Pulse colour from the
++    /// blood-volume-pulse signature, roughly 0.33 : 0.77 : 0.53 in R : G : B (de Haan & van Leest
++    /// 2014), at 0.4% in green.
++    #[test]
++    fn rgb_input_reads_the_pulse_not_the_lamp() {
++        let fs = 30.0_f32;
++        for &lamp_bpm in &[60.0_f32, 120.0] {
++            let mut p = RppgPipeline::new(fs, 10.0);
++            for i in 0..(12.0 * fs) as usize {
++                let t = i as f32 / fs;
++                let pulse = (2.0 * PI * 1.5 * t).sin();
++                let lamp = 1.0 + 0.01 * (2.0 * PI * lamp_bpm / 60.0 * t + 0.7).sin();
++                let a = 0.004 / 0.77;
++                p.push_sample_rgb(
++                    (t * 1000.0) as i64,
++                    150.0 * lamp * (1.0 - 0.33 * a * pulse),
++                    120.0 * lamp * (1.0 - 0.77 * a * pulse),
++                    100.0 * lamp * (1.0 - 0.53 * a * pulse),
++                    1.0,
++                );
++            }
++            let got = p.get_metrics().bpm;
++            assert!(
++                got.is_some_and(|b| (b - 90.0).abs() <= 3.0),
++                "lamp {lamp_bpm}: read {got:?}, true pulse 90"
++            );
++        }
++    }
++
++    /// A window that holds camera RGB and then the first fused samples (the moment DemoRunner
++    /// switches to the fuser) must still read the pulse. Per-window normalisation turns the jump
++    /// from camera-scale values to the fuser's zero-mean values into an equal drop on R, G and B,
++    /// which is brightness, so CHROM cancels it when the whole mixed window goes through CHROM.
++    #[test]
++    fn switch_from_camera_rgb_to_fused_reads_the_pulse() {
++        let fs = 30.0_f32;
++        for &bpm in &[66.0_f32, 90.0, 120.0] {
++            let mut p = RppgPipeline::new(fs, 10.0);
++            // 14 s with a 10 s window: camera RGB for the first 9 s of the window, fused for 1 s.
++            for i in 0..(14.0 * fs) as usize {
++                let t = i as f32 / fs;
++                let v = (2.0 * PI * bpm / 60.0 * t).sin();
++                let ts = (t * 1000.0) as i64;
++                if t < 13.0 {
++                    let a = 0.004 / 0.77;
++                    p.push_sample_rgb(
++                        ts,
++                        150.0 * (1.0 - 0.33 * a * v),
++                        120.0 * (1.0 - 0.77 * a * v),
++                        100.0 * (1.0 - 0.53 * a * v),
++                        1.0,
++                    );
++                } else {
++                    p.push_sample(ts, v);
++                }
++            }
++            let got = p.get_metrics().bpm;
++            assert!(
++                got.is_some_and(|b| (b - bpm).abs() <= 3.0),
++                "true {bpm}: read {got:?} across the switch to fused samples"
++            );
++        }
++    }
++
+     #[test]
+     fn mean_over_window() {
+         let mut p = RppgPipeline::new(30.0, 2.0);
+diff --git a/docs/implementation-plan-rppg.md b/docs/implementation-plan-rppg.md
+index 0d96740..c3c852f 100644
+--- a/docs/implementation-plan-rppg.md
++++ b/docs/implementation-plan-rppg.md
+@@ -20,10 +20,11 @@ consumer-facing session APIs). Optional JS fallbacks can exist for web-only use.
+ - [x] Identify target output metrics: `bpm`, `confidence`, `signal_quality`,
+   agreement/debug evidence, and quality reason codes.
+ - [~] Select baseline algorithms to port.
+-  - Implemented: POS-style RGB pipeline, temporal normalization, Welch/SNR,
+-    harmonic checks, autocorrelation/peaks/Bayesian helpers in the TS layer.
+-  - Planned: CHROM and GREEN/GRGB as first-class Rust-side candidate views for
+-    multi-ROI fusion.
++  - Implemented: RGB pipeline with CHROM's projection, temporal normalization,
++    Welch/SNR, harmonic checks, autocorrelation/peaks/Bayesian helpers in the TS
++    layer.
++  - Planned: POS, CHROM and GREEN/GRGB as first-class Rust-side candidate views
++    for multi-ROI fusion.
+ - [ ] Capture or curate small internal test clips for regression.
+ 
+ ## Phase 1: Rust DSP core
+@@ -121,7 +122,7 @@ https://doi.org/10.1038/s43856-024-00519-6.
+   - Compute heavier spectral quality/SNR on a cadence, e.g. once per second,
+     not every frame.
+ - [ ] Add classical candidate signals per region or region group.
+-  - POS first, matching the current Rust pipeline.
++  - POS first. (The current Rust pipeline's projection is CHROM's, not POS.)
+   - Add CHROM and GREEN/GRGB baselines as cheap additional views.
+   - Consider LGI/ICA only after the POS+CHROM ensemble is measured.
+ - [ ] Add deterministic fusion before BPM estimation.
+diff --git a/docs/rppg-multi-roi-learned-reconstruction.md b/docs/rppg-multi-roi-learned-reconstruction.md
+index 23ea8fc..7b50065 100644
+--- a/docs/rppg-multi-roi-learned-reconstruction.md
++++ b/docs/rppg-multi-roi-learned-reconstruction.md
+@@ -80,7 +80,7 @@ browser video
+   -> average RGB/green from ROI(s)
+   -> RppgProcessor
+   -> WASM RppgPipeline
+-  -> POS-style Rust pipeline
++  -> Rust colour projection (CHROM axes and sign)
+   -> temporal normalization, bandpass, Welch/SNR, harmonic selection
+   -> metrics
+ ```
+@@ -300,12 +300,14 @@ Start with cheap classical views:
+ 
+ **POS**
+ 
+-- Current Rust pipeline already uses a POS-style RGB projection.
++- Add as a second RGB projection method. The current Rust pipeline's projection
++  uses CHROM's axes and sign, not POS (see CHROM).
+ - First-class baseline for the multi-ROI path.
+ 
+ **CHROM**
+ 
+-- Add as a second RGB projection method.
++- Current Rust pipeline already uses CHROM's axes and X - alpha * Y over 1.6 s
++  windows, without CHROM's band-pass before alpha.
+ - Often strong under skin-tone and illumination changes.
+ - Cheap enough for Rust/WASM.
+ 

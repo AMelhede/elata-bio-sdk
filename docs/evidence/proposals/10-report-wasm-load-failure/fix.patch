@@ -1,0 +1,616 @@
+From 962299daf25fbe74f0a495aa1d757822bb0fbf70 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 16:39:03 +0000
+Subject: [PATCH] fix(rppg-web): keep why the WASM backend failed to load in
+ backend auto
+
+Squashed from fix/report-wasm-load-failure at 82ff7e0 for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/keep-wasm-load-error.md            |   5 +
+ docs/guides/troubleshooting.md                |   5 +
+ docs/guides/using-rppg-in-a-browser-app.md    |   2 +-
+ packages/rppg-web/README.md                   |  25 ++-
+ packages/rppg-web/llms.txt                    |   2 +-
+ .../createRppgSession.wasmLoadFailure.test.ts | 202 ++++++++++++++++++
+ .../src/__tests__/wasmBackend.test.ts         |  33 +++
+ packages/rppg-web/src/rppgErrors.ts           |  13 +-
+ packages/rppg-web/src/rppgProcessor.ts        |   2 +-
+ packages/rppg-web/src/rppgSession.ts          |  71 +++++-
+ packages/rppg-web/src/wasmBackend.ts          |  20 +-
+ 11 files changed, 355 insertions(+), 25 deletions(-)
+ create mode 100644 .changeset/keep-wasm-load-error.md
+ create mode 100644 packages/rppg-web/src/__tests__/createRppgSession.wasmLoadFailure.test.ts
+
+diff --git a/.changeset/keep-wasm-load-error.md b/.changeset/keep-wasm-load-error.md
+new file mode 100644
+index 0000000..21f26d7
+--- /dev/null
++++ b/.changeset/keep-wasm-load-error.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/rppg-web": patch
++---
++
++`createRppgSession({ backend: "auto" })` now keeps the reason when the WASM backend fails to load. The new `getDiagnostics().backendLoadError` (code `backend_init_failed`, stage `backend`) lists each URL the loader tried and the error it failed with, and `normalizeRppgError()` and the app adapter add it to the `backend_unavailable` error's `detail`. Its `cause` is the loader's error, which now also has `errors`: what each attempted URL failed with, in order (`lastError` still holds only the last). Nothing else changes: the session still falls back to `backendMode: "unavailable"`, `state` still reads `degraded` / `startup` / `backend_unavailable`, `onError` is not called and `lastError` stays `null`. `backend: "wasm"` still throws the same error with the same message.
+diff --git a/docs/guides/troubleshooting.md b/docs/guides/troubleshooting.md
+index 78eb8fe..1a04b94 100644
+--- a/docs/guides/troubleshooting.md
++++ b/docs/guides/troubleshooting.md
+@@ -24,6 +24,11 @@ Check the following:
+ Make sure your app is serving the packaged `pkg/rppg_wasm.js` and `.wasm`
+ assets from a path the browser can reach.
+ 
++To see why, pass `{ strict: true }`: the loader then throws an error whose
++`attemptedUrls` and `errors` say which URLs it tried and what each one failed
++with. A session created with `createRppgSession({ backend: "auto" })` keeps the
++same information in `session.getDiagnostics().backendLoadError`.
++
+ If you are unsure, compare your app with the scaffolded `rppg-demo` app.
+ 
+ ## My app shows its own 404 page when played on app.elata.bio
+diff --git a/docs/guides/using-rppg-in-a-browser-app.md b/docs/guides/using-rppg-in-a-browser-app.md
+index 16b6982..bad7427 100644
+--- a/docs/guides/using-rppg-in-a-browser-app.md
++++ b/docs/guides/using-rppg-in-a-browser-app.md
+@@ -248,7 +248,7 @@ Prefer the scaffolded `rppg-demo` template when you want:
+ 
+ ## Common Gotchas
+ 
+-- If `session.backendMode` is `unavailable`, your app is probably not serving the packaged `pkg/` assets correctly.
++- If `session.backendMode` is `unavailable`, your app is probably not serving the packaged `pkg/` assets correctly. `session.getDiagnostics().backendLoadError` says which URLs the loader tried and why each one failed.
+ - If `session.state.status` is `failed`, treat that processor backend as terminal and recreate the session instead of continuing to poll metrics from it.
+ - If you see "backend pipeline has no push_sample API", you likely bypassed the safe wrapper path. Start with `createRppgSession()` for browser apps, or use `RppgProcessor` for low-level ingestion.
+ - If you hit `wasmrppgpipeline_new`, verify your app is loading `rppg-web` WASM assets and avoid calling generated constructors directly.
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 9a34403..3194d6e 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -80,8 +80,9 @@ or use the import-based options below to let Vite manage the asset URLs instead.
+ 
+ Vite 7 blocks `import(url)` for files served from `/public`, which is where
+ most projects place the `pkg/` WASM assets. **If you skip this step, the
+-session will start, `backendMode` will be `"unavailable"`, and BPM will always
+-be null — no error is thrown.** Two approaches to fix it:
++session still starts with `backendMode` set to `"unavailable"`, no error is
++thrown and `onError` is not called. `getDiagnostics().backendLoadError` lists
++each URL that was tried and the error it failed with.** Two approaches to fix it:
+ 
+ **Option A — vite-plugin-wasm (recommended)**
+ 
+@@ -164,10 +165,14 @@ const interval = setInterval(() => {
+ 
+ Expect a ~10 second warmup before the first BPM estimate.
+ 
+-> **If BPM is always null:** check `session.backendMode` before assuming bad
+-> signal. If it is `"unavailable"`, the WASM assets did not load — the session
+-> runs gracefully but metrics will always be null. This looks identical to the
+-> warmup period. See the [Vite Config](#vite-config) section above.
++> **Check `session.backendMode` before trusting BPM.** If it is
++> `"unavailable"`, the WASM assets did not load. The session keeps running
++> without the WASM estimator: `estimationAvailable` is `false` and
++> `createRppgAppAdapter()` keeps `canPublish` false, but `getMetrics()` can
++> still return a BPM from the package's JavaScript estimators, so a number
++> alone does not show that the WASM loaded. `getDiagnostics().backendLoadError`
++> lists each URL that was tried and why it failed. See the
++> [Vite Config](#vite-config) section above.
+ 
+ If you need a single boolean for UI gating (e.g. "show the BPM display"),
+ use `createRppgAppAdapter().canPublish` instead of polling `getMetrics()`
+@@ -199,7 +204,10 @@ console.log(session.getMetrics());
+ capture loop, ROI handling, diagnostics emission, and cleanup. If WASM is not
+ available and you use `backend: "auto"`, the session falls back to an
+ `unavailable` backend mode and reports that state through diagnostics instead of
+-failing silently.
++failing silently. The reason (each URL tried and the error it failed with) is in
++`diagnostics.backendLoadError`, and `normalizeRppgError()` adds it to the
++`backend_unavailable` detail. It is not passed to `onError` and does not set
++`lastError`.
+ 
+ ## Which API To Use
+ 
+@@ -310,6 +318,7 @@ Every session diagnostics payload includes:
+ - `totalSamplesReceived`, `windowSampleCount`, and `lastSampleAgeMs`
+ - processor issue codes such as `no_samples_yet`, `insufficient_window`, and `low_skin_ratio`
+ - session-level issues such as `backend_unavailable`
++- `backendLoadError` when `backend: "auto"` fell back because the WASM did not load: each URL tried and the error it failed with (`null` otherwise)
+ - `state` with `running`, `degraded`, or terminal `failed` status
+ - `processorFailure` when a fatal backend exception poisons the WASM pipeline
+ - `lastError` when capture, FaceMesh, or processor work fails
+@@ -679,7 +688,7 @@ page can also run `replayBayesSession()` on it and render the result.
+ 
+ ## Troubleshooting
+ 
+-- If `session.backendMode` is `unavailable`, make sure your app is serving the packaged `pkg/rppg_wasm.js` and `.wasm` assets.
++- If `session.backendMode` is `unavailable`, make sure your app is serving the packaged `pkg/rppg_wasm.js` and `.wasm` assets. `session.getDiagnostics().backendLoadError` says which URLs the loader tried and why each one failed.
+ - If you see "backend pipeline has no push_sample API", make sure you are using `createRppgSession()` or a backend created through the normalized wrappers rather than constructing generated bindings directly.
+ - If you hit `wasmrppgpipeline_new`, make sure the underlying WASM module was initialized before creating low-level pipelines and prefer the package helpers over raw generated constructors.
+ - If you see deprecated init warnings, route startup through `initEegWasm()` instead of calling generated init exports with raw strings, URLs, or buffers.
+diff --git a/packages/rppg-web/llms.txt b/packages/rppg-web/llms.txt
+index 3810752..b9db0c9 100644
+--- a/packages/rppg-web/llms.txt
++++ b/packages/rppg-web/llms.txt
+@@ -8,7 +8,7 @@ Browser **rPPG** (camera photoplethysmography): WASM backend, optional MediaPipe
+ - Published tarball includes **`dist/`** and **`pkg/`** (WASM). Local **`file:`** installs copy disk at install time — run `build:wasm` in the repo **before** installing if `pkg/` is missing.
+ 
+ ## Critical: WASM loading (especially Vite)
+-Default loader fetches **`/pkg/rppg_wasm.js`** and **`.wasm`**. If the backend never loads, **`backendMode` is `"unavailable"`**, **`metrics.bpm` stays null**, and **no error may be thrown** — same symptom as warmup.
++Default loader fetches **`/pkg/rppg_wasm.js`** and **`.wasm`**. If the backend never loads, **`backendMode` is `"unavailable"`**, **no error is thrown** and `onError` is not called; **`getDiagnostics().backendLoadError`** lists each URL tried and the error it failed with. `metrics.bpm` can still be non-null (JavaScript estimators), so check `backendMode` or the app adapter's `canPublish`, not the number.
+ 
+ Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**, or use **`wasmImporter`** with a static import of `pkg/rppg_wasm.js`, or **`wasmJsUrl` / `wasmBinaryUrl`** with Vite **`?url`** imports. Vite 7 may block dynamic imports from `/public` — do not assume copying to `public/` is enough without the README patterns.
+ 
+diff --git a/packages/rppg-web/src/__tests__/createRppgSession.wasmLoadFailure.test.ts b/packages/rppg-web/src/__tests__/createRppgSession.wasmLoadFailure.test.ts
+new file mode 100644
+index 0000000..8924435
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/createRppgSession.wasmLoadFailure.test.ts
+@@ -0,0 +1,202 @@
++// No mock of ../wasmBackend here: these tests run the real loader against a
++// wasmImporter that fails the way a browser does when the glue file is not
++// served (404, an SPA index.html, a wrong MIME type).
++jest.mock("../videoPlayback", () => ({
++	ensureVideoPlaying: jest.fn(async () => undefined),
++}));
++
++jest.mock("../mediaPipeFrameSource", () => ({
++	MediaPipeFrameSource: jest.fn().mockImplementation(function MediaPipeFrameSource(this: any) {
++		this.onFrame = null;
++		this.start = jest.fn(async () => {});
++		this.stop = jest.fn(async () => {});
++	}),
++}));
++
++jest.mock("../demoRunner", () => ({
++	DemoRunner: jest.fn().mockImplementation(function DemoRunner(this: any) {
++		this.start = jest.fn(async () => {});
++		this.stop = jest.fn(async () => {});
++		this.getLastFaceBox = jest.fn(() => null);
++		this.getLastBlendshapes = jest.fn(() => null);
++		this.getDiagnostics = jest.fn(() => ({
++			framesSeen: 0,
++			framesWithFaceRoi: 0,
++			framesWithFallbackRoi: 0,
++			framesWithMultiRoi: 0,
++			samplesPushed: 0,
++			droppedFrames: 0,
++			lastDropReason: null,
++			lastTimestampMs: null,
++			lastIntensity: null,
++			lastSkinRatio: null,
++			lastClipRatio: null,
++			lastMotion: null,
++			lastProcessorMethod: null,
++			lastRoiSource: null,
++		}));
++	}),
++}));
++
++import { createRppgSession } from "../rppgSession";
++import { createManagedRppgSession } from "../managedRppgSession";
++import { normalizeRppgError } from "../rppgErrors";
++import { createRppgAppAdapter } from "../rppgAppAdapter";
++import type { WasmModule } from "../wasmBackend";
++
++const DEFAULT_URLS = ["/pkg/rppg_wasm.js", "/rppg_wasm.js"];
++
++function failingImporter() {
++	return jest.fn((url: string): Promise<WasmModule> =>
++		Promise.reject(new TypeError(`Failed to fetch dynamically imported module: ${url}`)),
++	);
++}
++
++function fakeWasmModule(): WasmModule {
++	return {
++		RppgPipeline: class {
++			push_sample() {}
++			get_metrics() {
++				return { bpm: null, confidence: 0, signal_quality: 0 };
++			}
++			free() {}
++		},
++	};
++}
++
++function autoOptions(wasmImporter: (url: string) => Promise<WasmModule>) {
++	return {
++		video: document.createElement("video"),
++		faceMesh: "off" as const,
++		backend: "auto" as const,
++		ensureVideoPlayback: false,
++		wasmImporter,
++	};
++}
++
++describe("createRppgSession, backend auto, WASM glue that does not load", () => {
++	test("keeps the reason: every URL the loader tried and why each one failed", async () => {
++		const importer = failingImporter();
++		const session = await createRppgSession(autoOptions(importer));
++
++		expect(session.backendMode).toBe("unavailable");
++		// Same requests as before: one attempt per default URL, nothing extra.
++		expect(importer.mock.calls.map(([url]) => url)).toEqual(DEFAULT_URLS);
++
++		const loadError = session.getDiagnostics().backendLoadError;
++		expect(loadError).toMatchObject({ code: "backend_init_failed", stage: "backend" });
++		expect(loadError?.message).toContain("Tried: /pkg/rppg_wasm.js, /rppg_wasm.js");
++		for (const url of DEFAULT_URLS) {
++			expect(loadError?.message).toContain(
++				`${url}: TypeError: Failed to fetch dynamically imported module: ${url}`,
++			);
++		}
++		// The cause is what the loader threw: the same error backend "wasm" throws.
++		expect(loadError?.cause).toMatchObject({
++			name: "RppgWasmLoadError",
++			attemptedUrls: DEFAULT_URLS,
++		});
++		await session.dispose();
++	});
++
++	test("when the glue loads but its .wasm does not, the reason names that failure, not the next URL's", async () => {
++		// The glue is served at /pkg/ but its .wasm is not (an SPA answers with
++		// index.html), so init fails there and the loader moves on to
++		// /rppg_wasm.js, which is not served either.
++		const initFailure = new Error(
++			"WebAssembly.instantiate(): expected magic word 00 61 73 6d, found 3c 21 44 4f @+0",
++		);
++		const importer = jest.fn((url: string): Promise<WasmModule> =>
++			url === "/pkg/rppg_wasm.js"
++				? Promise.resolve({ default: () => Promise.reject(initFailure) })
++				: Promise.reject(new TypeError(`Failed to fetch dynamically imported module: ${url}`)),
++		);
++		const session = await createRppgSession(autoOptions(importer));
++
++		const expected = `/pkg/rppg_wasm.js: ${String(initFailure)}`;
++		expect(session.getDiagnostics().backendLoadError?.message).toContain(expected);
++		expect(normalizeRppgError(session.lastError, session.getDiagnostics())?.detail).toContain(
++			expected,
++		);
++		await session.dispose();
++	});
++
++	test("normalizeRppgError and the app adapter carry that reason in detail, under the same backend_unavailable code", async () => {
++		const session = await createRppgSession(autoOptions(failingImporter()));
++
++		const normalized = normalizeRppgError(session.lastError, session.getDiagnostics());
++		expect(normalized).toMatchObject({
++			code: "backend_unavailable",
++			phase: "startup",
++			retryable: false,
++			terminal: false,
++		});
++		expect(normalized?.detail).toContain("Tried: /pkg/rppg_wasm.js, /rppg_wasm.js");
++		for (const url of DEFAULT_URLS) {
++			expect(normalized?.detail).toContain(
++				`${url}: TypeError: Failed to fetch dynamically imported module: ${url}`,
++			);
++		}
++		// Said once, not repeated from the cause.
++		expect(normalized?.detail.split("Unable to load rPPG WASM backend")).toHaveLength(2);
++
++		const snapshot = createRppgAppAdapter().getSnapshot(session);
++		expect(snapshot.status).toBe("degraded");
++		expect(snapshot.canPublish).toBe(false);
++		expect(snapshot.guidance.code).toBe("backend_unavailable");
++		expect(snapshot.normalizedError?.detail).toContain("Tried: /pkg/rppg_wasm.js, /rppg_wasm.js");
++		await session.dispose();
++	});
++
++	test("changes nothing the session already reported: no onError, no lastError, same state", async () => {
++		const onError = jest.fn();
++		const session = await createRppgSession({ ...autoOptions(failingImporter()), onError });
++
++		expect(onError).not.toHaveBeenCalled();
++		expect(session.lastError).toBeNull();
++		expect(session.getState()).toEqual({
++			status: "degraded",
++			phase: "startup",
++			terminal: false,
++			reason: "backend_unavailable",
++			errorCode: null,
++			errorStage: null,
++		});
++		expect(session.getDiagnostics().issues).toContain("backend_unavailable");
++		await session.dispose();
++	});
++
++	test("a managed session still goes starting then running, and its diagnostics keep the reason", async () => {
++		const states: string[] = [];
++		const managed = await createManagedRppgSession({
++			...autoOptions(failingImporter()),
++			onStateChange: (state) => states.push(`${state.status}/${state.lastError?.code ?? "none"}`),
++		});
++
++		expect(states).toEqual(["starting/none", "running/none"]);
++		expect(managed.getDiagnostics()?.backendLoadError?.message).toContain(
++			"Tried: /pkg/rppg_wasm.js, /rppg_wasm.js",
++		);
++		await managed.stop();
++	});
++
++	test("a load that succeeds on a later URL reports nothing", async () => {
++		const importer = jest.fn((url: string): Promise<WasmModule> =>
++			url === "/pkg/rppg_wasm.js"
++				? Promise.reject(new TypeError(`Failed to fetch dynamically imported module: ${url}`))
++				: Promise.resolve(fakeWasmModule()),
++		);
++		const session = await createRppgSession(autoOptions(importer));
++
++		expect(session.backendMode).toBe("wasm");
++		expect(session.getDiagnostics().backendLoadError).toBeNull();
++		expect(normalizeRppgError(session.lastError, session.getDiagnostics())).toBeNull();
++		await session.dispose();
++	});
++
++	test("backend wasm still throws the loader's error instead of falling back", async () => {
++		await expect(
++			createRppgSession({ ...autoOptions(failingImporter()), backend: "wasm" }),
++		).rejects.toMatchObject({ name: "RppgWasmLoadError", attemptedUrls: DEFAULT_URLS });
++	});
++});
+diff --git a/packages/rppg-web/src/__tests__/wasmBackend.test.ts b/packages/rppg-web/src/__tests__/wasmBackend.test.ts
+index 085ceab..bd534e2 100644
+--- a/packages/rppg-web/src/__tests__/wasmBackend.test.ts
++++ b/packages/rppg-web/src/__tests__/wasmBackend.test.ts
+@@ -36,6 +36,39 @@ test('loadWasmBackend throws a structured error in strict mode', async () => {
+   });
+ });
+ 
++test('loadWasmBackend in strict mode keeps why each URL failed, in the order tried', async () => {
++  // The glue at /pkg/ imports but its .wasm does not instantiate; /rppg_wasm.js is not served.
++  const initError = new Error('WebAssembly.instantiate(): expected magic word 00 61 73 6d');
++  const importError = new TypeError('Failed to fetch dynamically imported module: /rppg_wasm.js');
++  const error = await loadWasmBackend(async (url) => {
++    if (url === '/pkg/rppg_wasm.js') {
++      return { default: async () => { throw initError; } };
++    }
++    throw importError;
++  }, { strict: true }).catch((e) => e);
++
++  expect(error).toMatchObject({
++    name: 'RppgWasmLoadError',
++    attemptedUrls: ['/pkg/rppg_wasm.js', '/rppg_wasm.js'],
++    lastError: importError,
++  });
++  expect(error.errors).toEqual([initError, importError]);
++});
++
++test('loadWasmBackend in strict mode records a module that loads but exposes no pipeline', async () => {
++  const importError = new TypeError('Failed to fetch dynamically imported module: /rppg_wasm.js');
++  const error = await loadWasmBackend(async (url) => {
++    if (url === '/pkg/rppg_wasm.js') return {};
++    throw importError;
++  }, { strict: true }).catch((e) => e);
++
++  expect(error.errors).toHaveLength(2);
++  expect(String(error.errors[0])).toContain('/pkg/rppg_wasm.js loaded but exports no rPPG pipeline');
++  expect(error.errors[1]).toBe(importError);
++  // lastError keeps its meaning: the last error an attempt threw.
++  expect(error.lastError).toBe(importError);
++});
++
+ test('loadWasmBackend honors explicit jsUrl and binaryUrl options', async () => {
+   const initSpy = jest.fn(async (_binaryUrl?: string) => undefined);
+   const importer = jest.fn(async (url: string) => {
+diff --git a/packages/rppg-web/src/rppgErrors.ts b/packages/rppg-web/src/rppgErrors.ts
+index 8e62417..8128a40 100644
+--- a/packages/rppg-web/src/rppgErrors.ts
++++ b/packages/rppg-web/src/rppgErrors.ts
+@@ -26,7 +26,10 @@ export type RppgNormalizedError = {
+ };
+ 
+ type DiagnosticsLike = Partial<
+-	Pick<RppgSessionDiagnostics, "backendMode" | "state" | "lastError">
++	Pick<
++		RppgSessionDiagnostics,
++		"backendMode" | "state" | "lastError" | "backendLoadError"
++	>
+ >;
+ 
+ export function normalizeRppgError(
+@@ -39,12 +42,16 @@ export function normalizeRppgError(
+ 	if (!sessionError && !backendUnavailable) return null;
+ 
+ 	if (backendUnavailable) {
++		const loadError = coerceSessionError(diagnostics?.backendLoadError);
++		const detail =
++			"Packaged WASM assets were unavailable, so the session cannot provide full estimation.";
+ 		return {
+ 			code: "backend_unavailable",
+ 			phase: phaseFromDiagnostics(diagnostics?.state?.phase),
+ 			message: "rPPG is running without the WASM processor backend.",
+-			detail:
+-				"Packaged WASM assets were unavailable, so the session cannot provide full estimation.",
++			// The message already names each URL and its error; the cause is the
++			// loader's error, whose message would only repeat the first sentence.
++			detail: loadError ? `${detail} ${loadError.message}` : detail,
+ 			guidance:
+ 				"Serve the packaged WASM assets or pass wasmJsUrl, wasmBinaryUrl, or wasmImporter explicitly.",
+ 			retryable: false,
+diff --git a/packages/rppg-web/src/rppgProcessor.ts b/packages/rppg-web/src/rppgProcessor.ts
+index 74b3146..23421e4 100644
+--- a/packages/rppg-web/src/rppgProcessor.ts
++++ b/packages/rppg-web/src/rppgProcessor.ts
+@@ -72,7 +72,7 @@ export type BpmResolutionResult = {
+ };
+ 
+ export type Metrics = {
+-	/** Recommended display field. Final fused/calibrated BPM estimate. Null during warmup (~10s) or when backend is unavailable. */
++	/** Recommended display field. Final fused/calibrated BPM estimate. Null during warmup (~10s). An unavailable WASM backend does not make it null: the JavaScript estimators still produce one. To tell whether the WASM backend is running, check the session's `backendMode` or the app adapter's `canPublish`, not this value. */
+ 	bpm?: number | null;
+ 	/** 0–1 confidence score. Gate your UI on this — only show BPM when above your threshold (e.g. 0.5). */
+ 	confidence: number;
+diff --git a/packages/rppg-web/src/rppgSession.ts b/packages/rppg-web/src/rppgSession.ts
+index 491836a..3b8911e 100644
+--- a/packages/rppg-web/src/rppgSession.ts
++++ b/packages/rppg-web/src/rppgSession.ts
+@@ -18,6 +18,7 @@ import {
+ import {
+ 	loadWasmBackend,
+ 	createUnavailableBackend,
++	RppgWasmLoadError,
+ 	type Backend,
+ 	type WasmImporter,
+ } from "./wasmBackend";
+@@ -94,6 +95,15 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
+ 	processorFailure: RppgProcessorBackendFailure | null;
+ 	state: RppgSessionState;
+ 	lastError: RppgSessionError | null;
++	/**
++	 * Why the WASM backend did not load when `backend: "auto"` fell back to
++	 * `backendMode: "unavailable"`: `message` lists each URL the loader tried
++	 * and the error it failed with, and `cause` is the loader's error (with
++	 * `attemptedUrls` and `errors`). `null` when the backend loaded.
++	 * Diagnostic only: it is not `lastError`, does not call `onError`, and does
++	 * not change `state`.
++	 */
++	backendLoadError?: RppgSessionError | null;
+ 	modelDiagnostics?: RppgModelDiagnosticsV1 | null;
+ };
+ 
+@@ -174,6 +184,7 @@ type SessionInternals = {
+ 	onDiagnostics?: (diagnostics: RppgSessionDiagnostics) => void;
+ 	onError?: (error: RppgSessionError) => void;
+ 	backendDegraded?: boolean;
++	backendLoadError?: RppgSessionError | null;
+ 	faceTrackingDegraded?: boolean;
+ 	beforeStart?: () => Promise<void>;
+ 	waveformController?: WaveformReconstructionController;
+@@ -321,6 +332,7 @@ export class RppgSession {
+ 			processorFailure,
+ 			state,
+ 			lastError: this.lastErrorValue,
++			backendLoadError: this.internals.backendLoadError ?? null,
+ 			modelDiagnostics: this.getModelDiagnostics(),
+ 		};
+ 	}
+@@ -466,6 +478,7 @@ export async function createRppgSession(
+ 			onDiagnostics: options.onDiagnostics,
+ 			onError: options.onError,
+ 			backendDegraded: backendResult.mode !== "wasm",
++			backendLoadError: backendResult.loadError,
+ 			faceTrackingDegraded: faceMeshResult.error != null,
+ 			waveformController,
+ 			beforeStart: async () => {
+@@ -530,16 +543,56 @@ async function resolveBackend(
+ 		CreateRppgSessionOptions,
+ 		"wasmJsUrl" | "wasmBinaryUrl" | "wasmImporter"
+ 	>,
+-): Promise<{ backend: Backend; mode: RppgSessionBackendMode }> {
+-	const backend = await loadWasmBackend(options.wasmImporter, {
+-		strict: backendPreference === "wasm",
+-		jsUrl: options.wasmJsUrl,
+-		binaryUrl: options.wasmBinaryUrl,
+-	});
+-	if (backend) {
+-		return { backend, mode: "wasm" };
++): Promise<{
++	backend: Backend;
++	mode: RppgSessionBackendMode;
++	loadError: RppgSessionError | null;
++}> {
++	// Strict in both modes: it tries the same URLs, but a failed load throws
++	// RppgWasmLoadError (the URLs tried and why each failed) instead of
++	// resolving null, so "auto" can keep the reason when it falls back.
++	try {
++		const backend = await loadWasmBackend(options.wasmImporter, {
++			strict: true,
++			jsUrl: options.wasmJsUrl,
++			binaryUrl: options.wasmBinaryUrl,
++		});
++		// Strict mode never resolves null; this check only narrows the type.
++		if (backend) return { backend, mode: "wasm", loadError: null };
++	} catch (cause) {
++		if (backendPreference === "wasm") throw cause;
++		return {
++			backend: createUnavailableBackend(),
++			mode: "unavailable",
++			loadError: {
++				code: "backend_init_failed",
++				stage: "backend",
++				message: describeWasmLoadFailure(cause),
++				timestampMs: Date.now(),
++				cause,
++			},
++		};
+ 	}
+-	return { backend: createUnavailableBackend(), mode: "unavailable" };
++	return {
++		backend: createUnavailableBackend(),
++		mode: "unavailable",
++		loadError: null,
++	};
++}
++
++// The loader's message names the URLs; this adds what each one failed with.
++// The telling error is not always the last one: when the glue at the first URL
++// loads but its .wasm does not, the loader moves on and the last error is just
++// the next URL's 404.
++function describeWasmLoadFailure(error: unknown): string {
++	if (!(error instanceof RppgWasmLoadError)) {
++		return error instanceof Error ? error.message : String(error);
++	}
++	const failures = error.attemptedUrls.map((url, index) => {
++		const reason = error.errors[index];
++		return `${url}: ${reason === undefined ? "no error recorded" : String(reason)}`;
++	});
++	return `${error.message} Errors by URL: ${failures.join("; ")}`;
+ }
+ 
+ function applyTrackerConfiguration(
+diff --git a/packages/rppg-web/src/wasmBackend.ts b/packages/rppg-web/src/wasmBackend.ts
+index a43d168..83966ce 100644
+--- a/packages/rppg-web/src/wasmBackend.ts
++++ b/packages/rppg-web/src/wasmBackend.ts
+@@ -73,8 +73,18 @@ export class RppgWasmLoadError extends Error {
+ 	public readonly code = "RPPG_WASM_LOAD_FAILED";
+ 	public readonly attemptedUrls: string[];
+ 	public readonly lastError?: unknown;
++	/**
++	 * Why each URL in `attemptedUrls` failed, in the same order: the error its
++	 * import or init threw, or an error saying the module loaded but exports
++	 * no pipeline constructor. `lastError` only keeps the last one thrown.
++	 */
++	public readonly errors: unknown[];
+ 
+-	constructor(attemptedUrls: string[], lastError?: unknown) {
++	constructor(
++		attemptedUrls: string[],
++		lastError?: unknown,
++		errors: unknown[] = [],
++	) {
+ 		super(
+ 			`Unable to load rPPG WASM backend. Tried: ${attemptedUrls.join(
+ 				", ",
+@@ -83,6 +93,7 @@ export class RppgWasmLoadError extends Error {
+ 		this.name = "RppgWasmLoadError";
+ 		this.attemptedUrls = attemptedUrls;
+ 		this.lastError = lastError;
++		this.errors = errors;
+ 	}
+ }
+ 
+@@ -100,6 +111,7 @@ export async function loadWasmBackend(
+ 					"/rppg_wasm.js",
+ 				];
+ 	let lastError: unknown = undefined;
++	const errors: unknown[] = [];
+ 	for (const url of candidates) {
+ 		try {
+ 			const mod: WasmModule = await importer(url);
+@@ -135,12 +147,16 @@ export async function loadWasmBackend(
+ 						new (mod.default as any)(sr, ws),
+ 				};
+ 			}
++			errors.push(
++				new Error(`${url} loaded but exports no rPPG pipeline constructor.`),
++			);
+ 		} catch (e) {
+ 			lastError = e;
++			errors.push(e);
+ 		}
+ 	}
+ 	if (options.strict) {
+-		throw new RppgWasmLoadError(candidates, lastError);
++		throw new RppgWasmLoadError(candidates, lastError, errors);
+ 	}
+ 	return null;
+ }

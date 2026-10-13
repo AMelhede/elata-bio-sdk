@@ -1,0 +1,795 @@
+From 8dde55491438beb5e6cc6707c7df8c9185938e21 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 22:58:50 +0000
+Subject: [PATCH] fix(rppg-web): with face tracking on, no face means no
+ reading
+
+Squashed from fix/no-face-no-reading at 55de1a7 for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/no-face-no-reading.md              |   5 +
+ packages/rppg-web/README.md                   |  14 ++
+ packages/rppg-web/llms.txt                    |   1 +
+ .../createRppgSession.lifecycle.test.ts       |  52 ++++++
+ .../src/__tests__/demoRunnerFaceGap.test.ts   | 151 ++++++++++++++++++
+ .../src/__tests__/demoRunnerNoFace.test.ts    | 108 +++++++++++++
+ .../src/__tests__/rppgProcessor.test.ts       |  60 +++++++
+ .../src/__tests__/sessionNoFace.test.ts       |  45 ++++++
+ packages/rppg-web/src/demoRunner.ts           |  65 +++++++-
+ packages/rppg-web/src/rppgProcessor.ts        |  52 ++++++
+ packages/rppg-web/src/rppgSession.ts          |  15 +-
+ 11 files changed, 563 insertions(+), 5 deletions(-)
+ create mode 100644 .changeset/no-face-no-reading.md
+ create mode 100644 packages/rppg-web/src/__tests__/demoRunnerFaceGap.test.ts
+ create mode 100644 packages/rppg-web/src/__tests__/demoRunnerNoFace.test.ts
+ create mode 100644 packages/rppg-web/src/__tests__/sessionNoFace.test.ts
+
+diff --git a/.changeset/no-face-no-reading.md b/.changeset/no-face-no-reading.md
+new file mode 100644
+index 0000000..8288b61
+--- /dev/null
++++ b/.changeset/no-face-no-reading.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/rppg-web": minor
++---
++
++With face tracking on (`face_mesh` mode without an explicit `roi`), drop a frame with no face (drop reason `no_face`, `roiSource` null, no `onStats` call) instead of reading a 100x100 square at the centre of the frame; after two seconds without a face, report no reading from `RppgSession.getMetrics()` (every estimate cleared as for a failed backend, reason `no_face`, baseline and calibration state kept), and when the face returns, restart the fuser, the sample window and the engine pipeline. Add the `requireFace` option (on by default in that mode; `false` keeps the previous behaviour), `DemoRunner.faceAbsentMs()`, `RppgProcessor.resetSignal()` and the `no_face` member of `DemoRunnerDropReason` (an exhaustive switch over it needs a case). `video_frame` mode and an explicit `roi` are unchanged.
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 9a34403..da00c1a 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -319,6 +319,20 @@ contains `insufficient_window`. Once that clears, the processor has enough
+ samples for a BPM estimate. `diagnostics.windowSampleCount` gives the raw
+ sample count if you want to show a progress indicator.
+ 
++**No face, no reading:** in `face_mesh` mode (without an explicit `roi`), a frame
++in which the face finder found no face is dropped (`lastDropReason: "no_face"`,
++`roiSource: null`, no `onStats` call) instead of being read from the centre of
++the frame. After two seconds with no face, `session.getMetrics()` reports no
++reading: `bpm: null`, `confidence: 0` and every other estimate cleared as for a
++failed backend, with reason code `no_face`; the rolling baseline and calibration
++state are kept. A shorter miss keeps the last reading. When the face returns
++after those two seconds, the sample window and the engine pipeline start afresh, so
++the window's estimates use only frames from after the gap. A number comes back
++within a few seconds; the first ones come from a short window and can be off by
++several bpm until it fills. The Bayesian tracker, the rate history, calibration
++and the baseline carry over. Pass `requireFace: false` to keep the
++previous behaviour; `video_frame` mode and an explicit `roi` are unchanged.
++
+ **FaceMesh fallback:** `faceMesh: "auto"` falls back to `video_frame` mode if
+ MediaPipe fails to load. Check `diagnostics.faceTrackingMode` to see which
+ mode is active — `"face_mesh"` or `"video_frame"`.
+diff --git a/packages/rppg-web/llms.txt b/packages/rppg-web/llms.txt
+index 3810752..e9579ea 100644
+--- a/packages/rppg-web/llms.txt
++++ b/packages/rppg-web/llms.txt
+@@ -15,6 +15,7 @@ Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**,
+ ## Session behavior
+ - Roughly **~10 s warmup** before first BPM; during warmup diagnostics often include **`insufficient_window`**.
+ - Check **`diagnostics.state`**, **`backendMode`**, and **`faceTrackingMode`** (`face_mesh` vs `video_frame` when `faceMesh: "auto"`).
++- In `face_mesh` mode a frame with no face is dropped (`no_face`); after **2 s** with no face `getMetrics()` reports no reading (**`bpm: null`**, every estimate cleared, reason `no_face`), and the sample window and engine pipeline restart when the face returns. `requireFace: false` restores the old centre-of-frame read.
+ - ROI behavior is versioned and composable. Omit `roiGeometryProfile` and `roiPixelSampler` for existing SDK behavior. Use `MCD_PROXY_INPUT_V1_PROFILE` only for the frozen model-input geometry, `TRADELOCK_LIVE_FOREHEAD_V1_PROFILE` for live-pipeline replay, and `TRADELOCK_RGB_WEIGHTED_V1_PIXEL_SAMPLER` for TradeLock pixel-selection replay. Do not treat those two geometry profiles as interchangeable.
+ - `sampleRppgRoi()` produces `elata.rppg.roi-sample/v1`, including raw and compatibility skin fractions plus geometry/sampler IDs for traceability.
+ - Bayesian ambiguity penalties are off by default. Opt in with a validated `elata.rppg.bpm-tracker-config/v1`; diagnostics expose the config ID and applied penalty.
+diff --git a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+index a309378..5fda78c 100644
+--- a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
++++ b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
+ }));
+ 
+ import { createRppgSession } from "../rppgSession";
++import { DemoRunner } from "../demoRunner";
+ import { loadFaceLandmarker } from "../mediapipeLoader";
+ import { ensureVideoPlaying } from "../videoPlayback";
+ import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
+@@ -82,6 +83,7 @@ const mockedEnsureVideoPlaying = ensureVideoPlaying as jest.MockedFunction<typeo
+ const mockedMediaPipeFrameSource = MediaPipeFrameSource as unknown as jest.Mock;
+ const mockedMediaPipeFaceFrameSource = MediaPipeFaceFrameSource as unknown as jest.Mock;
+ const mockedLoadWasmBackend = loadWasmBackend as jest.MockedFunction<typeof loadWasmBackend>;
++const mockedDemoRunner = DemoRunner as unknown as jest.Mock;
+ 
+ describe("createRppgSession lifecycle", () => {
+ 	beforeEach(() => {
+@@ -220,4 +222,54 @@ describe("createRppgSession lifecycle", () => {
+ 		await session.dispose();
+ 		expect(model.dispose).toHaveBeenCalledTimes(2);
+ 	});
++
++	describe("requireFace", () => {
++		const faceMeshLoads = () =>
++			mockedLoadFaceMesh.mockResolvedValueOnce({
++				detectForVideo: jest.fn(() => ({ faceLandmarks: [] })),
++			} as any);
++		const runnerRequireFace = () => mockedDemoRunner.mock.calls[0][2].requireFace;
++		const video = () => document.createElement("video");
++
++		test("is on in face_mesh mode without an explicit roi", async () => {
++			faceMeshLoads();
++			await createRppgSession({ video: video(), faceMesh: "auto", ensureVideoPlayback: false });
++			expect(runnerRequireFace()).toBe(true);
++		});
++
++		test("is off with an explicit roi", async () => {
++			faceMeshLoads();
++			await createRppgSession({
++				video: video(),
++				faceMesh: "auto",
++				roi: { x: 0, y: 0, w: 10, h: 10 },
++				ensureVideoPlayback: false,
++			});
++			expect(runnerRequireFace()).toBe(false);
++		});
++
++		test("is off in video_frame mode, including when FaceMesh fails to load", async () => {
++			await createRppgSession({ video: video(), faceMesh: "off", ensureVideoPlayback: false });
++			mockedLoadFaceMesh.mockRejectedValueOnce(new Error("no model"));
++			await createRppgSession({ video: video(), faceMesh: "auto", ensureVideoPlayback: false });
++			expect(mockedDemoRunner.mock.calls.map((call) => call[2].requireFace)).toEqual([false, false]);
++		});
++
++		test("honours a caller's requireFace", async () => {
++			faceMeshLoads();
++			await createRppgSession({
++				video: video(),
++				faceMesh: "auto",
++				requireFace: false,
++				ensureVideoPlayback: false,
++			});
++			await createRppgSession({
++				video: video(),
++				faceMesh: "off",
++				requireFace: true,
++				ensureVideoPlayback: false,
++			});
++			expect(mockedDemoRunner.mock.calls.map((call) => call[2].requireFace)).toEqual([false, true]);
++		});
++	});
+ });
+diff --git a/packages/rppg-web/src/__tests__/demoRunnerFaceGap.test.ts b/packages/rppg-web/src/__tests__/demoRunnerFaceGap.test.ts
+new file mode 100644
+index 0000000..e27fd13
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/demoRunnerFaceGap.test.ts
+@@ -0,0 +1,151 @@
++import { DemoRunner } from "../demoRunner";
++import type { Frame, FrameSource } from "../frameSource";
++import { RppgProcessor } from "../rppgProcessor";
++
++// A known answer through the real processor: a 66 bpm colour pulse, the face gone for 10 s, then
++// back. The processor estimates its sample rate as samples over time spanned, so a window that
++// holds frames from both sides of a hole counts the hole as frames and scales every rate by the
++// share of the window that has frames (35 of 45 s here: 66 reads as about 51).
++const TRUE_BPM = 66;
++
++class Source implements FrameSource {
++	onFrame: ((f: Frame) => void) | null = null;
++	async start() {}
++	async stop() {}
++	emit(f: Frame) {
++		this.onFrame?.(f);
++	}
++}
++
++function frame(tMs: number, face: boolean, seed: { v: number }, regions = false): Frame {
++	const width = 20;
++	const height = 20;
++	const data = new Uint8ClampedArray(width * height * 4);
++	const p = Math.sin((2 * Math.PI * TRUE_BPM * tMs) / 60000);
++	const a = 0.03;
++	const dither = () => {
++		seed.v = (seed.v * 1664525 + 1013904223) >>> 0;
++		return seed.v / 2 ** 32 - 0.5;
++	};
++	for (let i = 0; i < data.length; i += 4) {
++		data[i] = 200 * (1 - 0.33 * a * p) + dither();
++		data[i + 1] = 140 * (1 - a * p) + dither();
++		data[i + 2] = 110 * (1 - 0.5 * a * p) + dither();
++		data[i + 3] = 255;
++	}
++	const f: Frame = { data, width, height, timestampMs: tMs };
++	if (face) f.roi = { x: 5, y: 5, w: 10, h: 10 };
++	// Forehead and both cheeks, as MediaPipeFaceFrameSource sends them with a face.
++	if (face && regions)
++		f.rois = [
++			{ x: 6, y: 3, w: 8, h: 5 },
++			{ x: 3, y: 10, w: 6, h: 6 },
++			{ x: 11, y: 10, w: 6, h: 6 },
++		];
++	return f;
++}
++
++describe("DemoRunner and RppgProcessor across a face gap", () => {
++	test("the rate after the face returns is measured on frames from after the gap", async () => {
++		const pipeline = {
++			push_sample: jest.fn(),
++			push_sample_rgb_meta: jest.fn(),
++			free: jest.fn(),
++			get_metrics: jest.fn(() => ({ bpm: null, confidence: 0, signal_quality: 0.5, reason_codes: [] })),
++		};
++		const newPipeline = jest.fn(() => pipeline);
++		const processor = new RppgProcessor({ newPipeline } as never, 30, 10);
++		const src = new Source();
++		const runner = new DemoRunner(src, processor, { sampleRate: 30, requireFace: true });
++		await runner.start();
++		const seed = { v: 1 };
++		let beforeGap: number | null = null;
++		for (let i = 0; i < 75 * 30; i++) {
++			const t = (i * 1000) / 30;
++			src.emit(frame(t, t < 45000 || t >= 55000, seed));
++			if (beforeGap == null && t >= 44000) beforeGap = processor.getMetrics().spectral_bpm ?? null;
++		}
++		// The fixture reads its own rate when nothing is missing, so the check below can fail.
++		expect(beforeGap).not.toBeNull();
++		expect(Math.abs((beforeGap as number) - TRUE_BPM)).toBeLessThanOrEqual(3);
++		const after = processor.getMetrics().spectral_bpm ?? null;
++		expect(after).not.toBeNull();
++		expect(Math.abs((after as number) - TRUE_BPM)).toBeLessThanOrEqual(3);
++		// The engine's own window starts afresh too.
++		expect(newPipeline).toHaveBeenCalledTimes(2);
++	});
++});
++
++describe("DemoRunner and RppgProcessor across a face gap, multi-region path", () => {
++	test("the fused rate after the gap is measured on frames from after it, and so are the region weights", async () => {
++		const pipeline = {
++			push_sample: jest.fn(),
++			push_sample_rgb_meta: jest.fn(),
++			free: jest.fn(),
++			get_metrics: jest.fn(() => ({ bpm: null, confidence: 0, signal_quality: 0.5, reason_codes: [] })),
++		};
++		const processor = new RppgProcessor({ newPipeline: () => pipeline } as never, 30, 10);
++		const src = new Source();
++		// The default with a face: the multi-region fuser and the skin mask on.
++		const runner = new DemoRunner(src, processor, { sampleRate: 30, requireFace: true });
++		await runner.start();
++		const seed = { v: 3 };
++		let beforeGap: number | null = null;
++		let snrBeforeGap = 0;
++		let snrJustAfter: number | null = null;
++		for (let i = 0; i < 75 * 30; i++) {
++			const t = (i * 1000) / 30;
++			src.emit(frame(t, t < 45000 || t >= 55000, seed, true));
++			if (beforeGap == null && t >= 44000) {
++				beforeGap = processor.getMetrics().spectral_bpm ?? null;
++				snrBeforeGap = runner.getDiagnostics().lastFusedSnr ?? 0;
++			}
++			// One second after the face returns: too soon for the fuser to have measured an SNR
++			// on frames from after the gap (it needs three seconds of them).
++			if (snrJustAfter == null && t >= 56000) snrJustAfter = runner.getDiagnostics().lastFusedSnr ?? 0;
++		}
++		expect(runner.getDiagnostics().lastProcessorMethod).toBe("fused");
++		expect(snrBeforeGap).toBeGreaterThan(1);
++		expect(snrJustAfter).toBe(0);
++		expect(beforeGap).not.toBeNull();
++		expect(Math.abs((beforeGap as number) - TRUE_BPM)).toBeLessThanOrEqual(3);
++		const after = processor.getMetrics().spectral_bpm ?? null;
++		expect(after).not.toBeNull();
++		expect(Math.abs((after as number) - TRUE_BPM)).toBeLessThanOrEqual(3);
++	});
++});
++
++describe("RppgSession with the real processor and no face in view", () => {
++	test("no face for two seconds means no reading; a shorter loss holds it; the face back reads again", async () => {
++		const pipeline = {
++			push_sample: jest.fn(),
++			push_sample_rgb_meta: jest.fn(),
++			free: jest.fn(),
++			get_metrics: jest.fn(() => ({ bpm: 72, confidence: 0.8, signal_quality: 0.7, reason_codes: ["LOW_SNR"] })),
++		};
++		const processor = new RppgProcessor({ newPipeline: () => pipeline } as never, 30, 10);
++		const src = new Source();
++		const runner = new DemoRunner(src, processor, { sampleRate: 30, requireFace: true });
++		const { RppgSession } = await import("../rppgSession");
++		const session = new RppgSession(src, processor, runner, "wasm", "face_mesh");
++		await runner.start();
++		const seed = { v: 7 };
++		let t = 0;
++		for (let i = 0; i < 90; i++, t += 1000 / 30) src.emit(frame(t, true, seed));
++		const pushedWithFace = pipeline.push_sample_rgb_meta.mock.calls.length;
++		const before = session.getMetrics().bpm;
++		expect(before).not.toBeNull();
++		for (let i = 0; i < 45; i++, t += 1000 / 30) src.emit(frame(t, false, seed));
++		// A face lost for 1.5 s (a turn of the head, a burst of finder misses) is held, not reset:
++		// on moving heads a restart there showed wrong numbers for about 5 s afterwards.
++		expect(session.getMetrics().bpm).toBe(before);
++		for (let i = 0; i < 30; i++, t += 1000 / 30) src.emit(frame(t, false, seed));
++		const gone = session.getMetrics();
++		expect(gone.bpm).toBeNull();
++		expect(gone.confidence).toBe(0);
++		expect(gone.reason_codes).toEqual(["LOW_SNR", "no_face"]);
++		expect(pipeline.push_sample_rgb_meta.mock.calls.length).toBe(pushedWithFace);
++		src.emit(frame(t, true, seed));
++		expect(session.getMetrics().reason_codes).not.toContain("no_face");
++	});
++});
+diff --git a/packages/rppg-web/src/__tests__/demoRunnerNoFace.test.ts b/packages/rppg-web/src/__tests__/demoRunnerNoFace.test.ts
+new file mode 100644
+index 0000000..dcbbd82
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/demoRunnerNoFace.test.ts
+@@ -0,0 +1,108 @@
++import { DemoRunner } from '../demoRunner';
++import { FrameSource, Frame } from '../frameSource';
++
++// With face tracking on, a frame with no face in it must not be read: the runner used to read a
++// 100x100 square at the centre of the frame (a wall, a chair) and keep reporting a heart rate.
++
++class MockFrameSource implements FrameSource {
++  onFrame: ((frame: Frame) => void) | null = null;
++  async start(): Promise<void> {}
++  async stop(): Promise<void> {}
++  emit(frame: Frame) { this.onFrame?.(frame); }
++}
++
++function wallFrame(timestampMs: number): Frame {
++  const width = 30, height = 30;
++  const data = new Uint8ClampedArray(width * height * 4);
++  for (let i = 0; i < data.length; i += 4) { data[i] = 200; data[i + 1] = 150; data[i + 2] = 120; data[i + 3] = 255; }
++  return { data, width, height, timestampMs };
++}
++
++async function feedWall(requireFace: boolean | undefined) {
++  const src = new MockFrameSource();
++  const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
++  const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, ...(requireFace === undefined ? {} : { requireFace }) });
++  await runner.start();
++  for (let i = 0; i < 75; i++) src.emit(wallFrame(1000 + i * 33.3));
++  return { src, proc, runner };
++}
++
++describe('DemoRunner with no face in view', () => {
++  test('does not read the frame when face tracking is on', async () => {
++    const { proc, runner } = await feedWall(true);
++    expect(proc.pushSampleRgbMeta).not.toHaveBeenCalled();
++    expect(proc.pushFusedSample).not.toHaveBeenCalled();
++    expect(runner.getDiagnostics().lastDropReason).toBe('no_face');
++  });
++
++  test('says the face has been gone, measured from the first frame without one', async () => {
++    const { runner } = await feedWall(true);
++    expect(runner.faceAbsentMs(1000 + 59 * 33.3)).toBeGreaterThanOrEqual(1900);
++    expect(runner.faceAbsentMs(1000)).toBe(0);
++  });
++
++  test('still reads the centre of the frame when face tracking is off (whole-frame mode)', async () => {
++    const { proc } = await feedWall(undefined);
++    expect(proc.pushSampleRgbMeta).toHaveBeenCalled();
++  });
++
++  test('starts the signal afresh when the face returns after two seconds or more', async () => {
++    const { src, proc, runner } = await feedWall(true);
++    src.emit({ ...wallFrame(1000 + 75 * 33.3), roi: { x: 0, y: 0, w: 30, h: 30 } });
++    expect(proc.resetSignal).toHaveBeenCalledTimes(1);
++    expect(proc.pushSampleRgbMeta).toHaveBeenCalledTimes(1);
++    expect(runner.faceAbsentMs()).toBe(0);
++  });
++
++  test('does not report a face ROI while no face is in view', async () => {
++    const { runner } = await feedWall(true);
++    expect(runner.getDiagnostics().lastRoiSource).toBeNull();
++  });
++
++  test('a brief face-finder miss does not restart the analysis', async () => {
++    const src = new MockFrameSource();
++    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
++    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
++    await runner.start();
++    for (let i = 0; i < 10; i++) src.emit(wallFrame(1000 + i * 33.3));
++    src.emit({ ...wallFrame(1400), roi: { x: 0, y: 0, w: 30, h: 30 } });
++    expect(proc.resetSignal).not.toHaveBeenCalled();
++  });
++
++  test('a face lost for 1.5 s (a turn of the head) does not restart the analysis', async () => {
++    const src = new MockFrameSource();
++    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn(), resetSignal: jest.fn() };
++    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
++    await runner.start();
++    for (let i = 0; i < 45; i++) src.emit(wallFrame(1000 + i * 33.3));
++    src.emit({ ...wallFrame(2500), roi: { x: 0, y: 0, w: 30, h: 30 } });
++    expect(proc.resetSignal).not.toHaveBeenCalled();
++  });
++
++  test('a processor without resetSignal keeps being fed after the face returns', async () => {
++    // Every other processor call in the runner is checked with typeof first, so a processor written
++    // against the older interface must not break the runner when the face comes back.
++    const src = new MockFrameSource();
++    const proc = { pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn() };
++    const onError = jest.fn();
++    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true, onError });
++    await runner.start();
++    for (let i = 0; i < 60; i++) src.emit(wallFrame(1000 + i * 33.3));
++    const face = (t: number) => ({ ...wallFrame(t), roi: { x: 0, y: 0, w: 30, h: 30 } });
++    expect(() => {
++      for (let i = 60; i < 90; i++) src.emit(face(1000 + i * 33.3));
++    }).not.toThrow();
++    expect(proc.pushSampleRgbMeta).toHaveBeenCalledTimes(30);
++    expect(runner.faceAbsentMs()).toBe(0);
++    expect(onError).not.toHaveBeenCalled();
++  });
++
++  test('an empty frame is reported as invalid, not as no face', async () => {
++    const src = new MockFrameSource();
++    const proc = { pushFusedSample: jest.fn(), pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn() };
++    const runner = new DemoRunner(src as any, proc as any, { sampleRate: 30, requireFace: true });
++    await runner.start();
++    src.emit({ data: new Uint8ClampedArray(0), width: 0, height: 0, timestampMs: 1000 });
++    expect(runner.getDiagnostics().lastDropReason).toBe('frame_invalid');
++  });
++});
+diff --git a/packages/rppg-web/src/__tests__/rppgProcessor.test.ts b/packages/rppg-web/src/__tests__/rppgProcessor.test.ts
+index 2e48c84..0dcb52d 100644
+--- a/packages/rppg-web/src/__tests__/rppgProcessor.test.ts
++++ b/packages/rppg-web/src/__tests__/rppgProcessor.test.ts
+@@ -1247,3 +1247,63 @@ describe('Snapshot persistence', () => {
+     expect(Array.isArray(restored.bpmHistory)).toBe(true);
+   });
+ });
++
++describe('RppgProcessor.resetSignal', () => {
++  const backend = () => ({
++    newPipeline: jest.fn(() => ({
++      push_sample_rgb_meta: jest.fn(),
++      enable_tracker: jest.fn(),
++      free: jest.fn(),
++      get_metrics: jest.fn(() => ({ bpm: null, confidence: 0, signal_quality: 0.5, reason_codes: [] })),
++    })),
++  });
++  // A colour pulse (green dips most) with a little deterministic sensor noise.
++  const feed = (processors: RppgProcessor[], fromMs: number, toMs: number, bpm: number, seed: { v: number }) => {
++    for (let t = fromMs; t < toMs; t += 1000 / 30) {
++      seed.v = (seed.v * 1664525 + 1013904223) >>> 0;
++      const noise = seed.v / 2 ** 32 - 0.5;
++      const p = Math.sin((2 * Math.PI * bpm * t) / 60000);
++      for (const processor of processors) {
++        processor.pushSampleRgbMeta(t, 200 * (1 - 0.01 * p) + noise, 140 * (1 - 0.03 * p) + noise, 110 * (1 - 0.015 * p) + noise, 1, 0, 0);
++      }
++    }
++  };
++  // What is measured on the sample window. The Bayesian tracker, the rate history, calibration
++  // and the baseline are kept across a restart by design, so the estimates built on them are not
++  // compared.
++  const windowEstimates = (processor: RppgProcessor) => {
++    const m = processor.getMetrics();
++    return [m.spectral_bpm, m.acf_bpm, m.peaks_bpm, m.hrv_rmssd, m.respiration_rate, m.respiration_confidence];
++  };
++
++  test('after a restart the window estimates are those of a processor that only saw the later samples', () => {
++    const backendRestarted = backend();
++    const restarted = new RppgProcessor(backendRestarted as any, 30, 10);
++    restarted.enableTracker(55, 150, 200);
++    feed([restarted], 0, 20000, 66, { v: 1 });
++    restarted.resetSignal();
++    // The engine's pipeline starts anew, with the tracker settings it had, and the old one is freed.
++    expect(backendRestarted.newPipeline).toHaveBeenCalledTimes(2);
++    expect(backendRestarted.newPipeline.mock.results[0].value.free).toHaveBeenCalledTimes(1);
++    const engine = backendRestarted.newPipeline.mock.results[1].value;
++    expect(engine.enable_tracker).toHaveBeenCalledWith(55, 150, 200);
++
++    const fresh = new RppgProcessor(backend() as any, 30, 10);
++    fresh.enableTracker(55, 150, 200);
++    const seed = { v: 2 };
++    for (let end = 35000; end <= 45000; end += 5000) {
++      feed([restarted, fresh], end - 5000, end, 84, seed);
++      const estimates = windowEstimates(fresh);
++      expect(estimates[0]).not.toBeNull();
++      expect(windowEstimates(restarted)).toEqual(estimates);
++    }
++  });
++
++  test('is a no-op once disposed', () => {
++    const b = backend();
++    const processor = new RppgProcessor(b as any, 30, 10);
++    processor.dispose();
++    processor.resetSignal();
++    expect(b.newPipeline).toHaveBeenCalledTimes(1);
++  });
++});
+diff --git a/packages/rppg-web/src/__tests__/sessionNoFace.test.ts b/packages/rppg-web/src/__tests__/sessionNoFace.test.ts
+new file mode 100644
+index 0000000..9c99617
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/sessionNoFace.test.ts
+@@ -0,0 +1,45 @@
++import { RppgSession } from "../rppgSession";
++
++// With face tracking on, once no face has been in view for two seconds the session reports no heart
++// rate (and no HRV or breathing), instead of the last number or one read off the wall.
++const processorMetrics = { bpm: 84, confidence: 0.6, signal_quality: 0.3, hrv_rmssd: 180, respiration_rate: 12, respiration_confidence: 1, spectral_bpm: 84, acf_bpm: 83, peaks_bpm: 85, bayes_bpm: 84, resolved_bpm: 84, resolved_confidence: 0.7, bayes_confidence: 0.65, baseline_bpm: 70, baseline_delta: 14, agreement: 0.9, winning_sources: ["spectral" as const, "acf" as const], alias_flag: true, bayes_ambiguity: 0.2, snr: 6, skin_ratio_mean: 0.8, motion_mean: 0.1, clip_mean: 0.02, calibration_trained: true, bayes_tracker_config_id: "cfg", capture_confidence: 0.7, reason_codes: ["LOW_SNR"] };
++const make = (goneMs: number) =>
++	new RppgSession(
++		{} as never,
++		{ getMetrics: () => ({ ...processorMetrics }) } as never,
++		{ faceAbsentMs: () => goneMs } as never,
++		"wasm",
++		"face_mesh",
++	);
++
++describe("RppgSession with no face in view", () => {
++	it("reports no heart rate once the face has been gone for two seconds", () => {
++		const m = make(2000).getMetrics();
++		expect(m.bpm).toBeNull();
++		expect(m.hrv_rmssd).toBeNull();
++		expect(m.respiration_rate).toBeNull();
++		// Not only the headline rate: every intermediate rate, and the confidence.
++		expect([m.spectral_bpm, m.acf_bpm, m.peaks_bpm, m.bayes_bpm]).toEqual([null, null, null, null]);
++		expect(m.confidence).toBe(0);
++		expect([m.resolved_bpm, m.resolved_confidence, m.bayes_confidence, m.baseline_delta]).toEqual([null, 0, 0, null]);
++		// Nothing that describes the window of the last face: the same values as a failed backend.
++		expect([m.agreement, m.winning_sources, m.alias_flag, m.signal_quality]).toEqual([0, [], false, 0]);
++		expect([m.skin_ratio_mean, m.motion_mean, m.clip_mean]).toEqual([0, 0, 0]);
++		expect(m.snr).toBeUndefined();
++		expect(m.bayes_ambiguity).toBeUndefined();
++		// What belongs to the person or the host stays: the rolling baseline, calibration state, the
++		// tracker configuration and the capture fields the host feeds.
++		expect(m.baseline_bpm).toBe(70);
++		expect(m.calibration_trained).toBe(true);
++		expect(m.bayes_tracker_config_id).toBe("cfg");
++		expect(m.capture_confidence).toBe(0.7);
++		expect(m.reason_codes).toEqual(["LOW_SNR", "no_face"]);
++	});
++	it("keeps the rate through a face loss shorter than two seconds", () => {
++		expect(make(400).getMetrics().bpm).toBe(84);
++		expect(make(1500).getMetrics().bpm).toBe(84);
++	});
++	it("is unchanged while a face is in view", () => {
++		expect(make(0).getMetrics()).toEqual(processorMetrics);
++	});
++});
+diff --git a/packages/rppg-web/src/demoRunner.ts b/packages/rppg-web/src/demoRunner.ts
+index c940ce6..55675a8 100644
+--- a/packages/rppg-web/src/demoRunner.ts
++++ b/packages/rppg-web/src/demoRunner.ts
+@@ -70,6 +70,12 @@ export type DemoRunnerOptions = {
+ 	 * aggregated-ROI path when sub-ROIs are unavailable.
+ 	 */
+ 	multiRoiFusion?: boolean;
++	/**
++	 * Face tracking is on: a frame with no face ROI is dropped (drop reason `no_face`) instead of
++	 * read. Without it, a frame with no ROI is read from a 100x100 square at the centre of the frame.
++	 * createRppgSession turns it on in face_mesh mode without an explicit `roi`.
++	 */
++	requireFace?: boolean;
+ 	/**
+ 	 * Pixel-selection and spatial-weighting profile. When omitted, the original
+ 	 * SDK YCbCr helper is used unchanged.
+@@ -81,6 +87,7 @@ export type DemoRunnerOptions = {
+ export type DemoRunnerDropReason =
+ 	| "frame_invalid"
+ 	| "roi_missing"
++	| "no_face"
+ 	| "non_finite_intensity"
+ 	| "processor_error";
+ 
+@@ -119,6 +126,19 @@ export type DemoRunnerError = {
+ 	cause?: unknown;
+ };
+ 
++/**
++ * How long without a face (face tracking on) before the session stops reporting; when the face
++ * returns after at least this long, the signal starts afresh. Long enough to ride out a face
++ * finder's brief misses and a turn of the head on a face that is still in view.
++ *
++ * Measured on synthetic moving heads through the real engine (turns, nods, fast movement; true
++ * 60, 72 and 100 bpm; face lost 0.3 to 5 s; 180 runs): wrong / right seconds shown were 539 / 3177
++ * at 1000 ms and 388 / 3428 at 2000 ms. A restart on a head still settling showed wrong numbers
++ * for 1 to 11 s (median about 5 s), so riding out a 1 to 2 s loss beats restarting. Holding off
++ * the number after a 1 s restart instead (3 to 12 s) lost more right seconds than it saved.
++ */
++export const FACE_GONE_RESET_MS = 2000;
++
+ export class DemoRunner {
+ 	private running = false;
+ 	private frameCount = 0;
+@@ -154,6 +174,9 @@ export class DemoRunner {
+ 	private lastBlendshapes: LastBlendshapes | null = null;
+ 	private lastFaceBox: LastFaceBox | null = null;
+ 	private fuser: MultiRoiRppgFuser | null = null;
++	/** Timestamp of the first frame of the current run without a face; null while a face is in view. */
++	private noFaceSinceMs: number | null = null;
++	private noFaceLastMs: number | null = null;
+ 
+ 	constructor(
+ 		private source: FrameSource,
+@@ -170,6 +193,16 @@ export class DemoRunner {
+ 		}
+ 	}
+ 
++	/**
++	 * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the
++	 * clock of `Frame.timestampMs`; by default it is the timestamp of the latest frame without a face.
++	 */
++	faceAbsentMs(nowMs: number = this.noFaceLastMs ?? 0): number {
++		return this.noFaceSinceMs == null
++			? 0
++			: Math.max(0, nowMs - this.noFaceSinceMs);
++	}
++
+ 	/** Latest face blendshapes (for affect estimation), with capture timestamp. */
+ 	getLastBlendshapes(): LastBlendshapes | null {
+ 		return this.lastBlendshapes;
+@@ -192,6 +225,7 @@ export class DemoRunner {
+ 	async stop() {
+ 		this.running = false;
+ 		this.fuser?.reset();
++		this.noFaceSinceMs = null;
+ 		await this.source.stop();
+ 	}
+ 
+@@ -258,6 +292,19 @@ export class DemoRunner {
+ 		let fusionResult: MultiRoiFusionResult | null = null;
+ 
+ 		const rois = frame.rois && frame.rois.length > 0 ? frame.rois : null;
++		if ((rois || frame.roi) && this.noFaceSinceMs != null) {
++			// The face is back. After an absence long enough for the session to have stopped
++			// reporting, start the analysis afresh, or the first number back would come from a
++			// window still holding the frames before the face was lost.
++			if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
++				this.fuser?.reset();
++				// Checked like every other processor call here: a processor without it keeps its
++				// window across the gap, as before this option existed.
++				const processor = this.processor as any;
++				if (typeof processor.resetSignal === "function") processor.resetSignal();
++			}
++			this.noFaceSinceMs = null;
++		}
+ 		if (rois) {
+ 			roiSource = "multi_roi";
+ 			this.diagnostics.framesWithMultiRoi += 1;
+@@ -293,11 +340,21 @@ export class DemoRunner {
+ 				this.diagnostics.framesWithFaceRoi += 1;
+ 				roiSource = "face_roi";
+ 			}
++			if (
++				!roi &&
++				(frame.width <= 0 || frame.height <= 0 || !frame.data.length)
++			) {
++				this.recordDrop("frame_invalid");
++				return;
++			}
++			if (!roi && this.opts.requireFace) {
++				this.noFaceSinceMs ??= frame.timestampMs ?? Date.now();
++				this.noFaceLastMs = frame.timestampMs ?? Date.now();
++				this.diagnostics.lastRoiSource = null;
++				this.recordDrop("no_face");
++				return;
++			}
+ 			if (!roi) {
+-				if (frame.width <= 0 || frame.height <= 0 || !frame.data.length) {
+-					this.recordDrop("frame_invalid");
+-					return;
+-				}
+ 				roi = {
+ 					x: Math.floor((frame.width - 100) / 2),
+ 					y: Math.floor((frame.height - 100) / 2),
+diff --git a/packages/rppg-web/src/rppgProcessor.ts b/packages/rppg-web/src/rppgProcessor.ts
+index 74b3146..51bc98b 100644
+--- a/packages/rppg-web/src/rppgProcessor.ts
++++ b/packages/rppg-web/src/rppgProcessor.ts
+@@ -524,6 +524,8 @@ export class RppgProcessor {
+ 	private disposed = false;
+ 	private readonly sampleRate: number;
+ 	private readonly windowSec: number;
++	/** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
++	private trackerSettings: [number, number, number] | null = null;
+ 
+ 	constructor(
+ 		private backend: Backend,
+@@ -547,6 +549,7 @@ export class RppgProcessor {
+ 	}
+ 
+ 	enableTracker(minBpm = 50, maxBpm = 160, numParticles = 150) {
++		this.trackerSettings = [minBpm, maxBpm, numParticles];
+ 		if (this.failedBackendError || this.disposed || !this.pipeline) return;
+ 		if (typeof this.pipeline.enable_tracker === "function") {
+ 			try {
+@@ -778,6 +781,37 @@ export class RppgProcessor {
+ 		this.fusion.updateMuse(bpm, quality, timestampMs);
+ 	}
+ 
++	/**
++	 * Start the signal afresh after a break in it (for example the face out of view): drop the
++	 * sample window and start the engine's pipeline anew, so the next estimate is made only from
++	 * samples after the break. A window that spans a break counts the missing time as samples, so
++	 * its sample-rate estimate, and every rate, is scaled down by the share of the window that has
++	 * samples. The signal models that carry state from sample to sample (channel gain, CHROM, the
++	 * fused-quality scalar) restart with it; calibration, the rolling baseline, the rate history
++	 * and the Bayesian tracker are kept, as are the capture-confidence scorer and the backend
++	 * failure state. No-op once disposed or failed.
++	 */
++	resetSignal() {
++		if (this.disposed || this.failedBackendError) return;
++		this.samples.length = 0;
++		this.channelGain.reset();
++		this.chromPulse.reset();
++		this.fusedQuality = null;
++		this.releasePipeline();
++		try {
++			this.pipeline = this.backend.newPipeline(this.sampleRate, this.windowSec);
++		} catch (error) {
++			this.failBackend("new_pipeline", error);
++			return;
++		}
++		if (!this.trackerSettings) return;
++		try {
++			this.enableTracker(...this.trackerSettings);
++		} catch {
++			// enableTracker has recorded the backend failure; getMetrics reports it from here on.
++		}
++	}
++
+ 	resetCalibration() {
+ 		this.cameraCalibration.reset();
+ 		this.bayesTracker.reset();
+@@ -1360,6 +1394,24 @@ function normalizeMetrics(raw: any): Metrics {
+ 	};
+ }
+ 
++/**
++ * `metrics` with no reading in it, for a cause other than a failed backend (for example no face in
++ * view): every estimate and every figure describing the sample window takes its failedMetrics()
++ * value, `snr` and `bayes_ambiguity` are dropped, and `reasonCode` is appended to the reason codes.
++ * What belongs to the person or the host is kept: the rolling baseline, calibration state, the
++ * tracker configuration ids and the `capture_*` fields fed through pushCaptureFrame.
++ */
++export function withoutReading(metrics: Metrics, reasonCode: string): Metrics {
++	const { snr: _snr, bayes_ambiguity: _ambiguity, ...kept } = metrics;
++	return {
++		...kept,
++		...failedMetrics(),
++		calibration_trained: metrics.calibration_trained,
++		baseline_bpm: metrics.baseline_bpm,
++		reason_codes: [...(metrics.reason_codes ?? []), reasonCode],
++	};
++}
++
+ function failedMetrics(): Metrics {
+ 	return {
+ 		bpm: null,
+diff --git a/packages/rppg-web/src/rppgSession.ts b/packages/rppg-web/src/rppgSession.ts
+index 491836a..e872e8a 100644
+--- a/packages/rppg-web/src/rppgSession.ts
++++ b/packages/rppg-web/src/rppgSession.ts
+@@ -14,6 +14,7 @@ import {
+ 	type RppgDebugSnapshot,
+ 	type RppgProcessorBackendFailure,
+ 	type RppgTraceSnapshot,
++	withoutReading,
+ } from "./rppgProcessor";
+ import {
+ 	loadWasmBackend,
+@@ -23,6 +24,7 @@ import {
+ } from "./wasmBackend";
+ import {
+ 	DemoRunner,
++	FACE_GONE_RESET_MS,
+ 	type DemoRunnerDiagnostics,
+ 	type DemoRunnerError,
+ 	type DemoRunnerOptions,
+@@ -200,7 +202,15 @@ export class RppgSession {
+ 	}
+ 
+ 	getMetrics(): Metrics {
+-		return this.processor.getMetrics();
++		const metrics = this.processor.getMetrics();
++		// No face for FACE_GONE_RESET_MS (2 s, face tracking on): nothing to report, not the last number.
++		// Two seconds ride out face-finder misses and a turn of the head without dropping a real reading.
++		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS) {
++			// Every estimate, not only the headline one: the intermediate estimates and the window's
++			// quality figures would otherwise keep describing the last face.
++			return withoutReading(metrics, "no_face");
++		}
++		return metrics;
+ 	}
+ 
+ 	/** Latest face blendshapes for affect estimation (null until a face is tracked). */
+@@ -419,6 +429,9 @@ export async function createRppgSession(
+ 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,
+ 		useSkinMask: options.useSkinMask ?? true,
+ 		multiRoiFusion: options.multiRoiFusion,
++		requireFace:
++			options.requireFace ??
++			(faceTrackingMode === "face_mesh" && options.roi === undefined),
+ 		roiPixelSampler: options.roiPixelSampler,
+ 		onRoiSamples: (samples) => {
+ 			options.onRoiSamples?.(samples);

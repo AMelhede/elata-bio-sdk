@@ -1,0 +1,435 @@
+From 2d3d672cfe9557dd13e388fbbd1497eed6572daf Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 13:13:58 +0000
+Subject: [PATCH] fix(eeg-web-ble,ppg-web): peer ranges take the published
+ siblings, and a semver release moves them
+
+Squashed from fix/eeg-web-ble-peer-range at 1c4d1fe for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/eeg-web-ble-peer-range.md      |   5 +
+ .changeset/ppg-web-peer-range.md          |   5 +
+ docs/releasing.md                         |   8 ++
+ packages/create-elata-demo/index.test.mjs | 139 ++++++++++++++++++++++
+ packages/eeg-web-ble/package.json         |   2 +-
+ packages/ppg-web/package.json             |   6 +-
+ scripts/audit-repo.mjs                    |  37 ++++++
+ scripts/run-lib.sh                        | 113 ++++++++++++++++++
+ 8 files changed, 311 insertions(+), 4 deletions(-)
+ create mode 100644 .changeset/eeg-web-ble-peer-range.md
+ create mode 100644 .changeset/ppg-web-peer-range.md
+
+diff --git a/.changeset/eeg-web-ble-peer-range.md b/.changeset/eeg-web-ble-peer-range.md
+new file mode 100644
+index 0000000..da5d749
+--- /dev/null
++++ b/.changeset/eeg-web-ble-peer-range.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/eeg-web-ble": patch
++---
++
++The peer range for `@elata-biosciences/eeg-web` is `^0.12.0`. It was `^0.2.1`, which under npm's rules for versions below 1.0 takes 0.2.x only, and no eeg-web 0.2.x was ever published. So `npm install` refused eeg-web-ble beside any published eeg-web (ERESOLVE), the eeg-ble, eeg-demo and ppg-demo starters from create-elata-demo included, and refused eeg-web-ble on its own (ETARGET).
+diff --git a/.changeset/ppg-web-peer-range.md b/.changeset/ppg-web-peer-range.md
+new file mode 100644
+index 0000000..472f178
+--- /dev/null
++++ b/.changeset/ppg-web-peer-range.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/ppg-web": patch
++---
++
++The peer ranges take the current siblings: `@elata-biosciences/eeg-web` and `eeg-web-ble` `^0.12.0`, `rppg-web` `^0.14.0`. They were `^0.2.1`, `^0.2.1` and `^0.3.0`, which under npm's rules for versions below 1.0 take 0.2.x and 0.3.x only, and none of those was ever published. So `npm install` refused ppg-web beside the published siblings (ERESOLVE), the ppg-demo starter from create-elata-demo included, and refused ppg-web on its own (ETARGET).
+diff --git a/docs/releasing.md b/docs/releasing.md
+index a647188..35ae531 100644
+--- a/docs/releasing.md
++++ b/docs/releasing.md
+@@ -123,6 +123,14 @@ the commit/tags.
+ 
+    Optional shorthand when you want a raw semver bump on **every** publishable package before publishing (same order as below): `./run.sh release patch`, `./run.sh release minor`, or `./run.sh release major`. Prefer `./run.sh bump` first when you are cutting a **Changesets** release so changelogs stay accurate.
+ 
++### Peer ranges
++
++A peer range that names a workspace package has to take that package's new version, or npm refuses to install the two together (ERESOLVE). Below 1.0 a caret range takes one minor, so `^0.12.0` refuses `0.13.0`.
++
++- `./run.sh release major|minor|patch` sets every workspace peer range that names a bumped package to `^<new version>`, in every package under `packages/`, and commits those manifests with the release.
++- `./run.sh bump` (Changesets) moves them too, but when the named package takes a minor or major bump it also bumps the package that declares the peer to a major, which takes a 0.x package to 1.0.0. Check the versions at step 2.
++- `pnpm run audit:repo` (in `pnpm lint`, `./run.sh doctor` and `verify:all`) fails while any workspace peer range does not take its sibling's current version.
++
+ ### Release order
+ 
+ Release order is fixed in `release_targets_for` (`scripts/run-lib.sh`): `eeg-web` → `eeg-web-ble` → `rppg-web` → `rppg-models-web` → `ppg-web` → `create-elata-demo` → `app-metrics` → `biosignal-session`.
+diff --git a/packages/create-elata-demo/index.test.mjs b/packages/create-elata-demo/index.test.mjs
+index 485410f..ae3d897 100644
+--- a/packages/create-elata-demo/index.test.mjs
++++ b/packages/create-elata-demo/index.test.mjs
+@@ -7,6 +7,7 @@ import {
+   mkdirSync,
+   rmSync,
+   readFileSync,
++  readdirSync,
+   existsSync,
+   writeFileSync,
+ } from 'node:fs';
+@@ -353,3 +354,141 @@ test('fails on unknown template', () => {
+     rmSync(tmp, { recursive: true, force: true });
+   }
+ });
++
++test('a semver release bump moves the peer ranges that name the bumped packages', () => {
++  // `./run.sh release minor` bumps every package in the `all` set with `pnpm version`
++  // (bump_publish_packages in scripts/run-lib.sh), which rewrites only each package's own version.
++  // Below 1.0 a caret range takes one minor version, so a peer range left behind refuses the new
++  // version and `npm install` stops (ERESOLVE) for any app installing eeg-web-ble or ppg-web beside
++  // its peers, the eeg-ble, eeg-demo and ppg-demo templates included. This runs the repo's own bump
++  // and release commit on a copy of every workspace manifest, one minor release on.
++  const repo = join(__dirname, '..', '..');
++  const root = mkdtempSync(join(tmpdir(), 'create-elata-demo-peers-'));
++  try {
++    mkdirSync(join(root, 'scripts'));
++    cpSync(join(repo, 'scripts', 'run-lib.sh'), join(root, 'scripts', 'run-lib.sh'));
++    const before = new Map();
++    for (const dir of readdirSync(join(repo, 'packages'))) {
++      const manifest = join(repo, 'packages', dir, 'package.json');
++      if (!existsSync(manifest)) continue;
++      mkdirSync(join(root, 'packages', dir), { recursive: true });
++      cpSync(manifest, join(root, 'packages', dir, 'package.json'));
++      const { name, version } = JSON.parse(readFileSync(manifest, 'utf8'));
++      before.set(name, version);
++    }
++    // Stands in for `pnpm version minor`, which rewrites the version of the package it runs in.
++    const pnpmVersion = join(root, 'pnpm-version.cjs');
++    writeFileSync(
++      pnpmVersion,
++      [
++        "const fs = require('node:fs');",
++        "const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));",
++        "const [major, minor] = pkg.version.split('.').map(Number);",
++        'pkg.version = `${major}.${minor + 1}.0`;',
++        "fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, '\\t')}\\n`);",
++      ].join('\n'),
++    );
++    const env = {
++      ...process.env,
++      PNPM_VERSION_STUB: pnpmVersion,
++      GIT_CONFIG_GLOBAL: '/dev/null',
++      GIT_CONFIG_NOSYSTEM: '1',
++      GIT_AUTHOR_NAME: 'test',
++      GIT_AUTHOR_EMAIL: 'test@example.com',
++      GIT_COMMITTER_NAME: 'test',
++      GIT_COMMITTER_EMAIL: 'test@example.com',
++    };
++    const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8', env });
++    assert.equal(git('init', '-q').status, 0);
++    assert.equal(git('add', '-A').status, 0);
++    assert.equal(git('commit', '-qm', 'base').status, 0);
++    // A package that is not committed yet (a release run with ALLOW_DIRTY=1) is not part of the
++    // release, even when it peers on a bumped package.
++    mkdirSync(join(root, 'packages', 'zz-uncommitted'));
++    writeFileSync(
++      join(root, 'packages', 'zz-uncommitted', 'package.json'),
++      `${JSON.stringify(
++        {
++          name: '@elata-biosciences/zz-uncommitted',
++          version: '0.0.0',
++          peerDependencies: {
++            '@elata-biosciences/eeg-web': `^${before.get('@elata-biosciences/eeg-web')}`,
++          },
++        },
++        null,
++        '\t',
++      )}\n`,
++    );
++    // Uncommitted edits to committed manifests (also only possible with ALLOW_DIRTY=1) stay out of
++    // the release commit too: app-state, which no bump touches, and biosignal-analytics, whose rppg-web
++    // peer the release moves. Only the peer range goes into the commit; the edit stays in the tree.
++    const localEdit = (dir) => {
++      const file = join(root, 'packages', dir, 'package.json');
++      const text = readFileSync(file, 'utf8');
++      const edited = text.replace(/("description": ")/, '$1local edit, ');
++      assert.notEqual(edited, text);
++      writeFileSync(file, edited);
++    };
++    localEdit('app-state');
++    localEdit('biosignal-analytics');
++
++    const release = spawnSync(
++      'bash',
++      [
++        '-c',
++        [
++          'source scripts/run-lib.sh',
++          'pnpm() { if [[ "$1" == version && "$2" == minor ]]; then node "$PNPM_VERSION_STUB"; fi; }',
++          'git() { if [[ "$1" == push ]]; then return 0; fi; command git "$@"; }',
++          'bump_publish_packages minor',
++          'release_commit_and_push_version_changes all latest',
++        ].join('\n'),
++      ],
++      { cwd: root, encoding: 'utf8', env },
++    );
++    assert.equal(release.status, 0, release.stderr);
++
++    const after = new Map();
++    for (const dir of readdirSync(join(root, 'packages'))) {
++      const manifest = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8'));
++      after.set(manifest.name, manifest);
++    }
++    const stale = [];
++    let checked = 0;
++    for (const manifest of after.values()) {
++      for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
++        const sibling = after.get(name);
++        if (!sibling || sibling.version === before.get(name)) continue;
++        checked += 1;
++        // ^<new version>, as `changeset version` writes; for a new 0.x minor such as 0.13.0 it is
++        // also the only caret range that takes it.
++        if (range !== `^${sibling.version}`) {
++          stale.push(`${manifest.name}: peer ${name} ${range} does not take the new ${sibling.version}`);
++        }
++      }
++    }
++    assert.ok(checked > 0, 'no workspace peer names a bumped package');
++    assert.deepEqual(stale, []);
++    assert.equal(
++      git('status', '--porcelain').stdout,
++      [
++        ' M packages/app-state/package.json',
++        ' M packages/biosignal-analytics/package.json',
++        '?? packages/zz-uncommitted/',
++        '',
++      ].join('\n'),
++      'the release commit must take every manifest the release edited, and nothing it did not edit',
++    );
++    const committed = (dir) => JSON.parse(git('show', `HEAD:packages/${dir}/package.json`).stdout);
++    assert.doesNotMatch(committed('app-state').description, /local edit/);
++    const analytics = committed('biosignal-analytics');
++    assert.doesNotMatch(analytics.description, /local edit/);
++    assert.equal(
++      analytics.peerDependencies['@elata-biosciences/rppg-web'],
++      `^${after.get('@elata-biosciences/rppg-web').version}`,
++    );
++    assert.match(after.get('@elata-biosciences/biosignal-analytics').description, /^local edit, /);
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
+diff --git a/packages/eeg-web-ble/package.json b/packages/eeg-web-ble/package.json
+index 581ad0e..b4b52b7 100644
+--- a/packages/eeg-web-ble/package.json
++++ b/packages/eeg-web-ble/package.json
+@@ -54,7 +54,7 @@
+ 		"pack:check": "pnpm pack --dry-run --json"
+ 	},
+ 	"peerDependencies": {
+-		"@elata-biosciences/eeg-web": "^0.2.1"
++		"@elata-biosciences/eeg-web": "^0.12.0"
+ 	},
+ 	"devDependencies": {
+ 		"@elata-biosciences/eeg-web": "workspace:*",
+diff --git a/packages/ppg-web/package.json b/packages/ppg-web/package.json
+index 06b86ac..e9b72e7 100644
+--- a/packages/ppg-web/package.json
++++ b/packages/ppg-web/package.json
+@@ -53,9 +53,9 @@
+ 		"prepack": "pnpm run prepare:publish && pnpm run verify:publish"
+ 	},
+ 	"peerDependencies": {
+-		"@elata-biosciences/eeg-web": "^0.2.1",
+-		"@elata-biosciences/eeg-web-ble": "^0.2.1",
+-		"@elata-biosciences/rppg-web": "^0.3.0"
++		"@elata-biosciences/eeg-web": "^0.12.0",
++		"@elata-biosciences/eeg-web-ble": "^0.12.0",
++		"@elata-biosciences/rppg-web": "^0.14.0"
+ 	},
+ 	"devDependencies": {
+ 		"@elata-biosciences/eeg-web": "workspace:*",
+diff --git a/scripts/audit-repo.mjs b/scripts/audit-repo.mjs
+index 0dbba32..8c75c4f 100644
+--- a/scripts/audit-repo.mjs
++++ b/scripts/audit-repo.mjs
+@@ -199,10 +199,47 @@ if (fs.existsSync(workspacePackagesDir)) {
+ 	}
+ }
+ 
++// Whether a caret range takes a version, as npm's semver does for x.y.z versions: ^1.2.3 takes
++// >=1.2.3 <2.0.0, ^0.2.3 takes >=0.2.3 <0.3.0, ^0.0.3 takes 0.0.3 only. Null for any other range.
++function caretTakes(range, version) {
++	const r = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
++	const v = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
++	if (!r || !v) return null;
++	const [r0, r1, r2] = r.slice(1).map(Number);
++	const [v0, v1, v2] = v.slice(1).map(Number);
++	const atLeast = v0 !== r0 ? v0 > r0 : v1 !== r1 ? v1 > r1 : v2 >= r2;
++	if (!atLeast) return false;
++	if (r0 > 0) return v0 === r0;
++	if (r1 > 0) return v0 === 0 && v1 === r1;
++	return v0 === 0 && v1 === 0 && v2 === r2;
++}
++
+ for (const { manifest, relPath } of workspacePackages.values()) {
+ 	const peerDependencies = manifest.peerDependencies ?? {};
+ 	const devDependencies = manifest.devDependencies ?? {};
+ 
++	// A workspace package named as a peer must be installable at its current version: npm refuses a
++	// peer outside its range (ERESOLVE), and pnpm warns, or fails when it has to install the peer
++	// itself. A semver release moves these ranges (sync_workspace_peer_ranges in scripts/run-lib.sh);
++	// this catches any version or range changed another way.
++	for (const [depName, range] of Object.entries(peerDependencies)) {
++		const sibling = workspacePackages.get(depName);
++		if (!sibling) continue;
++		const takes = caretTakes(range, sibling.manifest.version);
++		assert(
++			/^\^\d+\.\d+\.\d+$/.test(range),
++			`${relPath} names workspace peer '${depName}' with '${range}'; use a caret range (^x.y.z) the audit can check`,
++		);
++		assert(
++			/^\d+\.\d+\.\d+$/.test(sibling.manifest.version),
++			`${relPath} names workspace peer '${depName}', whose version ${sibling.manifest.version} is not x.y.z (a prerelease?); the audit cannot check it`,
++		);
++		assert(
++			takes !== false,
++			`${relPath} names workspace peer '${depName}' ${range}, which does not take its current version ${sibling.manifest.version}`,
++		);
++	}
++
+ 	for (const depName of Object.keys(peerDependencies)) {
+ 		if (!workspacePackages.has(depName)) continue;
+ 		const devSpecifier = devDependencies[depName];
+diff --git a/scripts/run-lib.sh b/scripts/run-lib.sh
+index ac2baf3..1da86d0 100755
+--- a/scripts/run-lib.sh
++++ b/scripts/run-lib.sh
+@@ -852,6 +852,115 @@ guard_major_zerover() {
+     esac
+ }
+ 
++# `pnpm version` rewrites only the version of the package it runs in. Below 1.0 a caret
++# range takes one minor (^0.12.0 is >=0.12.0 <0.13.0), so after a minor bump a peer range
++# naming a bumped package refuses its new version, and npm will not install the two
++# together (ERESOLVE). Set every peer range that names a bumped package to ^<new version>,
++# as `changeset version` does on the ./run.sh bump path for the caret ranges that
++# scripts/audit-repo.mjs requires, in every workspace package (biosignal-analytics peers
++# on rppg-web but is not in the `all` set). Each range is edited in place so the rest of
++# the manifest keeps its formatting.
++# Shared by the sync and the release commit: rewrite every peer range in one manifest's text
++# that names a package in `bumped` (name -> version) to ^<version>, in place.
++PEER_SYNC_JS='
++  function syncPeers(file, original, bumped, log) {
++    let text = original;
++    for (const [name, range] of Object.entries(JSON.parse(text).peerDependencies || {})) {
++      if (!bumped.has(name)) continue;
++      const next = "^" + bumped.get(name);
++      if (range === next) continue;
++      const start = text.indexOf("\"peerDependencies\"");
++      const end = text.indexOf("}", start);
++      const from = JSON.stringify(name) + ": " + JSON.stringify(range);
++      const to = JSON.stringify(name) + ": " + JSON.stringify(next);
++      text = text.slice(0, start) + text.slice(start, end).replace(from, to) + text.slice(end);
++      if (JSON.parse(text).peerDependencies[name] !== next) {
++        throw new Error(file + ": could not rewrite peer " + name + " " + range + " to " + next);
++      }
++      if (log) console.error("  -> " + file + ": peer " + name + " " + range + " -> " + next);
++    }
++    return text;
++  }
++  function bumpedVersions(files) {
++    const fs = require("node:fs");
++    return new Map(files.map((file) => {
++      const { name, version } = JSON.parse(fs.readFileSync(file, "utf8"));
++      return [name, version];
++    }));
++  }
++'
++
++sync_workspace_peer_ranges() {
++    require_cmds node
++    local pkg
++    local -a bumped=()
++    for pkg in "$@"; do
++        bumped+=("$(package_dir_for_target "$pkg")/package.json")
++    done
++    (
++        cd "$ROOT_DIR"
++        node -e "$PEER_SYNC_JS"'
++          const fs = require("node:fs");
++          const path = require("node:path");
++          const bumped = bumpedVersions(process.argv.slice(1));
++          try {
++            for (const dir of fs.readdirSync("packages")) {
++              const file = path.join("packages", dir, "package.json");
++              if (!fs.existsSync(file)) continue;
++              const original = fs.readFileSync(file, "utf8");
++              const text = syncPeers(file, original, bumped, true);
++              if (text !== original) fs.writeFileSync(file, text);
++            }
++          } catch (error) {
++            console.error(error.message);
++            process.exit(2);
++          }
++        ' "${bumped[@]}"
++    )
++}
++
++# Stage the peer ranges sync_workspace_peer_ranges moved in committed manifests outside the
++# release set, and nothing else in them: the staged file is the committed one with only those
++# ranges rewritten, so any other uncommitted edit (possible with ALLOW_DIRTY=1) stays in the
++# working tree. A manifest whose working copy does not carry the rewrite is left alone.
++stage_synced_peer_ranges() {
++    require_cmds node git
++    local pkg
++    local -a released=()
++    for pkg in "$@"; do
++        released+=("$(package_dir_for_target "$pkg")/package.json")
++    done
++    (
++        cd "$ROOT_DIR"
++        node -e "$PEER_SYNC_JS"'
++          const fs = require("node:fs");
++          const path = require("node:path");
++          const { execFileSync } = require("node:child_process");
++          const released = process.argv.slice(1);
++          const bumped = bumpedVersions(released);
++          const git = (args, input) => execFileSync("git", args, { encoding: "utf8", input });
++          try {
++            for (const dir of fs.readdirSync("packages")) {
++              const file = path.posix.join("packages", dir, "package.json");
++              if (released.includes(file)) continue;
++              const staged = git(["ls-files", "-s", "--", file]).trim();
++              if (!staged) continue;
++              const committed = git(["show", "HEAD:" + file]);
++              const synced = syncPeers(file, committed, bumped, false);
++              if (synced === committed) continue;
++              const working = fs.readFileSync(file, "utf8");
++              if (syncPeers(file, working, bumped, false) !== working) continue;
++              const blob = git(["hash-object", "-w", "--stdin"], synced).trim();
++              git(["update-index", "--cacheinfo", staged.split(" ")[0] + "," + blob + "," + file]);
++            }
++          } catch (error) {
++            console.error(error.message);
++            process.exit(2);
++          }
++        ' "${released[@]}"
++    )
++}
++
+ bump_publish_packages() {
+     local level="$1"
+     local pkg
+@@ -880,6 +989,7 @@ bump_publish_packages() {
+             pnpm version "$level" --no-git-tag-version
+         ) 1>&2
+     done
++    sync_workspace_peer_ranges $(release_targets_for all) 1>&2 || return 1
+ }
+ 
+ resolve_release_target_and_dist_tag() {
+@@ -1180,6 +1290,9 @@ release_commit_and_push_version_changes() {
+     fi
+ 
+     git add "${to_add[@]}" >/dev/null 2>&1 || true
++    # A semver bump also moves peer ranges in packages outside the release set
++    # (sync_workspace_peer_ranges); commit those ranges with the release, and only those.
++    stage_synced_peer_ranges $(release_targets_for "$target") || die "Could not stage the moved peer ranges."
+     if git diff --cached --quiet >/dev/null; then
+         echo "No version-related changes to commit."
+         return 0

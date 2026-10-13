@@ -1,0 +1,612 @@
+From 8b8ecadeb19aac13fcd64bcea723a3a5a43c3519 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 13:13:58 +0000
+Subject: [PATCH] fix(create-elata-demo): ship the appMetrics fallback version
+ and refuse a release that cannot start
+
+Squashed from fix/create-elata-demo-starts at fef0a51 for review; the pull request text carries the full description and the red/green evidence.
+---
+ .../create-elata-demo-app-metrics-version.md  |   5 +
+ docs/releasing.md                             |   4 +-
+ packages/create-elata-demo/index.test.mjs     | 281 +++++++++++++++++-
+ packages/create-elata-demo/llms.txt           |   2 +-
+ packages/create-elata-demo/package.json       |   5 +-
+ .../scripts/verify-packed-cli.mjs             | 113 +++++++
+ scripts/run-lib.sh                            |  37 ++-
+ 7 files changed, 414 insertions(+), 33 deletions(-)
+ create mode 100644 .changeset/create-elata-demo-app-metrics-version.md
+ create mode 100644 packages/create-elata-demo/scripts/verify-packed-cli.mjs
+
+diff --git a/.changeset/create-elata-demo-app-metrics-version.md b/.changeset/create-elata-demo-app-metrics-version.md
+new file mode 100644
+index 0000000..17fb774
+--- /dev/null
++++ b/.changeset/create-elata-demo-app-metrics-version.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/create-elata-demo": patch
++---
++
++`npx @elata-biosciences/create-elata-demo` (and `npm create @elata-biosciences/elata-demo`) works again. Every release from 0.3.1 to 0.12.1 crashed on start, for every template and every command including `--list-templates`, unless `@elata-biosciences/app-metrics` happened to be installed beside it: the CLI reads an `app-metrics` version on start that the package did not carry.
+diff --git a/docs/releasing.md b/docs/releasing.md
+index a647188..75fa49e 100644
+--- a/docs/releasing.md
++++ b/docs/releasing.md
+@@ -115,6 +115,7 @@ the commit/tags.
+    ```bash
+    ./run.sh release-check all
+    ```
++   For `create-elata-demo` the preflight also refuses an `elataSdkVersions` entry that names no package under `packages/`, and its `verify:publish` (which `prepack` runs again at publish) scaffolds every template from the package's packed files alone, as npm installs it, so a version the CLI needs but does not carry stops the release before anything is published.
+ 4. **Build and publish**:
+    ```bash
+    ./run.sh release
+@@ -125,9 +126,10 @@ the commit/tags.
+ 
+ ### Release order
+ 
+-Release order is fixed in `release_targets_for` (`scripts/run-lib.sh`): `eeg-web` → `eeg-web-ble` → `rppg-web` → `rppg-models-web` → `ppg-web` → `create-elata-demo` → `app-metrics` → `biosignal-session`.
++Release order is fixed in `release_targets_for` (`scripts/run-lib.sh`): `eeg-web` → `eeg-web-ble` → `rppg-web` → `rppg-models-web` → `ppg-web` → `app-metrics` → `biosignal-session` → `create-elata-demo`.
+ `rppg-models-web` follows `rppg-web` because it depends on the base package.
+ `eeg-web-ble` must follow `eeg-web` because it has an `eeg-web` peer dependency.
++`create-elata-demo` goes last because it pins the version of every package in its `elataSdkVersions`, which the release syncs just before publishing it. A package published after it could still be patch-bumped past the pinned version, or fail to publish and leave the pin pointing at a version npm does not have.
+ 
+ Two publishable packages are deliberately **excluded from the `all` set** and
+ released individually while their APIs settle:
+diff --git a/packages/create-elata-demo/index.test.mjs b/packages/create-elata-demo/index.test.mjs
+index 485410f..e1fc7e4 100644
+--- a/packages/create-elata-demo/index.test.mjs
++++ b/packages/create-elata-demo/index.test.mjs
+@@ -7,6 +7,8 @@ import {
+   mkdirSync,
+   rmSync,
+   readFileSync,
++  readdirSync,
++  statSync,
+   existsSync,
+   writeFileSync,
+ } from 'node:fs';
+@@ -28,6 +30,9 @@ const eegWebBleVersion = JSON.parse(
+ const rppgWebVersion = JSON.parse(
+   readFileSync(join(__dirname, '..', 'rppg-web', 'package.json'), 'utf8'),
+ ).version;
++const appMetricsVersion = JSON.parse(
++  readFileSync(join(__dirname, '..', 'app-metrics', 'package.json'), 'utf8'),
++).version;
+ const ppgWebVersion = JSON.parse(
+   readFileSync(join(__dirname, '..', 'ppg-web', 'package.json'), 'utf8'),
+ ).version;
+@@ -65,6 +70,88 @@ function runCommand(cmd, args, cwd, timeoutMs = 5 * 60_000) {
+   );
+ }
+ 
++// What npm installs: package.json plus the entries in its "files", with no SDK package beside it.
++function copyPackedFiles(fromDir, toDir) {
++  const manifest = JSON.parse(readFileSync(join(fromDir, 'package.json'), 'utf8'));
++  mkdirSync(toDir, { recursive: true });
++  for (const entry of ['package.json', ...manifest.files]) {
++    if (existsSync(join(fromDir, entry))) {
++      cpSync(join(fromDir, entry), join(toDir, entry), { recursive: true });
++    }
++  }
++}
++
++// Each template is a directory. A stray file beside them, such as the .DS_Store macOS Finder
++// leaves, is not a template, and npm does not pack it.
++function templateNamesIn(packageDir) {
++  return readdirSync(join(packageDir, 'templates'), { withFileTypes: true })
++    .filter((entry) => entry.isDirectory())
++    .map((entry) => entry.name);
++}
++
++function* filesUnder(dir) {
++  for (const entry of readdirSync(dir)) {
++    const path = join(dir, entry);
++    if (statSync(path).isDirectory()) {
++      yield* filesUnder(path);
++    } else {
++      yield path;
++    }
++  }
++}
++
++// The repo package an elataSdkVersions key names (eegWebBle: packages/eeg-web-ble).
++function packageDirFor(key) {
++  return key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
++}
++
++function readManifest(root, dir) {
++  return JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8'));
++}
++
++const repoRoot = join(__dirname, '..', '..');
++const needsBash = {
++  skip: spawnSync('bash', ['--version']).status === 0 ? false : 'needs bash for scripts/run-lib.sh',
++};
++
++// Runs scripts/run-lib.sh the way ./run.sh does, with pnpm and npm stubbed out so nothing is
++// installed or published.
++function runReleaseLib(root, commands) {
++  return spawnSync(
++    'bash',
++    [
++      '-c',
++      `set -Eeuo pipefail; source scripts/run-lib.sh >/dev/null; pnpm() { :; }; npm() { :; }; ${commands}`,
++    ],
++    { cwd: root, encoding: 'utf8' },
++  );
++}
++
++// A scratch copy of what the release reads: scripts/run-lib.sh, create-elata-demo's manifest
++// (plus `extraVersions` in its elataSdkVersions), and every package it pins, each one minor
++// version on, as at the next release.
++function makeReleaseRepo(extraVersions = {}) {
++  const root = mkdtempSync(join(tmpdir(), 'create-elata-demo-release-'));
++  mkdirSync(join(root, 'scripts'));
++  cpSync(join(repoRoot, 'scripts', 'run-lib.sh'), join(root, 'scripts', 'run-lib.sh'));
++  // Tarball contents are not under test here.
++  writeFileSync(join(root, 'scripts', 'validate-tarballs.mjs'), '');
++  const write = (dir, manifest) => {
++    mkdirSync(join(root, 'packages', dir), { recursive: true });
++    writeFileSync(join(root, 'packages', dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
++  };
++  const scaffolder = structuredClone(scaffolderPackage);
++  Object.assign(scaffolder.elataSdkVersions, extraVersions);
++  write('create-elata-demo', scaffolder);
++  for (const key of Object.keys(scaffolderPackage.elataSdkVersions)) {
++    const pkg = readManifest(repoRoot, packageDirFor(key));
++    const [major, minor] = pkg.version.split('.').map(Number);
++    pkg.version = `${major}.${minor + 1}.0`;
++    write(packageDirFor(key), pkg);
++  }
++  return root;
++}
++
+ test('lists templates', () => {
+   const result = runCli(['--list-templates'], __dirname);
+   assert.strictEqual(result.status, 0, result.stderr);
+@@ -87,6 +174,63 @@ test('ships fallback SDK versions that match the repo package versions', () => {
+   assert.equal(scaffolderPackage.elataSdkVersions.eegWebBle, eegWebBleVersion);
+   assert.equal(scaffolderPackage.elataSdkVersions.rppgWeb, rppgWebVersion);
+   assert.equal(scaffolderPackage.elataSdkVersions.ppgWeb, ppgWebVersion);
++  assert.equal(scaffolderPackage.elataSdkVersions.appMetrics, appMetricsVersion);
++});
++
++test('the release sync keeps every packaged SDK version current', needsBash, () => {
++  // Just before it publishes create-elata-demo, the release syncs elataSdkVersions with the
++  // repo's packages. A key the sync does not follow goes stale at the next release.
++  const root = makeReleaseRepo();
++  try {
++    const run = runReleaseLib(root, 'sync_create_elata_demo_versions_if_needed');
++    assert.equal(run.status, 0, run.stderr);
++    const synced = readManifest(root, 'create-elata-demo').elataSdkVersions;
++    assert.deepEqual(Object.keys(synced), Object.keys(scaffolderPackage.elataSdkVersions));
++    for (const [key, version] of Object.entries(synced)) {
++      const current = readManifest(root, packageDirFor(key)).version;
++      assert.equal(version, current, `elataSdkVersions.${key} was not synced`);
++    }
++  } finally {
++    rmSync(root, { recursive: true, force: true });
++  }
++});
++
++test('the release publishes create-elata-demo after every package it pins', needsBash, () => {
++  // The publish loop patch-bumps an unchanged package at its own turn, so a package published
++  // after create-elata-demo moves past the version just synced into it.
++  const run = runReleaseLib(repoRoot, 'release_targets_for all');
++  assert.equal(run.status, 0, run.stderr);
++  const order = run.stdout.trim().split(/\s+/);
++  const scaffolderTurn = order.indexOf('create-elata-demo');
++  assert.notEqual(scaffolderTurn, -1, order.join(' '));
++  for (const key of Object.keys(scaffolderPackage.elataSdkVersions)) {
++    const turn = order.indexOf(packageDirFor(key));
++    assert.ok(
++      turn !== -1 && turn < scaffolderTurn,
++      `${packageDirFor(key)} is not released before create-elata-demo: ${order.join(' ')}`,
++    );
++  }
++});
++
++test('release-check refuses a packaged SDK version that names no package', needsBash, () => {
++  // create-elata-demo is published last, so a bad entry that only the sync noticed would stop
++  // the release after every other package was already published.
++  const good = makeReleaseRepo();
++  const bad = makeReleaseRepo({ museProto: '1.0.0' });
++  try {
++    const manifest = join(good, 'packages', 'create-elata-demo', 'package.json');
++    const before = readFileSync(manifest, 'utf8');
++    const passed = runReleaseLib(good, 'verify_release_contract_for_target all');
++    assert.equal(passed.status, 0, passed.stderr);
++    assert.equal(readFileSync(manifest, 'utf8'), before, 'release-check must not change files');
++
++    const refused = runReleaseLib(bad, 'verify_release_contract_for_target all');
++    assert.notEqual(refused.status, 0);
++    assert.match(refused.stderr, /elataSdkVersions\.museProto names no package/);
++  } finally {
++    rmSync(good, { recursive: true, force: true });
++    rmSync(bad, { recursive: true, force: true });
++  }
+ });
+ 
+ test('scaffolds the default template', () => {
+@@ -120,26 +264,137 @@ test('scaffolds the default template', () => {
+   }
+ });
+ 
+-test('scaffolds correctly from packaged contents without monorepo siblings', () => {
++test('scaffolds every template from packaged contents without monorepo siblings', () => {
++  // npm installs create-elata-demo with no SDK package beside it, so every version a template
++  // needs has to come from the packaged elataSdkVersions. 0.3.1 to 0.12.1 crashed here on start.
+   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-packaged-'));
+   try {
+     const packagedDir = join(tmp, 'pkg');
+-    mkdirSync(packagedDir);
+-    cpSync(join(__dirname, 'index.mjs'), join(packagedDir, 'index.mjs'));
+-    cpSync(join(__dirname, 'package.json'), join(packagedDir, 'package.json'));
+-    cpSync(join(__dirname, 'templates'), join(packagedDir, 'templates'), {
+-      recursive: true,
+-    });
++    copyPackedFiles(__dirname, packagedDir);
++    const templateNames = templateNamesIn(packagedDir);
++    assert.ok(templateNames.length > 0);
++
++    for (const templateName of templateNames) {
++      const appName = `demo-${templateName}`;
++      const result = spawnSync(
++        process.execPath,
++        [join(packagedDir, 'index.mjs'), appName, '--template', templateName],
++        { cwd: tmp, encoding: 'utf8', timeout: 10_000 },
++      );
++      assert.strictEqual(result.status, 0, `CLI failed for ${templateName}:\n${result.stderr}`);
++
++      for (const file of filesUnder(join(tmp, appName))) {
++        const left = readFileSync(file, 'utf8').match(/__[A-Z][A-Z0-9_]*__/);
++        assert.equal(left, null, `${templateName}: ${left} left in ${file}`);
++      }
++      const pkg = JSON.parse(readFileSync(join(tmp, appName, 'package.json'), 'utf8'));
++      for (const [name, version] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) {
++        if (name.startsWith('@elata-biosciences/')) {
++          const dir = name.slice('@elata-biosciences/'.length);
++          assert.equal(version, readManifest(repoRoot, dir).version, `${templateName}: ${name}`);
++        }
++      }
++    }
++  } finally {
++    rmSync(tmp, { recursive: true, force: true });
++  }
++});
+ 
+-    const result = spawnSync(process.execPath, [join(packagedDir, 'index.mjs'), 'demo-app'], {
+-      cwd: tmp,
++test('the publish check refuses a package that cannot scaffold from its packed files', () => {
++  // verify:publish runs this check in release-check and in prepack. Before it, the only publish
++  // check was that a few files exist, so 0.3.1 to 0.12.1 shipped a CLI that crashed on start.
++  const check = (dir) =>
++    spawnSync(process.execPath, [join(__dirname, 'scripts', 'verify-packed-cli.mjs'), dir], {
+       encoding: 'utf8',
+-      timeout: 10_000,
++      timeout: 60_000,
+     });
++  const passed = check(__dirname);
++  assert.strictEqual(passed.status, 0, passed.stderr);
+ 
+-    assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
+-    const pkg = readFileSync(join(tmp, 'demo-app', 'package.json'), 'utf8');
+-    assert.match(pkg, new RegExp(`"@elata-biosciences/rppg-web": "${rppgWebVersion}"`));
++  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-publish-check-'));
++  try {
++    // A file beside the templates, such as the .DS_Store macOS Finder leaves (git ignores it and
++    // npm does not pack it), is not a template and must not stop a release.
++    const strayFile = join(tmp, 'stray-file');
++    copyPackedFiles(__dirname, strayFile);
++    writeFileSync(join(strayFile, 'templates', '.DS_Store'), '');
++    const tolerated = check(strayFile);
++    assert.strictEqual(tolerated.status, 0, tolerated.stderr);
++
++    // As 0.3.1 to 0.12.1 shipped: no appMetrics fallback.
++    const noFallback = join(tmp, 'no-fallback');
++    copyPackedFiles(__dirname, noFallback);
++    const manifest = {
++      ...scaffolderPackage,
++      elataSdkVersions: Object.fromEntries(
++        Object.entries(scaffolderPackage.elataSdkVersions).filter(([key]) => key !== 'appMetrics'),
++      ),
++    };
++    writeFileSync(join(noFallback, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
++    const crashed = check(noFallback);
++    assert.notStrictEqual(crashed.status, 0);
++    assert.match(crashed.stderr, /Missing packaged SDK version metadata for @elata-biosciences\/app-metrics/);
++
++    // A template that needs a version the CLI does not fill in.
++    const unfilled = join(tmp, 'unfilled');
++    copyPackedFiles(__dirname, unfilled);
++    const templateManifest = join(unfilled, 'templates', 'pulse-game', 'package.json');
++    const template = JSON.parse(readFileSync(templateManifest, 'utf8'));
++    template.dependencies['@elata-biosciences/biosignal-session'] = '__BIOSIGNAL_SESSION_VERSION__';
++    writeFileSync(templateManifest, `${JSON.stringify(template, null, 2)}\n`);
++    const leftOver = check(unfilled);
++    assert.notStrictEqual(leftOver.status, 0);
++    assert.match(leftOver.stderr, /pulse-game: __BIOSIGNAL_SESSION_VERSION__/);
++
++    // A global that Vite's define replaces at build time (written __NAME__ by convention) lives in
++    // module code, where the CLI fills nothing. It is not a placeholder and must not stop a release.
++    const defineGlobal = join(tmp, 'define-global');
++    copyPackedFiles(__dirname, defineGlobal);
++    const gameEntry = join(defineGlobal, 'templates', 'pulse-game', 'src', 'game', 'main.tsx');
++    writeFileSync(gameEntry, `${readFileSync(gameEntry, 'utf8')}console.log(__APP_VERSION__);\n`);
++    const defined = check(defineGlobal);
++    assert.strictEqual(defined.status, 0, defined.stderr);
++  } finally {
++    rmSync(tmp, { recursive: true, force: true });
++  }
++});
++
++test('verify:publish refuses a package that cannot start from npm', () => {
++  // release-check runs verify:publish before anything is published, and prepack runs it again.
++  // Run that script line the way npm and pnpm do (in a shell), in a copy laid out like the repo,
++  // so the test fails if the publish check is ever dropped from it.
++  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-verify-publish-'));
++  try {
++    mkdirSync(join(tmp, 'scripts'));
++    cpSync(
++      join(repoRoot, 'scripts', 'verify-package-build.mjs'),
++      join(tmp, 'scripts', 'verify-package-build.mjs'),
++    );
++    const packageDir = join(tmp, 'packages', 'create-elata-demo');
++    copyPackedFiles(__dirname, packageDir);
++    cpSync(join(__dirname, 'scripts'), join(packageDir, 'scripts'), { recursive: true });
++    const verifyPublish = () =>
++      spawnSync(scaffolderPackage.scripts['verify:publish'], {
++        cwd: packageDir,
++        shell: true,
++        encoding: 'utf8',
++        timeout: 60_000,
++      });
++
++    const passed = verifyPublish();
++    assert.strictEqual(passed.status, 0, passed.stderr);
++
++    // As 0.3.1 to 0.12.1 shipped: no appMetrics fallback.
++    const manifest = {
++      ...scaffolderPackage,
++      elataSdkVersions: Object.fromEntries(
++        Object.entries(scaffolderPackage.elataSdkVersions).filter(([key]) => key !== 'appMetrics'),
++      ),
++    };
++    writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
++    const refused = verifyPublish();
++    assert.notStrictEqual(refused.status, 0, 'verify:publish passed a package that crashes on start');
++    assert.match(refused.stderr, /Missing packaged SDK version metadata for @elata-biosciences\/app-metrics/);
+   } finally {
+     rmSync(tmp, { recursive: true, force: true });
+   }
+diff --git a/packages/create-elata-demo/llms.txt b/packages/create-elata-demo/llms.txt
+index 0c9e5b5..1b19847 100644
+--- a/packages/create-elata-demo/llms.txt
++++ b/packages/create-elata-demo/llms.txt
+@@ -1,7 +1,7 @@
+ # @elata-biosciences/create-elata-demo — context for tools and agents
+ 
+ ## Role
+-CLI **`create-elata-demo`** that scaffolds starter apps from embedded templates. Packaged **`elataSdkVersions`** in `package.json` pin compatible **`eeg-web` / `eeg-web-ble` / `rppg-web`** versions for generated `package.json` files.
++CLI **`create-elata-demo`** that scaffolds starter apps from embedded templates. Packaged **`elataSdkVersions`** in `package.json` pin the version of every Elata SDK package a template depends on (**`eeg-web` / `eeg-web-ble` / `rppg-web` / `ppg-web` / `app-metrics`**) for generated `package.json` files.
+ 
+ ## Templates (and aliases)
+ | Template ID   | Aliases                          | Contents (short)                          |
+diff --git a/packages/create-elata-demo/package.json b/packages/create-elata-demo/package.json
+index 034c855..e2a6bcc 100644
+--- a/packages/create-elata-demo/package.json
++++ b/packages/create-elata-demo/package.json
+@@ -28,14 +28,15 @@
+     "eegWeb": "0.12.0",
+     "eegWebBle": "0.12.0",
+     "rppgWeb": "0.14.0",
+-    "ppgWeb": "0.12.0"
++    "ppgWeb": "0.12.0",
++    "appMetrics": "0.5.0"
+   },
+   "bin": {
+     "create-elata-demo": "index.mjs"
+   },
+   "scripts": {
+     "test": "node --test index.test.mjs",
+-    "verify:publish": "node ../../scripts/verify-package-build.mjs index.mjs templates/rppg-demo/package.json templates/ppg-demo/package.json templates/eeg-demo/package.json",
++    "verify:publish": "node ../../scripts/verify-package-build.mjs index.mjs templates/rppg-demo/package.json templates/ppg-demo/package.json templates/eeg-demo/package.json && node scripts/verify-packed-cli.mjs",
+     "prepare:publish": "pnpm run verify:publish",
+     "prepack": "pnpm run prepare:publish && pnpm run verify:publish"
+   },
+diff --git a/packages/create-elata-demo/scripts/verify-packed-cli.mjs b/packages/create-elata-demo/scripts/verify-packed-cli.mjs
+new file mode 100644
+index 0000000..b47e6ad
+--- /dev/null
++++ b/packages/create-elata-demo/scripts/verify-packed-cli.mjs
+@@ -0,0 +1,113 @@
++#!/usr/bin/env node
++
++// Publish check, run by verify:publish (so by release-check and by prepack): the CLI must
++// scaffold every template from its packed files alone. npm installs this package with no SDK
++// package beside it, so every version a template needs has to come from the packaged
++// elataSdkVersions. 0.3.1 to 0.12.1 shipped without appMetrics and crashed on start, which a
++// files-exist check cannot see.
++//
++// Usage: node scripts/verify-packed-cli.mjs [package-dir]   (default: this package)
++
++import { spawnSync } from "node:child_process";
++import {
++	cpSync,
++	existsSync,
++	mkdirSync,
++	mkdtempSync,
++	readFileSync,
++	readdirSync,
++	rmSync,
++	statSync,
++} from "node:fs";
++import { tmpdir } from "node:os";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++
++const packageDir = path.resolve(
++	process.argv[2] ??
++		path.join(path.dirname(fileURLToPath(import.meta.url)), ".."),
++);
++const manifest = JSON.parse(
++	readFileSync(path.join(packageDir, "package.json"), "utf8"),
++);
++const placeholder = /__[A-Z][A-Z0-9_]*__/;
++// Module code is not scanned: a template may use a global that Vite's define replaces at build
++// time, and those are written __NAME__ by convention (__APP_VERSION__). The CLI's own placeholders
++// that can break an install sit in package.json, HTML and Markdown, which define never touches.
++const moduleCode = /\.[cm]?[jt]sx?$/;
++
++function* filesUnder(dir) {
++	for (const entry of readdirSync(dir)) {
++		const file = path.join(dir, entry);
++		if (statSync(file).isDirectory()) {
++			yield* filesUnder(file);
++		} else {
++			yield file;
++		}
++	}
++}
++
++const work = mkdtempSync(path.join(tmpdir(), "create-elata-demo-verify-"));
++const problems = [];
++let templates = [];
++try {
++	// What npm installs: package.json plus the entries in "files", with nothing beside it.
++	const packed = path.join(work, "package");
++	mkdirSync(packed);
++	for (const entry of ["package.json", ...manifest.files]) {
++		if (existsSync(path.join(packageDir, entry))) {
++			cpSync(path.join(packageDir, entry), path.join(packed, entry), {
++				recursive: true,
++			});
++		}
++	}
++
++	const cli = path.join(packed, manifest.bin["create-elata-demo"]);
++	// Each template is a directory. A stray file beside them, such as the .DS_Store macOS
++	// Finder leaves, is not a template, and npm does not pack it.
++	templates = readdirSync(path.join(packed, "templates"), {
++		withFileTypes: true,
++	})
++		.filter((entry) => entry.isDirectory())
++		.map((entry) => entry.name);
++	for (const template of templates) {
++		const app = `app-${template}`;
++		const run = spawnSync(
++			process.execPath,
++			[cli, app, "--template", template],
++			{ cwd: work, encoding: "utf8", timeout: 60_000 },
++		);
++		if (run.status !== 0) {
++			problems.push(
++				`${template}: the CLI exited with ${run.status ?? run.signal}\n${run.stderr}`,
++			);
++			continue;
++		}
++		for (const file of filesUnder(path.join(work, app))) {
++			if (moduleCode.test(file)) {
++				continue;
++			}
++			const left = readFileSync(file, "utf8").match(placeholder);
++			if (left) {
++				problems.push(
++					`${template}: ${left[0]} left in ${path.relative(path.join(work, app), file)}`,
++				);
++			}
++		}
++	}
++} finally {
++	rmSync(work, { recursive: true, force: true });
++}
++
++if (templates.length === 0) {
++	problems.push("no templates found in the packed files");
++}
++if (problems.length > 0) {
++	console.error(
++		`${manifest.name} cannot scaffold from its packed files:\n${problems.join("\n")}`,
++	);
++	process.exit(1);
++}
++console.log(
++	`Packed CLI verified: ${templates.length} templates scaffold with no sibling packages`,
++);
+diff --git a/scripts/run-lib.sh b/scripts/run-lib.sh
+index ac2baf3..c2e6f0e 100755
+--- a/scripts/run-lib.sh
++++ b/scripts/run-lib.sh
+@@ -354,8 +354,9 @@ release_tag_prefix_for_target() {
+ release_targets_for() {
+     local target="$1"
+     if [[ "$target" == "all" ]]; then
+-        # Keep repo-published dependency order.
+-        echo "eeg-web eeg-web-ble rppg-web rppg-models-web ppg-web create-elata-demo app-metrics biosignal-session"
++        # Keep repo-published dependency order. create-elata-demo goes last: it pins the
++        # version of every package in its elataSdkVersions, synced just before it publishes.
++        echo "eeg-web eeg-web-ble rppg-web rppg-models-web ppg-web app-metrics biosignal-session create-elata-demo"
+     else
+         echo "$target"
+     fi
+@@ -730,6 +731,9 @@ package_version_for_target() {
+ sync_create_elata_demo_versions_if_needed() {
+     # create-elata-demo embeds fallback SDK versions in its own package.json.
+     # Ensure they match the repo's current package versions before publishing.
++    # With "check", only confirm that each one names a package in this repo, so a
++    # bad entry stops release-check instead of a half-published release.
++    local mode="${1:-sync}"
+     require_cmds node
+ 
+     local pkg_dir="packages/create-elata-demo"
+@@ -737,12 +741,6 @@ sync_create_elata_demo_versions_if_needed() {
+         return 0
+     fi
+ 
+-    local eeg_web_version eeg_web_ble_version rppg_web_version ppg_web_version
+-    eeg_web_version="$(package_version_for_target "eeg-web")"
+-    eeg_web_ble_version="$(package_version_for_target "eeg-web-ble")"
+-    rppg_web_version="$(package_version_for_target "rppg-web")"
+-    ppg_web_version="$(package_version_for_target "ppg-web")"
+-
+     local changed="0"
+     changed="$(node -e "
+       const fs = require('node:fs');
+@@ -750,15 +748,19 @@ sync_create_elata_demo_versions_if_needed() {
+       const file = path.join(process.cwd(), '$pkg_dir', 'package.json');
+       const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+       const next = { ...(pkg.elataSdkVersions || {}) };
+-      const desired = {
+-        eegWeb: '$eeg_web_version',
+-        eegWebBle: '$eeg_web_ble_version',
+-        rppgWeb: '$rppg_web_version',
+-        ppgWeb: '$ppg_web_version',
+-      };
++      // Every version the CLI carries follows the package it names (eegWebBle: packages/eeg-web-ble),
++      // so a version added for a new template cannot be left behind at a release.
+       let didChange = false;
+-      for (const [k, v] of Object.entries(desired)) {
+-        if (next[k] !== v) { next[k] = v; didChange = true; }
++      for (const key of Object.keys(next)) {
++        const dir = key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
++        const manifest = path.join(process.cwd(), 'packages', dir, 'package.json');
++        if (!fs.existsSync(manifest)) {
++          console.error('elataSdkVersions.' + key + ' names no package at packages/' + dir);
++          process.exit(2);
++        }
++        if ('$mode' === 'check') continue;
++        const version = JSON.parse(fs.readFileSync(manifest, 'utf8')).version;
++        if (next[key] !== version) { next[key] = version; didChange = true; }
+       }
+       if (didChange) {
+         pkg.elataSdkVersions = next;
+@@ -939,6 +941,9 @@ verify_release_contract_for_target() {
+ 
+     for pkg in $(release_targets_for "$target"); do
+         local pkg_dir verify_script
++        if [[ "$pkg" == "create-elata-demo" ]]; then
++            sync_create_elata_demo_versions_if_needed check
++        fi
+         pkg_dir="$(package_dir_for_target "$pkg")"
+         verify_script="$(verify_script_for_target "$pkg")"
+         if [[ -n "$verify_script" ]]; then

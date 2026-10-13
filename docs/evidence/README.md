@@ -138,3 +138,14 @@ above.
 
 No recordings, no video, nothing that identifies a person, and no number from recordings we may not share. No
 dataset names. The full methods packet with the private evaluation is kept outside any repository.
+
+## Where each proposal's code lives
+
+Each proposal folder holds its code as one file, `fix.patch`: one commit on top of
+Elata's `main` at 49fdb41, so there is no branch per proposal to keep. To rebuild a
+proposal as a branch on the day its pull request is opened:
+
+    git checkout -b fix/<name> 49fdb41 && git am docs/evidence/proposals/NN-<name>/fix.patch
+
+Each file was checked to rebuild exactly the code of its former branch (same tree).
+The full working history of every former branch stays reachable from `archive/2026-10`.

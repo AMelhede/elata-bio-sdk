@@ -1,0 +1,125 @@
+From 9132e833826d44b2e5f7b15c8fb6b6e40953a15c Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 16:39:03 +0000
+Subject: [PATCH] fix(rppg-web): call the app monitor's timers as plain
+ functions
+
+Squashed from fix/app-monitor-timers at 93db1f3 for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/app-monitor-timers.md              |  5 ++
+ .../src/__tests__/rppgAppAdapter.test.ts      | 66 +++++++++++++++++++
+ packages/rppg-web/src/rppgAppAdapter.ts       |  9 ++-
+ 3 files changed, 78 insertions(+), 2 deletions(-)
+ create mode 100644 .changeset/app-monitor-timers.md
+
+diff --git a/.changeset/app-monitor-timers.md b/.changeset/app-monitor-timers.md
+new file mode 100644
+index 0000000..2d99b69
+--- /dev/null
++++ b/.changeset/app-monitor-timers.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/rppg-web": patch
++---
++
++`createRppgAppMonitor(...).start()` no longer throws a TypeError ("Illegal invocation" in Chromium) in browsers and Web Workers, so the monitor now emits snapshots on its interval: `start()` and `stop()` call `setInterval`/`clearInterval` as plain functions.
+diff --git a/packages/rppg-web/src/__tests__/rppgAppAdapter.test.ts b/packages/rppg-web/src/__tests__/rppgAppAdapter.test.ts
+index 453f2d2..32b1ad1 100644
+--- a/packages/rppg-web/src/__tests__/rppgAppAdapter.test.ts
++++ b/packages/rppg-web/src/__tests__/rppgAppAdapter.test.ts
+@@ -293,3 +293,69 @@ describe("RppgAppAdapter", () => {
+ 		}
+ 	});
+ });
++
++// WebIDL operations such as setInterval and clearInterval throw a TypeError
++// unless `this` is the global object or undefined (Chromium: "Illegal
++// invocation"). Node and jsdom do not enforce this, so these tests do, on top
++// of jest's fake timers, and check that the monitor really reports.
++describe("RppgAppMonitor with browser-strict timers", () => {
++	const realSetInterval = globalThis.setInterval;
++	const realClearInterval = globalThis.clearInterval;
++
++	const browserStrict = <T extends (...args: never[]) => unknown>(
++		timer: T,
++	): T =>
++		function (this: unknown, ...args: Parameters<T>) {
++			if (this !== undefined && this !== globalThis) {
++				throw new TypeError("Illegal invocation");
++			}
++			return timer.apply(globalThis, args);
++		} as unknown as T;
++
++	beforeEach(() => {
++		jest.useFakeTimers();
++		globalThis.setInterval = browserStrict(globalThis.setInterval);
++		globalThis.clearInterval = browserStrict(globalThis.clearInterval);
++	});
++
++	afterEach(() => {
++		jest.useRealTimers();
++		globalThis.setInterval = realSetInterval;
++		globalThis.clearInterval = realClearInterval;
++	});
++
++	function expectSnapshotsUntilStopped(monitor: RppgAppMonitor) {
++		const listener = jest.fn();
++		monitor.subscribe(listener);
++		monitor.start();
++		jest.advanceTimersByTime(650);
++		expect(listener).toHaveBeenCalledTimes(3);
++		expect(listener).toHaveBeenLastCalledWith(
++			expect.objectContaining({ status: "ready" }),
++		);
++
++		monitor.stop();
++		jest.advanceTimersByTime(650);
++		expect(listener).toHaveBeenCalledTimes(3);
++	}
++
++	test("createRppgAppMonitor reports every interval until stop()", () => {
++		expectSnapshotsUntilStopped(
++			createRppgAppMonitor(createSource(), {
++				nowMs: () => 1000,
++				intervalMs: 200,
++				emitImmediately: false,
++			}),
++		);
++	});
++
++	test("timers passed to the constructor are called the same way", () => {
++		expectSnapshotsUntilStopped(
++			new RppgAppMonitor(
++				createSource(),
++				{ nowMs: () => 1000, intervalMs: 200, emitImmediately: false },
++				{ setIntervalFn: setInterval, clearIntervalFn: clearInterval },
++			),
++		);
++	});
++});
+diff --git a/packages/rppg-web/src/rppgAppAdapter.ts b/packages/rppg-web/src/rppgAppAdapter.ts
+index d964251..6b3050f 100644
+--- a/packages/rppg-web/src/rppgAppAdapter.ts
++++ b/packages/rppg-web/src/rppgAppAdapter.ts
+@@ -423,14 +423,19 @@ export class RppgAppMonitor {
+ 
+ 	start() {
+ 		if (this.timer) return;
+-		this.timer = this.setIntervalFn(() => {
++		// Plain call, not `this.setIntervalFn(...)`: WebIDL operations such as
++		// setInterval throw a TypeError unless `this` is the global object or
++		// undefined. stop() does the same for clearInterval.
++		const setIntervalFn = this.setIntervalFn;
++		this.timer = setIntervalFn(() => {
+ 			this.emit();
+ 		}, this.intervalMs);
+ 	}
+ 
+ 	stop() {
+ 		if (!this.timer) return;
+-		this.clearIntervalFn(this.timer);
++		const clearIntervalFn = this.clearIntervalFn;
++		clearIntervalFn(this.timer);
+ 		this.timer = null;
+ 	}
+ 

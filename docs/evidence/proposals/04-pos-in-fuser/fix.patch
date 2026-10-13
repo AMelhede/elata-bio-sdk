@@ -1,0 +1,839 @@
+From deca8d7a8f0d4ae1075836acfe89f18ba9bb3bf2 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 11:52:03 +0000
+Subject: [PATCH] feat(rppg-web): project fused regions with POS by default
+
+Squashed from fix/pos-in-fuser at 564d589 for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/pos-in-fuser.md                    |  17 ++
+ packages/rppg-web/README.md                   |  16 +-
+ .../createRppgSession.fusion.test.ts          | 151 ++++++++++++++++++
+ .../createRppgSession.lifecycle.test.ts       |  16 ++
+ .../rppg-web/src/__tests__/demoRunner.test.ts |  38 +++++
+ .../rppg-web/src/__tests__/exports.test.ts    |   5 +
+ .../src/__tests__/fusionChromGolden.test.ts   |  67 ++++++++
+ .../src/__tests__/posPulseModel.test.ts       | 143 +++++++++++++++++
+ packages/rppg-web/src/demoRunner.ts           |  28 +++-
+ packages/rppg-web/src/index.ts                |   2 +
+ packages/rppg-web/src/multiRoiFusion.ts       |  49 ++++--
+ packages/rppg-web/src/rppgProcessor.ts        |   2 +-
+ packages/rppg-web/src/rppgSession.ts          |   1 +
+ packages/rppg-web/src/rppgSignalModel.ts      |  63 ++++++++
+ 14 files changed, 572 insertions(+), 26 deletions(-)
+ create mode 100644 .changeset/pos-in-fuser.md
+ create mode 100644 packages/rppg-web/src/__tests__/createRppgSession.fusion.test.ts
+ create mode 100644 packages/rppg-web/src/__tests__/fusionChromGolden.test.ts
+ create mode 100644 packages/rppg-web/src/__tests__/posPulseModel.test.ts
+
+diff --git a/.changeset/pos-in-fuser.md b/.changeset/pos-in-fuser.md
+new file mode 100644
+index 0000000..177ee5c
+--- /dev/null
++++ b/.changeset/pos-in-fuser.md
+@@ -0,0 +1,17 @@
++---
++"@elata-biosciences/rppg-web": minor
++---
++
++The multi-region fuser (`MultiRoiRppgFuser`, used by `createRppgSession` in
++`face_mesh` mode) now projects each region with POS (Wang et al. 2017) instead of
++CHROM by default, and exports the new `PosPulseModel`. `ChromPulseModel` keeps
++the window mean of its two axes, which is 1 for each, so its output carries a
++term (1 - alpha). Alpha is re-estimated on every frame, so its frame-to-frame
++change reached the fused pulse at full size, and sensor noise alone could put
++the fused pulse's peak tens of bpm away from the true rate. POS's axes each sum
++to zero, so the fused pulse no longer carries that term. On that path the rate
++and the `signal_quality` that `getMetrics()` reports change with it. The new
++`fusionProjection` option (`"pos"` or `"chrom"`, on `createRppgSession`,
++`DemoRunner` and the fuser's constructor) keeps the previous output reachable
++with `"chrom"`. `ChromPulseModel` itself, and the non-fused processor path that
++uses it, are unchanged.
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 9a34403..1cdd6e8 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -323,13 +323,15 @@ sample count if you want to show a progress indicator.
+ MediaPipe fails to load. Check `diagnostics.faceTrackingMode` to see which
+ mode is active — `"face_mesh"` or `"video_frame"`.
+ 
+-**Multi-ROI fusion (on by default):** in `face_mesh` mode the session runs CHROM +
+-bandpass independently on the forehead and both cheeks and blends them by in-band
+-spectral SNR, so glare/hair/glasses-glint or partial occlusion on one region no
+-longer poisons the pulse. It falls back automatically to the single aggregated-ROI
+-path in `video_frame` mode or when the skin mask is off. Disable with
+-`multiRoiFusion: false`. Runner diagnostics expose `lastFusionWeights` (per-region,
+-SNR-driven), `lastFusedSnr`, and `lastProcessorMethod: "fused"`.
++**Multi-ROI fusion (on by default):** in `face_mesh` mode the session projects the
++forehead and both cheeks to a pulse independently (POS, Wang et al. 2017), band-passes
++each one, and blends them by in-band spectral SNR, so glare/hair/glasses-glint or
++partial occlusion on one region no longer poisons the pulse. It falls back
++automatically to the single aggregated-ROI path in `video_frame` mode or when the
++skin mask is off. Disable with `multiRoiFusion: false`. `fusionProjection: "chrom"`
++selects the CHROM projection the fuser used before POS became the default (see
++`PosPulseModel` for why it changed). Runner diagnostics expose `lastFusionWeights`
++(per-region, SNR-driven), `lastFusedSnr`, and `lastProcessorMethod: "fused"`.
+ 
+ ### Versioned ROI profiles
+ 
+diff --git a/packages/rppg-web/src/__tests__/createRppgSession.fusion.test.ts b/packages/rppg-web/src/__tests__/createRppgSession.fusion.test.ts
+new file mode 100644
+index 0000000..95cd63d
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/createRppgSession.fusion.test.ts
+@@ -0,0 +1,151 @@
++// Known answer through the path apps get by default: createRppgSession() with no options
++// finds a face (face_mesh mode), DemoRunner samples the forehead and both cheeks, the
++// multi-region fuser projects and band-passes each region, and the fused pulse reaches the
++// processor through pushFusedSample. Only the camera, the face finder and the WASM core are
++// stubbed: the frames are synthetic pixels, so the true rate is known.
++
++jest.mock("../mediapipeLoader", () => ({
++	loadFaceLandmarker: jest.fn(async () => ({
++		detectForVideo: jest.fn(() => ({ faceLandmarks: [] })),
++	})),
++}));
++
++jest.mock("../videoPlayback", () => ({
++	ensureVideoPlaying: jest.fn(async () => undefined),
++}));
++
++jest.mock("../wasmBackend", () => ({
++	loadWasmBackend: jest.fn(async () => ({
++		newPipeline: () => ({
++			push_sample: jest.fn(),
++			get_metrics: jest.fn(() => ({
++				bpm: null,
++				confidence: 0,
++				signal_quality: 0,
++			})),
++			free: jest.fn(),
++		}),
++	})),
++	createUnavailableBackend: jest.fn(),
++}));
++
++jest.mock("../mediaPipeFaceFrameSource", () => ({
++	MediaPipeFaceFrameSource: jest
++		.fn()
++		.mockImplementation(function MediaPipeFaceFrameSource(this: any) {
++			this.onFrame = null;
++			this.start = jest.fn(async () => {});
++			this.stop = jest.fn(async () => {});
++		}),
++}));
++
++import type { Frame } from "../frameSource";
++import { MediaPipeFaceFrameSource } from "../mediaPipeFaceFrameSource";
++import { createRppgSession } from "../rppgSession";
++
++const FS = 30;
++const TRUE_BPM = 72;
++const SECONDS = 20;
++const WIDTH = 30;
++const HEIGHT = 30;
++// Forehead, left cheek, right cheek: the order DemoRunner hands to the fuser.
++const ROIS = [
++	{ x: 10, y: 0, w: 10, h: 10 },
++	{ x: 0, y: 15, w: 10, h: 10 },
++	{ x: 20, y: 15, w: 10, h: 10 },
++];
++// A skin tone that passes the SDK's YCbCr skin mask.
++const SKIN = [200, 150, 120] as const;
++// The pulse moves the colour along the blood-volume direction, about (0.33, 0.77, 0.53)
++// of each channel (de Haan and van Leest 2014), 0.4% deep: inside the 0.5 to 2% range of
++// real skin. Each pixel also gets sensor noise of one grey level (sd), so each 100-pixel
++// region carries about 0.1 level of noise per channel after averaging, quieter than a
++// webcam; the pixels are then rounded to integers, as a camera delivers them.
++const PULSE_DIRECTION = [0.33, 0.77, 0.53] as const;
++const PULSE_DEPTH = 0.004;
++const PIXEL_NOISE = 1;
++
++function rng(seed: number) {
++	let s = seed >>> 0;
++	return () => {
++		s = (s * 1664525 + 1013904223) >>> 0;
++		return s / 0xffffffff;
++	};
++}
++
++function gauss(r: () => number) {
++	let u = 0;
++	while (u === 0) u = r();
++	return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r());
++}
++
++function frameAt(i: number, r: () => number): Frame {
++	const p = PULSE_DEPTH * Math.sin((2 * Math.PI * (TRUE_BPM / 60) * i) / FS);
++	const data = new Uint8ClampedArray(WIDTH * HEIGHT * 4);
++	for (let px = 0; px < WIDTH * HEIGHT; px++) {
++		for (let c = 0; c < 3; c++) {
++			data[px * 4 + c] =
++				SKIN[c] * (1 + PULSE_DIRECTION[c] * p) + PIXEL_NOISE * gauss(r);
++		}
++		data[px * 4 + 3] = 255;
++	}
++	return {
++		data,
++		width: WIDTH,
++		height: HEIGHT,
++		rois: ROIS,
++		timestampMs: (i * 1000) / FS,
++	};
++}
++
++// Strongest frequency in 0.7 to 3.5 Hz (42 to 210 bpm) of a Hann-windowed series.
++function peakBpm(x: number[]) {
++	let best = 0;
++	let bestHz = 0;
++	for (let hz = 0.7; hz <= 3.5; hz += 0.01) {
++		let re = 0;
++		let im = 0;
++		for (let i = 0; i < x.length; i++) {
++			const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (x.length - 1));
++			re += w * x[i]! * Math.cos((2 * Math.PI * hz * i) / FS);
++			im += w * x[i]! * Math.sin((2 * Math.PI * hz * i) / FS);
++		}
++		if (re * re + im * im > best) {
++			best = re * re + im * im;
++			bestHz = hz;
++		}
++	}
++	return bestHz * 60;
++}
++
++describe("createRppgSession default multi-region fusion", () => {
++	// Fixed seeds keep the run reproducible.
++	test.each([2, 3, 4])(
++		"the fused pulse a default session hands the processor peaks at the true 72 bpm (seed %i)",
++		async (seed) => {
++			const session = await createRppgSession({
++				video: document.createElement("video"),
++			});
++			expect(session.faceTrackingMode).toBe("face_mesh");
++			const sources = (MediaPipeFaceFrameSource as unknown as jest.Mock).mock
++				.instances;
++			const source = sources[sources.length - 1] as {
++				onFrame: (frame: Frame) => void;
++			};
++			const r = rng(seed);
++			for (let i = 0; i < SECONDS * FS; i++) source.onFrame(frameAt(i, r));
++
++			// Every sample the processor received came from the fuser, from the first frame on.
++			const diagnostics = session.getDiagnostics();
++			expect(diagnostics.processorMethod).toBe("fused");
++			expect(diagnostics.framesWithFusion).toBe(SECONDS * FS);
++			expect(diagnostics.totalSamplesReceived).toBe(SECONDS * FS);
++			const fused = session
++				.getTraceSnapshot(10 * FS)
++				.points.map((point) => point.intensity);
++			expect(fused).toHaveLength(10 * FS);
++			expect(Math.abs(peakBpm(fused) - TRUE_BPM)).toBeLessThanOrEqual(2);
++			await session.dispose();
++		},
++	);
++});
+diff --git a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+index a309378..453d787 100644
+--- a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
++++ b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
+ }));
+ 
+ import { createRppgSession } from "../rppgSession";
++import { DemoRunner } from "../demoRunner";
+ import { loadFaceLandmarker } from "../mediapipeLoader";
+ import { ensureVideoPlaying } from "../videoPlayback";
+ import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
+@@ -162,6 +163,21 @@ describe("createRppgSession lifecycle", () => {
+ 		expect(session.faceTrackingMode).toBe("face_mesh");
+ 	});
+ 
++	test("passes fusionProjection through to the runner's fuser", async () => {
++		await createRppgSession({
++			video: document.createElement("video"),
++			faceMesh: "off",
++			ensureVideoPlayback: false,
++			fusionProjection: "chrom",
++		});
++
++		expect(DemoRunner).toHaveBeenCalledWith(
++			expect.anything(),
++			expect.anything(),
++			expect.objectContaining({ fusionProjection: "chrom" }),
++		);
++	});
++
+ 	test("dispose frees the created backend pipeline", async () => {
+ 		const free = jest.fn();
+ 		mockedLoadWasmBackend.mockResolvedValueOnce({
+diff --git a/packages/rppg-web/src/__tests__/demoRunner.test.ts b/packages/rppg-web/src/__tests__/demoRunner.test.ts
+index 2c2a599..246b34b 100644
+--- a/packages/rppg-web/src/__tests__/demoRunner.test.ts
++++ b/packages/rppg-web/src/__tests__/demoRunner.test.ts
+@@ -205,6 +205,44 @@ describe('DemoRunner multi-ROI path', () => {
+     await runner.stop();
+   });
+ 
++  test('fuses with POS by default and with CHROM only when fusionProjection asks', async () => {
++    // A 72 bpm pulse, 2% deep along the blood-volume colour direction (0.33, 0.77, 0.53).
++    const pulseFrame = (i: number): Frame => {
++      const p = 0.02 * Math.sin((2 * Math.PI * 1.2 * i) / 30);
++      const frame = makeSkinFrame(30, 30);
++      for (let px = 0; px < frame.data.length; px += 4) {
++        frame.data[px] = SKIN_PIXEL[0] * (1 + 0.33 * p);
++        frame.data[px + 1] = SKIN_PIXEL[1] * (1 + 0.77 * p);
++        frame.data[px + 2] = SKIN_PIXEL[2] * (1 + 0.53 * p);
++      }
++      frame.rois = [
++        { x: 0, y: 0, w: 10, h: 10 },
++        { x: 10, y: 10, w: 10, h: 10 },
++        { x: 20, y: 0, w: 10, h: 10 },
++      ];
++      frame.timestampMs = (i * 1000) / 30;
++      return frame;
++    };
++    const fused = async (opts: ConstructorParameters<typeof DemoRunner>[2]) => {
++      const src = new MockFrameSource();
++      const proc = new MockProcessor() as any;
++      proc.pushFusedSample = jest.fn();
++      const runner = new DemoRunner(src as any, proc as any, opts);
++      await runner.start();
++      for (let i = 0; i < 150; i++) src.emit(pulseFrame(i));
++      await runner.stop();
++      return proc.pushFusedSample.mock.calls.map((call: unknown[]) => call[1]);
++    };
++
++    const byDefault = await fused({});
++    const pos = await fused({ fusionProjection: 'pos' });
++    const chrom = await fused({ fusionProjection: 'chrom' });
++    expect(byDefault.length).toBeGreaterThan(0);
++    expect(byDefault).toEqual(pos);
++    expect(chrom).toHaveLength(pos.length);
++    expect(chrom).not.toEqual(pos);
++  });
++
+   test('falls back to aggregate path when multiRoiFusion is disabled', async () => {
+     const src = new MockFrameSource();
+     const proc = new MockProcessor() as any;
+diff --git a/packages/rppg-web/src/__tests__/exports.test.ts b/packages/rppg-web/src/__tests__/exports.test.ts
+index 226a19f..764047a 100644
+--- a/packages/rppg-web/src/__tests__/exports.test.ts
++++ b/packages/rppg-web/src/__tests__/exports.test.ts
+@@ -111,6 +111,11 @@ describe('@elata-biosciences/rppg-web exports', () => {
+     expect(typeof rppgWeb.replayBayesSession).toBe('function');
+   });
+ 
++  test('exports PosPulseModel as a constructor', () => {
++    expect(rppgWeb.PosPulseModel).toBeDefined();
++    expect(typeof rppgWeb.PosPulseModel).toBe('function');
++  });
++
+   test('has no unexpected undefined exports', () => {
+     const expectedKeys = [
+       'RppgProcessor',
+diff --git a/packages/rppg-web/src/__tests__/fusionChromGolden.test.ts b/packages/rppg-web/src/__tests__/fusionChromGolden.test.ts
+new file mode 100644
+index 0000000..3c58ab0
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/fusionChromGolden.test.ts
+@@ -0,0 +1,67 @@
++import { MultiRoiRppgFuser, type FusionRoiName } from '../multiRoiFusion';
++
++// fusionProjection "chrom" is kept so that the fuser's previous output stays reachable. This pins it:
++// the summary below was produced by the fuser on Elata main 49fdb41 (and by the published 0.14.0
++// dist) for exactly this input, which has a region dropping out, a region below the skin threshold
++// and a reset part way through. If any of it moves, "chrom" no longer reproduces the old fuser.
++
++function runStream(fuser: MultiRoiRppgFuser) {
++  let s = 12345;
++  const noise = () => {
++    let t = 0;
++    for (let k = 0; k < 4; k++) { s = (s * 1664525 + 1013904223) >>> 0; t += s / 4294967296; }
++    return (t - 2) * 1.5;
++  };
++  const sum = { valid: 0, fused: 0, fused2: 0, fusedOrder: 0, fusedSnr: 0, foreheadWeight: 0, cheekSnr: 0 };
++  for (let i = 0; i < 900; i++) {
++    if (i === 500) fuser.reset();
++    const p = 0.004 * Math.sin((2 * Math.PI * 1.2 * i) / 30);
++    const region = (skin: number) => ({ r: 180 * (1 + 0.33 * p) + noise(), g: 120 * (1 + 0.77 * p) + noise(), b: 100 * (1 + 0.53 * p) + noise(), skinFraction: skin });
++    const frame: Partial<Record<FusionRoiName, ReturnType<typeof region>>> = {
++      forehead: region(0.9),
++      leftCheek: i % 97 < 20 ? undefined : region(0.8),
++      rightCheek: region(i % 61 < 15 ? 0.05 : 0.7),
++    };
++    const out = fuser.pushFrame(frame);
++    if (!out.valid) continue;
++    sum.valid += 1;
++    sum.fused += out.fused;
++    sum.fused2 += out.fused * out.fused;
++    sum.fusedOrder += out.fused * ((i % 13) - 6);
++    sum.fusedSnr += out.fusedSnr;
++    sum.foreheadWeight += out.weights.forehead;
++    sum.cheekSnr += out.snr.leftCheek + out.snr.rightCheek;
++  }
++  return sum;
++}
++
++// Printed with toPrecision(17) from 49fdb41's dist/multiRoiFusion.js.
++const MAIN_49FDB41 = {
++  valid: 900,
++  fused: -1.8361663750866783,
++  fused2: 2.8756434728875888,
++  fusedOrder: 4.0572133439041371,
++  fusedSnr: 2846.7296577304264,
++  foreheadWeight: 315.29913304827431,
++  cheekSnr: 7034.6825814065014,
++};
++
++function expectSame(actual: Record<string, number>, expected: Record<string, number>) {
++  for (const [key, want] of Object.entries(expected)) {
++    // Relative 1e-9: far tighter than any change to the projection could stay inside, loose
++    // enough that a different libm rounding of Math.sin in another Node version does not trip it.
++    const tol = Math.max(1e-12, Math.abs(want) * 1e-9);
++    expect({ key, diff: Math.abs(actual[key] - want) <= tol, actual: actual[key] }).toEqual({ key, diff: true, actual: actual[key] });
++  }
++}
++
++describe('fusionProjection "chrom"', () => {
++  test('reproduces the fuser on Elata main 49fdb41', () => {
++    expectSame(runStream(new MultiRoiRppgFuser(30, undefined, undefined, 'chrom')), MAIN_49FDB41);
++  });
++
++  test('the default projection is not the old fuser, so the check above can fail', () => {
++    const pos = runStream(new MultiRoiRppgFuser(30));
++    expect(Math.abs(pos.fused - MAIN_49FDB41.fused)).toBeGreaterThan(1e-3);
++  });
++});
+diff --git a/packages/rppg-web/src/__tests__/posPulseModel.test.ts b/packages/rppg-web/src/__tests__/posPulseModel.test.ts
+new file mode 100644
+index 0000000..0b08653
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/posPulseModel.test.ts
+@@ -0,0 +1,143 @@
++import { MultiRoiRppgFuser, type RoiRgbSample } from "../multiRoiFusion";
++import { ChromPulseModel, PosPulseModel } from "../rppgSignalModel";
++
++// POS (Wang, den Brinker, Stuijk and de Haan, IEEE TBME 2017): on window-mean-normalised
++// channels, S1 = G - B and S2 = G + B - 2R, h = S1 + (sd S1 / sd S2) S2. Each normalised
++// channel averages exactly 1 over the window, so each axis averages the sum of its
++// weights: 0 for both POS axes, 1 for both CHROM axes (3R - 2G and 1.5R + G - 1.5B).
++// The pulse is a colour change along the blood-volume direction, about (0.33, 0.77, 0.53)
++// of each channel (de Haan and van Leest 2014).
++
++const fs = 30;
++const corr = (a: number[], b: number[]) => {
++	const n = a.length;
++	const ma = a.reduce((x, y) => x + y, 0) / n;
++	const mb = b.reduce((x, y) => x + y, 0) / n;
++	let sab = 0;
++	let saa = 0;
++	let sbb = 0;
++	for (let i = 0; i < n; i++) {
++		sab += (a[i]! - ma) * (b[i]! - mb);
++		saa += (a[i]! - ma) ** 2;
++		sbb += (b[i]! - mb) ** 2;
++	}
++	return sab / Math.sqrt(saa * sbb);
++};
++const sd = (a: number[]) => {
++	const m = a.reduce((x, y) => x + y, 0) / a.length;
++	return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length);
++};
++function rng(seed: number) {
++	let s = seed >>> 0;
++	return () => {
++		s = (s * 1664525 + 1013904223) >>> 0;
++		return s / 0xffffffff;
++	};
++}
++function gauss(r: () => number) {
++	let u = 0;
++	while (u === 0) u = r();
++	return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r());
++}
++
++describe("PosPulseModel", () => {
++	test("a brightness change alone gives no output (CHROM shares this property)", () => {
++		const m = new PosPulseModel();
++		const out: number[] = [];
++		for (let i = 0; i < 300; i++) {
++			const k = 1 + 0.05 * Math.sin((2 * Math.PI * 0.8 * i) / fs);
++			out.push(m.process(180 * k, 120 * k, 100 * k));
++		}
++		for (const v of out.slice(20)) expect(Math.abs(v)).toBeLessThan(1e-9);
++	});
++
++	test.each([1, 2, 3])(
++		"under sensor noise alone the output stays at the scale of the noise (seed %i)",
++		(seed) => {
++			// Noise of 0.1 level per channel is at most 0.1 / 100 = 0.001 of a channel's
++			// level. S1 and S2 average zero, so the per-frame weight only scales noise-sized
++			// deviations. With CHROM's arithmetic the output carries (1 - weight), and the
++			// weight's wobble makes it roughly a hundred times larger.
++			const m = new PosPulseModel();
++			const r = rng(seed);
++			const out: number[] = [];
++			for (let i = 0; i < 300; i++) {
++				out.push(
++					m.process(
++						180 + 0.1 * gauss(r),
++						120 + 0.1 * gauss(r),
++						100 + 0.1 * gauss(r),
++					),
++				);
++			}
++			expect(sd(out.slice(45))).toBeLessThan(5 * 0.001);
++		},
++	);
++
++	test("recovers a blood-volume pulse under a brightness swing ten times its size", () => {
++		const m = new PosPulseModel();
++		const out: number[] = [];
++		const pulse: number[] = [];
++		for (let i = 0; i < 300; i++) {
++			const t = i / fs;
++			const p = Math.sin(2 * Math.PI * 1.2 * t);
++			const k = 1 + 0.05 * Math.sin(2 * Math.PI * 0.4 * t);
++			const pv = 0.005 * p;
++			out.push(
++				m.process(
++					180 * k * (1 + 0.33 * pv),
++					120 * k * (1 + 0.77 * pv),
++					100 * k * (1 + 0.53 * pv),
++				),
++			);
++			pulse.push(p);
++		}
++		expect(Math.abs(corr(out.slice(60), pulse.slice(60)))).toBeGreaterThan(0.95);
++	});
++
++	test("keeps the waveform the same way up as CHROM, so beat timing downstream is unchanged", () => {
++		const pos = new PosPulseModel();
++		const chrom = new ChromPulseModel();
++		const a: number[] = [];
++		const c: number[] = [];
++		for (let i = 0; i < 300; i++) {
++			const pv = 0.005 * Math.sin(2 * Math.PI * 1.2 * (i / fs));
++			const rgb = [
++				180 * (1 + 0.33 * pv),
++				120 * (1 + 0.77 * pv),
++				100 * (1 + 0.53 * pv),
++			] as const;
++			a.push(pos.process(...rgb));
++			c.push(chrom.process(...rgb));
++		}
++		expect(corr(a.slice(60), c.slice(60))).toBeGreaterThan(0.9);
++	});
++});
++
++describe("MultiRoiRppgFuser projection", () => {
++	const run = (fuser: MultiRoiRppgFuser) => {
++		const out: number[] = [];
++		for (let i = 0; i < 200; i++) {
++			const t = i / fs;
++			const p = 0.004 * Math.sin(2 * Math.PI * 1.1 * t);
++			const k = 1 + 0.03 * Math.sin(2 * Math.PI * 0.3 * t);
++			const s: RoiRgbSample = {
++				r: 180 * k * (1 + 0.33 * p),
++				g: 120 * k * (1 + 0.77 * p),
++				b: 100 * k * (1 + 0.53 * p),
++			};
++			out.push(
++				fuser.pushFrame({ forehead: s, leftCheek: s, rightCheek: s }).fused,
++			);
++		}
++		return out;
++	};
++
++	test("uses POS by default and CHROM only when asked", () => {
++		const byDefault = run(new MultiRoiRppgFuser(fs));
++		const pos = run(new MultiRoiRppgFuser(fs, 8, 0.5, "pos"));
++		const chrom = run(new MultiRoiRppgFuser(fs, 8, 0.5, "chrom"));
++		expect(byDefault).toEqual(pos);
++		expect(chrom).not.toEqual(pos);
++	});
++});
+diff --git a/packages/rppg-web/src/demoRunner.ts b/packages/rppg-web/src/demoRunner.ts
+index c940ce6..7eb176e 100644
+--- a/packages/rppg-web/src/demoRunner.ts
++++ b/packages/rppg-web/src/demoRunner.ts
+@@ -14,6 +14,7 @@ import {
+ } from "./faceFraming";
+ import {
+ 	FUSION_ROIS,
++	type FusionProjection,
+ 	type FusionRoiName,
+ 	type MultiRoiFusionResult,
+ 	MultiRoiRppgFuser,
+@@ -63,13 +64,20 @@ export type DemoRunnerOptions = {
+ 	onError?: (error: DemoRunnerError) => void;
+ 	skinRatioSmoothingAlpha?: number;
+ 	/**
+-	 * Multi-ROI rPPG fusion: run CHROM + bandpass per face region (forehead +
+-	 * both cheeks) and blend by in-band spectral SNR, so glare/hair/occlusion on
+-	 * one region no longer poisons the estimate. Requires sub-ROIs on the frame
++	 * Multi-ROI rPPG fusion: project each face region (forehead + both cheeks)
++	 * to a pulse (see `fusionProjection`), band-pass it, and blend the regions
++	 * by in-band spectral SNR, so glare/hair/occlusion on one region no longer
++	 * poisons the estimate. Requires sub-ROIs on the frame
+ 	 * (face-mesh mode) + the skin mask. Defaults to on; falls back to the single
+ 	 * aggregated-ROI path when sub-ROIs are unavailable.
+ 	 */
+ 	multiRoiFusion?: boolean;
++	/**
++	 * Per-region projection inside the multi-ROI fuser: "pos" (default) or
++	 * "chrom", the projection used before this option existed. See
++	 * {@link FusionProjection}.
++	 */
++	fusionProjection?: FusionProjection;
+ 	/**
+ 	 * Pixel-selection and spatial-weighting profile. When omitted, the original
+ 	 * SDK YCbCr helper is used unchanged.
+@@ -166,7 +174,12 @@ export class DemoRunner {
+ 		this.diagnostics.roiPixelSamplerId =
+ 			opts.roiPixelSampler?.id ?? ELATA_YCBCR_V1_PIXEL_SAMPLER.id;
+ 		if (opts.multiRoiFusion !== false) {
+-			this.fuser = new MultiRoiRppgFuser(opts.sampleRate ?? 30);
++			this.fuser = new MultiRoiRppgFuser(
++				opts.sampleRate ?? 30,
++				undefined,
++				undefined,
++				opts.fusionProjection,
++			);
+ 		}
+ 	}
+ 
+@@ -271,7 +284,7 @@ export class DemoRunner {
+ 			skinRatio = agg.skinRatio;
+ 			clipRatio = agg.clipRatio;
+ 			intensity = agg.g;
+-			// Multi-ROI fusion: per-region CHROM blended by in-band SNR. The
++			// Multi-ROI fusion: per-region projection blended by in-band SNR. The
+ 			// aggregate above is still computed for diagnostics/onStats and as the
+ 			// fallback if the fuser can't produce a valid frame this tick.
+ 			if (this.fuser && useSkinMask) {
+@@ -364,8 +377,9 @@ export class DemoRunner {
+ 				fusionResult?.valid &&
+ 				typeof proc.pushFusedSample === "function"
+ 			) {
+-				// Fused pulse already carries CHROM + SNR-weighted blending; feed it
+-				// straight to spectral BPM/HRV, with the fused SNR as quality.
++				// Fused pulse already carries the per-region projection + SNR-weighted
++				// blending; feed it straight to spectral BPM/HRV, with the fused SNR
++				// as quality.
+ 				proc.pushFusedSample(ts, fusionResult.fused, fusionResult.fusedSnr);
+ 				this.diagnostics.lastProcessorMethod = "fused";
+ 				this.diagnostics.framesWithFusion += 1;
+diff --git a/packages/rppg-web/src/index.ts b/packages/rppg-web/src/index.ts
+index 940e82c..fdbd545 100644
+--- a/packages/rppg-web/src/index.ts
++++ b/packages/rppg-web/src/index.ts
+@@ -163,11 +163,13 @@ export {
+ 	ChannelGainController,
+ 	ChromPulseModel,
+ 	computeSignalSnrDb,
++	PosPulseModel,
+ 	spectralSnr,
+ 	zeroPhaseBandpass,
+ } from "./rppgSignalModel";
+ export { FUSION_ROIS, MultiRoiRppgFuser } from "./multiRoiFusion";
+ export type {
++	FusionProjection,
+ 	FusionRoiName,
+ 	MultiRoiFusionResult,
+ 	RoiRgbSample,
+diff --git a/packages/rppg-web/src/multiRoiFusion.ts b/packages/rppg-web/src/multiRoiFusion.ts
+index 6fdd6cd..e54e6f3 100644
+--- a/packages/rppg-web/src/multiRoiFusion.ts
++++ b/packages/rppg-web/src/multiRoiFusion.ts
+@@ -1,15 +1,35 @@
+-import { Bandpass, ChromPulseModel, spectralSnr } from "./rppgSignalModel";
++import {
++	Bandpass,
++	ChromPulseModel,
++	PosPulseModel,
++	spectralSnr,
++} from "./rppgSignalModel";
++
++/**
++ * How each region's colour is turned into a pulse sample. `"pos"` (the default)
++ * uses {@link PosPulseModel}. `"chrom"` uses {@link ChromPulseModel}, the
++ * projection the fuser used before this option existed, kept so that output
++ * stays reachable. See {@link PosPulseModel} for why POS is the default.
++ */
++export type FusionProjection = "pos" | "chrom";
++
++/** A per-region projection: one pulse sample per colour sample. */
++type PulseProjection = {
++	process(r: number, g: number, b: number): number;
++	reset(): void;
++};
+ 
+ /**
+  * Multi-ROI rPPG fusion.
+  *
+- * Instead of reading the pulse from a single forehead patch, this runs CHROM +
+- * bandpass independently on several face regions (forehead + both cheeks) and
+- * blends them with weights proportional to each region's in-band spectral SNR.
++ * Instead of reading the pulse from a single forehead patch, this projects each
++ * of several face regions (forehead + both cheeks) to a pulse (POS by default,
++ * see {@link FusionProjection}), band-passes it, and blends the regions with
++ * weights proportional to each region's in-band spectral SNR.
+  * The cleanest region dominates moment-to-moment, so local glare, hair, glasses
+  * glint, or partial occlusion on any one ROI no longer poisons the estimate.
+  *
+- * Per-ROI CHROM is self-normalizing (it divides by each channel's temporal
++ * Per-ROI projection is self-normalizing (it divides by each channel's temporal
+  * mean), so the raw skin-masked ROI averages can be fed directly — no shared
+  * AGC across regions, which would be incorrect.
+  */
+@@ -49,7 +69,7 @@ const MIN_SKIN_FRACTION = 0.1;
+ 
+ export class MultiRoiRppgFuser {
+ 	private readonly fs: number;
+-	private readonly chrom: Record<FusionRoiName, ChromPulseModel>;
++	private readonly projection: Record<FusionRoiName, PulseProjection>;
+ 	private readonly band: Record<FusionRoiName, Bandpass>;
+ 	private buf: Record<FusionRoiName, number[]>;
+ 	private fusedBuf: number[] = [];
+@@ -62,12 +82,19 @@ export class MultiRoiRppgFuser {
+ 	private readonly updateEvery: number;
+ 	private readonly weightEma = 0.3;
+ 
+-	constructor(fs = 30, windowSeconds = 8, updateEverySeconds = 0.5) {
++	constructor(
++		fs = 30,
++		windowSeconds = 8,
++		updateEverySeconds = 0.5,
++		projection: FusionProjection = "pos",
++	) {
+ 		this.fs = fs;
+ 		this.bufLimit = Math.max(60, Math.round(fs * windowSeconds));
+ 		this.minSamples = Math.round(fs * 3);
+ 		this.updateEvery = Math.max(1, Math.round(fs * updateEverySeconds));
+-		this.chrom = this.makeRecord(() => new ChromPulseModel());
++		this.projection = this.makeRecord<PulseProjection>(() =>
++			projection === "chrom" ? new ChromPulseModel() : new PosPulseModel(),
++		);
+ 		this.band = this.makeRecord(() => new Bandpass(fs, 0.7, 4.0));
+ 		this.buf = this.makeRecord(() => [] as number[]);
+ 		this.weights = this.makeRecord(() => 1 / FUSION_ROIS.length);
+@@ -84,7 +111,7 @@ export class MultiRoiRppgFuser {
+ 
+ 	reset() {
+ 		for (const roi of FUSION_ROIS) {
+-			this.chrom[roi].reset();
++			this.projection[roi].reset();
+ 			this.band[roi].reset();
+ 			this.buf[roi] = [];
+ 			this.weights[roi] = 1 / FUSION_ROIS.length;
+@@ -113,8 +140,8 @@ export class MultiRoiRppgFuser {
+ 			) {
+ 				continue;
+ 			}
+-			const chromVal = this.chrom[roi].process(s.r, s.g, s.b);
+-			const f = this.band[roi].process(chromVal);
++			const pulse = this.projection[roi].process(s.r, s.g, s.b);
++			const f = this.band[roi].process(pulse);
+ 			filtered[roi] = f;
+ 			const buf = this.buf[roi];
+ 			buf.push(f);
+diff --git a/packages/rppg-web/src/rppgProcessor.ts b/packages/rppg-web/src/rppgProcessor.ts
+index 74b3146..8aa2757 100644
+--- a/packages/rppg-web/src/rppgProcessor.ts
++++ b/packages/rppg-web/src/rppgProcessor.ts
+@@ -644,7 +644,7 @@ export class RppgProcessor {
+ 
+ 	/**
+ 	 * Push a pre-extracted, fused pulse value from the multi-ROI fuser
+-	 * ({@link MultiRoiRppgFuser}). The fuser already ran CHROM + bandpass per face
++	 * ({@link MultiRoiRppgFuser}). The fuser already projected and band-passed each face
+ 	 * region and blended them by in-band spectral SNR, so we feed the fused pulse
+ 	 * through the intensity path for spectral BPM/HRV and carry the fuser's
+ 	 * `fusedSnr` as the quality scalar — the backend's RGB-derived signal_quality
+diff --git a/packages/rppg-web/src/rppgSession.ts b/packages/rppg-web/src/rppgSession.ts
+index 491836a..2677286 100644
+--- a/packages/rppg-web/src/rppgSession.ts
++++ b/packages/rppg-web/src/rppgSession.ts
+@@ -419,6 +419,7 @@ export async function createRppgSession(
+ 		roiSmoothingAlpha: options.roiSmoothingAlpha ?? 0.25,
+ 		useSkinMask: options.useSkinMask ?? true,
+ 		multiRoiFusion: options.multiRoiFusion,
++		fusionProjection: options.fusionProjection,
+ 		roiPixelSampler: options.roiPixelSampler,
+ 		onRoiSamples: (samples) => {
+ 			options.onRoiSamples?.(samples);
+diff --git a/packages/rppg-web/src/rppgSignalModel.ts b/packages/rppg-web/src/rppgSignalModel.ts
+index 1a21afb..7ec2921 100644
+--- a/packages/rppg-web/src/rppgSignalModel.ts
++++ b/packages/rppg-web/src/rppgSignalModel.ts
+@@ -99,6 +99,69 @@ export class ChromPulseModel {
+ 	}
+ }
+ 
++/**
++ * POS, "plane orthogonal to skin" (Wang, den Brinker, Stuijk and de Haan,
++ * "Algorithmic principles of remote PPG", IEEE TBME 64(7), 2017), streaming over
++ * the same 45-sample window as {@link ChromPulseModel} and returning the newest
++ * sample. On window-mean-normalised channels, S1 = G - B, S2 = G + B - 2R and the
++ * pulse is h = S1 + (sd S1 / sd S2) S2.
++ *
++ * Each normalised channel averages exactly 1 over the window, so each axis
++ * averages the sum of its weights. POS's weights sum to zero, so S1 and S2 have
++ * no constant part, and a brightness change (all channels scaled together)
++ * cancels. The weight sd S1 / sd S2 is re-estimated on every frame; here its
++ * frame-to-frame change only rescales a pulse-sized deviation. CHROM's axes
++ * (3R - 2G and 1.5R + G - 1.5B) each sum to 1, so ChromPulseModel's X - aY
++ * carries a term (1 - a): every frame-to-frame change in a reaches the output
++ * at full size, and the part inside the heart-rate band passes the band-pass that
++ * follows. The paper version of CHROM band-passes X and Y before combining them,
++ * which removes that constant; ChromPulseModel combines them unfiltered.
++ */
++export class PosPulseModel {
++	private rQueue: number[] = [];
++	private gQueue: number[] = [];
++	private bQueue: number[] = [];
++
++	constructor(private readonly windowSize = 45) {}
++
++	reset() {
++		this.rQueue = [];
++		this.gQueue = [];
++		this.bQueue = [];
++	}
++
++	process(r: number, g: number, b: number): number {
++		this.rQueue.push(r);
++		this.gQueue.push(g);
++		this.bQueue.push(b);
++		if (this.rQueue.length > this.windowSize) {
++			this.rQueue.shift();
++			this.gQueue.shift();
++			this.bQueue.shift();
++		}
++		const len = this.rQueue.length;
++		if (len < 10) return 0;
++		const meanR = mean(this.rQueue) || 1;
++		const meanG = mean(this.gQueue) || 1;
++		const meanB = mean(this.bQueue) || 1;
++		const s1: number[] = [];
++		const s2: number[] = [];
++		for (let i = 0; i < len; i++) {
++			const rn = this.rQueue[i] / meanR;
++			const gn = this.gQueue[i] / meanG;
++			const bn = this.bQueue[i] / meanB;
++			s1.push(gn - bn);
++			s2.push(gn + bn - 2 * rn);
++		}
++		const sd2 = standardDeviation(s2);
++		const alpha = sd2 > 1e-9 ? standardDeviation(s1) / sd2 : 1;
++		// Negated so the waveform keeps the orientation ChromPulseModel gives the same pulse
++		// (CHROM's X - aY comes out opposite in sign to POS's S1 + aS2): peak detection and beat
++		// timing downstream were built on that orientation.
++		return -(s1[len - 1] + alpha * s2[len - 1]);
++	}
++}
++
+ export function computeSignalSnrDb(values: number[]): number {
+ 	if (values.length < 8) return -100;
+ 

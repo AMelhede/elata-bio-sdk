@@ -1,0 +1,1060 @@
+From aeb6d5ba8629771a29869dd2c8292e392ac048bc Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 13:13:58 +0000
+Subject: [PATCH] fix(create-elata-demo): build and install fresh starters with
+ current tooling
+
+Squashed from fix/starters-build-and-install at b94551e for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/starters-build-and-install.md      |   5 +
+ AGENTS.md                                     |  16 +-
+ CONTRIBUTING.md                               |   7 +-
+ README.md                                     |  11 +-
+ docs/create-elata-demo.md                     |  44 ++++-
+ docs/guides/choose-the-right-package.md       |   2 +-
+ docs/guides/compatibility.md                  |   6 +-
+ docs/guides/getting-started.md                |   8 +-
+ docs/guides/troubleshooting.md                |  11 +-
+ docs/maintainers.md                           |  16 +-
+ packages/create-elata-demo/README.md          |  10 +-
+ packages/create-elata-demo/index.mjs          |   9 +-
+ packages/create-elata-demo/index.test.mjs     | 177 +++++++++++++++++-
+ packages/create-elata-demo/llms.txt           |   2 +-
+ .../templates/eeg-ble/README.md               |   8 +-
+ .../templates/eeg-ble/package.json            |   3 +-
+ .../templates/eeg-ble/pnpm-workspace.yaml     |  10 +
+ .../templates/eeg-ble/vite.config.ts          |   3 +-
+ .../templates/eeg-demo/README.md              |   8 +-
+ .../templates/eeg-demo/package.json           |   3 +-
+ .../templates/eeg-demo/pnpm-workspace.yaml    |  10 +
+ .../templates/eeg-demo/vite.config.ts         |   3 +-
+ .../templates/ppg-demo/README.md              |   8 +-
+ .../templates/ppg-demo/package.json           |   3 +-
+ .../templates/ppg-demo/pnpm-workspace.yaml    |  10 +
+ .../templates/ppg-demo/vite.config.ts         |   3 +-
+ .../templates/pulse-game/package.json         |   3 +-
+ .../templates/pulse-game/pnpm-workspace.yaml  |  10 +
+ .../templates/pulse-game/vite.config.ts       |   3 +-
+ .../templates/rppg-demo/README.md             |   8 +-
+ .../templates/rppg-demo/package.json          |   3 +-
+ .../templates/rppg-demo/pnpm-workspace.yaml   |  10 +
+ .../templates/rppg-demo/vite.config.ts        |   3 +-
+ packages/rppg-web/README.md                   |  12 +-
+ scripts/run-lib.sh                            |  91 +++++++--
+ 35 files changed, 430 insertions(+), 109 deletions(-)
+ create mode 100644 .changeset/starters-build-and-install.md
+ create mode 100644 packages/create-elata-demo/templates/eeg-ble/pnpm-workspace.yaml
+ create mode 100644 packages/create-elata-demo/templates/eeg-demo/pnpm-workspace.yaml
+ create mode 100644 packages/create-elata-demo/templates/ppg-demo/pnpm-workspace.yaml
+ create mode 100644 packages/create-elata-demo/templates/pulse-game/pnpm-workspace.yaml
+ create mode 100644 packages/create-elata-demo/templates/rppg-demo/pnpm-workspace.yaml
+
+diff --git a/.changeset/starters-build-and-install.md b/.changeset/starters-build-and-install.md
+new file mode 100644
+index 0000000..0c53872
+--- /dev/null
++++ b/.changeset/starters-build-and-install.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/create-elata-demo": patch
++---
++
++Fresh starters build and install with current tools again. `vite build` failed in the starters that bundle `@elata-biosciences/rppg-web` (rppg-demo, pulse-game) once `@swc/core` 1.16.0 was released: `vite-plugin-top-level-await` re-prints every chunk that contains a dynamic `import()` and that version rejects it ("missing field `type`"). No template uses top-level await, so the plugin is removed from all five. pnpm 10 skips esbuild's build step with a warning, and pnpm 11 and later refuse to install until it is allowed, which they read only from `pnpm-workspace.yaml`; each starter now ships one that allows esbuild and lists the app itself (`packages: ['.']`, which pnpm 9 requires). That file also makes a starter its own pnpm project inside another workspace, so the CLI now prints `pnpm --dir <app> install` instead of `--ignore-workspace`, which skips the starter's own file and so fails on pnpm 11 and later. Because a starter is now a workspace root, pnpm 9 wants `-w` on `pnpm add` inside it; pnpm 10 and later do not.
+diff --git a/AGENTS.md b/AGENTS.md
+index 8349a4f..d4d900e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -101,22 +101,20 @@ chance that consumers follow an internal or legacy-looking path:
+   - recommended default
+   - only use the alternative when a specific repo-maintainer or advanced-integration condition applies
+ - For browser rPPG work, start with `createRppgSession()` and only drop to generated WASM bindings if you are intentionally debugging the SDK itself.
+-- If a reported consumer issue might actually be workspace coupling, check the `pnpm --ignore-workspace` caveat before concluding that the scaffold or template is broken.
++- If a reported consumer issue might actually be workspace coupling, check that the app still has the `pnpm-workspace.yaml` the scaffolder ships (starters from create-elata-demo 0.12.1 and earlier have none) before concluding that the scaffold or template is broken.
+ 
+ ## Important Gotcha: Scaffolding Inside This Repo
+ 
+-If a scaffolded app is created inside this repository, `pnpm install` from that
+-app directory may still bind to the parent workspace defined in
++A scaffolded app ships its own `pnpm-workspace.yaml`, so even inside this
++repository it installs as its own project, with its own `node_modules` and
++lockfile, rather than binding to the parent workspace defined in
+ [pnpm-workspace.yaml](pnpm-workspace.yaml).
+ 
+-That means the app may not get its own `node_modules` if it is not included in
+-the workspace globs.
+-
+-Use one of these instead:
++From the repository root:
+ 
+ ```bash
+-pnpm --dir my-app --ignore-workspace install
+-pnpm --dir my-app --ignore-workspace run dev
++pnpm --dir my-app install
++pnpm --dir my-app run dev
+ ```
+ 
+ Or use `npm install` / `npm run dev` from inside the scaffolded app.
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 92842ac..cf19b97 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -83,9 +83,10 @@ rather than forking consumer demos.
+ - The current scaffold flow supports interactive template selection, template
+   aliases (`rppg`, `eeg`, `ble`; plus legacy `eeg-web-ble-demo`), and
+   `--list-templates`.
+-- If you scaffold inside another `pnpm` workspace, verify the
+-  `pnpm --dir my-app --ignore-workspace ...` caveat before treating it as a
+-  scaffold failure.
++- Scaffolded apps ship their own `pnpm-workspace.yaml` (it also allows
++  esbuild's build script, which pnpm 11 and later require). If an install
++  misbehaves inside another workspace, check that file is still there before
++  treating it as a scaffold failure.
+ 
+ ### Demo And Example Notes
+ 
+diff --git a/README.md b/README.md
+index 5ef46dc..f0f2913 100644
+--- a/README.md
++++ b/README.md
+@@ -66,12 +66,13 @@ npm install
+ npm run dev
+ ```
+ 
+-If the new app lives inside another `pnpm` workspace, run this from the parent
+-directory instead:
++If the new app lives inside another `pnpm` workspace, it still installs as its
++own project, because it ships its own `pnpm-workspace.yaml`. From the parent
++directory:
+ 
+ ```bash
+-pnpm --dir my-app --ignore-workspace install
+-pnpm --dir my-app --ignore-workspace run dev
++pnpm --dir my-app install
++pnpm --dir my-app run dev
+ ```
+ 
+ Full details: [docs/create-elata-demo.md](docs/create-elata-demo.md)
+@@ -108,7 +109,7 @@ Wrong turns to avoid:
+ 
+ - Do not start with `./run.sh sync-to` unless you are modifying `packages/eeg-web` inside this monorepo.
+ - Do not treat in-repo dev demos as the normal consumer install path; they are reference and SDK-development surfaces.
+-- If you scaffold inside another `pnpm` workspace, check the `--ignore-workspace` flow before assuming the template is broken.
++- A scaffolded app installs as its own pnpm project even inside another workspace, because it ships its own `pnpm-workspace.yaml`. To make it part of the parent workspace instead, delete that file and allow esbuild's build script in the parent's.
+ 
+ ## Example applications
+ 
+diff --git a/docs/create-elata-demo.md b/docs/create-elata-demo.md
+index 38bed8d..eef6e92 100644
+--- a/docs/create-elata-demo.md
++++ b/docs/create-elata-demo.md
+@@ -81,7 +81,11 @@ Each scaffolded app includes:
+ - a `package.json` pinned to the current compatible Elata SDK package versions,
+ - a minimal React + Vite shell, and
+ - a template-specific `README.md` with browser and hardware notes,
+-- a `build` script that Type-checks and runs `vite build`.
++- a `build` script that Type-checks and runs `vite build`, and
++- a `pnpm-workspace.yaml` that makes the app its own pnpm project and allows
++  esbuild's build script (pnpm 11 and later refuse to install without that).
++  Because the app is then a workspace root, pnpm 9 wants `-w` on `pnpm add`;
++  pnpm 10 and later do not.
+ 
+ After scaffolding:
+ 
+@@ -95,15 +99,41 @@ pnpm run dev
+ 
+ > Note: The templates are compatible with `pnpm` and other package managers; this repo prefers `pnpm` for local work.
+ >
+-> If you scaffold **inside an existing pnpm workspace** but do not add the new app
+-> to that workspace's `pnpm-workspace.yaml`, run this from the parent directory:
++> If you scaffold **inside an existing pnpm workspace**, the new app still installs
++> as its own project, because it ships its own `pnpm-workspace.yaml`. From the
++> parent directory:
+ >
+ > ```bash
+-> pnpm --dir my-app --ignore-workspace install
+-> pnpm --dir my-app --ignore-workspace run dev
++> pnpm --dir my-app install
++> pnpm --dir my-app run dev
+ > ```
+ >
+-> or use `npm install` / `npm run dev` from inside `my-app`.
++> or use `npm install` / `npm run dev` from inside `my-app`. To make the app part
++> of the parent workspace instead, delete its `pnpm-workspace.yaml` and allow
++> esbuild's build script in the parent's.
++
++### Starters made by create-elata-demo 0.12.1 and earlier
++
++Those starters fail `vite build` with current `@swc/core` (1.16.0 and later):
++`vite-plugin-top-level-await` reports "missing field `type`" for every chunk
++that contains a dynamic `import()`, which includes anything that bundles
++`@elata-biosciences/rppg-web`. On pnpm 11 and later they also fail to install,
++because nothing allows esbuild's build script. To repair one:
++
++1. In `vite.config.ts`, delete the `vite-plugin-top-level-await` import and its
++   entry in `plugins`, and remove it from `devDependencies` in `package.json`.
++   No template uses top-level await.
++2. For pnpm, add a `pnpm-workspace.yaml` next to `package.json`:
++
++   ```yaml
++   packages:
++     - .
++   allowBuilds:
++     esbuild: true
++   ```
++
++   pnpm 9 needs the `packages` field. On pnpm 9, `pnpm add` inside such an app
++   needs `-w`.
+ 
+ ### Using `pnpm dlx` directly
+ 
+@@ -132,7 +162,7 @@ This command:
+ 
+ 1. Ensures `node_modules/` exists at the workspace root (`pnpm install` if needed).
+ 2. Runs the `packages/create-elata-demo` test suite.
+-3. For each template (`rppg-demo`, `eeg-demo`, `eeg-ble`):
++3. For each template (`rppg-demo`, `ppg-demo`, `eeg-demo`, `eeg-ble`, `pulse-game`):
+    - scaffolds into a temporary directory,
+    - installs dependencies with `pnpm install`, and
+    - runs `pnpm run build` (Vite + TypeScript).
+diff --git a/docs/guides/choose-the-right-package.md b/docs/guides/choose-the-right-package.md
+index 306d925..e308764 100644
+--- a/docs/guides/choose-the-right-package.md
++++ b/docs/guides/choose-the-right-package.md
+@@ -57,4 +57,4 @@ Do not use `sync-to` as the normal onboarding path for new SDK consumers.
+ 
+ - Avoid starting from `./run.sh sync-to` for new apps. It is a local `eeg-web` development helper, not a general setup flow.
+ - Avoid treating in-repo dev demos as the normal install path. They are useful references, but `create-elata-demo` is the cleaner consumer starting point.
+-- Avoid assuming a scaffolded app is broken if `pnpm install` behaves strangely inside another workspace. Check the `pnpm --ignore-workspace` workflow first.
++- Avoid assuming a scaffolded app is broken if `pnpm install` behaves strangely inside another workspace. Check that the app still has its own `pnpm-workspace.yaml` first.
+diff --git a/docs/guides/compatibility.md b/docs/guides/compatibility.md
+index dcabd40..66dd5c9 100644
+--- a/docs/guides/compatibility.md
++++ b/docs/guides/compatibility.md
+@@ -52,11 +52,11 @@ Other headsets can be integrated by contributors or app authors using the same
+ 
+ - Generated scaffolded apps work with `pnpm` or `npm`.
+ - This repo prefers `pnpm` for local development.
+-- If you scaffold an app inside another `pnpm` workspace and do not add it to the workspace globs, use:
++- A scaffolded app ships its own `pnpm-workspace.yaml`, so inside another `pnpm` workspace it still installs as its own project:
+ 
+ ```bash
+-pnpm --dir my-app --ignore-workspace install
+-pnpm --dir my-app --ignore-workspace run dev
++pnpm --dir my-app install
++pnpm --dir my-app run dev
+ ```
+ 
+ ## Related Guides
+diff --git a/docs/guides/getting-started.md b/docs/guides/getting-started.md
+index 4a8e5db..60eb312 100644
+--- a/docs/guides/getting-started.md
++++ b/docs/guides/getting-started.md
+@@ -39,10 +39,10 @@ Follow-up guides:
+ 
+ ## Workspace Caveat
+ 
+-If you scaffold an app inside another `pnpm` workspace and the new app is not
+-added to that workspace, run from the parent directory:
++A scaffolded app ships its own `pnpm-workspace.yaml`, so inside another `pnpm`
++workspace it still installs as its own project. From the parent directory:
+ 
+ ```bash
+-pnpm --dir my-app --ignore-workspace install
+-pnpm --dir my-app --ignore-workspace run dev
++pnpm --dir my-app install
++pnpm --dir my-app run dev
+ ```
+diff --git a/docs/guides/troubleshooting.md b/docs/guides/troubleshooting.md
+index 78eb8fe..3f5bdce 100644
+--- a/docs/guides/troubleshooting.md
++++ b/docs/guides/troubleshooting.md
+@@ -2,12 +2,15 @@
+ 
+ ## `pnpm install` did not create `node_modules` in my scaffolded app
+ 
+-You likely created the app inside another `pnpm` workspace. Run from the parent
+-directory:
++You likely created the app inside another `pnpm` workspace with
++create-elata-demo 0.12.1 or earlier, whose starters have no `pnpm-workspace.yaml`
++of their own, so pnpm binds them to the parent. Add the file current starters
++ship (see [create-elata-demo.md](../create-elata-demo.md#starters-made-by-create-elata-demo-0121-and-earlier)),
++then run from the parent directory:
+ 
+ ```bash
+-pnpm --dir my-app --ignore-workspace install
+-pnpm --dir my-app --ignore-workspace run dev
++pnpm --dir my-app install
++pnpm --dir my-app run dev
+ ```
+ 
+ ## Web Bluetooth is unavailable
+diff --git a/docs/maintainers.md b/docs/maintainers.md
+index 0311cfa..6885811 100644
+--- a/docs/maintainers.md
++++ b/docs/maintainers.md
+@@ -66,20 +66,18 @@ Before changing release docs, verify the package set against current
+ - Docs that mention onboarding: verify `create-elata-demo` guidance and workspace caveats
+ 
+ `./run.sh test create-elata-demo` runs the Node test suite in
+-`packages/create-elata-demo`, including a smoke build for **each** of the three
+-templates (`rppg-demo`, `eeg-demo`, `eeg-ble`): scaffold to a temp directory,
+-`pnpm install`, and `pnpm run build`.
++`packages/create-elata-demo`, including a smoke build for **each** of the five
++templates (`rppg-demo`, `ppg-demo`, `eeg-demo`, `eeg-ble`, `pulse-game`): scaffold
++to a temp directory, `pnpm install`, and `pnpm run build`.
+ 
+ ## Workspace Caveat
+ 
+-If you scaffold an app inside this repo, plain `pnpm install` in the generated
+-app can attach to the parent workspace from `pnpm-workspace.yaml`.
+-
+-Use:
++If you scaffold an app inside this repo, it installs as its own project,
++because the scaffolder gives it its own `pnpm-workspace.yaml`:
+ 
+ ```bash
+-pnpm --dir my-app --ignore-workspace install
+-pnpm --dir my-app --ignore-workspace run dev
++pnpm --dir my-app install
++pnpm --dir my-app run dev
+ ```
+ 
+ or use `npm` inside the generated app.
+diff --git a/packages/create-elata-demo/README.md b/packages/create-elata-demo/README.md
+index ff03ffc..0c17043 100644
+--- a/packages/create-elata-demo/README.md
++++ b/packages/create-elata-demo/README.md
+@@ -85,13 +85,13 @@ each template by scaffolding, installing dependencies, and running a build.
+ 
+ ## Workspace Caveat
+ 
+-If you scaffold a new app inside another `pnpm` workspace and that app is not
+-added to the workspace globs, run this from the parent directory:
++A new app ships its own `pnpm-workspace.yaml`, so inside another `pnpm`
++workspace it still installs as its own project. From the parent directory:
+ 
+ ```text
+ pnpm:
+-pnpm --dir my-app --ignore-workspace install
+-pnpm --dir my-app --ignore-workspace run dev
++pnpm --dir my-app install
++pnpm --dir my-app run dev
+ 
+ npm:
+ cd my-app
+@@ -102,7 +102,7 @@ npm run dev
+ ## Troubleshooting
+ 
+ - If scaffolding fails because the directory already exists, choose a new target folder or remove the existing one first.
+-- If `pnpm install` inside a generated app does not create `node_modules`, check whether you are inside another `pnpm` workspace and use `--ignore-workspace`.
++- If `pnpm install` inside a generated app does not create `node_modules`, check that the app still has its own `pnpm-workspace.yaml` (starters from 0.12.1 and earlier have none; see the repository's docs/create-elata-demo.md).
+ - If you are deciding between this package and `./run.sh sync-to`, use `create-elata-demo` for new apps and `sync-to` only for local `eeg-web` iteration against an existing app.
+ 
+ ## More Details
+diff --git a/packages/create-elata-demo/index.mjs b/packages/create-elata-demo/index.mjs
+index bf4c07f..2fba552 100644
+--- a/packages/create-elata-demo/index.mjs
++++ b/packages/create-elata-demo/index.mjs
+@@ -414,10 +414,13 @@ const parentWorkspaceDir = findParentPnpmWorkspace(dirname(targetDir));
+ if (parentWorkspaceDir) {
+   console.log('Note: this app was created inside an existing pnpm workspace.\n');
+   console.log(
+-    'If the new app is not added to that workspace, use one of these install flows:\n',
++    'It has its own pnpm-workspace.yaml, so it installs as its own project:\n',
+   );
+-  console.log(`  pnpm --dir ${projectName} --ignore-workspace install`);
+-  console.log(`  pnpm --dir ${projectName} --ignore-workspace run dev`);
++  console.log(`  pnpm --dir ${projectName} install`);
++  console.log(`  pnpm --dir ${projectName} run dev`);
+   console.log('  # or');
+   console.log(`  cd ${projectName} && npm install && npm run dev\n`);
++  console.log(
++    "To make it part of the parent workspace instead, delete its pnpm-workspace.yaml and allow esbuild's build script in the parent's.\n",
++  );
+ }
+diff --git a/packages/create-elata-demo/index.test.mjs b/packages/create-elata-demo/index.test.mjs
+index 485410f..6b77c73 100644
+--- a/packages/create-elata-demo/index.test.mjs
++++ b/packages/create-elata-demo/index.test.mjs
+@@ -89,6 +89,24 @@ test('ships fallback SDK versions that match the repo package versions', () => {
+   assert.equal(scaffolderPackage.elataSdkVersions.ppgWeb, ppgWebVersion);
+ });
+ 
++const TEMPLATE_DIRS = ['rppg-demo', 'ppg-demo', 'eeg-demo', 'eeg-ble', 'pulse-game'];
++
++test('no template depends on vite-plugin-top-level-await, and each one allows esbuild for pnpm 11+', () => {
++  // The behaviour test is the smoke test below (scaffold, install, build). This guard is the cheap
++  // part of it that runs offline: the plugin's production build fails with @swc/core >= 1.16.0, and
++  // pnpm 11+ refuses to install until esbuild's build script is reviewed in pnpm-workspace.yaml.
++  for (const t of TEMPLATE_DIRS) {
++    const dir = join(__dirname, 'templates', t);
++    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
++    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
++    assert.ok(!('vite-plugin-top-level-await' in deps), `${t}: depends on vite-plugin-top-level-await`);
++    assert.doesNotMatch(readFileSync(join(dir, 'vite.config.ts'), 'utf8'), /top-level-await/, t);
++    const ws = readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8').replace(/#.*$/gm, '');
++    assert.match(ws, /^packages:\s*(\n\s+- ['"]?\.['"]?\s*$|\[\s*['"]?\.['"]?\s*\])/m, `${t}: packages must list the app`);
++    assert.match(ws, /^allowBuilds:\s*(\n\s+esbuild:\s*true|\{\s*esbuild:\s*true\s*\})/m, `${t}: esbuild not allowed`);
++  }
++});
++
+ test('scaffolds the default template', () => {
+   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-'));
+   try {
+@@ -146,9 +164,8 @@ test('scaffolds correctly from packaged contents without monorepo siblings', ()
+ });
+ 
+ test('smoke: each published template scaffolds, installs, and builds', () => {
+-  const templates = ['rppg-demo', 'eeg-demo', 'eeg-ble'];
+-
+-  for (const templateName of templates) {
++  // Every template, with pnpm as corepack resolves it today (its version is printed first).
++  for (const templateName of TEMPLATE_DIRS) {
+     const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-smoke-'));
+     const appName = `demo-${templateName}`;
+     const appDir = join(tmp, appName);
+@@ -163,6 +180,7 @@ test('smoke: each published template scaffolds, installs, and builds', () => {
+       assert.ok(existsSync(join(appDir, 'package.json')));
+       assert.ok(existsSync(join(appDir, 'README.md')));
+ 
++      runCommand('pnpm', ['--version'], appDir);
+       runCommand('pnpm', ['install'], appDir);
+       runCommand('pnpm', ['run', 'build'], appDir);
+     } finally {
+@@ -231,7 +249,9 @@ test('warns when scaffolding inside a parent pnpm workspace', () => {
+     const result = runCli(['nested-demo'], workspaceDir);
+     assert.strictEqual(result.status, 0, `CLI failed:\n${result.stderr}`);
+     assert.match(result.stdout, /inside an existing pnpm workspace/);
+-    assert.match(result.stdout, /--ignore-workspace install/);
++    assert.match(result.stdout, /pnpm --dir nested-demo install/);
++    assert.doesNotMatch(result.stdout, /--ignore-workspace/);
++    assert.ok(existsSync(join(workspaceDir, 'nested-demo', 'pnpm-workspace.yaml')));
+   } finally {
+     rmSync(tmp, { recursive: true, force: true });
+   }
+@@ -343,6 +363,155 @@ test('rppg template uses Vite URL assets instead of public pkg imports', () => {
+   }
+ });
+ 
++test('./run.sh unlink removes the link overrides pnpm link records, and only those', (t) => {
++  // `./run.sh link` runs `pnpm link`, which records the local build as a `link:` override in the
++  // app's pnpm-workspace.yaml (creating an override-only file when the app has none), or in
++  // package.json's pnpm.overrides when package.json has a "pnpm" field (pnpm 10). Every starter
++  // now ships its own pnpm-workspace.yaml, so unlink has to edit that file rather than delete it
++  // or leave it. This runs the repo's real `./run.sh unlink` with pnpm stubbed on PATH, so nothing
++  // is installed; the stub records that a reinstall was asked for.
++  if (spawnSync('bash', ['--version']).status !== 0) {
++    t.skip('needs bash');
++    return;
++  }
++  const runSh = join(__dirname, '..', '..', 'run.sh');
++  const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-unlink-'));
++  try {
++    const bin = join(tmp, 'bin');
++    mkdirSync(bin);
++    writeFileSync(join(bin, 'pnpm'), '#!/bin/sh\necho "pnpm $*" >> "$PNPM_LOG"\n', { mode: 0o755 });
++    const lines = (...rows) => `${rows.join('\n')}\n`;
++    const unlink = (name, files) => {
++      const app = join(tmp, name);
++      mkdirSync(app);
++      for (const [file, text] of Object.entries(files)) writeFileSync(join(app, file), text);
++      const log = join(tmp, `${name}.pnpm.log`);
++      const run = spawnSync('bash', [runSh, 'unlink', app], {
++        encoding: 'utf8',
++        timeout: 30_000,
++        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PNPM_LOG: log },
++      });
++      const read = (file) => (existsSync(join(app, file)) ? readFileSync(join(app, file), 'utf8') : null);
++      return { run, read, reinstalled: existsSync(log) };
++    };
++    const ok = (result) => {
++      assert.equal(result.run.status, 0, result.run.stderr);
++      assert.ok(result.reinstalled, 'unlink did not reinstall');
++    };
++    const pkg = '{\n  "name": "app"\n}\n';
++
++    // A starter's own workspace file after `pnpm link`: the link goes, everything else stays.
++    const starter = unlink('starter', {
++      'package.json': pkg,
++      'pnpm-workspace.yaml': lines(
++        '# comment', 'packages:', '  - .', 'allowBuilds:', '  esbuild: true', 'overrides:',
++        "  '@elata-biosciences/rppg-web': link:../../elata-bio-sdk/packages/rppg-web",
++      ),
++    });
++    ok(starter);
++    assert.equal(
++      starter.read('pnpm-workspace.yaml'),
++      lines('# comment', 'packages:', '  - .', 'allowBuilds:', '  esbuild: true'),
++    );
++
++    // Another override in the same block is kept, with its key.
++    const mixed = unlink('mixed', {
++      'package.json': pkg,
++      'pnpm-workspace.yaml': lines(
++        'overrides:', '  foo: 1.2.3', "  '@elata-biosciences/eeg-web': link:../eeg-web", 'packages:', '  - .',
++      ),
++    });
++    ok(mixed);
++    assert.equal(mixed.read('pnpm-workspace.yaml'), lines('overrides:', '  foo: 1.2.3', 'packages:', '  - .'));
++
++    // The override-only file pnpm creates for an app without a workspace file is removed.
++    const only = unlink('only', {
++      'package.json': pkg,
++      'pnpm-workspace.yaml': lines('overrides:', "  '@elata-biosciences/rppg-web': link:../rppg-web"),
++    });
++    ok(only);
++    assert.equal(only.read('pnpm-workspace.yaml'), null);
++
++    // Blank lines and comments inside the block do not end it. This is the layout pnpm 10.33.2
++    // writes when the app's own overrides are separated by a blank line: the link sorts first and
++    // the blank line follows it. The other overrides stay under `overrides:`.
++    const blank = unlink('blank', {
++      'package.json': pkg,
++      'pnpm-workspace.yaml': lines(
++        'packages:', '  - .', 'allowBuilds:', '  esbuild: true', 'overrides:',
++        "  '@elata-biosciences/rppg-web': link:../rppg-web", '', '  react: 18.3.1', '  zod: 3.23.8',
++      ),
++    });
++    ok(blank);
++    assert.equal(
++      blank.read('pnpm-workspace.yaml'),
++      lines('packages:', '  - .', 'allowBuilds:', '  esbuild: true', 'overrides:', '', '  react: 18.3.1', '  zod: 3.23.8'),
++    );
++    const comment = unlink('comment', {
++      'package.json': pkg,
++      'pnpm-workspace.yaml': lines(
++        'overrides:', '# pinned on purpose', "  '@elata-biosciences/rppg-web': link:../rppg-web", '  zod: 3.23.8',
++        'packages:', '  - .',
++      ),
++    });
++    ok(comment);
++    assert.equal(
++      comment.read('pnpm-workspace.yaml'),
++      lines('overrides:', '# pinned on purpose', '  zod: 3.23.8', 'packages:', '  - .'),
++    );
++
++    // A comment after the key is still the key.
++    const keyComment = unlink('key-comment', {
++      'package.json': pkg,
++      'pnpm-workspace.yaml': lines(
++        'packages:', '  - .', 'overrides: # local builds', "  '@elata-biosciences/rppg-web': link:../rppg-web",
++      ),
++    });
++    ok(keyComment);
++    assert.equal(keyComment.read('pnpm-workspace.yaml'), lines('packages:', '  - .'));
++
++    // pnpm 10 writes the link into package.json's pnpm.overrides when package.json has a "pnpm"
++    // field. That link goes; the other override, the rest of the field, a dependency the app itself
++    // declares as link: and the file's indentation stay.
++    const withPnpmField = unlink('pnpm-field', {
++      'package.json': lines(
++        '{', '  "name": "app",', '  "dependencies": {', '    "local-thing": "link:../local-thing"', '  },',
++        '  "pnpm": {', '    "onlyBuiltDependencies": [', '      "esbuild"', '    ],', '    "overrides": {',
++        '      "@elata-biosciences/rppg-web": "link:../rppg-web",', '      "zod": "3.23.8"', '    }', '  }', '}',
++      ),
++    });
++    ok(withPnpmField);
++    assert.equal(
++      withPnpmField.read('package.json'),
++      lines(
++        '{', '  "name": "app",', '  "dependencies": {', '    "local-thing": "link:../local-thing"', '  },',
++        '  "pnpm": {', '    "onlyBuiltDependencies": [', '      "esbuild"', '    ],', '    "overrides": {',
++        '      "zod": "3.23.8"', '    }', '  }', '}',
++      ),
++    );
++
++    // An overrides object, and then a pnpm field, left empty are dropped, like the workspace key.
++    const pnpmFieldOnly = unlink('pnpm-field-only', {
++      'package.json':
++        '{\n\t"name": "app",\n\t"pnpm": {\n\t\t"overrides": {\n\t\t\t"@elata-biosciences/rppg-web": "link:../rppg-web"\n\t\t}\n\t}\n}\n',
++    });
++    ok(pnpmFieldOnly);
++    assert.equal(pnpmFieldOnly.read('package.json'), '{\n\t"name": "app"\n}\n');
++
++    // A link this cannot edit (overrides written inline) fails before reinstalling instead of
++    // reporting "Unlinked", and the file is left as it was.
++    const inlineFile = lines('packages:', '  - .', "overrides: { '@elata-biosciences/rppg-web': 'link:../rppg-web' }");
++    const inline = unlink('inline', { 'package.json': pkg, 'pnpm-workspace.yaml': inlineFile });
++    assert.notEqual(inline.run.status, 0, 'unlink reported success with an inline link override left in place');
++    assert.match(inline.run.stderr, /link:/);
++    assert.doesNotMatch(inline.run.stdout, /Unlinked/);
++    assert.equal(inline.reinstalled, false);
++    assert.equal(inline.read('pnpm-workspace.yaml'), inlineFile);
++  } finally {
++    rmSync(tmp, { recursive: true, force: true });
++  }
++});
++
+ test('fails on unknown template', () => {
+   const tmp = mkdtempSync(join(tmpdir(), 'create-elata-demo-'));
+   try {
+diff --git a/packages/create-elata-demo/llms.txt b/packages/create-elata-demo/llms.txt
+index 0c9e5b5..e7465b5 100644
+--- a/packages/create-elata-demo/llms.txt
++++ b/packages/create-elata-demo/llms.txt
+@@ -24,7 +24,7 @@ Interactive runs ask for app type then project name. **Non-interactive runs with
+ - List templates: `pnpm dlx @elata-biosciences/create-elata-demo -- --list-templates` (note **`--` before flags** when the runner requires it)
+ 
+ ## Workspace caveat
+-Scaffolding **inside** a parent **pnpm workspace** may attach to the parent and skip a local `node_modules`. Use **`pnpm --dir <app> --ignore-workspace install`** or **`npm install`** inside the new app.
++Each starter ships its own **`pnpm-workspace.yaml`**, so scaffolding **inside** a parent **pnpm workspace** still gives it its own `node_modules`: use **`pnpm --dir <app> install`** from the parent, or **`npm install`** inside the new app.
+ 
+ ## vs internal repo tools
+ **`create-elata-demo`** is the canonical path for new consumer apps. **`./run.sh sync-to`** is for maintainers iterating **`eeg-web`** into an existing app — not equivalent to scaffolding.
+diff --git a/packages/create-elata-demo/templates/eeg-ble/README.md b/packages/create-elata-demo/templates/eeg-ble/README.md
+index 6461913..c50f146 100644
+--- a/packages/create-elata-demo/templates/eeg-ble/README.md
++++ b/packages/create-elata-demo/templates/eeg-ble/README.md
+@@ -31,13 +31,13 @@ pnpm install
+ pnpm run dev
+ ```
+ 
+-If this app was created inside another `pnpm` workspace and is not part of that
+-workspace, run from the parent directory:
++This app ships its own `pnpm-workspace.yaml`, so inside another `pnpm` workspace
++it still installs as its own project. From the parent directory:
+ 
+ ```text
+ pnpm:
+-pnpm --dir __APP_NAME__ --ignore-workspace install
+-pnpm --dir __APP_NAME__ --ignore-workspace run dev
++pnpm --dir __APP_NAME__ install
++pnpm --dir __APP_NAME__ run dev
+ 
+ npm:
+ cd __APP_NAME__
+diff --git a/packages/create-elata-demo/templates/eeg-ble/package.json b/packages/create-elata-demo/templates/eeg-ble/package.json
+index 906be54..194a038 100644
+--- a/packages/create-elata-demo/templates/eeg-ble/package.json
++++ b/packages/create-elata-demo/templates/eeg-ble/package.json
+@@ -21,7 +21,6 @@
+     "@vitejs/plugin-react": "^4.3.4",
+     "typescript": "^5.6.2",
+     "vite": "^6.0.5",
+-    "vite-plugin-wasm": "^3.3.0",
+-    "vite-plugin-top-level-await": "^1.4.4"
++    "vite-plugin-wasm": "^3.3.0"
+   }
+ }
+diff --git a/packages/create-elata-demo/templates/eeg-ble/pnpm-workspace.yaml b/packages/create-elata-demo/templates/eeg-ble/pnpm-workspace.yaml
+new file mode 100644
+index 0000000..9ba56ff
+--- /dev/null
++++ b/packages/create-elata-demo/templates/eeg-ble/pnpm-workspace.yaml
+@@ -0,0 +1,10 @@
++# This app is its own pnpm workspace, so installing it from inside another workspace gives it
++# its own node_modules and lockfile. pnpm 9 needs the packages field ("packages field missing or empty").
++# pnpm 11 and later refuse to install until every dependency build script has been reviewed, and they
++# read that review only from this file. vite's esbuild is the one build script here; allowing it is a
++# deliberate choice, the same allowance Elata's own repository root makes. pnpm 10.26 and later read it
++# too; older pnpm 10 skips the script with a warning, and the app still builds.
++packages:
++  - .
++allowBuilds:
++  esbuild: true
+diff --git a/packages/create-elata-demo/templates/eeg-ble/vite.config.ts b/packages/create-elata-demo/templates/eeg-ble/vite.config.ts
+index cda8981..cc72824 100644
+--- a/packages/create-elata-demo/templates/eeg-ble/vite.config.ts
++++ b/packages/create-elata-demo/templates/eeg-ble/vite.config.ts
+@@ -1,10 +1,9 @@
+ import { defineConfig } from 'vite';
+ import react from '@vitejs/plugin-react';
+ import wasm from 'vite-plugin-wasm';
+-import topLevelAwait from 'vite-plugin-top-level-await';
+ 
+ export default defineConfig({
+-  plugins: [react(), wasm(), topLevelAwait()],
++  plugins: [react(), wasm()],
+   optimizeDeps: {
+     exclude: ['@elata-biosciences/eeg-web', '@elata-biosciences/eeg-web-ble'],
+   },
+diff --git a/packages/create-elata-demo/templates/eeg-demo/README.md b/packages/create-elata-demo/templates/eeg-demo/README.md
+index c15780a..67400ae 100644
+--- a/packages/create-elata-demo/templates/eeg-demo/README.md
++++ b/packages/create-elata-demo/templates/eeg-demo/README.md
+@@ -25,13 +25,13 @@ pnpm install
+ pnpm run dev
+ ```
+ 
+-If this app was created inside another `pnpm` workspace and is not part of that
+-workspace, run from the parent directory:
++This app ships its own `pnpm-workspace.yaml`, so inside another `pnpm` workspace
++it still installs as its own project. From the parent directory:
+ 
+ ```text
+ pnpm:
+-pnpm --dir __APP_NAME__ --ignore-workspace install
+-pnpm --dir __APP_NAME__ --ignore-workspace run dev
++pnpm --dir __APP_NAME__ install
++pnpm --dir __APP_NAME__ run dev
+ 
+ npm:
+ cd __APP_NAME__
+diff --git a/packages/create-elata-demo/templates/eeg-demo/package.json b/packages/create-elata-demo/templates/eeg-demo/package.json
+index 906be54..194a038 100644
+--- a/packages/create-elata-demo/templates/eeg-demo/package.json
++++ b/packages/create-elata-demo/templates/eeg-demo/package.json
+@@ -21,7 +21,6 @@
+     "@vitejs/plugin-react": "^4.3.4",
+     "typescript": "^5.6.2",
+     "vite": "^6.0.5",
+-    "vite-plugin-wasm": "^3.3.0",
+-    "vite-plugin-top-level-await": "^1.4.4"
++    "vite-plugin-wasm": "^3.3.0"
+   }
+ }
+diff --git a/packages/create-elata-demo/templates/eeg-demo/pnpm-workspace.yaml b/packages/create-elata-demo/templates/eeg-demo/pnpm-workspace.yaml
+new file mode 100644
+index 0000000..9ba56ff
+--- /dev/null
++++ b/packages/create-elata-demo/templates/eeg-demo/pnpm-workspace.yaml
+@@ -0,0 +1,10 @@
++# This app is its own pnpm workspace, so installing it from inside another workspace gives it
++# its own node_modules and lockfile. pnpm 9 needs the packages field ("packages field missing or empty").
++# pnpm 11 and later refuse to install until every dependency build script has been reviewed, and they
++# read that review only from this file. vite's esbuild is the one build script here; allowing it is a
++# deliberate choice, the same allowance Elata's own repository root makes. pnpm 10.26 and later read it
++# too; older pnpm 10 skips the script with a warning, and the app still builds.
++packages:
++  - .
++allowBuilds:
++  esbuild: true
+diff --git a/packages/create-elata-demo/templates/eeg-demo/vite.config.ts b/packages/create-elata-demo/templates/eeg-demo/vite.config.ts
+index cda8981..cc72824 100644
+--- a/packages/create-elata-demo/templates/eeg-demo/vite.config.ts
++++ b/packages/create-elata-demo/templates/eeg-demo/vite.config.ts
+@@ -1,10 +1,9 @@
+ import { defineConfig } from 'vite';
+ import react from '@vitejs/plugin-react';
+ import wasm from 'vite-plugin-wasm';
+-import topLevelAwait from 'vite-plugin-top-level-await';
+ 
+ export default defineConfig({
+-  plugins: [react(), wasm(), topLevelAwait()],
++  plugins: [react(), wasm()],
+   optimizeDeps: {
+     exclude: ['@elata-biosciences/eeg-web', '@elata-biosciences/eeg-web-ble'],
+   },
+diff --git a/packages/create-elata-demo/templates/ppg-demo/README.md b/packages/create-elata-demo/templates/ppg-demo/README.md
+index a5ac9d4..4f837d7 100644
+--- a/packages/create-elata-demo/templates/ppg-demo/README.md
++++ b/packages/create-elata-demo/templates/ppg-demo/README.md
+@@ -24,13 +24,13 @@ pnpm install
+ pnpm run dev
+ ```
+ 
+-If this app was created inside another `pnpm` workspace and is not part of that
+-workspace, run from the parent directory:
++This app ships its own `pnpm-workspace.yaml`, so inside another `pnpm` workspace
++it still installs as its own project. From the parent directory:
+ 
+ ```text
+ pnpm:
+-pnpm --dir __APP_NAME__ --ignore-workspace install
+-pnpm --dir __APP_NAME__ --ignore-workspace run dev
++pnpm --dir __APP_NAME__ install
++pnpm --dir __APP_NAME__ run dev
+ 
+ npm:
+ cd __APP_NAME__
+diff --git a/packages/create-elata-demo/templates/ppg-demo/package.json b/packages/create-elata-demo/templates/ppg-demo/package.json
+index f05d755..f7fe05c 100644
+--- a/packages/create-elata-demo/templates/ppg-demo/package.json
++++ b/packages/create-elata-demo/templates/ppg-demo/package.json
+@@ -23,7 +23,6 @@
+     "@vitejs/plugin-react": "^4.3.4",
+     "typescript": "^5.6.2",
+     "vite": "^6.0.5",
+-    "vite-plugin-wasm": "^3.3.0",
+-    "vite-plugin-top-level-await": "^1.4.4"
++    "vite-plugin-wasm": "^3.3.0"
+   }
+ }
+diff --git a/packages/create-elata-demo/templates/ppg-demo/pnpm-workspace.yaml b/packages/create-elata-demo/templates/ppg-demo/pnpm-workspace.yaml
+new file mode 100644
+index 0000000..9ba56ff
+--- /dev/null
++++ b/packages/create-elata-demo/templates/ppg-demo/pnpm-workspace.yaml
+@@ -0,0 +1,10 @@
++# This app is its own pnpm workspace, so installing it from inside another workspace gives it
++# its own node_modules and lockfile. pnpm 9 needs the packages field ("packages field missing or empty").
++# pnpm 11 and later refuse to install until every dependency build script has been reviewed, and they
++# read that review only from this file. vite's esbuild is the one build script here; allowing it is a
++# deliberate choice, the same allowance Elata's own repository root makes. pnpm 10.26 and later read it
++# too; older pnpm 10 skips the script with a warning, and the app still builds.
++packages:
++  - .
++allowBuilds:
++  esbuild: true
+diff --git a/packages/create-elata-demo/templates/ppg-demo/vite.config.ts b/packages/create-elata-demo/templates/ppg-demo/vite.config.ts
+index 4999c37..3f777e6 100644
+--- a/packages/create-elata-demo/templates/ppg-demo/vite.config.ts
++++ b/packages/create-elata-demo/templates/ppg-demo/vite.config.ts
+@@ -1,10 +1,9 @@
+ import { defineConfig } from 'vite';
+ import react from '@vitejs/plugin-react';
+ import wasm from 'vite-plugin-wasm';
+-import topLevelAwait from 'vite-plugin-top-level-await';
+ 
+ export default defineConfig({
+-  plugins: [react(), wasm(), topLevelAwait()],
++  plugins: [react(), wasm()],
+   optimizeDeps: {
+     exclude: [
+       '@elata-biosciences/ppg-web',
+diff --git a/packages/create-elata-demo/templates/pulse-game/package.json b/packages/create-elata-demo/templates/pulse-game/package.json
+index 4bce244..36277e1 100644
+--- a/packages/create-elata-demo/templates/pulse-game/package.json
++++ b/packages/create-elata-demo/templates/pulse-game/package.json
+@@ -21,7 +21,6 @@
+     "@vitejs/plugin-react": "^4.3.4",
+     "typescript": "^5.6.2",
+     "vite": "^6.0.5",
+-    "vite-plugin-wasm": "^3.3.0",
+-    "vite-plugin-top-level-await": "^1.4.4"
++    "vite-plugin-wasm": "^3.3.0"
+   }
+ }
+diff --git a/packages/create-elata-demo/templates/pulse-game/pnpm-workspace.yaml b/packages/create-elata-demo/templates/pulse-game/pnpm-workspace.yaml
+new file mode 100644
+index 0000000..9ba56ff
+--- /dev/null
++++ b/packages/create-elata-demo/templates/pulse-game/pnpm-workspace.yaml
+@@ -0,0 +1,10 @@
++# This app is its own pnpm workspace, so installing it from inside another workspace gives it
++# its own node_modules and lockfile. pnpm 9 needs the packages field ("packages field missing or empty").
++# pnpm 11 and later refuse to install until every dependency build script has been reviewed, and they
++# read that review only from this file. vite's esbuild is the one build script here; allowing it is a
++# deliberate choice, the same allowance Elata's own repository root makes. pnpm 10.26 and later read it
++# too; older pnpm 10 skips the script with a warning, and the app still builds.
++packages:
++  - .
++allowBuilds:
++  esbuild: true
+diff --git a/packages/create-elata-demo/templates/pulse-game/vite.config.ts b/packages/create-elata-demo/templates/pulse-game/vite.config.ts
+index fde86e6..2145f85 100644
+--- a/packages/create-elata-demo/templates/pulse-game/vite.config.ts
++++ b/packages/create-elata-demo/templates/pulse-game/vite.config.ts
+@@ -2,10 +2,9 @@ import { defineConfig } from 'vite';
+ import { resolve } from 'node:path';
+ import react from '@vitejs/plugin-react';
+ import wasm from 'vite-plugin-wasm';
+-import topLevelAwait from 'vite-plugin-top-level-await';
+ 
+ export default defineConfig({
+-  plugins: [react(), wasm(), topLevelAwait()],
++  plugins: [react(), wasm()],
+   optimizeDeps: {
+     exclude: ['@elata-biosciences/rppg-web'],
+   },
+diff --git a/packages/create-elata-demo/templates/rppg-demo/README.md b/packages/create-elata-demo/templates/rppg-demo/README.md
+index f8e9fe8..bb5b0f3 100644
+--- a/packages/create-elata-demo/templates/rppg-demo/README.md
++++ b/packages/create-elata-demo/templates/rppg-demo/README.md
+@@ -24,13 +24,13 @@ pnpm install
+ pnpm run dev
+ ```
+ 
+-If this app was created inside another `pnpm` workspace and is not part of that
+-workspace, run from the parent directory:
++This app ships its own `pnpm-workspace.yaml`, so inside another `pnpm` workspace
++it still installs as its own project. From the parent directory:
+ 
+ ```text
+ pnpm:
+-pnpm --dir __APP_NAME__ --ignore-workspace install
+-pnpm --dir __APP_NAME__ --ignore-workspace run dev
++pnpm --dir __APP_NAME__ install
++pnpm --dir __APP_NAME__ run dev
+ 
+ npm:
+ cd __APP_NAME__
+diff --git a/packages/create-elata-demo/templates/rppg-demo/package.json b/packages/create-elata-demo/templates/rppg-demo/package.json
+index 6e1b325..9ff21ac 100644
+--- a/packages/create-elata-demo/templates/rppg-demo/package.json
++++ b/packages/create-elata-demo/templates/rppg-demo/package.json
+@@ -20,7 +20,6 @@
+     "@vitejs/plugin-react": "^4.3.4",
+     "typescript": "^5.6.2",
+     "vite": "^6.0.5",
+-    "vite-plugin-wasm": "^3.3.0",
+-    "vite-plugin-top-level-await": "^1.4.4"
++    "vite-plugin-wasm": "^3.3.0"
+   }
+ }
+diff --git a/packages/create-elata-demo/templates/rppg-demo/pnpm-workspace.yaml b/packages/create-elata-demo/templates/rppg-demo/pnpm-workspace.yaml
+new file mode 100644
+index 0000000..9ba56ff
+--- /dev/null
++++ b/packages/create-elata-demo/templates/rppg-demo/pnpm-workspace.yaml
+@@ -0,0 +1,10 @@
++# This app is its own pnpm workspace, so installing it from inside another workspace gives it
++# its own node_modules and lockfile. pnpm 9 needs the packages field ("packages field missing or empty").
++# pnpm 11 and later refuse to install until every dependency build script has been reviewed, and they
++# read that review only from this file. vite's esbuild is the one build script here; allowing it is a
++# deliberate choice, the same allowance Elata's own repository root makes. pnpm 10.26 and later read it
++# too; older pnpm 10 skips the script with a warning, and the app still builds.
++packages:
++  - .
++allowBuilds:
++  esbuild: true
+diff --git a/packages/create-elata-demo/templates/rppg-demo/vite.config.ts b/packages/create-elata-demo/templates/rppg-demo/vite.config.ts
+index 4f56fd6..96189f4 100644
+--- a/packages/create-elata-demo/templates/rppg-demo/vite.config.ts
++++ b/packages/create-elata-demo/templates/rppg-demo/vite.config.ts
+@@ -1,10 +1,9 @@
+ import { defineConfig } from 'vite';
+ import react from '@vitejs/plugin-react';
+ import wasm from 'vite-plugin-wasm';
+-import topLevelAwait from 'vite-plugin-top-level-await';
+ 
+ export default defineConfig({
+-  plugins: [react(), wasm(), topLevelAwait()],
++  plugins: [react(), wasm()],
+   optimizeDeps: {
+     exclude: ['@elata-biosciences/rppg-web'],
+   },
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 9a34403..b5e05a5 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -86,20 +86,26 @@ be null — no error is thrown.** Two approaches to fix it:
+ **Option A — vite-plugin-wasm (recommended)**
+ 
+ ```bash
+-npm install -D vite-plugin-wasm vite-plugin-top-level-await
++npm install -D vite-plugin-wasm
+ ```
+ 
+ ```ts
+ // vite.config.ts
+ import { defineConfig } from "vite";
+ import wasm from "vite-plugin-wasm";
+-import topLevelAwait from "vite-plugin-top-level-await";
+ 
+ export default defineConfig({
+-  plugins: [wasm(), topLevelAwait()],
++  plugins: [wasm()],
++  // Vite 6 only: its default build target has no top-level await, which the
++  // example below uses. Vite 7 and later need no target.
++  build: { target: "es2022" },
+ });
+ ```
+ 
++Do not add `vite-plugin-top-level-await`: with `@swc/core` 1.16.0 or later its
++production build fails ("missing field `type`") on this package, which uses
++dynamic `import()`, and with Vite 8 it does not load at all.
++
+ Then import the WASM JS bundle statically and pass it as `wasmImporter`:
+ 
+ ```ts
+diff --git a/scripts/run-lib.sh b/scripts/run-lib.sh
+index ac2baf3..e47c4ea 100755
+--- a/scripts/run-lib.sh
++++ b/scripts/run-lib.sh
+@@ -1557,9 +1557,85 @@ link_package_into_app() {
+     echo "Undo with: ./run.sh unlink $app_dir"
+ }
+ 
++# Remove the `link:` overrides that `pnpm link` (pnpm 10 and later) records for an app, and keep
++# everything else. pnpm writes them to the app's pnpm-workspace.yaml, creating an override-only
++# file when the app has none, or to package.json's pnpm.overrides when package.json has a "pnpm"
++# field. Dies, before anything is reinstalled, if a link entry is left that this cannot edit, so
++# unlink never reports success while the app still resolves the local build.
++remove_pnpm_link_overrides() {
++    local app_dir="$1"
++    local ws="$app_dir/pnpm-workspace.yaml" pj="$app_dir/package.json"
++    if [[ -f "$ws" ]] && grep -q "link:" "$ws"; then
++        echo "Removing pnpm link overrides from: $ws"
++        remove_workspace_link_overrides "$ws"
++    fi
++    if [[ -f "$pj" ]] && grep -q '"link:' "$pj"; then
++        remove_package_json_link_overrides "$pj"
++    fi
++    if [[ -f "$ws" ]] && grep -qE "^[^#]*:[[:space:]]*[\"']?link:" "$ws"; then
++        die "$ws still has a 'link:' entry that unlink cannot edit, for example overrides written inline as 'overrides: { ... }'." \
++            "Delete that entry by hand, then run ./run.sh unlink again."
++    fi
++}
++
++# The pnpm-workspace.yaml half: an `overrides:` key left empty is dropped, and a file left with
++# only comments and blank lines (the override-only file pnpm creates) is deleted. As in YAML, the
++# overrides block runs from its key to the next line that is not indented, blank or a comment.
++# Blank and comment lines are held until it is known whether the block continues, so they never
++# end it early.
++remove_workspace_link_overrides() {
++    local ws="$1" tmp
++    tmp="$(mktemp)"
++    awk '
++        BEGIN { link_re = ":[[:space:]]*[\"\047]?link:" }
++        /^overrides:[[:space:]]*(#.*)?$/ { in_ov = 1; key = $0; held = ""; next }
++        in_ov && /^[[:space:]]*(#.*)?$/ { held = held $0 "\n"; next }
++        in_ov && /^[[:space:]]/ {
++            if ($0 ~ link_re) next
++            if (key != "") { print key; key = "" }
++            printf "%s", held
++            held = ""
++            print
++            next
++        }
++        in_ov { printf "%s", held; in_ov = 0; key = ""; held = "" }
++        { print }
++        END { if (in_ov) printf "%s", held }
++    ' "$ws" >"$tmp"
++    if grep -qvE '^[[:space:]]*(#|$)' "$tmp"; then
++        cat "$tmp" >"$ws"
++    else
++        rm -f "$ws"
++    fi
++    rm -f "$tmp"
++}
++
++# The package.json half: drops the `link:` values from pnpm.overrides, then an overrides object
++# and a pnpm field left empty, and keeps the file's indentation. A dependency the app itself
++# declares as link: is not an override and is left alone.
++remove_package_json_link_overrides() {
++    node - "$1" <<'NODE'
++const fs = require("node:fs");
++const file = process.argv[2];
++const text = fs.readFileSync(file, "utf8");
++const pkg = JSON.parse(text);
++const overrides = pkg.pnpm?.overrides;
++const links =
++  overrides && typeof overrides === "object"
++    ? Object.keys(overrides).filter((name) => String(overrides[name]).startsWith("link:"))
++    : [];
++if (links.length > 0) {
++  console.log(`Removing pnpm link overrides from: ${file}`);
++  for (const name of links) delete overrides[name];
++  if (Object.keys(overrides).length === 0) delete pkg.pnpm.overrides;
++  if (Object.keys(pkg.pnpm).length === 0) delete pkg.pnpm;
++  const indent = /^([ \t]+)"/m.exec(text)?.[1] ?? "  ";
++  fs.writeFileSync(file, `${JSON.stringify(pkg, null, indent)}${text.endsWith("\n") ? "\n" : ""}`);
++}
++NODE
++}
++
+ # Drop a local link from an app and reinstall so it resolves registry deps.
+-# pnpm (v10) records `pnpm link` as an override in pnpm-workspace.yaml; remove
+-# that override-only file, but never a real workspace definition.
+ unlink_package_from_app() {
+     local app_dir="$1"
+     require_package_manager
+@@ -1568,16 +1644,7 @@ unlink_package_from_app() {
+     fi
+ 
+     if [[ "$PKG_MGR" == "pnpm" ]]; then
+-        local ws="$app_dir/pnpm-workspace.yaml"
+-        if [[ -f "$ws" ]]; then
+-            if grep -q "link:" "$ws" && ! grep -qE "^[[:space:]]*packages:" "$ws"; then
+-                echo "Removing pnpm link override: $ws"
+-                rm -f "$ws"
+-            else
+-                echo "Note: $ws looks like a real workspace file; leaving it in place."
+-                echo "Remove any 'link:' override under 'overrides:' manually if needed."
+-            fi
+-        fi
++        remove_pnpm_link_overrides "$app_dir"
+     fi
+ 
+     echo "Reinstalling dependencies in $app_dir (using $PKG_MGR)..."

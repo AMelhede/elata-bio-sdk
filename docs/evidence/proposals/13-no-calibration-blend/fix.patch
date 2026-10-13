@@ -1,0 +1,332 @@
+From c4f98c2f4f6143929af172b3185d94ea1fc9c843 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 08:37:18 +0000
+Subject: [PATCH] feat(rppg-web): add calibrationBlend: false so bpm shows the
+ processor's resolved rate
+
+When the processor's checks pass, bpm has been the camera calibration's
+prediction from the spectral and autocorrelation rates. The model is never
+trained against another sensor: untrained it is their plain mean, and it then
+learns toward the resolved rate by a small step per read. When the two rates
+disagree (the autocorrelation reads a clean 120 at 60), bpm is a blend
+neither measured: 95.7 on one read, 115.5 after 14 reads at one a second.
+
+With calibrationBlend: false (RppgProcessor's fourth argument, passed on by
+createRppgSession), bpm is the resolved rate. The default, true, keeps the
+previous behaviour exactly; calibrated_bpm still reports the prediction.
+---
+ .changeset/processor-calibration-blend.md     |  17 +++
+ packages/rppg-web/README.md                   |   8 ++
+ .../createRppgSession.lifecycle.test.ts       |  33 +++++
+ .../processorCalibrationBlend.test.ts         | 123 ++++++++++++++++++
+ packages/rppg-web/src/rppgProcessor.ts        |  23 +++-
+ packages/rppg-web/src/rppgSession.ts          |   8 ++
+ 6 files changed, 211 insertions(+), 1 deletion(-)
+ create mode 100644 .changeset/processor-calibration-blend.md
+ create mode 100644 packages/rppg-web/src/__tests__/processorCalibrationBlend.test.ts
+
+diff --git a/.changeset/processor-calibration-blend.md b/.changeset/processor-calibration-blend.md
+new file mode 100644
+index 0000000..5196bda
+--- /dev/null
++++ b/.changeset/processor-calibration-blend.md
+@@ -0,0 +1,17 @@
++---
++"@elata-biosciences/rppg-web": minor
++---
++
++New `calibrationBlend` option on `RppgProcessor`, passed on by `createRppgSession`.
++When the processor's own checks pass, `bpm` (and `fused_bpm` without a Muse) has
++been the camera calibration's prediction from the spectral and autocorrelation
++rates. That model is never trained against another sensor: until a read passes
++with a resolved confidence of 0.55 it predicts their plain mean, and after that it
++moves toward the processor's own resolved rate by a small step per read. So when
++the two rates disagree, `bpm` is a rate neither of them measured: a clean 120 bpm
++pulse whose autocorrelation reads 60 shows 95.7 on a single read, and 95.7, 100.3,
++104.1 and on to 115.5 over 14 reads at one a second. With
++`calibrationBlend: false`, `bpm` is the resolved rate (`resolved_bpm`), the one
++the resolver and the rate tracker chose from the engine's, spectral,
++autocorrelation and peak rates; `calibrated_bpm` still reports the prediction.
++`true`, the default, is the previous behaviour, unchanged.
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 9a34403..0e81585 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -235,6 +235,14 @@ If you want to inject your own backend, it must expose
+ `newPipeline(sampleRate, windowSec)` and return an object with `push_sample`
+ and `get_metrics` or camelCase equivalents.
+ 
++When the processor's checks pass, `getMetrics().bpm` is its camera calibration's
++prediction from the spectral and autocorrelation rates, which starts as their
++plain mean and learns toward the processor's own resolved rate a little with each
++read. When those two rates disagree (a clean 120 whose autocorrelation reads 60),
++`bpm` is a blend neither measured (95.7 on one read). Pass
++`{ calibrationBlend: false }` as `RppgProcessor`'s fourth argument, or to
++`createRppgSession`, to show the resolved rate (`resolved_bpm`) instead.
++
+ ## Key Exports
+ 
+ - `createRppgSession`
+diff --git a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+index a309378..8fb0c94 100644
+--- a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
++++ b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
+ }));
+ 
+ import { createRppgSession } from "../rppgSession";
++import { DemoRunner } from "../demoRunner";
+ import { loadFaceLandmarker } from "../mediapipeLoader";
+ import { ensureVideoPlaying } from "../videoPlayback";
+ import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
+@@ -113,6 +114,38 @@ describe("createRppgSession lifecycle", () => {
+ 		expect(runnerStart).toHaveBeenCalledTimes(1);
+ 	});
+ 
++	test("passes calibrationBlend through to the processor", async () => {
++		// An engine that reports 120 and a grey 120 pulse whose autocorrelation reads 60:
++		// the blend shows 95.7 on one read, the resolved rate 120.
++		const backend = {
++			newPipeline: () => ({
++				push_sample_rgb_meta: jest.fn(),
++				get_metrics: jest.fn(() => ({ bpm: 120, confidence: 0.8, signal_quality: 0.9 })),
++				free: jest.fn(),
++			}),
++		} as any;
++		const shown = async (calibrationBlend?: boolean) => {
++			mockedLoadWasmBackend.mockResolvedValueOnce(backend);
++			(DemoRunner as unknown as jest.Mock).mockClear();
++			await createRppgSession({
++				video: document.createElement("video"),
++				faceMesh: "off",
++				ensureVideoPlayback: false,
++				calibrationBlend,
++			});
++			const processor = (DemoRunner as unknown as jest.Mock).mock.calls[0][1];
++			for (let i = 0; i < 900; i++) {
++				const ph = (2 * Math.PI * 2 * i) / 30;
++				const v = 0.5 + 0.02 * (Math.sin(ph) + 0.4 * Math.sin(2 * ph + 0.8));
++				processor.pushSampleRgbMeta((i * 1000) / 30, v, v, v, 1, 0, 0);
++			}
++			return processor.getMetrics().bpm;
++		};
++
++		expect(Math.abs((await shown()) - 95.7)).toBeLessThan(0.1);
++		expect(Math.abs((await shown(false)) - 120)).toBeLessThanOrEqual(1);
++	});
++
+ 	test("skips video playback coordination when ensureVideoPlayback is false", async () => {
+ 		await createRppgSession({
+ 			video: document.createElement("video"),
+diff --git a/packages/rppg-web/src/__tests__/processorCalibrationBlend.test.ts b/packages/rppg-web/src/__tests__/processorCalibrationBlend.test.ts
+new file mode 100644
+index 0000000..a78c845
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/processorCalibrationBlend.test.ts
+@@ -0,0 +1,123 @@
++import { RppgProcessor } from "../rppgProcessor";
++
++// The rate RppgProcessor shows (`bpm`, and `fused_bpm` without a Muse) is its camera
++// calibration's prediction from the spectral and autocorrelation rates. That model is
++// never trained against another sensor: until a read passes with a resolved confidence
++// of 0.55 it predicts their plain mean, and after that it moves toward the processor's
++// own resolved rate by a small step per read. So when the two estimators disagree, the
++// processor shows a number neither of them measured, and the rate its own resolver chose
++// (from the engine, the spectral, autocorrelation and peak rates, the rate history and
++// the tracker) arrives late. With `calibrationBlend: false` it shows the resolved rate.
++//
++// The engines here are stand-ins that report the true rate, so the processor's gate can
++// pass. The samples are grey (R = G = B), as a fused sample from DemoRunner: the
++// processor's colour step passes them unchanged. The pulse has a second harmonic at 0.4
++// of the fundamental. On it the autocorrelation reads a clean 120 at 60 (its doubling-lag
++// test compares confidences clamped at 1, so it halves every clean rate over 110), and
++// the spectral estimate reads a 72 at 144 (its doubling rule fires below 85 bpm). The
++// blend's own values are pinned only for the first kind: the doubling rule has its own
++// fix, which makes the 72 read 72 on both paths.
++
++function engineAt(bpm: number | null) {
++	return {
++		newPipeline: () => ({
++			push_sample_rgb() {},
++			push_sample_rgb_meta() {},
++			get_metrics: () => ({ bpm, confidence: 0.8, signal_quality: 0.9 }),
++		}),
++	};
++}
++
++type Read = {
++	bpm: number | null;
++	calibrated: number | null;
++	resolved: number | null;
++	confidence: number;
++	trained: boolean;
++};
++
++function run(
++	bpm: number,
++	fs: number,
++	opts: { engine?: number | null; everySecond?: boolean; calibrationBlend?: boolean } = {},
++): Read[] {
++	const options = opts.calibrationBlend === undefined ? {} : { calibrationBlend: opts.calibrationBlend };
++	const p = new RppgProcessor(engineAt(opts.engine === undefined ? bpm : opts.engine), fs, 10, options);
++	const reads: Read[] = [];
++	const read = () => {
++		const m = p.getMetrics();
++		reads.push({
++			bpm: m.bpm ?? null,
++			calibrated: m.calibrated_bpm ?? null,
++			resolved: m.resolved_bpm ?? null,
++			confidence: m.confidence,
++			trained: m.calibration_trained === true,
++		});
++	};
++	for (let i = 0; i < 30 * fs; i++) {
++		const ph = (2 * Math.PI * bpm * i) / (60 * fs);
++		const v = 0.5 + 0.02 * (Math.sin(ph) + 0.4 * Math.sin(2 * ph + 0.8));
++		p.pushSampleRgbMeta((i * 1000) / fs, v, v, v, 1, 0, 0);
++		if (opts.everySecond && (i + 1) % fs === 0 && i >= 16 * fs) read();
++	}
++	read();
++	p.dispose();
++	return reads;
++}
++
++describe("RppgProcessor calibrationBlend", () => {
++	test.each([
++		[120, 30],
++		[120, 20],
++		[140, 30],
++		[72, 30],
++	])("read once after 30 s, a clean %i at %i a second shows the resolved rate with calibrationBlend: false", (bpm, fs) => {
++		const [last] = run(bpm, fs, { calibrationBlend: false });
++		expect(last.resolved).not.toBeNull();
++		expect(Math.abs(last.resolved! - bpm)).toBeLessThanOrEqual(1);
++		expect(last.bpm).toBe(last.resolved);
++		// the calibration still trains and is still reported
++		expect(last.trained).toBe(true);
++		expect(last.calibrated).not.toBeNull();
++	});
++
++	test.each([
++		[120, 30, 95.7],
++		[140, 30, 114.1],
++	])("by default, the blend: a clean %i at %i a second shows %f on one read", (bpm, fs, blend) => {
++		for (const calibrationBlend of [undefined, true]) {
++			const [last] = run(bpm, fs, { calibrationBlend });
++			expect(last.bpm).toBe(last.calibrated);
++			expect(Math.abs(last.bpm! - blend)).toBeLessThan(0.1);
++			expect(Math.abs(last.resolved! - bpm)).toBeLessThanOrEqual(1);
++		}
++	});
++
++	test("read once a second from 17 s, a clean 120 shows 120 from the first read", () => {
++		const reads = run(120, 30, { everySecond: true, calibrationBlend: false });
++		expect(reads.length).toBeGreaterThan(10);
++		for (const r of reads) expect(Math.abs(r.bpm! - 120)).toBeLessThanOrEqual(1);
++		// the default climbs from the blend toward it, one small step per read
++		const blend = run(120, 30, { everySecond: true }).map((r) => r.bpm!);
++		expect(blend[0]).toBeLessThan(100);
++		expect(blend[1]).toBeGreaterThan(blend[0]);
++	});
++
++	// To a millionth of a beat: where the estimators agree (90 sits between both rules'
++	// limits), the blend and the resolved rate differ only by rounding.
++	test("where the estimators agree, every read is the same rate either way", () => {
++		const off = run(90, 30, { everySecond: true, calibrationBlend: false });
++		const on = run(90, 30, { everySecond: true });
++		expect(off.length).toBe(on.length);
++		off.forEach((r, i) => expect(r.bpm!).toBeCloseTo(on[i].bpm!, 6));
++		for (const r of off) expect(Math.abs(r.bpm! - 90)).toBeLessThanOrEqual(1);
++	});
++
++	test("a read the processor refuses shows nothing either way", () => {
++		for (const calibrationBlend of [true, false]) {
++			const [last] = run(120, 30, { engine: null, calibrationBlend });
++			expect(last.bpm).toBeNull();
++			expect(last.confidence).toBeLessThanOrEqual(0.3);
++		}
++	});
++});
+diff --git a/packages/rppg-web/src/rppgProcessor.ts b/packages/rppg-web/src/rppgProcessor.ts
+index 74b3146..f3fb3e0 100644
+--- a/packages/rppg-web/src/rppgProcessor.ts
++++ b/packages/rppg-web/src/rppgProcessor.ts
+@@ -502,6 +502,8 @@ export class RppgProcessor {
+ 	private readonly samples: Sample[] = [];
+ 	private readonly bpmHistory: number[] = [];
+ 	private readonly cameraCalibration = new MuseCalibrationModel();
++	/** See the constructor's `calibrationBlend` option. */
++	private readonly calibrationBlend: boolean;
+ 	private readonly fusion = new MuseFusionCalibrator();
+ 	private readonly bayesTracker: BpmBayesTracker;
+ 	private readonly channelGain = new ChannelGainController();
+@@ -531,6 +533,19 @@ export class RppgProcessor {
+ 		windowSec = 5,
+ 		options: {
+ 			bpmTrackerConfig?: BpmTrackerConfigV1;
++			/**
++			 * What `bpm` (and `fused_bpm` without a Muse) shows when the processor's
++			 * gate passes. `true`, the default: the camera calibration's prediction
++			 * from the spectral and autocorrelation rates. That model is never
++			 * trained against another sensor: until a read passes with a resolved
++			 * confidence of 0.55 it is their plain mean, and then it moves toward
++			 * the resolved rate by a small step per read, so when the two disagree
++			 * it shows a rate neither measured. `false`: the resolved rate, the one
++			 * the resolver and tracker chose from the engine's, spectral,
++			 * autocorrelation and peak rates. `calibrated_bpm` reports the
++			 * prediction either way.
++			 */
++			calibrationBlend?: boolean;
+ 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
+ 		} = {},
+ 	) {
+@@ -543,6 +558,7 @@ export class RppgProcessor {
+ 			options.bpmTrackerConfig,
+ 			options.bpmEvidenceQualityProvider,
+ 		);
++		this.calibrationBlend = options.calibrationBlend !== false;
+ 		this.pipeline = this.backend.newPipeline(sampleRate, windowSec);
+ 	}
+ 
+@@ -1191,9 +1207,14 @@ export class RppgProcessor {
+ 			analysis.snrDb < -4.5 ||
+ 			analysis.motionMean > 0.22 ||
+ 			(resolved.aliasFlag && estimatorSpread > 28);
++		// With calibrationBlend (the default) the camera rate is the calibration's
++		// prediction, a blend of the spectral and autocorrelation rates; without it,
++		// the resolved rate (see the constructor's option).
+ 		const cameraCandidate = lowConfidenceGate
+ 			? null
+-			: calibratedBpm ?? resolvedBpm ?? base.bpm ?? null;
++			: this.calibrationBlend
++				? (calibratedBpm ?? resolvedBpm ?? base.bpm ?? null)
++				: (resolvedBpm ?? base.bpm ?? null);
+ 		const cameraQuality = clamp(
+ 			((base.signal_quality || 0) + (analysis.quality || 0)) * 50,
+ 			0,
+diff --git a/packages/rppg-web/src/rppgSession.ts b/packages/rppg-web/src/rppgSession.ts
+index 491836a..0c9f9fe 100644
+--- a/packages/rppg-web/src/rppgSession.ts
++++ b/packages/rppg-web/src/rppgSession.ts
+@@ -112,6 +112,13 @@ export type CreateRppgSessionOptions = Omit<
+ 	};
+ 	sampleRate?: number;
+ 	windowSec?: number;
++	/**
++	 * What `getMetrics().bpm` shows when the processor's checks pass: the camera
++	 * calibration's blend of the spectral and autocorrelation rates (`true`, the
++	 * default) or the processor's resolved rate (`false`). See `RppgProcessor`'s
++	 * option of the same name.
++	 */
++	calibrationBlend?: boolean;
+ 	backend?: RppgSessionBackendPreference;
+ 	/**
+ 	 * Face ROI mode.
+@@ -397,6 +404,7 @@ export async function createRppgSession(
+ 		windowSec,
+ 		{
+ 			bpmTrackerConfig: options.bpmTrackerConfig,
++			calibrationBlend: options.calibrationBlend,
+ 			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+ 		},
+ 	);

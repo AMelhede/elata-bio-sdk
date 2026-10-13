@@ -1,0 +1,667 @@
+From 9828923458c24fc9c2cf2052b256000d8d5ce51e Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 15:12:29 +0000
+Subject: [PATCH] feat(rppg-web): add rgbPulse "pos" so the processor's colour
+ path reads the rate
+
+Squashed from fix/processor-colour-pulse at b748546 for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/processor-rgb-pulse.md             |  20 ++
+ packages/rppg-web/README.md                   |  10 +
+ .../createRppgSession.lifecycle.test.ts       |  33 +++
+ .../src/__tests__/processorRgbPulse.test.ts   | 250 ++++++++++++++++++
+ packages/rppg-web/src/rppgProcessor.ts        |  37 ++-
+ packages/rppg-web/src/rppgSession.ts          |  10 +
+ packages/rppg-web/src/rppgSignalModel.ts      | 156 +++++++++++
+ 7 files changed, 513 insertions(+), 3 deletions(-)
+ create mode 100644 .changeset/processor-rgb-pulse.md
+ create mode 100644 packages/rppg-web/src/__tests__/processorRgbPulse.test.ts
+
+diff --git a/.changeset/processor-rgb-pulse.md b/.changeset/processor-rgb-pulse.md
+new file mode 100644
+index 0000000..2df1c18
+--- /dev/null
++++ b/.changeset/processor-rgb-pulse.md
+@@ -0,0 +1,20 @@
++---
++"@elata-biosciences/rppg-web": minor
++---
++
++New `rgbPulse` option on `RppgProcessor`, passed on by `createRppgSession`.
++With `rgbPulse: "pos"` the processor builds the pulse its own estimators read
++from colour samples (`pushSampleRgb`, `pushSampleRgbMeta`) with POS and the
++0.7 to 4 Hz band-pass, designed for the rate the samples arrive at. The
++default, `"chrom"`, is the previous behaviour, unchanged: channel gain, then
++`ChromPulseModel`, with the raw green value kept for the first nine samples
++and whenever CHROM gives about 0. Those raw values are about a hundred grey
++levels beside a pulse of about 0.01 and stay in the 45 s window, and CHROM's
++axes keep a constant part that puts the frame-to-frame change of its weight in
++the heart-rate band, so on a clean synthetic pulse the processor's spectral
++estimate reads the same rate whatever the true rate and `bpm` is withheld or
++wrong. With `"pos"` both read the true rate. `"chrom"` stays the default because with no
++pulse at all `"pos"` reports `bpm` in more seconds at 30 frames a second. A
++session feeds colour samples for every frame it does not fuse (no face mesh,
++`multiRoiFusion` or `useSkinMask` off, or no face region with skin); fused
++samples never take this path.
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 9a34403..8ebde48 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -600,6 +600,16 @@ available:
+ - `RppgProcessor` for direct sample ingestion
+ - `DemoRunner`, `MediaPipeFrameSource`, and `MediaPipeFaceFrameSource` for advanced browser control
+ 
++`RppgProcessor` passes colour samples (`pushSampleRgb`, `pushSampleRgbMeta`) to
++the WASM core and also reads them with its own estimators. Pass
++`{ rgbPulse: "pos" }` as its fourth argument, or to `createRppgSession`, to
++build the pulse those estimators read with POS and a 0.7 to 4 Hz band-pass at
++the rate the samples arrive at. The default, `"chrom"`, keeps the previous
++signal, which reads a clean synthetic pulse at the wrong rate; it stays the
++default because with no pulse at all `"pos"` reports a rate in more seconds. A
++session feeds colour samples for every frame it does not fuse (no face mesh,
++`multiRoiFusion` or `useSkinMask` off, or no face region with skin).
++
+ For most browser apps, prefer `createRppgSession()` and only drop lower if you
+ need custom lifecycle or rendering behavior.
+ 
+diff --git a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+index a309378..2136ca0 100644
+--- a/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
++++ b/packages/rppg-web/src/__tests__/createRppgSession.lifecycle.test.ts
+@@ -71,6 +71,7 @@ jest.mock("../demoRunner", () => ({
+ }));
+ 
+ import { createRppgSession } from "../rppgSession";
++import { DemoRunner } from "../demoRunner";
+ import { loadFaceLandmarker } from "../mediapipeLoader";
+ import { ensureVideoPlaying } from "../videoPlayback";
+ import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
+@@ -183,6 +184,38 @@ describe("createRppgSession lifecycle", () => {
+ 		expect(free).toHaveBeenCalledTimes(1);
+ 	});
+ 
++	test("passes rgbPulse through to the processor's colour path", async () => {
++		const backend = {
++			newPipeline: () => ({
++				push_sample_rgb: jest.fn(),
++				get_metrics: jest.fn(() => ({ bpm: null, confidence: 0, signal_quality: 0 })),
++				free: jest.fn(),
++			}),
++		} as any;
++		const firstValues = async (rgbPulse?: "pos" | "chrom") => {
++			mockedLoadWasmBackend.mockResolvedValueOnce(backend);
++			(DemoRunner as unknown as jest.Mock).mockClear();
++			await createRppgSession({
++				video: document.createElement("video"),
++				faceMesh: "off",
++				ensureVideoPlayback: false,
++				rgbPulse,
++			});
++			const processor = (DemoRunner as unknown as jest.Mock).mock.calls[0][1];
++			for (let i = 0; i < 12; i++) {
++				processor.pushSampleRgb(i * 33.3, 170 + Math.sin(i), 120 + Math.cos(i), 100, 1);
++			}
++			return processor
++				.getTraceSnapshot(100)
++				.points.slice(0, 9)
++				.map((p: { intensity: number }) => Math.round(p.intensity));
++		};
++
++		// POS gives its neutral 0 while it warms up; the default keeps raw green there.
++		expect(await firstValues("pos")).toEqual(Array(9).fill(0));
++		expect((await firstValues()).every((v: number) => v >= 119 && v <= 121)).toBe(true);
++	});
++
+ 	test("stops and reinitializes an experimental model with the session", async () => {
+ 		const model = {
+ 			manifest: {
+diff --git a/packages/rppg-web/src/__tests__/processorRgbPulse.test.ts b/packages/rppg-web/src/__tests__/processorRgbPulse.test.ts
+new file mode 100644
+index 0000000..0fbc5e7
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/processorRgbPulse.test.ts
+@@ -0,0 +1,250 @@
++import { RppgProcessor } from "../rppgProcessor";
++import {
++	Bandpass,
++	ChannelGainController,
++	ChromPulseModel,
++	PosPulseModel,
++	RgbPulseExtractor,
++} from "../rppgSignalModel";
++
++// Known answers for the processor's own colour path (pushSampleRgb and
++// pushSampleRgbMeta): what an app that feeds RppgProcessor directly uses, and what
++// DemoRunner feeds for every frame it does not fuse. The engine below never has a
++// rate of its own, so every rate comes from the processor's own pulse signal and
++// its window estimators.
++//
++// The feed: a skin-coloured region mean of 170 / 120 / 100 grey levels whose pulse
++// lies along the blood-volume direction, relative strengths 0.33 / 0.77 / 0.53 for
++// R / G / B (de Haan and van Leest 2014, Physiol. Meas. 35:1913), 0.77% at green
++// (camera pulses are 0.5 to 2%), plus Gaussian sensor noise of 0.05 grey levels per
++// channel on the region mean (a 2-level per-pixel noise averaged over about 1600
++// skin pixels). Rising blood volume lowers every channel, green most. The rates
++// sit well away from 100 bpm, where a pipeline reading no pulse tends to land.
++
++const PBV = [0.33, 0.77, 0.53];
++const BASE = [170, 120, 100];
++
++type Sample = { t: number; r: number; g: number; b: number };
++
++function feed(
++	bpm: number,
++	fps: number,
++	seconds: number,
++	opts: { noise?: number; grey?: boolean; seed?: number } = {},
++): Sample[] {
++	let s = (opts.seed ?? 12345) >>> 0;
++	const u = () => {
++		s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
++		return (s + 0.5) / 2 ** 32;
++	};
++	const gauss = () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u());
++	const noise = opts.noise ?? 0.05;
++	const out: Sample[] = [];
++	for (let i = 0; i < Math.round(seconds * fps); i++) {
++		const t = (i * 1000) / fps;
++		const p = bpm > 0 ? Math.sin((2 * Math.PI * bpm * t) / 60000) : 0;
++		const [r, g, b] = BASE.map((c, k) => c * (1 - 0.01 * PBV[k] * p) + noise * gauss());
++		out.push(opts.grey ? { t, r: g, g, b: g } : { t, r, g, b });
++	}
++	return out;
++}
++
++const READ_EVERY_MS = 5000;
++
++// An engine that takes every sample and never has a rate.
++const silentBackend = {
++	newPipeline: () => ({
++		push_sample_rgb() {},
++		push_sample_rgb_meta() {},
++		get_metrics: () => ({ bpm: null, confidence: 0, signal_quality: 0 }),
++	}),
++};
++
++function run(
++	samples: Sample[],
++	sampleRate: number,
++	opts: { rgbPulse?: "pos" | "chrom"; meta?: boolean } = { rgbPulse: "pos" },
++) {
++	const p = new RppgProcessor(silentBackend, sampleRate, 10, {
++		rgbPulse: opts.rgbPulse,
++	});
++	// Read along the way, as an app does: the rate history and the tracker move with the reads.
++	// Every 5 s rather than every second keeps every answer asserted below on these feeds (each read
++	// runs the whole window analysis, which is slow under jest); only the true 120 at 30 a second
++	// withholds bpm at the end, which its test allows.
++	let next = READ_EVERY_MS;
++	for (const x of samples) {
++		if (opts.meta) p.pushSampleRgbMeta(x.t, x.r, x.g, x.b, 1, 0, 0);
++		else p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
++		if (x.t >= next) {
++			next += READ_EVERY_MS;
++			p.getMetrics();
++		}
++	}
++	return p;
++}
++
++const near = (value: number | null | undefined, truth: number) =>
++	value != null && Math.abs(value - truth) <= 3;
++
++describe('processor colour path with rgbPulse: "pos": known answers', () => {
++	test.each([
++		[72, 30],
++		[50, 30],
++		[50, 20],
++		[72, 20],
++	])("a true %i at %i frames a second reads within 3, spectral estimate and bpm", (bpm, fps) => {
++		const m = run(feed(bpm, fps, 30), fps).getMetrics();
++		expect(near(m.spectral_bpm, bpm)).toBe(true);
++		expect(near(m.bpm, bpm)).toBe(true);
++	});
++
++	test("a true 120 reads within 3 on the spectral estimate, and bpm is never a wrong number", () => {
++		// The processor's autocorrelation estimate halves clean rates above about 110, so on some
++		// feeds the estimators disagree and bpm is withheld; that is a separate stage.
++		const m = run(feed(120, 30, 30), 30).getMetrics();
++		expect(near(m.spectral_bpm, 120)).toBe(true);
++		expect(m.bpm == null || near(m.bpm, 120)).toBe(true);
++	});
++
++	test("pushSampleRgbMeta takes the same path", () => {
++		const m = run(feed(72, 30, 30), 30, { rgbPulse: "pos", meta: true }).getMetrics();
++		expect(near(m.bpm, 72)).toBe(true);
++	});
++
++	test("a camera slower than the processor was built for (20 a second into sampleRate 30) still reads", () => {
++		for (const bpm of [50, 72, 120]) {
++			const m = run(feed(bpm, 20, 30), 30).getMetrics();
++			expect(near(m.spectral_bpm, bpm)).toBe(true);
++			if (bpm < 110) expect(near(m.bpm, bpm)).toBe(true);
++		}
++	});
++
++	test("the processor's window holds one quantity: no sample carries a raw colour level", () => {
++		const trace = run(feed(72, 30, 10), 30).getTraceSnapshot(1000).points;
++		expect(trace.length).toBe(300);
++		expect(Math.max(...trace.map((x) => Math.abs(x.intensity)))).toBeLessThan(1);
++	});
++
++	test("an already-extracted signal (R = G = B) passes its own value and still reads", () => {
++		const p = run(feed(72, 30, 30, { grey: true }), 30);
++		for (const x of p.getTraceSnapshot(5).points) expect(x.intensity).toBe(x.g);
++		expect(near(p.getMetrics().bpm, 72)).toBe(true);
++	});
++
++	test("one clipped frame in a colour stream puts no raw level in the window and still reads", () => {
++		// A frame clipped white (255, 255, 255) is R = G = B but carries no colour: it gives
++		// the projection's neutral 0, not its own level beside a pulse of about 0.01.
++		const samples = feed(72, 30, 30);
++		samples[300] = { ...samples[300], r: 255, g: 255, b: 255 };
++		const p = run(samples, 30);
++		const trace = p.getTraceSnapshot(2000).points;
++		expect(trace.length).toBe(900);
++		expect(trace[300].intensity).toBe(0);
++		expect(Math.max(...trace.map((x) => Math.abs(x.intensity)))).toBeLessThan(1);
++		expect(near(p.getMetrics().bpm, 72)).toBe(true);
++	});
++
++	test("resetCalibration starts the colour pulse afresh", () => {
++		const p = run(feed(72, 30, 5), 30);
++		p.resetCalibration();
++		for (const x of feed(72, 30, 1).map((s) => ({ ...s, t: s.t + 10000 }))) {
++			p.pushSampleRgb(x.t, x.r, x.g, x.b, 1);
++		}
++		const trace = p.getTraceSnapshot(1000).points;
++		expect(trace.slice(-30, -21).map((x) => x.intensity)).toEqual(Array(9).fill(0));
++	});
++});
++
++describe("processor colour path by default: unchanged", () => {
++	test('left out or "chrom": raw green for the first nine samples, then channel gain and CHROM, value for value', () => {
++		const samples = feed(72, 30, 5);
++		const gain = new ChannelGainController();
++		const chrom = new ChromPulseModel();
++		const before = samples.map((x) => {
++			const bal = gain.process(x.r, x.g, x.b);
++			const v = chrom.process(bal.r, bal.g, bal.b);
++			return !Number.isFinite(v) || Math.abs(v) < 1e-6 ? x.g : v;
++		});
++		for (const rgbPulse of [undefined, "chrom"] as const) {
++			const trace = run(samples, 30, { rgbPulse }).getTraceSnapshot(1000).points;
++			expect(trace.map((x) => x.intensity)).toEqual(before);
++		}
++		expect(before.slice(0, 9)).toEqual(samples.slice(0, 9).map((x) => x.g));
++	});
++});
++
++describe("RgbPulseExtractor", () => {
++	const push = (x: RgbPulseExtractor, times: number[]) =>
++		times.map((t, i) => x.process(t, 170 + Math.sin(i), 120 + Math.cos(i), 100));
++
++	test("gives the projection's neutral 0, never a colour level, until it has 10 samples", () => {
++		const out = push(new RgbPulseExtractor(), Array.from({ length: 12 }, (_, i) => i * 33.3));
++		expect(out.slice(0, 9)).toEqual(Array(9).fill(0));
++		expect(Math.abs(out[11])).toBeLessThan(1);
++	});
++
++	test.each([30, 20])(
++		"is POS and then the fuser's 0.7 to 4 Hz band-pass designed at the arrival rate, value for value (%i a second)",
++		(fps) => {
++			// A clean synthetic pulse reads through a band-pass designed for the wrong rate too, so the
++			// filter itself is pinned here, at a rate other than the usual 30 as well.
++			const samples = feed(72, fps, 5);
++			const x = new RgbPulseExtractor();
++			const pos = new PosPulseModel();
++			let bp: Bandpass | null = null;
++			samples.forEach((s, i) => {
++				const h = pos.process(s.r, s.g, s.b);
++				const got = x.process(s.t, s.r, s.g, s.b);
++				if (i < 9) return expect(got).toBe(0);
++				bp ??= new Bandpass(fps, 0.7, 4.0);
++				expect(got).toBeCloseTo(bp.process(h), 12);
++			});
++			expect(x.filterRate).toBeCloseTo(fps, 9);
++		},
++	);
++
++	test("designs its band-pass for the rate the samples arrive at", () => {
++		const x = new RgbPulseExtractor();
++		push(x, Array.from({ length: 60 }, (_, i) => i * 50));
++		expect(x.filterRate).toBeCloseTo(20, 6);
++	});
++
++	test("takes the mean rate of a camera on a 16 ms clock, not the median interval", () => {
++		// 32, 32, 48 ms repeating: mean 37.33 ms (26.8 a second), median 32 ms (31.25 a second).
++		const steps = [32, 32, 48];
++		const times = [0];
++		for (let i = 1; i < 60; i++) times.push(times[i - 1] + steps[i % 3]);
++		const x = new RgbPulseExtractor();
++		push(x, times);
++		expect(x.filterRate).toBeGreaterThan(26);
++		expect(x.filterRate).toBeLessThan(27.5);
++	});
++
++	test("one camera stall does not move the rate", () => {
++		const times = Array.from({ length: 60 }, (_, i) => i * 33.3 + (i >= 40 ? 600 : 0));
++		const x = new RgbPulseExtractor();
++		push(x, times);
++		expect(x.filterRate).toBeCloseTo(30.03, 1);
++	});
++
++	test("passes an R = G = B sample through only while the stream has been grey", () => {
++		const x = new RgbPulseExtractor();
++		expect(x.process(0, 120, 120, 120)).toBe(120);
++		expect(x.process(33, 121, 121, 121)).toBe(121);
++		const colour = push(x, Array.from({ length: 30 }, (_, i) => 66 + i * 33.3));
++		expect(Math.abs(colour[29])).toBeLessThan(1);
++		expect(x.process(2000, 255, 255, 255)).toBe(0);
++		expect(x.process(2033, 1, 1, 1)).toBe(0);
++		x.reset();
++		expect(x.process(5000, 120, 120, 120)).toBe(120);
++	});
++
++	test("reset starts it afresh", () => {
++		const x = new RgbPulseExtractor();
++		push(x, Array.from({ length: 30 }, (_, i) => i * 33.3));
++		x.reset();
++		expect(x.filterRate).toBe(0);
++		expect(push(x, Array.from({ length: 9 }, (_, i) => 5000 + i * 33.3))).toEqual(Array(9).fill(0));
++	});
++});
+diff --git a/packages/rppg-web/src/rppgProcessor.ts b/packages/rppg-web/src/rppgProcessor.ts
+index 74b3146..9e31a94 100644
+--- a/packages/rppg-web/src/rppgProcessor.ts
++++ b/packages/rppg-web/src/rppgProcessor.ts
+@@ -11,6 +11,7 @@ import {
+ import {
+ 	ChannelGainController,
+ 	ChromPulseModel,
++	RgbPulseExtractor,
+ } from "./rppgSignalModel";
+ import {
+ 	analyzePulseWindow,
+@@ -506,6 +507,9 @@ export class RppgProcessor {
+ 	private readonly bayesTracker: BpmBayesTracker;
+ 	private readonly channelGain = new ChannelGainController();
+ 	private readonly chromPulse = new ChromPulseModel();
++	/** The colour path's pulse signal with `rgbPulse: "pos"` (see computeLocalRgbIntensity). */
++	private readonly rgbPulseExtractor = new RgbPulseExtractor();
++	private readonly rgbPulse: "pos" | "chrom";
+ 	// Quality scalar supplied by an external multi-ROI fuser (see pushFusedSample).
+ 	// When set, it overrides the backend's RGB-derived signal_quality, because the
+ 	// fused path bypasses the backend CHROM stage. Cleared by any non-fused push.
+@@ -532,8 +536,26 @@ export class RppgProcessor {
+ 		options: {
+ 			bpmTrackerConfig?: BpmTrackerConfigV1;
+ 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
++			/**
++			 * How colour samples (`pushSampleRgb`, `pushSampleRgbMeta`) become the
++			 * pulse signal the processor's own window analysis reads (its spectral,
++			 * autocorrelation and peak rates, and HRV). `"pos"`: POS, then the
++			 * 0.7 to 4 Hz band-pass at the rate the samples arrive at
++			 * ({@link RgbPulseExtractor}). `"chrom"`, the default: channel gain,
++			 * then `ChromPulseModel`, with the raw green value kept for the first
++			 * nine samples and whenever CHROM gives about 0, as before. Those raw
++			 * values are about a hundred grey levels beside a pulse of about 0.01
++			 * and stay in the 45 s window, and CHROM's axes keep a constant part,
++			 * so its per-sample weight puts noise in the heart-rate band: on a
++			 * clean synthetic pulse the processor's own rate is wrong with
++			 * `"chrom"` and right with `"pos"`. `"chrom"` stays the default
++			 * because with no pulse at all `"pos"` lets the estimators agree on
++			 * noise more often, so `bpm` is reported in more of those seconds.
++			 */
++			rgbPulse?: "pos" | "chrom";
+ 		} = {},
+ 	) {
++		this.rgbPulse = options.rgbPulse === "pos" ? "pos" : "chrom";
+ 		this.sampleRate = sampleRate;
+ 		this.windowSec = windowSec;
+ 		this.bayesTracker = new BpmBayesTracker(
+@@ -695,7 +717,7 @@ export class RppgProcessor {
+ 		}
+ 		this.pushLocalSample(
+ 			timestampMs,
+-			this.computeLocalRgbIntensity(r, g, b),
++			this.computeLocalRgbIntensity(timestampMs, r, g, b),
+ 			r,
+ 			g,
+ 			b,
+@@ -764,7 +786,7 @@ export class RppgProcessor {
+ 		}
+ 		this.pushLocalSample(
+ 			timestampMs,
+-			this.computeLocalRgbIntensity(r, g, b),
++			this.computeLocalRgbIntensity(timestampMs, r, g, b),
+ 			r,
+ 			g,
+ 			b,
+@@ -783,6 +805,7 @@ export class RppgProcessor {
+ 		this.bayesTracker.reset();
+ 		this.channelGain.reset();
+ 		this.chromPulse.reset();
++		this.rgbPulseExtractor.reset();
+ 		this.fusedQuality = null;
+ 		this.captureScorer?.reset();
+ 		this.lastCapture = null;
+@@ -1031,7 +1054,15 @@ export class RppgProcessor {
+ 		}
+ 	}
+ 
+-	private computeLocalRgbIntensity(r: number, g: number, b: number): number {
++	private computeLocalRgbIntensity(
++		timestampMs: number,
++		r: number,
++		g: number,
++		b: number,
++	): number {
++		if (this.rgbPulse === "pos") {
++			return this.rgbPulseExtractor.process(timestampMs, r, g, b);
++		}
+ 		if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
+ 			return Number.isFinite(g) ? g : 0;
+ 		}
+diff --git a/packages/rppg-web/src/rppgSession.ts b/packages/rppg-web/src/rppgSession.ts
+index 491836a..69c8353 100644
+--- a/packages/rppg-web/src/rppgSession.ts
++++ b/packages/rppg-web/src/rppgSession.ts
+@@ -104,6 +104,15 @@ export type CreateRppgSessionOptions = Omit<
+ 	video: HTMLVideoElement;
+ 	bpmTrackerConfig?: BpmTrackerConfigV1;
+ 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
++	/**
++	 * How the processor turns colour samples into the pulse it analyses: `"pos"`
++	 * or `"chrom"` (the default). See `RppgProcessor`'s option of the same name.
++	 * The session feeds the processor colour samples for every frame it does not
++	 * fuse: with no face mesh (`faceMesh: "off"`, or MediaPipe did not load),
++	 * with `multiRoiFusion` or `useSkinMask` off, and on a frame where no face
++	 * region has skin. Fused samples never take this path.
++	 */
++	rgbPulse?: "pos" | "chrom";
+ 	experimental?: {
+ 		waveformReconstructor: WaveformReconstructor;
+ 		inferenceIntervalMs?: number;
+@@ -398,6 +407,7 @@ export async function createRppgSession(
+ 		{
+ 			bpmTrackerConfig: options.bpmTrackerConfig,
+ 			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
++			rgbPulse: options.rgbPulse,
+ 		},
+ 	);
+ 	applyTrackerConfiguration(processor, enableTracker);
+diff --git a/packages/rppg-web/src/rppgSignalModel.ts b/packages/rppg-web/src/rppgSignalModel.ts
+index 1a21afb..9d3e61d 100644
+--- a/packages/rppg-web/src/rppgSignalModel.ts
++++ b/packages/rppg-web/src/rppgSignalModel.ts
+@@ -99,6 +99,69 @@ export class ChromPulseModel {
+ 	}
+ }
+ 
++/**
++ * POS, "plane orthogonal to skin" (Wang, den Brinker, Stuijk and de Haan,
++ * "Algorithmic principles of remote PPG", IEEE TBME 64(7), 2017), streaming over
++ * the same 45-sample window as {@link ChromPulseModel} and returning the newest
++ * sample. On window-mean-normalised channels, S1 = G - B, S2 = G + B - 2R and the
++ * pulse is h = S1 + (sd S1 / sd S2) S2.
++ *
++ * Each normalised channel averages exactly 1 over the window, so each axis
++ * averages the sum of its weights. POS's weights sum to zero, so S1 and S2 have
++ * no constant part, and a brightness change (all channels scaled together)
++ * cancels. The weight sd S1 / sd S2 is re-estimated on every frame; here its
++ * frame-to-frame change only rescales a pulse-sized deviation. CHROM's axes
++ * (3R - 2G and 1.5R + G - 1.5B) each sum to 1, so ChromPulseModel's X - aY
++ * carries a term (1 - a): every frame-to-frame change in a reaches the output
++ * at full size, and the part inside the heart-rate band passes the band-pass that
++ * follows. The paper version of CHROM band-passes X and Y before combining them,
++ * which removes that constant; ChromPulseModel combines them unfiltered.
++ */
++export class PosPulseModel {
++	private rQueue: number[] = [];
++	private gQueue: number[] = [];
++	private bQueue: number[] = [];
++
++	constructor(private readonly windowSize = 45) {}
++
++	reset() {
++		this.rQueue = [];
++		this.gQueue = [];
++		this.bQueue = [];
++	}
++
++	process(r: number, g: number, b: number): number {
++		this.rQueue.push(r);
++		this.gQueue.push(g);
++		this.bQueue.push(b);
++		if (this.rQueue.length > this.windowSize) {
++			this.rQueue.shift();
++			this.gQueue.shift();
++			this.bQueue.shift();
++		}
++		const len = this.rQueue.length;
++		if (len < 10) return 0;
++		const meanR = mean(this.rQueue) || 1;
++		const meanG = mean(this.gQueue) || 1;
++		const meanB = mean(this.bQueue) || 1;
++		const s1: number[] = [];
++		const s2: number[] = [];
++		for (let i = 0; i < len; i++) {
++			const rn = this.rQueue[i] / meanR;
++			const gn = this.gQueue[i] / meanG;
++			const bn = this.bQueue[i] / meanB;
++			s1.push(gn - bn);
++			s2.push(gn + bn - 2 * rn);
++		}
++		const sd2 = standardDeviation(s2);
++		const alpha = sd2 > 1e-9 ? standardDeviation(s1) / sd2 : 1;
++		// Negated so the waveform keeps the orientation ChromPulseModel gives the same pulse
++		// (CHROM's X - aY comes out opposite in sign to POS's S1 + aS2): peak detection and beat
++		// timing downstream were built on that orientation.
++		return -(s1[len - 1] + alpha * s2[len - 1]);
++	}
++}
++
+ export function computeSignalSnrDb(values: number[]): number {
+ 	if (values.length < 8) return -100;
+ 
+@@ -277,6 +340,99 @@ export function zeroPhaseBandpass(
+ 	return b;
+ }
+ 
++/**
++ * An interval longer than this is a stall (a hidden tab, a camera hiccup), not the
++ * frame rate: 250 ms is 4 frames a second, too slow to sample the 4 Hz top of the
++ * cardiac band at all (that needs more than 8 a second).
++ */
++const RGB_PULSE_STALL_MS = 250;
++/** Timestamps the rate is measured over: the projection's own window (PosPulseModel, 45 samples). */
++const RGB_PULSE_RATE_WINDOW = 45;
++/** Samples before there is a pulse value: PosPulseModel gives 0 below 10. */
++const RGB_PULSE_WARMUP = 10;
++/**
++ * The band-pass is designed afresh when the measured rate moves by more than this
++ * share. A 10% rate error moves both band edges by 10%, which changes the gain at
++ * 50 bpm (0.83 Hz) by under 1 dB: the second-order Butterworth high-pass gives
++ * -1.75 dB there with its cut-off at 0.70 Hz and -2.38 dB at 0.77 Hz.
++ */
++const RGB_PULSE_REDESIGN = 0.1;
++
++/**
++ * The pulse signal RppgProcessor analyses from camera colour (`pushSampleRgb`,
++ * `pushSampleRgbMeta`): POS ({@link PosPulseModel}), then the same 0.7 to 4 Hz
++ * band-pass the multi-region fuser applies to each region, so the processor's
++ * window estimators get a pulse-sized, zero-mean signal from a colour feed too.
++ * Colour pushed to the processor arrives at the camera's own rate, which can
++ * differ from the processor's nominal `sampleRate`, so the band-pass is designed
++ * for the rate measured from the timestamps: intervals per second over the last
++ * 45 samples, leaving out stalls over 250 ms. The mean interval, not the median:
++ * camera frames arrive on a 16 ms clock, 32, 48 or 64 ms apart, where the median
++ * interval can sit several frames a second off the real rate.
++ *
++ * Until the projection has 10 samples the value is 0, the projection's own
++ * neutral value, never a colour level. A sample with R = G = B carries no colour
++ * to project. While every sample since the last reset has been like that (a
++ * signal already extracted, or a grey camera, pushed as g, g, g) it passes its
++ * own value unchanged, as the colour path always has. Once a colour sample has
++ * arrived, one is a clipped or dropped frame: it gives 0 and does not enter the
++ * projection, since its own level would sit about a hundred grey levels beside a
++ * pulse of about 0.01 for the whole of the processor's window.
++ */
++export class RgbPulseExtractor {
++	private readonly pos = new PosPulseModel();
++	private band: Bandpass | null = null;
++	private bandRate = 0;
++	private times: number[] = [];
++	private seenColour = false;
++
++	/** The sample rate the band-pass is designed for; 0 until it is designed. */
++	get filterRate(): number {
++		return this.bandRate;
++	}
++
++	reset() {
++		this.pos.reset();
++		this.band = null;
++		this.bandRate = 0;
++		this.times = [];
++		this.seenColour = false;
++	}
++
++	process(timestampMs: number, r: number, g: number, b: number): number {
++		if (r === g && g === b) return this.seenColour ? 0 : g;
++		this.seenColour = true;
++		this.times.push(timestampMs);
++		if (this.times.length > RGB_PULSE_RATE_WINDOW) this.times.shift();
++		const pulse = this.pos.process(r, g, b);
++		if (this.times.length < RGB_PULSE_WARMUP) return 0;
++		const rate = this.measuredRate();
++		if (!(rate > 0)) return 0;
++		if (
++			this.band == null ||
++			Math.abs(rate - this.bandRate) > RGB_PULSE_REDESIGN * this.bandRate
++		) {
++			this.band = new Bandpass(rate, 0.7, 4.0);
++			this.bandRate = rate;
++		}
++		const out = this.band.process(pulse);
++		return Number.isFinite(out) ? out : 0;
++	}
++
++	private measuredRate(): number {
++		let count = 0;
++		let total = 0;
++		for (let i = 1; i < this.times.length; i++) {
++			const d = this.times[i] - this.times[i - 1];
++			if (d > 0 && d <= RGB_PULSE_STALL_MS) {
++				count += 1;
++				total += d;
++			}
++		}
++		return count > 0 ? (1000 * count) / total : 0;
++	}
++}
++
+ /**
+  * In-band spectral SNR (linear): peak power in the cardiac band divided by the
+  * band's mean power, via a Hann-windowed DFT evaluated on a coarse frequency

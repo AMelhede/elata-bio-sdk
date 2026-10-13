@@ -1,0 +1,190 @@
+From 1a73b09df317a037dac4ea4750fb3319569cb231 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 16:39:03 +0000
+Subject: [PATCH] fix(rppg-web): stop the spectral estimator doubling the
+ strongest rate
+
+Squashed from fix/no-rate-doubling at ea12c6b for review; the pull request text carries the full description and the red/green evidence.
+---
+ .changeset/no-rate-doubling.md                |   5 +
+ .../src/__tests__/spectralNoDoubling.test.ts  | 129 ++++++++++++++++++
+ packages/rppg-web/src/pulseAnalysis.ts        |  18 +--
+ 3 files changed, 138 insertions(+), 14 deletions(-)
+ create mode 100644 .changeset/no-rate-doubling.md
+ create mode 100644 packages/rppg-web/src/__tests__/spectralNoDoubling.test.ts
+
+diff --git a/.changeset/no-rate-doubling.md b/.changeset/no-rate-doubling.md
+new file mode 100644
+index 0000000..cff96b7
+--- /dev/null
++++ b/.changeset/no-rate-doubling.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/rppg-web": patch
++---
++
++`estimateDominantBpm`, the spectral estimate in `analyzePulseWindow`, no longer replaces the strongest rate with twice that rate; the rule fired on normal resting heart rates and doubled correct readings (for example 65 to 130). The peak and beat-timing (HRV) estimates it seeds and `RppgProcessor`'s resolved and final rates change with it.
+diff --git a/packages/rppg-web/src/__tests__/spectralNoDoubling.test.ts b/packages/rppg-web/src/__tests__/spectralNoDoubling.test.ts
+new file mode 100644
+index 0000000..acb2438
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/spectralNoDoubling.test.ts
+@@ -0,0 +1,129 @@
++import { analyzePulseWindow, estimateDominantBpm } from "../pulseAnalysis";
++import { RppgProcessor } from "../rppgProcessor";
++
++// A pulse wave is not a sine: its steep rise and dicrotic notch put energy at twice the rate, and
++// that second harmonic can exceed a third of the fundamental. The estimator used to jump to twice
++// the strongest rate whenever the line there held over 35% of the peak below 85 bpm, so a correct
++// 70 read as 140. The cases below are synthetic known answers.
++//
++// What the rule gave up: a signal whose strongest line sits at half its true rate (a true 140 with
++// a stronger line at 70) has the same spectrum as a 70 bpm pulse with a strong second harmonic.
++// The rule doubled both; the estimator now reads the strongest line for both, and the 70 bpm pulse
++// is the common one.
++
++const fs = 30;
++const wave = (bpm: number, h2: number, seconds = 10) =>
++	Array.from({ length: fs * seconds }, (_, i) => {
++		const t = i / fs;
++		const f = bpm / 60;
++		return Math.sin(2 * Math.PI * f * t) + h2 * Math.sin(2 * Math.PI * 2 * f * t + 0.8);
++	});
++
++describe("estimateDominantBpm keeps the strongest rate", () => {
++	test.each([
++		[60, 0.5],
++		[70, 0.6],
++		[80, 0.45],
++	])("%i bpm with a second harmonic at %f of the fundamental reads as itself", (bpm, h2) => {
++		const r = estimateDominantBpm(wave(bpm, h2), fs, 0.7, 3.3);
++		expect(r).not.toBeNull();
++		expect(Math.abs(r!.bpm - bpm)).toBeLessThan(3);
++	});
++
++	// Unchanged by the fix: the strongest line (110) is above the old rule's 85 bpm limit, so it
++	// read 110 before as well. Pinned so the estimator does not start halving without a test.
++	test("a rate whose second harmonic is the strongest line still reads the strongest line", () => {
++		const r = estimateDominantBpm(wave(55, 1.5), fs, 0.7, 3.3);
++		expect(Math.abs(r!.bpm - 110)).toBeLessThan(3);
++	});
++});
++
++// The spectral rate seeds the autocorrelation, peak and beat-timing estimators in
++// analyzePulseWindow, and it is a candidate for RppgProcessor's resolved, Bayes and final rates,
++// so the doubling reached the numbers an app reads.
++describe("readings built on the spectral rate", () => {
++	test("analyzePulseWindow reads 60 from the spectrum and from the beats of a 60 bpm pulse", () => {
++		const samples = wave(60, 0.5).map((intensity, i) => ({
++			timestampMs: (i * 1000) / fs,
++			intensity,
++			skinRatio: 0.9,
++			motion: 0.01,
++			clipRatio: 0.01,
++		}));
++		const analysis = analyzePulseWindow(samples);
++		expect(analysis?.spectral).not.toBeNull();
++		expect(analysis?.peaks).not.toBeNull();
++		expect(Math.abs(analysis!.spectral!.bpm - 60)).toBeLessThan(3);
++		expect(Math.abs(analysis!.peaks!.bpm - 60)).toBeLessThan(3);
++	});
++
++	// Beat timing for HRV is centred on the spectral rate. The pulse below wanders in phase by
++	// 0.3 rad at 0.25 Hz, so its beat-to-beat intervals vary by a known amount: the true RMSSD
++	// comes from solving for the beat times directly. Tolerance 30%: across 50 to 84 bpm this
++	// pulse reads 11 to 27% low with the fix, and up to four times high around a doubled centre.
++	test.each([
++		[60, 0.5],
++		[72, 0.4],
++	])("analyzePulseWindow's HRV matches the known RMSSD of a %i bpm pulse (harmonic %f)", (bpm, h2) => {
++		const seconds = 10;
++		const phase = (t: number) =>
++			2 * Math.PI * (bpm / 60) * t + 0.3 * Math.sin(2 * Math.PI * 0.25 * t);
++		const samples = Array.from({ length: fs * seconds }, (_, i) => {
++			const p = phase(i / fs);
++			return {
++				timestampMs: (i * 1000) / fs,
++				intensity: Math.sin(p) + h2 * Math.sin(2 * p + 0.8),
++				skinRatio: 0.9,
++				motion: 0.01,
++				clipRatio: 0.01,
++			};
++		});
++		// One beat per cycle of the phase (it only increases), found by bisection.
++		const beats: number[] = [];
++		for (let k = 0; phase(seconds) >= 2 * Math.PI * k + Math.PI / 2; k++) {
++			let lo = 0;
++			let hi = seconds;
++			for (let i = 0; i < 60; i++) {
++				const mid = (lo + hi) / 2;
++				if (phase(mid) < 2 * Math.PI * k + Math.PI / 2) lo = mid;
++				else hi = mid;
++			}
++			beats.push(lo * 1000);
++		}
++		const ibis = beats.slice(1).map((t, i) => t - beats[i]);
++		const diffs = ibis.slice(1).map((ibi, i) => ibi - ibis[i]);
++		const trueRmssd = Math.sqrt(diffs.reduce((acc, d) => acc + d * d, 0) / diffs.length);
++
++		const analysis = analyzePulseWindow(samples);
++		expect(analysis?.hrvRmssd).not.toBeNull();
++		expect(Math.abs(analysis!.hrvRmssd! - trueRmssd)).toBeLessThan(0.3 * trueRmssd);
++	});
++
++	const idleBackend = () => {
++		const metrics = () => ({ bpm: null, confidence: 0.1, signal_quality: 0.9 });
++		const pipeline = {
++			push_sample_rgb_meta: jest.fn(),
++			get_metrics: jest.fn(metrics),
++			getMetrics: jest.fn(metrics),
++			free: jest.fn(),
++		};
++		return { newPipeline: jest.fn(() => pipeline) };
++	};
++
++	// Equal colour channels, as in the other processor tests, so the processor analyses the
++	// green value itself. The backend offers no rate, so the reading comes from the window
++	// analysis alone.
++	test.each([
++		[60, 0.5],
++		[72, 0.4],
++	])("RppgProcessor reads %i bpm with a second harmonic at %f of the fundamental", (bpm, h2) => {
++		const processor = new RppgProcessor(idleBackend(), fs, 10);
++		wave(bpm, h2, 30).forEach((value, i) => {
++			const level = 0.5 + 0.02 * value;
++			processor.pushSampleRgbMeta((i * 1000) / fs, level, level, level, 0.9, 0.01, 0.01);
++		});
++		const metrics = processor.getMetrics();
++		expect(metrics.bpm).not.toBeNull();
++		expect(Math.abs(metrics.bpm! - bpm)).toBeLessThan(3);
++	});
++});
+diff --git a/packages/rppg-web/src/pulseAnalysis.ts b/packages/rppg-web/src/pulseAnalysis.ts
+index 0de3131..8f587f6 100644
+--- a/packages/rppg-web/src/pulseAnalysis.ts
++++ b/packages/rppg-web/src/pulseAnalysis.ts
+@@ -171,20 +171,10 @@ export function estimateDominantBpm(
+ 
+ 	if (!(bestMag > 0) || !Number.isFinite(bestBpm)) return null;
+ 
+-	if (minHz >= 0.6 && maxHz <= 4.5) {
+-		const baseHz = bestBpm / 60;
+-		const doubleHz = baseHz * 2;
+-		if (doubleHz <= maxHz + 1e-6) {
+-			const doubleMag = getMagnitude(doubleHz);
+-			const ratio = doubleMag / (bestMag + 1e-9);
+-			const doubleBpm = doubleHz * 60;
+-			if (ratio > 0.35 && bestBpm < 85 && doubleBpm >= 60 && doubleBpm <= 190) {
+-				bestBpm = doubleBpm;
+-				bestMag = doubleMag;
+-			}
+-		}
+-	}
+-
++	// No jump to twice the strongest rate: a pulse wave is not a sine, and its second harmonic
++	// can exceed a third of the fundamental, so such a rule doubles correct resting rates. A
++	// signal whose strongest line is half its true rate has the same spectrum and reads that
++	// line too (see spectralNoDoubling.test.ts).
+ 	const energy = centered.reduce((acc, value) => acc + value * value, 0) / n;
+ 	const confidence =
+ 		energy > 1e-9 ? clamp(bestMag / (Math.sqrt(energy) + 1e-9), 0, 1) : 0;
