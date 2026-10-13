@@ -325,13 +325,29 @@ export declare const OWN_PULSE_EDGE_MIN_SNR_DB = 0;
  */
 export declare const OWN_PULSE_HOLD_MIN = 6;
 export type OwnPulseVerdict = "measured" | "not-measured" | "unknown";
+/**
+ * How a "measured" verdict was reached: "proof" (the streak, or the strong windows), "dark" (the dark
+ * entry), or "hold" (a rate measured before, still carried by most of the newest windows). The first two
+ * are fresh proofs; the hold is not.
+ */
+export type OwnPulseVerdictPath = "proof" | "dark" | "hold";
 export declare function ownPulseVerdict(history: readonly (OwnPulseEstimate | null)[], 
 /** The rate the previous verdict was measured at, if it was; enables the hold. */
-held?: number | null): {
+held?: number | null, 
+/**
+ * Rule reproveOnDrift (pulseCheck.ts): the rate of the last fresh proof, and how far a hold may move from it.
+ * A hold further than `maxBpm` from `provenBpm` ends, and the rate needs a fresh proof. Left out: no limit.
+ */
+drift?: {
+    provenBpm: number | null;
+    maxBpm: number;
+}): {
     verdict: OwnPulseVerdict;
     bpm: number | null;
     snrDb: number | null;
     streak: number;
+    /** How a "measured" verdict was reached (OwnPulseVerdictPath); null otherwise. */
+    path: OwnPulseVerdictPath | null;
 };
 /**
  * A strong pulse in good light, confirmed from 12 s: the beat intervals and the
