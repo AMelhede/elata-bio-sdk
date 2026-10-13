@@ -80,8 +80,8 @@ it is withdrawn as code: `fused_bpm` already gives the same value, and the issue
 
 ## 2. What the PR would contain
 
-Cut fresh from Elata main, from the test build's method (release/test-1 c85bc9b, byte-identical method since
-test.15), not from `feat/pulse-check-on-main` (section 8):
+Cut fresh from Elata main, from the test build's method (release/test-1 6084d8d, test.21: the test.15 method with the face
+flicker constant 7 since test.20 and four dim-light switches, off, since test.21), not from `feat/pulse-check-on-main` (section 8):
 
 - `src/pulseCheckCore.ts` (pure estimator and verdict, about 1,000 lines) and `src/pulseCheck.ts` (the class, the
   wall tracker, the light and head rules, the shown rate, about 1,000 lines).
@@ -163,7 +163,7 @@ appendix (ask Andreas Melhede). The full methods packet is under outside review 
 
 ## 4. What it costs (measured)
 
-- **Fewer numbers.** It never adds right seconds; it removes wrong ones. [owner] right seconds 848 to 650, and 10 of 50 recordings got no number. Coverage falls with heart rate and after exercise
+- **Fewer numbers.** It never adds right seconds; it removes wrong ones. [owner] right seconds 848 to 650, and 10 of 50 recordings got no number. Why those 10 got none, described after the fact on the same recordings [owner, in-sample]: mostly dim light; the check's own windows there pointed at the right rate only 9 times in 100, so the withholds were right (numbers in [split-plan.md](split-plan.md), objections 2 and 3). Coverage falls with heart rate and after exercise
   [private].
 - **Needs a face mesh.** Frames without landmarks hand the check a null head, so no window counts as evidence and it
   never proves: the 35-line reproduction without landmarks showed nothing for a true 72 in 60 s. Elata's own README

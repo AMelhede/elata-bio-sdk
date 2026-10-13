@@ -2,7 +2,8 @@
 
 This folder lets anyone check, from first principles, each change we propose to Elata's SDK. It is for Elata's
 maintainers, the outside reviewer and the testers. Nothing here has been
-sent to Elata yet. Written 2026-10-12.
+sent to Elata yet. Written 2026-10-12, brought up to date 2026-10-13 (test.21, the replayable demo file, why
+the pulse check is slow or silent on the owner's recordings, fix 1 at 2 s).
 
 ## How to read it
 
@@ -14,12 +15,15 @@ sent to Elata yet. Written 2026-10-12.
   it, and whether it closed. Audits are dated records; where a later measurement moved a verdict, the proposal's
   README, its `pr.md` and [open-gaps.md](open-gaps.md) carry the current state. Fixes 1, 3 and 4 share `runner.md`; 2 and the issue `core.md`; 5 and 13
   `estimators.md`; 11 and 12 `processor.md`; 6, 7 and 8 `tooling.md` and `cross-os.md`; 9 and 10 `runtime.md`.
-- **The test build** under [test-build/](test-build/): the audits of `@amelhede/rppg-web` 0.15.0-test.17 to test.19
-  (the build testers install), the behaviour difference against 0.14.0, and the package-tool checks.
+- **The test build** under [test-build/](test-build/): the audits and build notes of `@amelhede/rppg-web`
+  0.15.0-test.17 to test.21 (the build testers install), the behaviour difference against 0.14.0, and the
+  package-tool checks.
 - [methods.md](methods.md): how the pulse check works, every constant and its source.
 - [open-gaps.md](open-gaps.md): everything not yet evidenced, what would close it, and who can.
 - [tools/strap-score/](tools/strap-score/): scores the demo page's "Save readings" file against a chest strap
-  (Polar, HRV Logger, Elite HRV, Kubios or a plain RR list), with self-checks and synthetic examples.
+  (Polar, HRV Logger, Elite HRV, Kubios or a plain RR list), with self-checks and synthetic examples. Since test.21
+  that file is JSON and also holds what the pulse check was fed, so `--replay` scores every dim-light rule on the
+  same seconds.
 
 Labels on every number:
 
@@ -50,7 +54,9 @@ Every change goes through the same steps, in this order, and none is skipped:
 5. **Then one PR per change into Elata's SDK**, opened from a clean one-commit `pr/*` ref, only once the whole team
    has tested it and decided together.
 
-Today we are between steps 2 and 3: test.19 is ready to publish and not yet published.
+Today we are between steps 2 and 3. test.21 is built and pushed (`release/test-1` 6084d8d); its audit is pending
+and nothing is published. The demo page testers use runs test.21 from its tarball, so the strap study does not wait
+for npm.
 
 ## The changes at a glance
 
@@ -59,7 +65,7 @@ than first claimed; **withdrawn** = do not send the code.
 
 | Change | Verdict | Strongest evidence | Cost | Still open | Branch, one-commit ref |
 |---|---|---|---|---|---|
-| [1. No face, no reading](proposals/01-no-face-no-reading/) | strong | wall gap: a number in 10 of 10 s on 0.14.0, 1 then nothing with the fix [synthetic] | no number while no face is in view | real moving people not measured; on a synthetic head (180 runs) the 2 s hold shows 388 wrong seconds against 539 for 1 s and 1083 on main, so the PR now holds 2 s; the test build still holds 1 s | `fix/no-face-no-reading` 0b60181, `pr/no-face-no-reading` 5d944c6 |
+| [1. No face, no reading](proposals/01-no-face-no-reading/) | strong | wall gap: a number in 10 of 10 s on 0.14.0; with the fix 2 held readings, then nothing (1 in the test build, which holds 1 s) [synthetic] | no number while no face is in view | real moving people not measured; on a synthetic head (180 runs) the 2 s hold shows 388 wrong seconds against 539 for 1 s and 1083 on main, so the PR now holds 2 s; the test build still holds 1 s (test.21) | `fix/no-face-no-reading` 55de1a7, `pr/no-face-no-reading` 8dde554 |
 | [2. Core colour projection sign](proposals/02-rust-colour-projection-sign/) | strong | true 90 under a lamp at 60 reads 67 on 0.14.0, about 90 with the fix [synthetic] | camera-colour path shows more numbers; the wrong share of them falls from 85 to 71 in 100, but the count of wrong seconds rises (issue 1) | no shareable real-capture check | `fix/rust-colour-projection-sign` 06f93f6, `pr/...` b527385 |
 | [3. Real frame rate](proposals/03-real-frame-rate/) | narrow, **held** from the first round | quality at 15 fps 0.19 of its 30 fps value with fix 4 alone, 1.00 with fix 3 [synthetic] | `getMetrics()` 142 against 57 ms at 15 fps | changes no rate once fix 4 is in; comes back only with a pre-registered test on unseen recordings | `fix/real-frame-rate` bd72c7e, `pr/...` ff1cc00 |
 | [4. POS in the fuser](proposals/04-pos-in-fuser/) | strong | true 120 right in 0 of 150 s on 0.14.0, 150 of 150 with POS [synthetic] | default output of every face-mesh session changes | breathing under POS not measured | `fix/pos-in-fuser` 564d589, `pr/...` deca8d7 |
@@ -73,8 +79,8 @@ than first claimed; **withdrawn** = do not send the code.
 | [12. Engine fallback](proposals/12-no-engine-fallback/) | withdrawn, issue only ([issue.md](proposals/12-no-engine-fallback/issue.md)) | `fused_bpm` already gives the checked rate in 5,440 of 5,440 reads | none (not sent) | file the issue at step 5 | `fix/no-engine-fallback` 6894d3a, `pr/...` 13793e5 |
 | [13. Calibration blend](proposals/13-no-calibration-blend/) | modest | real engine, grey pulses: right in 1,813 of 2,592 s on 0.14.0, 2,053 with the option [synthetic] | one more option forever | shows the engine's octave when the engine has one; on Elata main with fix 4 a clear gain on real captures, 1,895 to 2,282 right seconds (37 recordings better, 8 worse) [owner]; the earlier "adds nothing" came from our test build | `fix/no-calibration-blend` 608e797, `pr/...` c4f98c2 |
 | [Issue 1. Harmonic picker](proposals/issue-harmonic-picker/) | strong, as a report | clean 72 reads 48 at confidence 0.88 [synthetic] | none (no patch) | removing it does not help real captures yet | issue only |
-| [Pulse check](proposals/pulse-check/) | strong on known answers, not ready | no pulse: a number in 44 of 60 s on 0.14.0, 0 with the check [synthetic] | first number after 18 to 22 s in Node, 24 to 29 s in a browser [synthetic], median 48.6 s [owner]; no number in 5,680 of 6,457 s, none at all in 10 of 50 recordings, and fewer right seconds than 0.14.0 (650 against 848) [owner]; HRV, breathing withheld | failed its 10% bar on owner recordings (16.3%), and those are in-sample (its constants were tuned on them); with no wall in view, lamps whose colour change looks like blood get through (no rule found yet); needs a re-cut, real footage, a chest strap | method on `release/test-1` c85bc9b |
-| [test.19's own changes](test-build/test19-audit.md) | ready to publish | 48 paired runs: every per-second read identical to test.18 at the defaults [synthetic] | none at the defaults | no browser or real-people run on test.19 | `release/test-1` c85bc9b |
+| [Pulse check](proposals/pulse-check/) | strong on known answers, not ready | no pulse: a number in 44 of 60 s on 0.14.0, 0 with the check [synthetic] | first number after 18 to 22 s in Node, 24 to 29 s in a browser [synthetic], median 48.6 s [owner]; no number in 5,680 of 6,457 s, none at all in 10 of 50 recordings, and fewer right seconds than 0.14.0 (650 against 848) [owner]; HRV, breathing withheld. Why [owner, described, not tuned]: the 10 are mostly dim captures whose windows pointed at the right rate only 9 times in 100; of the 48.6 s wait, 18.6 s is the method itself and the rest is windows the rules refused, which were mostly wrong | failed its 10% bar on owner recordings (16.3%), and those are in-sample (its constants were tuned on them); with no wall in view, lamps whose colour change looks like blood get through (no rule found yet); needs a re-cut, real footage, a chest strap; four dim-light rules are built, off, waiting for the strap study | method on `release/test-1` 6084d8d (test.21) |
+| [test.21's own changes](test-build/test21-build.md) | built; audit pending | with the four dim-light rules off, every read identical to test.20 [synthetic], and the check's state equal at all 7,555 evaluations on 51 owner files [owner]; a saved recording replays to every number shown (6,340 of 6,340 reads) [synthetic] | none while the recording is off; on, about 7 MB held for 5 minutes | audit; a real camera; no tester file replayed yet | `release/test-1` 6084d8d |
 
 The `fix/*` branches are on the fork (`github.com/AMelhede/elata-bio-sdk`). The `pr/*` refs carry the same tree as
 the branch tip on a single commit on 49fdb41; they are local until Andreas pushes them. Merge order, holds and the known
@@ -96,7 +102,7 @@ with the pulse set to 0.
 git clone https://github.com/AMelhede/elata-bio-sdk && cd elata-bio-sdk && git checkout docs/evidence
 mkdir -p /tmp/p14 && (cd /tmp/p14 && npm init -y >/dev/null && npm install @elata-biosciences/rppg-web@0.14.0)
 P14=/tmp/p14/node_modules/@elata-biosciences/rppg-web     # the published package
-T=packages/rppg-web                                         # the test build, built files committed on this branch
+T=packages/rppg-web                                         # the test build (test.19), built files committed here
 E=docs/evidence/proposals
 
 node $E/pulse-check/no-pulse-session.mjs $P14               # no pulse: a number in 44 of 60 s

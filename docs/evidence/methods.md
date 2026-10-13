@@ -19,7 +19,10 @@ Labels on every measured number:
 
 Source of the method: `packages/rppg-web/src/pulseCheckCore.ts` (estimator and verdict) and `src/pulseCheck.ts`
 (class, light and head rules, shown rate) on `release/test-1` (0.15.0-test.19). The built `dist/pulseCheck.js` and
-`dist/pulseCheckCore.js` are byte-identical from test.15 to test.19 (sha256 prefixes 700ab679 and 1569ebec).
+`dist/pulseCheckCore.js` are byte-identical from test.15 to test.19 (sha256 prefixes 700ab679 and 1569ebec). Since then:
+test.20 sets the face flicker constant to 7 (section below), and test.21 adds four dim-light rules, all off, and an
+optional recording of the check's inputs; with the rules off, test.21's check state equals test.20's at every
+evaluation on the owner recordings (`test-build/test21-build.md`).
 
 ---
 
@@ -217,7 +220,10 @@ typed reference.
 - The bar written down before this run was 10% wrong of shown. **It failed** (16.3%). Most of the 127 sit in 7
   recordings where the typed reference itself is doubtful (one value per recording, one typed later); that cannot be
   shown without a chest strap.
-- 10 of the 50 recordings got no number from the check. First number at a median of 48.6 s.
+- 10 of the 50 recordings got no number from the check. First number at a median of 48.6 s. Described afterwards
+  (2026-10-13, pre-registered, nothing tuned): the 10 are mostly dim captures whose windows pointed within 5 bpm of
+  the reference only 9 times in 100, so withholding was right; of the wait, 18.6 s (median) is the method itself and
+  the rest is windows the rules refused or runs that broke, mostly wrong (`proposals/pulse-check/split-plan.md`).
 - Gating 0.14.0's own `confidence` instead makes it worse: the wrong share of shown seconds rises with the bar, to
   97.4% at 0.5 and 98.8% at 0.9.
 - Showing the engine's rate whenever the check passes: right 112, wrong 577, against the check's own 650 and 127.

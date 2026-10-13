@@ -18,7 +18,13 @@
   real filmed lamp and nod footage; about 2,000 lines, with a split plan written but not cut
   ([split-plan.md](split-plan.md)). The face flicker constant is 7 since test.20 (set on the synthetic lamp sweep;
   the owner recordings only checked that it costs nothing).
-- **Where.** Method on `release/test-1` c85bc9b (test.19). The older `feat/pulse-check-on-main` is withdrawn.
+- **Why slow or silent** [owner, in-sample, described, nothing tuned]. The 10 of 50 recordings with no number are
+  mostly dim captures whose windows pointed at the right rate only 9 times in 100, so withholding was right. Of the
+  48.6 s median wait, 18.6 s is the method itself; the rest is windows the rules refused, which were mostly wrong.
+  A faster first number needs a better dim-light signal, not a shorter wait. Details: [split-plan.md](split-plan.md).
+- **Dim light.** Four candidate rules are in test.21, all off, settings fixed in advance; only the strap study can
+  switch one on ([../../open-gaps.md](../../open-gaps.md)).
+- **Where.** Method on `release/test-1` 6084d8d (test.21). The older `feat/pulse-check-on-main` is withdrawn.
 
 Files: [case.md](case.md) (proposal outline), [split-plan.md](split-plan.md) (how it splits into PRs), audit [../../audits/pulse-check.md](../../audits/pulse-check.md),
 [no-pulse-session.mjs](no-pulse-session.mjs).

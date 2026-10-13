@@ -8,7 +8,7 @@ the same recordings the check's constants were tuned on (in-sample).
 ## Bottom line
 
 The pulse check is about 2,000 lines in two files (`pulseCheckCore.ts`, `pulseCheck.ts`) on the test build
-(`release/test-1`, test.20) over Elata main 49fdb41, plus session and runner wiring and 14 test files. It splits into
+(`release/test-1`, test.21: the test.20 check plus four dim-light switches, all off) over Elata main 49fdb41, plus session and runner wiring and 14 test files. It splits into
 five code PRs and one issue. The first code PR fixes the issue on its own (a heart rate shown with no pulse in view);
 each later one adds one rule with its own test and its own known answer. A reviewer can review each on its own; they
 are released together (see the catch below).
@@ -29,8 +29,8 @@ from the test build in it. Steps 3 to 5 each add their name to `pulseCheckRules`
 in a test.
 
 **Left out of every step:** the agreement path (`pulseCheckAgreement`, unvalidated); `earlyPulse` and `beatRate`
-(about 130 lines in the core that nothing on test.20 calls); the four dim-light candidate rules (off, waiting for the
-strap study); every other fix and switch of the test build; the older branch's four speed commits.
+(about 130 lines in the core that nothing on test.21 calls); the four dim-light candidate rules (off, waiting for the
+strap study); the pulse-check input recording and replay (test.21; a study tool, a later PR only if Elata wants it); every other fix and switch of the test build; the older branch's four speed commits.
 
 **The catch, from the audit.** The light and head known answers (case.md 3.2: a light at 72 on face and wall, a nod
 at 60, both with no pulse) pass only with the rules of steps 3 and 5 in. Step 2 alone is expected to show a rate for
@@ -60,24 +60,43 @@ Evidence exists, and it cuts both ways.
 - Open: whether 16.3 is the right price is a product call. The 10 in 100 bar set in advance failed.
 
 **2. It shows no number at all in 10 of 50 recordings [owner].**
-Partly explained, mostly open.
+Explained since (see the measured paragraph below); whether nothing beats a wrong number stays a product call.
 - What exists: the check withholds when the regions do not agree above the noise, and the dim recordings are where
   it struggles (where it does show, 31.8 of every 100 dim seconds are wrong against 10.4 in the rest, split by the
   light word in the file name, after looking).
-- What does not exist: no analysis yet says why each of the 10 got nothing (light, frame rate, rate below 58 bpm,
-  face mesh). That is a description run on the existing rows, to be pre-registered before it is run.
+- Measured since: light, not rate. In those 10 the check's own windows were mostly wrong, so withholding them was
+  right (below).
 - Open: whether "nothing" is better than "a number wrong 86 times in 100" for those 10 is a product call. The
   project's own rule is show less, never invent.
 
 **3. The median wait for a first number is 48.6 s [owner], against 1 to 3 s on 0.14.0.**
-Partly explained.
+Explained since (see the measured paragraph below).
 - What exists: on clean generated faces the first number comes at 18 to 22 s in Node and 23.6 to 28.5 s in a real
-  browser [synthetic]. That floor is structural: a 16 s window plus 8 agreeing one-second evaluations. In dim light the
-  check takes the dark path, which needs 16 windows, not 8, so it is slower there by construction.
+  browser [synthetic]. That floor is structural: the first 16 s window plus a proving run of agreeing one-second windows
+  (4 on the strong path, 8 on the normal path, 16 on the dark path). The dark path is not why the owner wait is
+  long: only 2 of the 40 first numbers came by it, and recordings named dark or dim got their first number sooner
+  (median 37 s) than the rest (49 s).
 - When it does show, the first number was right in 34 of 40 recordings (0.14.0: 9 of 50).
-- What does not exist: how much of the gap from about 20 s to 48.6 s is dim light, low frame rate, or movement. Not
-  measured. The older branch's speed commits were withdrawn because they changed defaults.
+- Measured since: of the 48.6 s, 18.6 s is the method; the rest is mostly wrong windows that a rule refused or runs
+  that broke (below). The older branch's speed commits were withdrawn because they changed defaults.
 - Open: a faster first number without more wrong ones. No candidate is measured.
+
+**Objections 2 and 3, measured since (2026-10-13, pre-registered, [owner], in-sample,
+description only).** The test.20 check's state was read every second on the same 50 recordings; the replay
+reproduces 650 right, 127 wrong, 10 of 50 with no number and 48.6 s exactly. *No number in 10:* in those 10 the
+check's own windows pointed within 5 bpm of the reference only 9 times in 100 (median; 36 in the 40 that got a
+number), and 0.14.0 was right in 109 of 1,230 of the same seconds. Every one is a withhold of mostly wrong
+evidence by the rule fixed in advance. The cause is light, not rate: 8 of 10 are named dark or dim, the camera had
+slowed itself for low light, windows were faint (median -2.7 to -4.8 dB) and their lines sat at 45 to 55 bpm; no
+reference in the 50 is under 58. One near miss: a short recording with an 11-window run at 64 against 61 that
+missed the strength bar by 0.13 dB. *The 48 s wait:* 18.6 s (median) is the method itself (the first 16 s window
+plus 4 agreeing windows, the same as the synthetic floor); the other 29 s is windows a rule refused or runs that
+broke, and those windows were more than 5 bpm off in 550 of 640 and 297 of 485. The only pure waits are small
+(extra windows in a run: 0 s median, 3.1 s at the 90th percentile; nothing was held back by the wall, flicker or head
+rules). Proving earlier is not free: a normal-path run was wrong in 41 of 100 at 4 windows against 20 of 100 at 8,
+and the 6 wrong first numbers already came early (18 to 48 s, 5 of them on the 4-window path). So the slow and
+silent cases are the signal, not a timer; a faster first number needs a better signal in dim light, not a shorter
+wait. Head rows are not in these files, so the head rule is untested here.
 
 **4. Size: about 2,000 lines in one change.**
 Answered by this plan: five code PRs of about 80 to 700 lines each, each with its own test and evidence, plus about

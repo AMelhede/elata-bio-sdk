@@ -5,7 +5,7 @@
   reading starts fresh. `requireFace: false` restores the old behaviour.
 - **Verdict.** Strong.
 - **Strongest evidence** [synthetic]. A true 66 with a 10 s wall gap: 0.14.0 shows a number in 10 of 10 gap seconds,
-  is right in 31 of the 65 s after, and first right 35 s after the face returns. With the fix alone (0b60181): 2 held
+  is right in 31 of the 65 s after, and first right 35 s after the face returns. With the fix alone (55de1a7): 2 held
   readings in the gap, then nothing; right in 61 of 65 s after (the 3 wrong ones are the CHROM fuser restarting; merged
   with POS in the fuser, 65 of 65). In the test build (1 s hold, POS in the fuser): 1 held reading, then right in 65 of 65.
 - **Cost.** Apps lose the number while no face is in view (the point); the last number stays up to 2 s after the face
@@ -18,8 +18,8 @@
   3 to 12 s after a 1 s restart lost more right seconds than it saved. [owner] 1 of 20 real face-loss moments fell
   in the 1 to 2 s band. **Decided: the PR holds 2 s** (it shows the old number one second longer than 1 s would).
 - **Still open.** Real people moving, turning and leaving have not been measured; only the synthetic head above.
-- **Where.** Branch `fix/no-face-no-reading` 0b60181; one-commit review ref `pr/no-face-no-reading` 5d944c6 (local,
-  not yet pushed). In the test build: switch `noFaceNoReading`, still with the 1 s hold (see open-gaps.md).
+- **Where.** Branch `fix/no-face-no-reading` 55de1a7; one-commit review ref `pr/no-face-no-reading` 8dde554 (local,
+  not yet pushed). In the test build: switch `noFaceNoReading`, still with the 1 s hold as of test.21 (see open-gaps.md).
 
 Files: [pr.md](pr.md) (the PR text), audit: [../../audits/runner.md](../../audits/runner.md) (fix 1 rows and its
 Closed section), [face-gap.mjs](face-gap.mjs).
