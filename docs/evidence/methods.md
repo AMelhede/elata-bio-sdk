@@ -239,7 +239,8 @@ shown seconds.
 | 20 | 40 to 42 / 42 / 42 / 42 / 42 | 650 / 127 |
 
 So 7 catches the L = 0.1 lamp that 10 misses, at no cost on the owner's recordings. The rule written before the
-measurement ("worse for keeping 10") fired. Recommendation: 7, after a check on private development data.
+measurement ("worse for keeping 10") fired. Decision: 7, on this synthetic sweep; the owner recordings only checked that 7 costs nothing (0 right seconds
+lost). It is 7 in test.20 (585d2dd). No private data decides it.
 With no wall in view, lamps with a colour part of 0.15 or more still get through at 7.
 
 ## 7. Limitations, and what would change our mind

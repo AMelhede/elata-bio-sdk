@@ -7,13 +7,14 @@
 - **Strongest evidence** [synthetic]. A true 90 under a lamp at 60 reads 67 every second on 0.14.0, and 88 to 93 with
   the fix (14 of the last 15 s within 5 bpm). Three new Rust tests are red with main's sign. The default fused path
   is bit for bit main: 210 of 210 seeded runs equal.
-- **Cost.** No API or default change. On the camera-colour path with no lamp, more numbers appear: 476 shown against
-  259 of 480 s, 140 right against 39, 336 wrong against 220; 88 of the 116 extra wrong seconds go when the harmonic
+- **Cost.** No API or default change. On the camera-colour path with no lamp, many more numbers appear, and a
+  smaller share of them is wrong: 85 in 100 shown seconds wrong on main (220 of 259), 71 in 100 with the fix (336 of
+  476); right seconds 39 to 140 of 480. The count of wrong seconds rises (220 to 336) because more numbers show; 88 of the 116 extra wrong seconds go when the harmonic
   picker is switched off (see the issue).
 - **Still open.** No shareable real-capture check. The session-level script needs a built dist and a wasm-bindgen
   pkg. [owner] 35 captures: 38.1% right of shown on main, 40.4% with the fix (21 better, 12 worse, p 0.16: modest,
-  not significant). A follow-up (POS axes inside the core) did better on those captures and goes through the release
-  path on its own.
+  not significant). POS axes inside the core did better on those captures, but not
+  on 15 held-out ones (607 right against the fix's 617; 6 better, 8 worse), so it is not proposed.
 - **Where.** Branch `fix/rust-colour-projection-sign` 06f93f6; `pr/rust-colour-projection-sign` b527385 (local). In
   the test build: switch `colourProjectionFix`.
 

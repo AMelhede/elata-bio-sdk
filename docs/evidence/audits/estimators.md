@@ -106,7 +106,7 @@ seconds), which is why it is opt-in. One more public option on two constructors,
 | Root cause is the acf halving; the option papers over it | answered in text | "Considered and not done" (C loses at 15 and 20 fps, D loses 103 noisy reads) |
 | The C and D numbers and both suite tables come from a harness the maintainer cannot run | gap | criterion 6; the raw grey suite could ship as one standalone script |
 | Test count wrong (17 and 11 vs 16 and 10) | gap | text fix |
-| With fixes 4 and 5 in place the value on real recordings is nil (2,094 vs 2,047) | conceded | PR says so |
+| With fixes 4 and 5 in place the value on real recordings is nil (2,094 vs 2,047) | conceded, then corrected (2026-10-13): that was our test build test.19; on Elata main with fixes 4 and 5 the option gives 1,964 to 2,265 (38 better, 11 worse) | PR says so |
 | Real-recording gain (19.4% to 24.3%) private | conceded | labelled context |
 | Default rule fails by small margins | answered | table in PR |
 | Name exposes internals | gap (taste) | maintainer may prefer another name |
@@ -175,3 +175,8 @@ and appears only together with fix 13's option. fix5.md now says that plainly, a
 their value together. If the maintainer will not take fix 13's option, fix 5 rests on synthetic evidence and the
 HRV result, and we should say so rather than claim a real-world gain. Fix 13: unchanged; text corrected and its raw
 suite made runnable.
+
+Later (2026-10-13): measured on Elata main with fix 4, the first round's base, fix 5 adds nothing on real captures
+with or without fix 13's option (1,895 to 1,964 at the defaults, 23 better and 18 worse; 2,282 to 2,265 with the
+option). So fix 5 rests on synthetic evidence and the HRV result in every case, and fix 13's option is a clear gain
+on its own (1,895 to 2,282, 37 better and 8 worse). The "2,094 vs 2,047" above was our test build test.19.

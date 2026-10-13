@@ -15,10 +15,12 @@
   qualified; the one lead (timing spread across face regions) was chosen after looking and fails once the camera
   reads the cheeks a few ms after the forehead (rolling shutter). See [../../open-gaps.md](../../open-gaps.md).
 - **Still open.** A branch cut fresh onto Elata main; real-people evidence Elata can check (chest strap or testers);
-  real filmed lamp and nod footage; the face flicker constant from 10 to 7; about 2,000 lines with no split plan.
+  real filmed lamp and nod footage; about 2,000 lines, with a split plan written but not cut
+  ([split-plan.md](split-plan.md)). The face flicker constant is 7 since test.20 (set on the synthetic lamp sweep;
+  the owner recordings only checked that it costs nothing).
 - **Where.** Method on `release/test-1` c85bc9b (test.19). The older `feat/pulse-check-on-main` is withdrawn.
 
-Files: [case.md](case.md) (proposal outline), audit [../../audits/pulse-check.md](../../audits/pulse-check.md),
+Files: [case.md](case.md) (proposal outline), [split-plan.md](split-plan.md) (how it splits into PRs), audit [../../audits/pulse-check.md](../../audits/pulse-check.md),
 [no-pulse-session.mjs](no-pulse-session.mjs).
 
 ```

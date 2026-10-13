@@ -12,10 +12,12 @@ one that corrects the code comment and the changeset.
 **What this PR claims, narrowed after review (2026-10-12).** The doubling rule is a defect on synthetic known
 answers: removing it takes 105 clean resting pulses from 69 right to 105 right, and HRV within 30% from 19 to 105
 cases. On real camera recordings it does not, on its own, give more right seconds: on our own 50 recordings it
-changes nothing measurable (1,296 against 1,289 right seconds of 6,679, p 0.87), and it gains only together with
-fix 13's `calibrationBlend: false` (1,625 against 1,653, p 0.05). Those recordings are one person's and cannot be
-shared, so they are context. If fix 13's option is not taken, this PR rests on the synthetic cases and the HRV
-result, and claims no real-world gain.
+changes nothing measurable (1,296 against 1,289 right seconds of 6,679, p 0.87). On main's CHROM fuser it gained a
+little together with fix 13's `calibrationBlend: false` (1,625 against 1,653, p 0.05), but on Elata main with fix 4
+(POS in the fuser), the base the first round lands on, it adds nothing measurable at the defaults (1,895 against
+1,964, 23 recordings better, 18 worse, p 0.53) or with fix 13's option (2,282 against 2,265, 17 better, 20 worse,
+p 0.74). Those recordings are one person's and cannot be shared, so they are context. This PR rests on the
+synthetic cases and the HRV result, and claims no real-world gain.
 
 ## Issue
 
@@ -245,6 +247,8 @@ figures in the issue come from this set. Removing the rule alone: 1,296 -> 1,289
 before running it (lost at most gained) that is a small loss, indistinguishable from none. 99 of the 155 lost seconds are reads where main's gate refused (the estimators disagreed) and showed the engine's raw rate, which was
 right, while this branch's gate passed and showed the calibration blend, which was not: the mechanism fix 13 is
 about. With fix 13's `calibrationBlend: false` on both: 1,625 -> 1,653 (60 lost, 88 gained; 19 better, 8 worse,
-p 0.05). So on real camera signals this change pays only once the shown rate stops being the calibration's blend.
+p 0.05). So on main's CHROM fuser this change pays only once the shown rate stops being the calibration's blend. On Elata
+main with fix 4 it does not pay even then: 1,895 -> 1,964 at the defaults (23 better, 18 worse, p 0.53) and
+2,282 -> 2,265 with the option (17 better, 20 worse, p 0.74).
 
 The recordings cannot be shared, so all of this is context, not evidence for the PR.

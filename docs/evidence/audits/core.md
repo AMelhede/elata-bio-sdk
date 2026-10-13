@@ -191,7 +191,8 @@ in case/core2/results.
    (prereg 4): S1 57/3/2, S3 and S4 equal, S6 427/75/56, S5 fewer right in every cell (by 3 to 10); on the 35
    captures 1,863 right of 4,230 shown (44.0%), 2,367 wrong, more right seconds than fix 2 in 24 captures and
    fewer in 9 (sign test p 0.01). The prereg rule (replace only if not worse on any synthetic section by more than
-   2 runs) keeps it out of this PR; the text says it is the stronger follow-up candidate. Cost: get_metrics on
+   2 runs) keeps it out of this PR. (Later, 2026-10-12: its real-capture lead failed a held-out check on 15 other captures,
+   607 right against fix 2's 617, so it is not proposed, now or as a follow-up.) Cost: get_metrics on
    fused windows 5.1 to 5.3 ms on both trees; on camera RGB 11.5 and 12.7 ms against 13.4 ms on main.
 5. **Real-capture effect: closed as labelled private context.** Fix 2's exact code (06f93f6) on the 35 owner
    captures with a reference, every-whole-second judging, self-checks first (grey 90 within 2 bpm on both trees,

@@ -231,8 +231,10 @@ the owner's real pulses the ratio at the shown rate was not near 3: median 1.3, 
 | 20 | 40 to 42 / 42 / 42 / 42 / 42 | 650 / 127 |
 
 So 7 catches the L = 0.1 lamp that 10 misses at no cost on the owner's recordings; 5 catches more at 9 right seconds.
-The pre-registered "worse for keeping 10" line fired. Recommendation for the re-cut: 7, after a check on the [private]
-development data shows it costs nothing there either; otherwise keep 10 and say it is a guess. Either way the comment
+The pre-registered "worse for keeping 10" line fired. Decision: 7, set on the synthetic lamp
+sweep above, which anyone can rerun. The owner recordings only checked that 7 costs nothing (the same 650 right and
+127 wrong, so 0 right seconds lost). It is 7 in test.20 (585d2dd) and goes into the re-cut at 7. No private data
+decides it. Either way the comment
 that a pulse "keeps it near 3" holds for synthetic blood, not for this person's real footage.
 
 ## 5. Alternatives considered
@@ -272,6 +274,6 @@ that a pulse "keeps it near 3" holds for synthetic blood, not for this person's 
 
 See `case/pulsecheck-audit.md`, "Gaps". In short: re-cut the branch from the test build's method on Elata main with
 nothing else in it; add the session test of section 3.5a (written and run on the test build's tree, not yet on a
-branch); settle the face flicker ratio (section 4a); reproduce section 3 on the re-cut branch; outside review of the
+branch); carry the face flicker ratio of 7 into the re-cut (already in test.20; set on the synthetic lamp sweep of section 4a, with the owner recordings as a cost check only, 0 right seconds lost); cut it in the order of [split-plan.md](split-plan.md); reproduce section 3 on the re-cut branch; outside review of the
 method (the outside reviewer, in progress); the test build in the testers' apps; and a decision on
 whether the owner's recordings may be shared.

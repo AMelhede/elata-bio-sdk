@@ -16,7 +16,7 @@ them.
 | 1 | Fix 1, no face means no reading | `fix/no-face-no-reading` (0b60181), `pr/no-face-no-reading` 5d944c6 | none |
 | 2 | Fix 2, Rust colour projection sign | `fix/rust-colour-projection-sign` (06f93f6), `pr/...` b527385 | none |
 | 3 | Fix 4, POS in the fuser | `fix/pos-in-fuser` (564d589), `pr/...` deca8d7 | 2 hunks with fix 1 (section 2) |
-| 4 | Fix 5, no rate doubling (claim narrowed: its real-camera gain shows only with fix 13's option) | `fix/no-rate-doubling` (ea12c6b), `pr/...` 1a73b09 | none |
+| 4 | Fix 5, no rate doubling (claim narrowed: synthetic and HRV only; no measured real-camera gain on Elata main with fix 4) | `fix/no-rate-doubling` (ea12c6b), `pr/...` 1a73b09 | none |
 | 5 | Fix 6, starter maker crash | `fix/create-elata-demo-starts` (fef0a51), `pr/...` 8b8ecad | none |
 | 6 | Fix 7, starters build and install | `fix/starters-build-and-install` (b94551e), `pr/...` aeb6d5b | none |
 | 7 | Fix 8, peer ranges | `fix/eeg-web-ble-peer-range` (1c4d1fe), `pr/...` 2d3d672 | 1 hunk with fix 6 (section 2) |
@@ -43,8 +43,8 @@ bar failed on the owner's recordings, no real filmed lamp or nod).
 **Why this order.** Fix 1 first: the most visible bug, and it leaves fix 4 with two keep-both hunks. Fix 2 conflicts
 with nothing. Fix 6 before fix 8: fix 8's release docs describe fix 6's release order, and fix 8 carries the one
 import-line hunk. Fixes 9, 10, 11 and 13 merge cleanly in any position; fix 11 after fix 1 because it needs one
-line in fix 1's `resetSignal()`. Fix 5 and fix 13 are each worth less without the other on real camera signals,
-so they should be reviewed together, but neither needs the other to merge.
+line in fix 1's `resetSignal()`. Fix 5 and fix 13 are independent: neither needs the other to merge, and on Elata main
+with fix 4 fix 13's option gains on real camera signals with or without fix 5.
 
 **The first-round tree, measured 2026-10-12.** Local detached worktree, never pushed, built from 49fdb41 by merging
 the eleven tips above in this order (only fix 4 and fix 8 conflicted: 2 hunks and 1 hunk, resolved as in section 2,
@@ -131,8 +131,10 @@ refused).
 Fix 5 and fix 13 also interact in what they buy, measured 2026-10-12 on the owner's 50 camera recordings through
 main's session path (private, context only): fix 5 alone 1,296 -> 1,289 right seconds of 6,679 (a wash; its lost
 seconds are mostly reads where the gate now passes and the calibration blend is shown), fix 13's option alone
-1,625, both 1,653. Neither needs the other to merge, and the order above does not change; but fix 5's value on real
-camera signals shows only with fix 13's option on, and fix5.md now says so.
+1,625, both 1,653. On Elata main with fix 4, the first round's base: fix 4 alone 1,895, fix 4 and 5 1,964 (23
+better, 18 worse, p 0.53: nil), fix 4 and 13's option 2,282 (37 better, 8 worse, p under 0.001), all three 2,265
+(fix 5 on top: 17 better, 20 worse, nil). So fix 5 claims no real-camera gain (its PR text says so) and fix 13's
+option is a clear gain in this round. Neither needs the other to merge, and the order above does not change.
 
 **Why this order.**
 

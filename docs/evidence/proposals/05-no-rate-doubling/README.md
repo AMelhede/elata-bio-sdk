@@ -2,15 +2,17 @@
 
 - **Problem.** A rule reads a resting 65 with a normal second harmonic as 132.
 - **Fix.** Remove the doubling rule.
-- **Verdict.** Keep, with a narrower claim, stated at the top of its PR text: a defect on synthetic known answers;
-  on real recordings its value shows only together with fix 13's option, and alone it claims no real-world gain.
+- **Verdict.** Keep, with a narrower claim, stated at the top of its PR text: a defect on synthetic known answers
+  and on HRV; on real recordings it claims no gain (none measured on Elata main with fix 4, with or without fix 13's
+  option).
 - **Strongest evidence** [synthetic]. `estimateDominantBpm` on 65 bpm with harmonic 0.6: 132 on 0.14.0, 66 with the
   fix. 105 clean resting pulses: 69 right on 0.14.0, 105 with the fix. Grey-pulse suite: 1,813 against 2,237 right
   seconds of 2,592, 0 lost. `spectralNoDoubling.test.ts`: 8 of 9 red on main.
 - **Cost.** No pulse: a number in 230 of 432 s against 220. A true 140 with a stronger 70 line reads 69 (conceded).
 - **Still open.** The harmonic strengths 0.4 to 0.6 were chosen to make the rule fire; contact-PPG literature gives
   about 0.12 (Park et al. 2023). [owner] the ratio passed 0.35 in 41 of 568 windows; fix 5 alone through main's
-  session path: 1,296 to 1,289 right of 6,679 s (p 0.87); with fix 13's option on both, 1,625 to 1,653 (p 0.05).
+  session path: 1,296 to 1,289 right of 6,679 s (p 0.87); with fix 13's option on both, 1,625 to 1,653 (p 0.05). On Elata main with fix 4: 1,895 to 1,964 at the defaults
+  (23 better, 18 worse, p 0.53), 2,282 to 2,265 with fix 13's option: nil.
 - **Where.** Branch `fix/no-rate-doubling` ea12c6b; `pr/no-rate-doubling` 1a73b09 (local). Test build: `noRateDoubling`.
 
 Files: [pr.md](pr.md), audit [../../audits/estimators.md](../../audits/estimators.md), [doubling.mjs](doubling.mjs),

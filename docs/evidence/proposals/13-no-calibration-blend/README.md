@@ -17,7 +17,9 @@
   resolved rate stays 120. So the option removes the blend's lag; it does not correct an engine that is an octave
   off. To rerun: change the stub's `bpm: 120` in `blend.mjs` to 60 and read `resolved_bpm` on 0.14.0.
 - **Cost.** One more option kept forever; with it on, 23 session seconds lost and 4 more no-pulse seconds.
-- **Still open.** An engine an octave off is shown as is (limit above). [owner] 19.4% to 24.3% right; with fixes 4 and 5 in place it adds nothing on those recordings.
+- **Still open.** An engine an octave off is shown as is (limit above). [owner] 19.4% to 24.3% right on main; on Elata main with fix 4,
+  1,895 to 2,282 right seconds of 6,679 (37 recordings better, 8 worse). The earlier "adds nothing with fixes 4 and 5
+  in place" was measured on our test build (test.19), not on Elata main.
 - **Where.** Branch `fix/no-calibration-blend` 608e797; `pr/no-calibration-blend` c4f98c2 (local). Not in the test
   build: build the branch to see the "with" numbers.
 
