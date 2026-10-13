@@ -84,7 +84,7 @@ Explained since (see the measured paragraph below).
 **Objections 2 and 3, measured since (2026-10-13, pre-registered, [owner], in-sample,
 description only).** The test.20 check's state was read every second on the same 50 recordings; the replay
 reproduces 650 right, 127 wrong, 10 of 50 with no number and 48.6 s exactly. *No number in 10:* in those 10 the
-check's own windows pointed within 5 bpm of the reference only 9 times in 100 (median; 36 in the 40 that got a
+check's own windows pointed within 5 bpm of the reference only 9 times in 100 (median; 36 in 100 in the 40 that got a
 number), and 0.14.0 was right in 109 of 1,230 of the same seconds. Every one is a withhold of mostly wrong
 evidence by the rule fixed in advance. The cause is light, not rate: 8 of 10 are named dark or dim, the camera had
 slowed itself for low light, windows were faint (median -2.7 to -4.8 dB) and their lines sat at 45 to 55 bpm; no
