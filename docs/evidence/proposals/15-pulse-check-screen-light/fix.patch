@@ -1,0 +1,474 @@
+From c80f71431b21daad836c865b5e54351b2f949fc0 Mon Sep 17 00:00:00 2001
+From: Andreas Melhede <95473109+AMelhede@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 20:03:04 +0000
+Subject: [PATCH] feat(rppg-web): pulse check rule screenLight, a window one
+ light steps on the whole face is not evidence
+
+A face with no pulse lit by a screen showing video was read as a heart rate:
+one light moves forehead and both cheeks together, so the regions agree on
+whatever rhythm the screen happens to have. Blood cannot make a step; a
+screen cut, a switched lamp or an exposure change scales all the skin by
+the same share in one frame.
+
+A 16 s window holding 10 or more equal light steps (same direction, the
+smallest over max(1%, 0.4/s x frame gap), the largest at most 1.35 x the
+smallest, frames under 250 ms apart, each new level holding for 100 ms,
+consecutive frames easing one change in counted once) cannot count toward
+the proof. The brightness floor that discards a lost face is read on
+either value scale (0 to 1 or 0 to 255). On by default; it only withholds,
+never makes or changes a rate. pulseCheckRules.screenLight: false restores
+the previous behaviour. The state gains windowScreenSteps and screenLight.
+
+Still missed: slow (steps 1 to 3 s apart) or shallow (5%) screen changes.
+---
+ .changeset/pulse-check-screen-light.md        |   5 +
+ packages/rppg-web/README.md                   |   3 +-
+ packages/rppg-web/llms.txt                    |   2 +-
+ packages/rppg-web/package.json                |   2 +-
+ .../src/__tests__/pulseCheckRules.test.ts     |  15 +-
+ .../__tests__/pulseCheckScreenLight.test.ts   | 158 ++++++++++++++++++
+ .../src/__tests__/readmeSwitches.test.ts      |   2 +-
+ packages/rppg-web/src/pulseCheck.ts           | 106 ++++++++++++
+ 8 files changed, 284 insertions(+), 9 deletions(-)
+ create mode 100644 .changeset/pulse-check-screen-light.md
+ create mode 100644 packages/rppg-web/src/__tests__/pulseCheckScreenLight.test.ts
+
+diff --git a/.changeset/pulse-check-screen-light.md b/.changeset/pulse-check-screen-light.md
+new file mode 100644
+index 0000000..0c2ea87
+--- /dev/null
++++ b/.changeset/pulse-check-screen-light.md
+@@ -0,0 +1,5 @@
++---
++"@elata-biosciences/rppg-web": patch
++---
++
++The pulse check gains rule `screenLight`, on by default, ported from an app that runs it: a 16 s window in which one light steps on the forehead and both cheeks alike (same direction, the smallest step over max(1%, 0.4/s x frame gap), the largest at most 1.35 x the smallest, frames under 250 ms apart, regions brighter than 30) 10 or more times is not evidence of a pulse. It only withholds: such a window cannot count toward the proof streak or the early and strong paths. The state gains `windowScreenSteps` and `screenLight`. Measured in that app with the same rule: on 134 generated screen-lit faces with no pulse a rate was shown on 70 without it and 9 with it; a 70 bpm pulse under the same screens read 131 of 134 with 6 showing wrong seconds without it, 44 with none wrong with it; recorded captures against a reference pulse unchanged. In this check, on 30 generated screen-lit faces with no pulse a rate was shown on 14 with the rule off and on none with it on. Still missed: slow (steps 1 to 3 s apart) or shallow (5%) screen changes. Set `screenLight: false` in `pulseCheckRules` for the behaviour before.
+diff --git a/packages/rppg-web/README.md b/packages/rppg-web/README.md
+index 3d1f9dc..41e4e8b 100644
+--- a/packages/rppg-web/README.md
++++ b/packages/rppg-web/README.md
+@@ -63,6 +63,7 @@ const session = await createRppgSession({
+     lightFamily: true,
+     faceFlicker: true,
+     lightTaint: true,
++    screenLight: true,
+     headMotion: true,
+     darkWall: true,
+     followerMedian: false, // off by default: a dim-light candidate, see the pulseCheckRules row
+@@ -87,7 +88,7 @@ console.log(session.getBuildSwitches()); // what this session actually runs
+ | `fixes.analysisWorker` | Speed. The heart-rate analysis runs in a Web Worker, so it never holds up the camera frames. It runs on the main thread instead when a worker or the WASM core inside it cannot start, or when `wasmImporter` or `bpmEvidenceQualityProvider` is set (a function cannot be sent to a worker). The session option `analysisWorker`, when given, wins over this switch. Reads answer from the worker's latest message, so `getTraceSnapshot()` returns at most its newest 300 points (about 10 s at 30 a second) whatever it is asked for. | The analysis runs on the main thread, as published, and camera frames that arrive while it runs are skipped. |
+ | `fixes.faceFinderTrial` | Speed. With `faceMesh: "auto"`, the face finder is built on the GPU and on the CPU, each is timed on the live video for a few frames, and the faster is kept (a laptop's CPU alone can hold the camera to a few frames a second; a software GPU can be slower than the CPU, so the clock decides). A finder whose GPU context dies, or that finds no face for 2 s after the page comes back from hidden, is rebuilt. `session.getFaceFinder()` says which delegate won and what each cost. An app that passes its own `faceMesh` is unaffected. | The CPU delegate only, as published, and no rebuild. |
+ | `pulseCheck` | A heart rate is reported only while a real pulse is proven: forehead and both cheeks agree on one rate, clearly above the noise, over 8 one-second windows, and the newest 8 seconds still back it. The reported rate is the one the check measured. Only `bpm` is held back: the engine's own estimates (`spectral_bpm`, `fused_bpm` and the other `*_bpm` fields) and its `confidence` pass through as the engine reads them, so they are diagnostics, not a rate to show (on a generated face with no pulse, `fused_bpm` read 43 to 123 at a `confidence` up to 0.69 while `bpm` stayed empty). A patch of wall beside the face is checked too: a light that flickers at the same rhythm is refused. HRV and breathing are always withheld while it is on, because neither yet passes a known-answer test: from `getMetrics()` and from `getDebugSnapshot()` alike (of the session's reads, `experimentalVitals` is their one way out; `session.processor`, the raw engine, is not filtered). `session.getPulseCheck()` shows the check's state. | The SDK's own rate (with the fixes chosen above), HRV and breathing, as published. |
+-| `pulseCheckRules` | Each of the check's rules can be turned off on its own, for testing one at a time: `wallBandEdge` (the wall's line is found even at the band's edge, a light folded to 180 a minute), `lightFamily` (a light's whole and half multiples are the light's too), `faceFlicker` (a rate the face flickers at in brightness far more than in colour is refused), `lightTaint` (a second the wall carries does not count toward proving a pulse), `headMotion` (a rate the head's own movement keeps time with, such as a nod, is the movement's: judged at that rate, by how far the movement stands above the head's other movement and by its size against the face's width; a second the head carries the rate is not evidence, nor is a second the face mesh did not see the head, and the rate is withheld once the head carries it for 4 seconds), `darkWall` (when the camera's colour is too damaged to read by colour, the pulse is read from green minus the wall beside the face, but only over a wall that shows the light on the face: the wall at least a tenth as bright as the face through nearly the whole window, whatever the colour scale or the camera's exposure; over a darker wall it is read by colour as usual, so a light on the face that the wall does not show, such as a screen, is not read as the pulse; `getPulseCheck().windowWallToFace` shows the wall against the face, `windowWallLevel` the wall's level as the camera sees it). All on unless set to false; `getBuildSwitches()` reports them. Four more are **off unless set to `true`**: candidates for dim light, where the check is wrong far more often than in normal light, with their settings fixed (on generated faces, or from the check's own constants) before a chest-strap study judges them. `followerMedian` (the rate shown is the median of the last `FOLLOWER_MEDIAN_K` values of the newest 8 s line instead of the newest one: an 8 s window is coarse, so that line jitters around a right rate), `reproveOnDrift` (once proven, a rate is held while most of the newest windows sit near it, and the held rate is recomputed from them, so in weak light it can walk onto noise; a hold more than `REPROVE_DRIFT_BPM` from the rate of its last fresh proof ends until the pulse is proven again), `tooDark` (no rate while the mean signal-to-noise of the newest 4 windows is below `TOO_DARK_SNR_DB`, the level a face with no pulse reaches, or while any of those windows found no line; `getPulseCheck().tooDark` says so, so an app can ask for more light; the face's brightness is not used, as a camera's auto exposure raises a dark face's level and its noise together), `anchorDrift` (a run of shown rates ends, and the check's evidence starts over, once its rate has moved more than `ANCHOR_DRIFT_BPM` from where the run was first proven: in weak light the check's dark path re-proves every second, so a slowly moving noise line is re-proven at each new place, which a limit on the hold cannot see; a real rate that moves that far within one run also loses its number until a new streak proves it). `getPulseCheck().followerBpm` shows the newest 8 s line the rate follows. | Each rule off: the behaviour before it existed (for the four candidates, today's behaviour). |
++| `pulseCheckRules` | Each of the check's rules can be turned off on its own, for testing one at a time: `wallBandEdge` (the wall's line is found even at the band's edge, a light folded to 180 a minute), `lightFamily` (a light's whole and half multiples are the light's too), `faceFlicker` (a rate the face flickers at in brightness far more than in colour is refused), `lightTaint` (a second the wall carries does not count toward proving a pulse), `screenLight` (a second in which one light steps on the forehead and both cheeks alike, in the same direction and by nearly the same share, 10 or more times in the 16 s window, each step a new level that holds for 100 ms (flicker reverses on the next frame, so a pulse under a flickering lamp is still read), and frames easing one change in (auto exposure, white balance) counting as one step, does not count toward proving a pulse: blood changes the skin smoothly, while a screen showing video, a lamp switched or an exposure change scales all the skin at once in one frame; movement and a passing hand step the regions unequally, so they are not counted; it only withholds, never makes or changes a rate; measured in an app running the same rule: on 134 generated faces with no pulse lit by a screen a rate was shown on 70 without it and 9 with it, a 70 bpm pulse under the same screens showed wrong seconds on 6 of 134 without it and none with it (read on 44, the rest withheld), and recorded captures against a reference pulse were unchanged; still missed: slow screens, stepping every 1 to 3 s, and shallow ones, 5%, which make too few steps in 16 s; `getPulseCheck().windowScreenSteps` counts the window's steps, `screenLight` says when it withholds), `headMotion` (a rate the head's own movement keeps time with, such as a nod, is the movement's: judged at that rate, by how far the movement stands above the head's other movement and by its size against the face's width; a second the head carries the rate is not evidence, nor is a second the face mesh did not see the head, and the rate is withheld once the head carries it for 4 seconds), `darkWall` (when the camera's colour is too damaged to read by colour, the pulse is read from green minus the wall beside the face, but only over a wall that shows the light on the face: the wall at least a tenth as bright as the face through nearly the whole window, whatever the colour scale or the camera's exposure; over a darker wall it is read by colour as usual, so a light on the face that the wall does not show, such as a screen, is not read as the pulse; `getPulseCheck().windowWallToFace` shows the wall against the face, `windowWallLevel` the wall's level as the camera sees it). All on unless set to false; `getBuildSwitches()` reports them. Four more are **off unless set to `true`**: candidates for dim light, where the check is wrong far more often than in normal light, with their settings fixed (on generated faces, or from the check's own constants) before a chest-strap study judges them. `followerMedian` (the rate shown is the median of the last `FOLLOWER_MEDIAN_K` values of the newest 8 s line instead of the newest one: an 8 s window is coarse, so that line jitters around a right rate), `reproveOnDrift` (once proven, a rate is held while most of the newest windows sit near it, and the held rate is recomputed from them, so in weak light it can walk onto noise; a hold more than `REPROVE_DRIFT_BPM` from the rate of its last fresh proof ends until the pulse is proven again), `tooDark` (no rate while the mean signal-to-noise of the newest 4 windows is below `TOO_DARK_SNR_DB`, the level a face with no pulse reaches, or while any of those windows found no line; `getPulseCheck().tooDark` says so, so an app can ask for more light; the face's brightness is not used, as a camera's auto exposure raises a dark face's level and its noise together), `anchorDrift` (a run of shown rates ends, and the check's evidence starts over, once its rate has moved more than `ANCHOR_DRIFT_BPM` from where the run was first proven: in weak light the check's dark path re-proves every second, so a slowly moving noise line is re-proven at each new place, which a limit on the hold cannot see; a real rate that moves that far within one run also loses its number until a new streak proves it). `getPulseCheck().followerBpm` shows the newest 8 s line the rate follows. | Each rule off: the behaviour before it existed (for the four candidates, today's behaviour). |
+ | `experimentalVitals` | Experimental, off by default. Hands over HRV and breathing in their own box, `session.getExperimentalVitals()` as `{ experimental: true, hrvRmssd, breathing }`, for research and testing, not for showing a person as a measurement. HRV has not passed a check against a reference: against an ECG it read several times too high. `breathing` is `{ rate, share }`: the breathing rate from the up-and-down motion of the chest and shoulders in a box below the chin (32-second window, 6 to 36 breaths a minute), and `share` near 1 for one clear rhythm, near 0 for noise; it needs the face mesh, a view of the chest and a still person, and is separate from the metrics' `respiration_rate`. It has so far been checked only on still people against a reference worked out from a finger sensor, not a breathing belt. `hrvRmssd` comes from the session's latest `getMetrics()` read, and only while a face is in view and the pulse check (when on) still shows the rate it proved; when a face comes back after a second away the engine's signal starts afresh (`resetSignal()`), so the HRV holds no samples from before it. With the pulse check off, the engine's own HRV, as published. With the pulse check on, `getMetrics()` and `getDebugSnapshot()` withhold HRV and breathing whether this option is on or off. | (default) `getExperimentalVitals()` returns null. |
+ | `pulseCheckAgreement` | Off by default. With the check on, also report the SDK's own rate when it agrees with the check's latest window for 8 seconds running. | (default) |
+ 
+diff --git a/packages/rppg-web/llms.txt b/packages/rppg-web/llms.txt
+index 4dbfb6a..530c94f 100644
+--- a/packages/rppg-web/llms.txt
++++ b/packages/rppg-web/llms.txt
+@@ -17,7 +17,7 @@ Fixes (see README): copy `node_modules/.../rppg-web/pkg/` to **`public/pkg/`**,
+ 
+ ## Pulse check
+ - `pulseCheck` (on by default): a rate is reported only while forehead and both cheeks prove one pulse; `session.getPulseCheck()` shows its state.
+-- `pulseCheckRules`, each on unless set to false (`getBuildSwitches()` reports them): `wallBandEdge`, `lightFamily`, `faceFlicker`, `lightTaint`, `headMotion` (needs MediaPipe's face mesh, 468 or 478 points, on every frame; without it no rate is shown), `darkWall` (damaged colour is read as green minus the wall only over a wall that shows the light on the face: at least a tenth as bright as the face through nearly the whole window, on any colour scale). Four more are OFF unless set to true, candidates for dim light still to be judged on a chest-strap study: `followerMedian` (the rate shown is the median of the newest follower values), `reproveOnDrift` (a held rate that has moved more than the agreement band from its proof needs a fresh proof), `tooDark` (no rate while the newest windows' pulse line is no stronger than noise makes; `getPulseCheck().tooDark` says so), `anchorDrift` (a run of shown rates ends, and the evidence starts over, once its rate moves more than the agreement band from where the run was first proven).
++- `pulseCheckRules`, each on unless set to false (`getBuildSwitches()` reports them): `wallBandEdge`, `lightFamily`, `faceFlicker`, `lightTaint`, `screenLight` (a window in which one light steps on the forehead and both cheeks alike 10 or more times, such as a screen showing video, does not count toward the proof; slow or shallow screen changes are still missed), `headMotion` (needs MediaPipe's face mesh, 468 or 478 points, on every frame; without it no rate is shown), `darkWall` (damaged colour is read as green minus the wall only over a wall that shows the light on the face: at least a tenth as bright as the face through nearly the whole window, on any colour scale). Four more are OFF unless set to true, candidates for dim light still to be judged on a chest-strap study: `followerMedian` (the rate shown is the median of the newest follower values), `reproveOnDrift` (a held rate that has moved more than the agreement band from its proof needs a fresh proof), `tooDark` (no rate while the newest windows' pulse line is no stronger than noise makes; `getPulseCheck().tooDark` says so), `anchorDrift` (a run of shown rates ends, and the evidence starts over, once its rate moves more than the agreement band from where the run was first proven).
+ - `recordPulseCheckInputs` (off by default; `true` or `{ seconds }`): the session keeps what the pulse check was fed and every `getMetrics()` read, newest 5 minutes by default (about 7 MB at 30 frames a second). `session.getPulseCheckRecording()`, saved with `serializePulseCheckRecording` and read back with `parsePulseCheckRecording`, replays offline through the same check with any `pulseCheckRules` via `replayPulseCheck(recording, { rules })`; with the recording's own rules and `dropped: 0` every read's `bpm` equals the rate the session showed. Recording changes no output.
+ 
+ ## Session behavior
+diff --git a/packages/rppg-web/package.json b/packages/rppg-web/package.json
+index ca9da6c..267e811 100644
+--- a/packages/rppg-web/package.json
++++ b/packages/rppg-web/package.json
+@@ -1,7 +1,7 @@
+ {
+ 	"name": "@amelhede/rppg-web",
+ 	"version": "0.15.0-test.21",
+-	"description": "Test build of the Elata rPPG web SDK (Elata main after rppg-web 0.14.0) with ten fix switches (seven heart-rate fixes and three speed changes) and a real-pulse check with ten rules, each with an on/off switch, every fix and rule on by default but one fix and four dim-light candidate rules, and an opt-in recording of what the check is fed for offline replay, for testing in apps only.",
++	"description": "Test build of the Elata rPPG web SDK (Elata main after rppg-web 0.14.0) with ten fix switches (seven heart-rate fixes and three speed changes) and a real-pulse check with eleven rules, each with an on/off switch, every fix and rule on by default but one fix and four dim-light candidate rules, and an opt-in recording of what the check is fed for offline replay, for testing in apps only.",
+ 	"license": "MIT",
+ 	"author": "Andreas Melhede",
+ 	"repository": {
+diff --git a/packages/rppg-web/src/__tests__/pulseCheckRules.test.ts b/packages/rppg-web/src/__tests__/pulseCheckRules.test.ts
+index 2835168..317d8df 100644
+--- a/packages/rppg-web/src/__tests__/pulseCheckRules.test.ts
++++ b/packages/rppg-web/src/__tests__/pulseCheckRules.test.ts
+@@ -56,6 +56,7 @@ describe("PulseCheck light rules, one switch each", () => {
+ 			lightFamily: true,
+ 			faceFlicker: true,
+ 			lightTaint: true,
++			screenLight: true,
+ 			headMotion: true,
+ 			darkWall: true,
+ 			followerMedian: false,
+@@ -86,17 +87,21 @@ describe("PulseCheck light rules, one switch each", () => {
+ 
+ 	it("faceFlicker: under mains flicker it is the rule that keeps 180 off the screen", () => {
+ 		// Measured 2026-10-08: with every rule on nothing shows; with faceFlicker alone off, 180
+-		// shows for 4 s; turning off any other single rule changes nothing on this fixture.
++		// shows for 4 s; turning off any other single rule changes nothing on this fixture. screenLight
++		// (added later) also withholds this lamp, whose smooth swing steps all three regions alike every
++		// frame, so it is off here to judge the rules this test was written for.
+ 		expect(shownSeconds({})).toEqual([]);
+-		expect(shownSeconds({ faceFlicker: false }).length).toBeGreaterThanOrEqual(3);
++		expect(shownSeconds({ screenLight: false, faceFlicker: false }).length).toBeGreaterThanOrEqual(3);
++		expect(shownSeconds({ faceFlicker: false })).toEqual([]);
+ 		for (const rule of ["wallBandEdge", "lightFamily", "lightTaint"] as const)
+-			expect(shownSeconds({ [rule]: false })).toEqual([]);
++			expect(shownSeconds({ screenLight: false, [rule]: false })).toEqual([]);
+ 	});
+ 
+ 	it("lightTaint: seconds the wall carries build no proof, so a dip in the wall line lets far less out", () => {
+ 		// With faceFlicker off (the wall rules alone): 19 s shown without the taint, 4 with it.
+-		const without = shownSeconds({ faceFlicker: false, lightTaint: false });
+-		const withTaint = shownSeconds({ faceFlicker: false });
++		// screenLight off as well: it withholds this lamp on its own (see above).
++		const without = shownSeconds({ screenLight: false, faceFlicker: false, lightTaint: false });
++		const withTaint = shownSeconds({ screenLight: false, faceFlicker: false });
+ 		expect(without.length).toBeGreaterThanOrEqual(15);
+ 		expect(withTaint.length).toBeLessThanOrEqual(5);
+ 	});
+diff --git a/packages/rppg-web/src/__tests__/pulseCheckScreenLight.test.ts b/packages/rppg-web/src/__tests__/pulseCheckScreenLight.test.ts
+new file mode 100644
+index 0000000..c1bd8e8
+--- /dev/null
++++ b/packages/rppg-web/src/__tests__/pulseCheckScreenLight.test.ts
+@@ -0,0 +1,158 @@
++import { PulseCheck, resolvePulseCheckRules, PULSE_CHECK_RULE_NAMES } from "../pulseCheck";
++
++type Row = number[];
++
++// Ported from an app's synthetic face generator: a still face with NO pulse, lit only by a
++// screen showing video. Every 0.3 to 1.5 s the light's level jumps x0.85 to x1.15 and its tint +-6 DN,
++// the same on all three regions, plus sensor noise. Rows: [t, forehead rgb, left cheek rgb, right cheek rgb].
++function screenRows(seconds: number, seed = 44): Row[] {
++	let r = seed >>> 0;
++	const rng = () => (r = (r * 1664525 + 1013904223) >>> 0) / 4294967296;
++	const steps: [number, number, number, number][] = [];
++	let next = 0;
++	for (let t = 0; t < 24; t += 1 / 30)
++		if (t >= next) {
++			next = t + 0.3 + rng() * 1.2;
++			steps.push([t, 0.85 + rng() * 0.3, (rng() - 0.5) * 12, (rng() - 0.5) * 12]);
++		}
++	let s = 5;
++	const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.6;
++	const out: Row[] = [];
++	for (let t = 0; t <= seconds * 1000; t += 1000 / 30) {
++		const lt = (t / 1000) % 24;
++		let c = steps[0];
++		for (const x of steps) if (x[0] <= lt) c = x;
++		const [, k, du, dv] = c;
++		const reg = () => [150 * k + 1.596 * dv + rnd(), 120 * k - 0.392 * du - 0.813 * dv + rnd(), 100 * k + 2.017 * du + rnd()];
++		out.push([Math.round(t), ...reg(), ...reg(), ...reg()]);
++	}
++	return out;
++}
++
++// A chromatic 70 bpm pulse (green drops most) in steady light, with sensor noise.
++function pulseRows(seconds: number, bpm = 70): Row[] {
++	let s = 7;
++	const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.3;
++	const out: Row[] = [];
++	for (let t = 0; t <= seconds * 1000; t += 1000 / 30) {
++		const p = 0.008 * Math.sin((2 * Math.PI * bpm * t) / 60000);
++		const reg = () => [150 * (1 - 0.3 * p) + noise(), 120 * (1 - p) + noise(), 100 * (1 - 0.6 * p) + noise()];
++		out.push([Math.round(t), ...reg(), ...reg(), ...reg()]);
++	}
++	return out;
++}
++
++
++// A 70 bpm pulse under 100 Hz mains flicker filmed with uneven frame drops (17 kept of 30, the rest held):
++// at each kept frame the lamp is high or low in turn (+-15%), the same on every region. Ported from the same app.
++function mainsPulseRows(seconds: number): Row[] {
++	const pulse = pulseRows(seconds);
++	let held: Row | null = null;
++	let last = -1;
++	let kept = 0;
++	return pulse.map((x, i) => {
++		const bucket = Math.floor((i * 17) / 30 + 1e-9);
++		if (bucket === last && held) return [x[0], ...held.slice(1)];
++		last = bucket;
++		const g = kept++ % 2 === 0 ? 1.15 : 0.85;
++		held = [x[0], ...x.slice(1).map((v) => v * g)];
++		return held;
++	});
++}
++
++
++// A 70 bpm pulse while auto exposure hunts: gains 1, 1.12, 0.94, 1.08, 0.90, 1.05, 0.96, 1.10 every 3 s,
++// each change eased over 4 frames, the same on every region. Ported from the same app.
++function exposurePulseRows(seconds: number): Row[] {
++	const gains = [1, 1.12, 0.94, 1.08, 0.9, 1.05, 0.96, 1.1];
++	return pulseRows(seconds).map((x) => {
++		const t = x[0] / 1000;
++		const k = Math.floor(t / 3) % 8;
++		const prev = gains[(k + 7) % 8];
++		const a = Math.min(1, ((t - Math.floor(t / 3) * 3) * 30) / 4);
++		const g = prev + (gains[k] - prev) * a;
++		return [x[0], ...x.slice(1).map((v) => v * g)];
++	});
++}
++
++/** Feeds the rows; returns every shown rate (one per second) and the last state. */
++function run(rows: Row[], screenLight: boolean) {
++	const check = new PulseCheck({ rules: { screenLight } });
++	const shown: number[] = [];
++	let steps = 0;
++	let next = 1000;
++	for (const x of rows) {
++		const rgb = (i: number) => ({ r: x[1 + 3 * i], g: x[2 + 3 * i], b: x[3 + 3 * i] });
++		check.push(x[0], [rgb(0), rgb(1), rgb(2)]);
++		if (x[0] >= next) {
++			const st = check.getState();
++			if (st.verdict === "measured" && st.bpm != null) shown.push(st.bpm);
++			steps = Math.max(steps, st.windowScreenSteps ?? 0);
++			next += 1000;
++		}
++	}
++	return { shown, steps, state: check.getState() };
++}
++
++describe("pulse check rule screenLight: a light stepping on the whole face is not a pulse", () => {
++	it("is on by default and switchable like the others", () => {
++		expect(PULSE_CHECK_RULE_NAMES).toContain("screenLight");
++		expect(resolvePulseCheckRules().screenLight).toBe(true);
++		expect(resolvePulseCheckRules({ screenLight: false }).screenLight).toBe(false);
++	});
++
++	// Seeds 1 to 30 measured here: with the rule off, the check's other rules already withhold 16 and a rate
++	// is shown on 14 (these five among them); with the rule on, none shows a rate.
++	it.each([2, 4, 6, 7, 8])("pulseless face under a screen (seed %i): a made-up rate with the rule off, none with it on", (seed) => {
++		const rows = screenRows(90, seed);
++		expect(run(rows, false).shown.length).toBeGreaterThan(0);
++		const on = run(rows, true);
++		expect(on.shown).toEqual([]);
++		expect(on.steps).toBeGreaterThanOrEqual(10);
++	});
++
++	it("shows no rate on any of seeds 1 to 30 with the rule on", () => {
++		for (let seed = 1; seed <= 30; seed++) expect([seed, run(screenRows(60, seed), true).shown]).toEqual([seed, []]);
++	});
++
++	it("a 70 bpm pulse in steady light still reads 70 with the rule on", () => {
++		const on = run(pulseRows(45), true);
++		expect(on.shown.length).toBeGreaterThan(10);
++		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(3);
++		expect(on.steps).toBe(0);
++		expect(on.state.screenLight).toBe(false);
++	});
++
++	it("a 70 bpm pulse under uneven-drop mains flicker still reads 70: flicker reverses, a screen holds its level", () => {
++		const on = run(mainsPulseRows(45), true);
++		expect(on.steps).toBeLessThan(10);
++		expect(on.shown.length).toBeGreaterThan(0);
++		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(4);
++	});
++
++	it("a 70 bpm pulse while auto exposure hunts still reads 70: one eased change is one event", () => {
++		const on = run(exposurePulseRows(45), true);
++		expect(on.steps).toBeLessThan(10);
++		expect(on.shown.length).toBeGreaterThan(0);
++		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(4);
++	});
++
++	it("catches the screen when region means arrive as 0 to 1, as the session's skin-masked mean sends them", () => {
++		// The session divides its skin-masked region mean by 255; a brightness floor written for 0 to 255
++		// silently discarded every frame there, and the rule never fired live.
++		for (const seed of [2, 4, 6]) {
++			const unit = screenRows(45, seed).map((x) => [x[0], ...x.slice(1).map((v) => v / 255)]);
++			const on = run(unit, true);
++			expect(on.steps).toBeGreaterThanOrEqual(10);
++			expect(on.shown).toEqual([]);
++		}
++	});
++
++	it("steps on one region only are not counted", () => {
++		// Same screen, but only the forehead takes it; the cheeks hold steady (a hand, a shadow, movement).
++		const screen = screenRows(45, 3);
++		const steady = pulseRows(45);
++		const rows = screen.map((x, i) => [x[0], x[1], x[2], x[3], ...steady[i].slice(4, 10)]);
++		expect(run(rows, true).steps).toBe(0);
++	});
++});
+diff --git a/packages/rppg-web/src/__tests__/readmeSwitches.test.ts b/packages/rppg-web/src/__tests__/readmeSwitches.test.ts
+index 9eca0dd..8ba2593 100644
+--- a/packages/rppg-web/src/__tests__/readmeSwitches.test.ts
++++ b/packages/rppg-web/src/__tests__/readmeSwitches.test.ts
+@@ -129,7 +129,7 @@ describe("PUBLISHING.md names this branch and this build", () => {
+ // same lists, and the speed changes from the README rows that say "Speed.".
+ describe("package.json description", () => {
+ 	const pkg = require("../../package.json") as { description: string };
+-	const words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
++	const words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"];
+ 	const speed = FIX_SWITCH_NAMES.filter((name) =>
+ 		new RegExp(`^\\| \`fixes\\.${name}\` \\| Speed\\.`, "m").test(switches),
+ 	).length;
+diff --git a/packages/rppg-web/src/pulseCheck.ts b/packages/rppg-web/src/pulseCheck.ts
+index 3512dca..9ea3747 100644
+--- a/packages/rppg-web/src/pulseCheck.ts
++++ b/packages/rppg-web/src/pulseCheck.ts
+@@ -105,6 +105,10 @@ export type PulseCheckState = {
+ 	anchorBpm?: number | null;
+ 	/** True on the evaluation at which rule anchorDrift ended a run because its rate moved too far from where it started. */
+ 	anchorEnded?: boolean;
++	/** For diagnosis: equal light steps (equalLightStep) in the latest window, counted with rule screenLight on, else null. */
++	windowScreenSteps?: number | null;
++	/** True while rule screenLight holds the latest window's rate out of the evidence (SCREEN_STEPS_PER_WINDOW or more equal steps). */
++	screenLight?: boolean;
+ };
+ 
+ /**
+@@ -294,6 +298,12 @@ export type PulseCheckRules = {
+ 	faceFlicker?: boolean;
+ 	/** A window whose rate the wall carries is not evidence of a pulse: it is not counted toward the proof. Off: it counts, and the rate shows the moment the wall line dips. */
+ 	lightTaint?: boolean;
++	/**
++	 * A window in which one light steps on all three face regions alike at least SCREEN_STEPS_PER_WINDOW
++	 * times (equalLightStep: a screen showing video, the wall dark) is not evidence of a pulse: it is not
++	 * counted toward the proof. It only withholds. Off: such windows count, as before.
++	 */
++	screenLight?: boolean;
+ 	/**
+ 	 * A rate the head's own movement keeps time with (a nod, a rock) is the movement's: not evidence,
+ 	 * and withheld once it holds for 4 windows. Needs the head (`push`'s `head`, headCentre); once a
+@@ -330,6 +340,7 @@ export const PULSE_CHECK_RULE_NAMES = [
+ 	"lightFamily",
+ 	"faceFlicker",
+ 	"lightTaint",
++	"screenLight",
+ 	"headMotion",
+ 	"darkWall",
+ 	"followerMedian",
+@@ -353,6 +364,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
+ 		lightFamily: rules?.lightFamily !== false,
+ 		faceFlicker: rules?.faceFlicker !== false,
+ 		lightTaint: rules?.lightTaint !== false,
++		screenLight: rules?.screenLight !== false,
+ 		headMotion: rules?.headMotion !== false,
+ 		darkWall: rules?.darkWall !== false,
+ 		followerMedian: rules?.followerMedian === true,
+@@ -680,6 +692,94 @@ function lineCarries(
+ const LIGHT_FAMILY = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
+ 
+ const EVAL_EVERY_MS = 1000;
++
++/*
++ * Rule screenLight. Blood cannot make a step: a pulse changes the skin smoothly, a few percent over a
++ * whole beat, while a screen, a lamp switched or an exposure change scales all the skin at once, in one
++ * frame, by the same fraction everywhere. Movement and a passing hand step the regions UNEQUALLY. A face
++ * with no pulse lit by a screen showing video (steps every 0.3 to 1.5 s, about 67 a minute) was read as
++ * a rate, since one light moves all three regions together and they agree. The rule only withholds; it
++ * still misses slow (steps 1 to 3 s apart) or shallow (5%) screens, which make too few equal steps in a
++ * window. Its settings were measured against recorded captures with a reference pulse before it was added.
++ */
++/** Largest over smallest region step for one light: a screen's steps sit well within this, unequal movement does not. */
++const SCREEN_STEP_RATIO = 1.35;
++/** Smallest step counted, as a share of the region's brightness: max(1%, 0.4 per second x frame gap). 0.4/s bounds a 2% pulse's slope at 3 Hz (2 pi x 3 x 0.02). */
++const SCREEN_STEP_MIN = 0.01;
++const SCREEN_STEP_SLOPE_PER_S = 0.4;
++/** Frames further apart than this are a gap, not a step. */
++const SCREEN_STEP_MAX_GAP_MS = 250;
++/**
++ * Regions darker than this share of full scale (R + G + B against 3 x full scale) are a lost face, not skin:
++ * 30 of 765 on a 0 to 255 scale. Callers send either scale (the session's skin-masked mean is 0 to 1), so a
++ * fixed 30 would discard every frame of a 0 to 1 caller; the scale is read from the values themselves.
++ */
++const SCREEN_STEP_MIN_BRIGHTNESS_SHARE = 30 / 765;
++const brightnessFloor = (x: number) => (x <= 3 ? 3 : 765) * SCREEN_STEP_MIN_BRIGHTNESS_SHARE;
++/** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
++export const SCREEN_STEPS_PER_WINDOW = 10;
++
++/**
++ * A step counts only if its new level holds: within SCREEN_LEVEL_HOLD_MS no region gives back
++ * SCREEN_LEVEL_REVERSAL of it. A screen or a switched light moves the face to a new level that stays
++ * (200 ms or more on the generated screens); mains flicker filmed with uneven frame drops moves every
++ * region together too, but reverses on the next kept frame, so it is not a screen and a pulse under it
++ * is still read.
++ */
++export const SCREEN_LEVEL_HOLD_MS = 100;
++export const SCREEN_LEVEL_REVERSAL = 0.5;
++export function levelHolds(samples: readonly (readonly number[])[], k: number): boolean {
++	const bright = (s: readonly number[], r: number) => s[1 + 3 * r] + s[2 + 3 * r] + s[3 + 3 * r];
++	const a = samples[k - 1];
++	const b = samples[k];
++	for (let j = k + 1; j < samples.length && samples[j][0] - b[0] <= SCREEN_LEVEL_HOLD_MS; j++)
++		for (let r = 0; r < 3; r++) {
++			const step = bright(b, r) - bright(a, r);
++			if ((bright(samples[j], r) - bright(a, r)) / step < 1 - SCREEN_LEVEL_REVERSAL) return false;
++		}
++	return true;
++}
++
++/** Whether the change from sample `a` to sample `b` is one light stepping on all three regions alike. */
++export function equalLightStep(a: readonly number[], b: readonly number[]): boolean {
++	const dt = b[0] - a[0];
++	if (!(dt > 0) || dt > SCREEN_STEP_MAX_GAP_MS) return false;
++	const d: number[] = [];
++	for (let r = 0; r < 3; r++) {
++		const x = a[1 + 3 * r] + a[2 + 3 * r] + a[3 + 3 * r];
++		const y = b[1 + 3 * r] + b[2 + 3 * r] + b[3 + 3 * r];
++		if (!(x >= brightnessFloor(x)) || !(y >= brightnessFloor(y))) return false;
++		d.push((y - x) / x);
++	}
++	if (Math.sign(d[0]) !== Math.sign(d[1]) || Math.sign(d[1]) !== Math.sign(d[2])) return false;
++	const size = d.map(Math.abs);
++	const least = Math.min(...size);
++	return (
++		least > Math.max(SCREEN_STEP_MIN, (SCREEN_STEP_SLOPE_PER_S * dt) / 1000) &&
++		Math.max(...size) <= SCREEN_STEP_RATIO * least
++	);
++}
++
++/** Equal light steps in the OWN_PULSE_WINDOW_S window ending at `atMs`. */
++export function screenSteps(samples: readonly (readonly number[])[], atMs: number): number {
++	// One light change counts once: consecutive frames stepping the same way (auto exposure or white balance
++	// easing over several frames) are one event; a screen cut lands in one frame.
++	const from = atMs - OWN_PULSE_WINDOW_S * 1000;
++	const bright = (s: readonly number[]) => s[1] + s[2] + s[3];
++	let n = 0;
++	let lastK = -2;
++	let lastSign = 0;
++	for (let k = 1; k < samples.length; k++) {
++		const t = samples[k][0];
++		if (t <= from || t > atMs) continue;
++		if (!equalLightStep(samples[k - 1], samples[k]) || !levelHolds(samples, k)) continue;
++		const sign = Math.sign(bright(samples[k]) - bright(samples[k - 1]));
++		if (!(lastK === k - 1 && sign === lastSign)) n++;
++		lastK = k;
++		lastSign = sign;
++	}
++	return n;
++}
+ const KEEP_MS = (OWN_PULSE_WINDOW_S + 2) * 1000;
+ /**
+  * The wall and head checks look back over OWN_PULSE_STRONG_STREAK windows, so they keep that much
+@@ -838,9 +938,13 @@ export class PulseCheck {
+ 			this.rules.headMotion && this.headHandedOver && est?.bpm != null
+ 				? headJudge(this.head, timestampMs, est.bpm)
+ 				: null;
++		// A window a stepping light on the face fills is not evidence either (screenLight): it only withholds.
++		const windowScreenSteps = this.rules.screenLight ? screenSteps(this.samples, timestampMs) : null;
++		const screenLit = est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
+ 		const tainted =
+ 			est?.bpm != null &&
+ 			((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
++				screenLit ||
+ 				(windowHead != null && windowHead !== "clear"));
+ 		this.history.push(tainted ? null : est);
+ 		if (this.history.length > HISTORY_MAX) this.history.shift();
+@@ -935,6 +1039,8 @@ export class PulseCheck {
+ 		this.state.provenBpm = this.provenBpm;
+ 		this.state.anchorBpm = this.anchorBpm;
+ 		this.state.anchorEnded = anchorEnded;
++		this.state.windowScreenSteps = windowScreenSteps;
++		this.state.screenLight = screenLit;
+ 		this.evaluationCount += 1;
+ 	}
+ 
+-- 
+2.43.0
+
