@@ -709,8 +709,13 @@ const SCREEN_STEP_MIN = 0.01;
 const SCREEN_STEP_SLOPE_PER_S = 0.4;
 /** Frames further apart than this are a gap, not a step. */
 const SCREEN_STEP_MAX_GAP_MS = 250;
-/** Regions darker than this (R + G + B) are a lost face, not skin. */
-const SCREEN_STEP_MIN_BRIGHTNESS = 30;
+/**
+ * Regions darker than this share of full scale (R + G + B against 3 x full scale) are a lost face, not skin:
+ * 30 of 765 on a 0 to 255 scale. Callers send either scale (the session's skin-masked mean is 0 to 1), so a
+ * fixed 30 would discard every frame of a 0 to 1 caller; the scale is read from the values themselves.
+ */
+const SCREEN_STEP_MIN_BRIGHTNESS_SHARE = 30 / 765;
+const brightnessFloor = (x: number) => (x <= 3 ? 3 : 765) * SCREEN_STEP_MIN_BRIGHTNESS_SHARE;
 /** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
 export const SCREEN_STEPS_PER_WINDOW = 10;
 
@@ -743,7 +748,7 @@ export function equalLightStep(a: readonly number[], b: readonly number[]): bool
 	for (let r = 0; r < 3; r++) {
 		const x = a[1 + 3 * r] + a[2 + 3 * r] + a[3 + 3 * r];
 		const y = b[1 + 3 * r] + b[2 + 3 * r] + b[3 + 3 * r];
-		if (!(x >= SCREEN_STEP_MIN_BRIGHTNESS) || !(y >= SCREEN_STEP_MIN_BRIGHTNESS)) return false;
+		if (!(x >= brightnessFloor(x)) || !(y >= brightnessFloor(y))) return false;
 		d.push((y - x) / x);
 	}
 	if (Math.sign(d[0]) !== Math.sign(d[1]) || Math.sign(d[1]) !== Math.sign(d[2])) return false;

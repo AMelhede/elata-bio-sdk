@@ -137,6 +137,17 @@ describe("pulse check rule screenLight: a light stepping on the whole face is no
 		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(4);
 	});
 
+	it("catches the screen when region means arrive as 0 to 1, as the session's skin-masked mean sends them", () => {
+		// The session divides its skin-masked region mean by 255; a brightness floor written for 0 to 255
+		// silently discarded every frame there, and the rule never fired live.
+		for (const seed of [2, 4, 6]) {
+			const unit = screenRows(45, seed).map((x) => [x[0], ...x.slice(1).map((v) => v / 255)]);
+			const on = run(unit, true);
+			expect(on.steps).toBeGreaterThanOrEqual(10);
+			expect(on.shown).toEqual([]);
+		}
+	});
+
 	it("steps on one region only are not counted", () => {
 		// Same screen, but only the forehead takes it; the cheeks hold steady (a hand, a shadow, movement).
 		const screen = screenRows(45, 3);
