@@ -757,12 +757,21 @@ export function equalLightStep(a: readonly number[], b: readonly number[]): bool
 
 /** Equal light steps in the OWN_PULSE_WINDOW_S window ending at `atMs`. */
 export function screenSteps(samples: readonly (readonly number[])[], atMs: number): number {
+	// One light change counts once: consecutive frames stepping the same way (auto exposure or white balance
+	// easing over several frames) are one event; a screen cut lands in one frame.
 	const from = atMs - OWN_PULSE_WINDOW_S * 1000;
+	const bright = (s: readonly number[]) => s[1] + s[2] + s[3];
 	let n = 0;
+	let lastK = -2;
+	let lastSign = 0;
 	for (let k = 1; k < samples.length; k++) {
 		const t = samples[k][0];
 		if (t <= from || t > atMs) continue;
-		if (equalLightStep(samples[k - 1], samples[k]) && levelHolds(samples, k)) n++;
+		if (!equalLightStep(samples[k - 1], samples[k]) || !levelHolds(samples, k)) continue;
+		const sign = Math.sign(bright(samples[k]) - bright(samples[k - 1]));
+		if (!(lastK === k - 1 && sign === lastSign)) n++;
+		lastK = k;
+		lastSign = sign;
 	}
 	return n;
 }

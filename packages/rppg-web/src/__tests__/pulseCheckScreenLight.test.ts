@@ -60,6 +60,21 @@ function mainsPulseRows(seconds: number): Row[] {
 	});
 }
 
+
+// A 70 bpm pulse while auto exposure hunts: gains 1, 1.12, 0.94, 1.08, 0.90, 1.05, 0.96, 1.10 every 3 s,
+// each change eased over 4 frames, the same on every region. Ported from Peak.
+function exposurePulseRows(seconds: number): Row[] {
+	const gains = [1, 1.12, 0.94, 1.08, 0.9, 1.05, 0.96, 1.1];
+	return pulseRows(seconds).map((x) => {
+		const t = x[0] / 1000;
+		const k = Math.floor(t / 3) % 8;
+		const prev = gains[(k + 7) % 8];
+		const a = Math.min(1, ((t - Math.floor(t / 3) * 3) * 30) / 4);
+		const g = prev + (gains[k] - prev) * a;
+		return [x[0], ...x.slice(1).map((v) => v * g)];
+	});
+}
+
 /** Feeds the rows; returns every shown rate (one per second) and the last state. */
 function run(rows: Row[], screenLight: boolean) {
 	const check = new PulseCheck({ rules: { screenLight } });
@@ -110,6 +125,13 @@ describe("pulse check rule screenLight: a light stepping on the whole face is no
 
 	it("a 70 bpm pulse under uneven-drop mains flicker still reads 70: flicker reverses, a screen holds its level", () => {
 		const on = run(mainsPulseRows(45), true);
+		expect(on.steps).toBeLessThan(10);
+		expect(on.shown.length).toBeGreaterThan(0);
+		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(4);
+	});
+
+	it("a 70 bpm pulse while auto exposure hunts still reads 70: one eased change is one event", () => {
+		const on = run(exposurePulseRows(45), true);
 		expect(on.steps).toBeLessThan(10);
 		expect(on.shown.length).toBeGreaterThan(0);
 		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(4);
