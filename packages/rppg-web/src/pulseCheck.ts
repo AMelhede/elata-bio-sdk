@@ -105,6 +105,10 @@ export type PulseCheckState = {
 	anchorBpm?: number | null;
 	/** True on the evaluation at which rule anchorDrift ended a run because its rate moved too far from where it started. */
 	anchorEnded?: boolean;
+	/** For diagnosis: equal light steps (equalLightStep) in the latest window, counted with rule screenLight on, else null. */
+	windowScreenSteps?: number | null;
+	/** True while rule screenLight holds the latest window's rate out of the evidence (SCREEN_STEPS_PER_WINDOW or more equal steps). */
+	screenLight?: boolean;
 };
 
 /**
@@ -295,6 +299,12 @@ export type PulseCheckRules = {
 	/** A window whose rate the wall carries is not evidence of a pulse: it is not counted toward the proof. Off: it counts, and the rate shows the moment the wall line dips. */
 	lightTaint?: boolean;
 	/**
+	 * A window in which one light steps on all three face regions alike at least SCREEN_STEPS_PER_WINDOW
+	 * times (equalLightStep: a screen showing video, the wall dark) is not evidence of a pulse: it is not
+	 * counted toward the proof. It only withholds. Off: such windows count, as before.
+	 */
+	screenLight?: boolean;
+	/**
 	 * A rate the head's own movement keeps time with (a nod, a rock) is the movement's: not evidence,
 	 * and withheld once it holds for 4 windows. Needs the head (`push`'s `head`, headCentre); once a
 	 * head has been handed over, a window the head's rows do not cover is not evidence either. Off,
@@ -330,6 +340,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"lightFamily",
 	"faceFlicker",
 	"lightTaint",
+	"screenLight",
 	"headMotion",
 	"darkWall",
 	"followerMedian",
@@ -353,6 +364,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		lightFamily: rules?.lightFamily !== false,
 		faceFlicker: rules?.faceFlicker !== false,
 		lightTaint: rules?.lightTaint !== false,
+		screenLight: rules?.screenLight !== false,
 		headMotion: rules?.headMotion !== false,
 		darkWall: rules?.darkWall !== false,
 		followerMedian: rules?.followerMedian === true,
@@ -680,6 +692,59 @@ function lineCarries(
 const LIGHT_FAMILY = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
 
 const EVAL_EVERY_MS = 1000;
+
+/*
+ * Rule screenLight. Blood cannot make a step: a pulse changes the skin smoothly, a few percent over a
+ * whole beat, while a screen, a lamp switched or an exposure change scales all the skin at once, in one
+ * frame, by the same fraction everywhere. Movement and a passing hand step the regions UNEQUALLY. A face
+ * with no pulse lit by a screen showing video (steps every 0.3 to 1.5 s, about 67 a minute) was read as
+ * a rate, since one light moves all three regions together and they agree. The rule only withholds; it
+ * still misses slow (steps 1 to 3 s apart) or shallow (5%) screens, which make too few equal steps in a
+ * window. Its settings were measured against recorded captures with a reference pulse before it was added.
+ */
+/** Largest over smallest region step for one light: a screen's steps sit well within this, unequal movement does not. */
+const SCREEN_STEP_RATIO = 1.35;
+/** Smallest step counted, as a share of the region's brightness: max(1%, 0.4 per second x frame gap). 0.4/s bounds a 2% pulse's slope at 3 Hz (2 pi x 3 x 0.02). */
+const SCREEN_STEP_MIN = 0.01;
+const SCREEN_STEP_SLOPE_PER_S = 0.4;
+/** Frames further apart than this are a gap, not a step. */
+const SCREEN_STEP_MAX_GAP_MS = 250;
+/** Regions darker than this (R + G + B) are a lost face, not skin. */
+const SCREEN_STEP_MIN_BRIGHTNESS = 30;
+/** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
+export const SCREEN_STEPS_PER_WINDOW = 10;
+
+/** Whether the change from sample `a` to sample `b` is one light stepping on all three regions alike. */
+export function equalLightStep(a: readonly number[], b: readonly number[]): boolean {
+	const dt = b[0] - a[0];
+	if (!(dt > 0) || dt > SCREEN_STEP_MAX_GAP_MS) return false;
+	const d: number[] = [];
+	for (let r = 0; r < 3; r++) {
+		const x = a[1 + 3 * r] + a[2 + 3 * r] + a[3 + 3 * r];
+		const y = b[1 + 3 * r] + b[2 + 3 * r] + b[3 + 3 * r];
+		if (!(x >= SCREEN_STEP_MIN_BRIGHTNESS) || !(y >= SCREEN_STEP_MIN_BRIGHTNESS)) return false;
+		d.push((y - x) / x);
+	}
+	if (Math.sign(d[0]) !== Math.sign(d[1]) || Math.sign(d[1]) !== Math.sign(d[2])) return false;
+	const size = d.map(Math.abs);
+	const least = Math.min(...size);
+	return (
+		least > Math.max(SCREEN_STEP_MIN, (SCREEN_STEP_SLOPE_PER_S * dt) / 1000) &&
+		Math.max(...size) <= SCREEN_STEP_RATIO * least
+	);
+}
+
+/** Equal light steps in the OWN_PULSE_WINDOW_S window ending at `atMs`. */
+export function screenSteps(samples: readonly (readonly number[])[], atMs: number): number {
+	const from = atMs - OWN_PULSE_WINDOW_S * 1000;
+	let n = 0;
+	for (let k = 1; k < samples.length; k++) {
+		const t = samples[k][0];
+		if (t <= from || t > atMs) continue;
+		if (equalLightStep(samples[k - 1], samples[k])) n++;
+	}
+	return n;
+}
 const KEEP_MS = (OWN_PULSE_WINDOW_S + 2) * 1000;
 /**
  * The wall and head checks look back over OWN_PULSE_STRONG_STREAK windows, so they keep that much
@@ -838,9 +903,13 @@ export class PulseCheck {
 			this.rules.headMotion && this.headHandedOver && est?.bpm != null
 				? headJudge(this.head, timestampMs, est.bpm)
 				: null;
+		// A window a stepping light on the face fills is not evidence either (screenLight): it only withholds.
+		const windowScreenSteps = this.rules.screenLight ? screenSteps(this.samples, timestampMs) : null;
+		const screenLit = est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
 		const tainted =
 			est?.bpm != null &&
 			((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
+				screenLit ||
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
@@ -935,6 +1004,8 @@ export class PulseCheck {
 		this.state.provenBpm = this.provenBpm;
 		this.state.anchorBpm = this.anchorBpm;
 		this.state.anchorEnded = anchorEnded;
+		this.state.windowScreenSteps = windowScreenSteps;
+		this.state.screenLight = screenLit;
 		this.evaluationCount += 1;
 	}
 

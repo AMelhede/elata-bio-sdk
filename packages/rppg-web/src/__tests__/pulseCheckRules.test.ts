@@ -56,6 +56,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			lightFamily: true,
 			faceFlicker: true,
 			lightTaint: true,
+			screenLight: true,
 			headMotion: true,
 			darkWall: true,
 			followerMedian: false,
@@ -86,17 +87,21 @@ describe("PulseCheck light rules, one switch each", () => {
 
 	it("faceFlicker: under mains flicker it is the rule that keeps 180 off the screen", () => {
 		// Measured 2026-10-08: with every rule on nothing shows; with faceFlicker alone off, 180
-		// shows for 4 s; turning off any other single rule changes nothing on this fixture.
+		// shows for 4 s; turning off any other single rule changes nothing on this fixture. screenLight
+		// (added later) also withholds this lamp, whose smooth swing steps all three regions alike every
+		// frame, so it is off here to judge the rules this test was written for.
 		expect(shownSeconds({})).toEqual([]);
-		expect(shownSeconds({ faceFlicker: false }).length).toBeGreaterThanOrEqual(3);
+		expect(shownSeconds({ screenLight: false, faceFlicker: false }).length).toBeGreaterThanOrEqual(3);
+		expect(shownSeconds({ faceFlicker: false })).toEqual([]);
 		for (const rule of ["wallBandEdge", "lightFamily", "lightTaint"] as const)
-			expect(shownSeconds({ [rule]: false })).toEqual([]);
+			expect(shownSeconds({ screenLight: false, [rule]: false })).toEqual([]);
 	});
 
 	it("lightTaint: seconds the wall carries build no proof, so a dip in the wall line lets far less out", () => {
 		// With faceFlicker off (the wall rules alone): 19 s shown without the taint, 4 with it.
-		const without = shownSeconds({ faceFlicker: false, lightTaint: false });
-		const withTaint = shownSeconds({ faceFlicker: false });
+		// screenLight off as well: it withholds this lamp on its own (see above).
+		const without = shownSeconds({ screenLight: false, faceFlicker: false, lightTaint: false });
+		const withTaint = shownSeconds({ screenLight: false, faceFlicker: false });
 		expect(without.length).toBeGreaterThanOrEqual(15);
 		expect(withTaint.length).toBeLessThanOrEqual(5);
 	});

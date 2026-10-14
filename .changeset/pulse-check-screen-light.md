@@ -1,0 +1,5 @@
+---
+"@elata-biosciences/rppg-web": patch
+---
+
+The pulse check gains rule `screenLight`, on by default, ported from an app that runs it: a 16 s window in which one light steps on the forehead and both cheeks alike (same direction, the smallest step over max(1%, 0.4/s x frame gap), the largest at most 1.35 x the smallest, frames under 250 ms apart, regions brighter than 30) 10 or more times is not evidence of a pulse. It only withholds: such a window cannot count toward the proof streak or the early and strong paths. The state gains `windowScreenSteps` and `screenLight`. Measured in that app with the same rule: on 134 generated screen-lit faces with no pulse a rate was shown on 70 without it and 9 with it; a 70 bpm pulse under the same screens read 131 of 134 with 6 showing wrong seconds without it, 44 with none wrong with it; 284 recorded captures against a reference pulse unchanged. In this check, on 30 generated screen-lit faces with no pulse a rate was shown on 14 with the rule off and on none with it on. Still missed: slow (steps 1 to 3 s apart) or shallow (5%) screen changes. Set `screenLight: false` in `pulseCheckRules` for the behaviour before.
