@@ -42,6 +42,24 @@ function pulseRows(seconds: number, bpm = 70): Row[] {
 	return out;
 }
 
+
+// A 70 bpm pulse under 100 Hz mains flicker filmed with uneven frame drops (17 kept of 30, the rest held):
+// at each kept frame the lamp is high or low in turn (+-15%), the same on every region. Ported from Peak.
+function mainsPulseRows(seconds: number): Row[] {
+	const pulse = pulseRows(seconds);
+	let held: Row | null = null;
+	let last = -1;
+	let kept = 0;
+	return pulse.map((x, i) => {
+		const bucket = Math.floor((i * 17) / 30 + 1e-9);
+		if (bucket === last && held) return [x[0], ...held.slice(1)];
+		last = bucket;
+		const g = kept++ % 2 === 0 ? 1.15 : 0.85;
+		held = [x[0], ...x.slice(1).map((v) => v * g)];
+		return held;
+	});
+}
+
 /** Feeds the rows; returns every shown rate (one per second) and the last state. */
 function run(rows: Row[], screenLight: boolean) {
 	const check = new PulseCheck({ rules: { screenLight } });
@@ -88,6 +106,13 @@ describe("pulse check rule screenLight: a light stepping on the whole face is no
 		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(3);
 		expect(on.steps).toBe(0);
 		expect(on.state.screenLight).toBe(false);
+	});
+
+	it("a 70 bpm pulse under uneven-drop mains flicker still reads 70: flicker reverses, a screen holds its level", () => {
+		const on = run(mainsPulseRows(45), true);
+		expect(on.steps).toBeLessThan(10);
+		expect(on.shown.length).toBeGreaterThan(0);
+		for (const b of on.shown) expect(Math.abs(b - 70)).toBeLessThanOrEqual(4);
 	});
 
 	it("steps on one region only are not counted", () => {

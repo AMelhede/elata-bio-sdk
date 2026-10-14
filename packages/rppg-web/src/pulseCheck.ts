@@ -714,6 +714,27 @@ const SCREEN_STEP_MIN_BRIGHTNESS = 30;
 /** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
 export const SCREEN_STEPS_PER_WINDOW = 10;
 
+/**
+ * A step counts only if its new level holds: within SCREEN_LEVEL_HOLD_MS no region gives back
+ * SCREEN_LEVEL_REVERSAL of it. A screen or a switched light moves the face to a new level that stays
+ * (200 ms or more on the generated screens); mains flicker filmed with uneven frame drops moves every
+ * region together too, but reverses on the next kept frame, so it is not a screen and a pulse under it
+ * is still read.
+ */
+export const SCREEN_LEVEL_HOLD_MS = 100;
+export const SCREEN_LEVEL_REVERSAL = 0.5;
+export function levelHolds(samples: readonly (readonly number[])[], k: number): boolean {
+	const bright = (s: readonly number[], r: number) => s[1 + 3 * r] + s[2 + 3 * r] + s[3 + 3 * r];
+	const a = samples[k - 1];
+	const b = samples[k];
+	for (let j = k + 1; j < samples.length && samples[j][0] - b[0] <= SCREEN_LEVEL_HOLD_MS; j++)
+		for (let r = 0; r < 3; r++) {
+			const step = bright(b, r) - bright(a, r);
+			if ((bright(samples[j], r) - bright(a, r)) / step < 1 - SCREEN_LEVEL_REVERSAL) return false;
+		}
+	return true;
+}
+
 /** Whether the change from sample `a` to sample `b` is one light stepping on all three regions alike. */
 export function equalLightStep(a: readonly number[], b: readonly number[]): boolean {
 	const dt = b[0] - a[0];
@@ -741,7 +762,7 @@ export function screenSteps(samples: readonly (readonly number[])[], atMs: numbe
 	for (let k = 1; k < samples.length; k++) {
 		const t = samples[k][0];
 		if (t <= from || t > atMs) continue;
-		if (equalLightStep(samples[k - 1], samples[k])) n++;
+		if (equalLightStep(samples[k - 1], samples[k]) && levelHolds(samples, k)) n++;
 	}
 	return n;
 }
