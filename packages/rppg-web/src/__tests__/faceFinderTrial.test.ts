@@ -1,5 +1,6 @@
 import {
 	FINDER_SWITCH_MARGIN,
+	FINDER_TRIAL_BUDGET_MS,
 	FINDER_TRIAL_TIMED_CALLS,
 	FINDER_TRIAL_WARMUP_CALLS,
 	type FinderCandidate,
@@ -79,8 +80,10 @@ describe("the trial on the live video", () => {
 		const gpu = fake("GPU", 290, clock);
 		const cpu = fake("CPU", 60, clock);
 		const f = new TrialFaceFinder([gpu, cpu], { now: () => clock.t });
-		drive(f, PER, clock);
-		expect(gpu.calls).toHaveLength(PER);
+		// 290 ms a call passes the trial's time budget before its 13 calls: it is cut short there.
+		const gpuCalls = 1 + Math.ceil(FINDER_TRIAL_BUDGET_MS / 290);
+		drive(f, gpuCalls, clock);
+		expect(gpu.calls).toHaveLength(gpuCalls);
 		expect(cpu.calls).toHaveLength(0);
 		drive(f, PER, clock);
 		expect(cpu.calls).toHaveLength(PER);
@@ -89,7 +92,7 @@ describe("the trial on the live video", () => {
 		expect(cpu.closed()).toBe(false);
 		drive(f, 5, clock);
 		expect(cpu.calls).toHaveLength(PER + 5);
-		expect(gpu.calls).toHaveLength(PER);
+		expect(gpu.calls).toHaveLength(gpuCalls);
 		expect(f.trialResults.map((r) => r.delegate)).toEqual(["GPU", "CPU"]);
 		expect(f.trialResults[0].meanMs).toBeCloseTo(290, 6);
 	});
@@ -103,6 +106,32 @@ describe("the trial on the live video", () => {
 		expect(f.delegate).toBe("GPU");
 		expect(cpu.closed()).toBe(true);
 		expect(gpu.calls).toHaveLength(PER + 3);
+	});
+
+	test("a candidate far too slow to be kept stops its trial once its calls pass the time budget", () => {
+		// On a heavily throttled device the software GPU took about 3.3 s a call; the full trial (13 calls) spent
+		// about 43 s on it before the CPU (about 0.15 s a call) was even tried, and the face was analysed at
+		// 0.3 frames a second for the whole reading. The first call (shader compile, WASM warm-up) is not counted.
+		const clock = { t: 0 };
+		const gpu = fake("GPU", 3300, clock);
+		const cpu = fake("CPU", 150, clock);
+		const f = new TrialFaceFinder([gpu, cpu], { now: () => clock.t });
+		drive(f, 2 + PER, clock);
+		expect(gpu.calls.length).toBe(1 + Math.ceil(FINDER_TRIAL_BUDGET_MS / 3300));
+		expect(f.delegate).toBe("CPU");
+		expect(gpu.closed()).toBe(true);
+		expect(f.trialResults[0]).toEqual({ delegate: "GPU", meanMs: 3300 });
+	});
+
+	test("a fast candidate is timed for every call; the budget never cuts it short", () => {
+		const clock = { t: 0 };
+		const gpu = fake("GPU", 20, clock);
+		const cpu = fake("CPU", 60, clock);
+		const f = new TrialFaceFinder([gpu, cpu], { now: () => clock.t });
+		drive(f, 2 * PER, clock);
+		expect(gpu.calls.length).toBe(PER);
+		expect(cpu.calls.length).toBe(PER);
+		expect(f.delegate).toBe("GPU");
 	});
 
 	test("one candidate is simply used, with no trial", () => {
