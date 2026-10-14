@@ -240,7 +240,7 @@ assertions, demo untouched).
 whose licence does not allow sharing their numbers, removing the rule alone made no measurable difference either;
 the numbers are in the private appendix (ask Andreas Melhede).
 
-Our own 50 phone and laptop camera recordings of one person [owner] with a reference rate each (45 of them under 85
+Our own 50 phone and laptop camera recordings of one contributor with a reference rate each (45 of them under 85
 bpm), each recording's three face-region colours fed as the session path's three regions (`DemoRunner` with the
 fuser, tracker on), main's build with the published core, `bpm` read once a second from 20 s. The harmonic ratio
 figures in the issue come from this set. Removing the rule alone: 1,296 -> 1,289 right seconds of 6,679 (155 lost, 148 gained; 18 recordings better, 20 worse, sign test p 0.87); seconds reading double 33 -> 15. By the rule we wrote
