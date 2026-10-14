@@ -173,6 +173,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "lightFamily",
     "faceFlicker",
     "lightTaint",
+    "screenLight",
     "headMotion",
     "darkWall",
     "followerMedian",
@@ -194,6 +195,7 @@ export function resolvePulseCheckRules(rules) {
         lightFamily: rules?.lightFamily !== false,
         faceFlicker: rules?.faceFlicker !== false,
         lightTaint: rules?.lightTaint !== false,
+        screenLight: rules?.screenLight !== false,
         headMotion: rules?.headMotion !== false,
         darkWall: rules?.darkWall !== false,
         followerMedian: rules?.followerMedian === true,
@@ -460,6 +462,95 @@ function lineCarries(line, bpm, rules) {
  */
 const LIGHT_FAMILY = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 const EVAL_EVERY_MS = 1000;
+/*
+ * Rule screenLight. Blood cannot make a step: a pulse changes the skin smoothly, a few percent over a
+ * whole beat, while a screen, a lamp switched or an exposure change scales all the skin at once, in one
+ * frame, by the same fraction everywhere. Movement and a passing hand step the regions UNEQUALLY. A face
+ * with no pulse lit by a screen showing video (steps every 0.3 to 1.5 s, about 67 a minute) was read as
+ * a rate, since one light moves all three regions together and they agree. The rule only withholds; it
+ * still misses slow (steps 1 to 3 s apart) or shallow (5%) screens, which make too few equal steps in a
+ * window. Its settings were measured against recorded captures with a reference pulse before it was added.
+ */
+/** Largest over smallest region step for one light: a screen's steps sit well within this, unequal movement does not. */
+const SCREEN_STEP_RATIO = 1.35;
+/** Smallest step counted, as a share of the region's brightness: max(1%, 0.4 per second x frame gap). 0.4/s bounds a 2% pulse's slope at 3 Hz (2 pi x 3 x 0.02). */
+const SCREEN_STEP_MIN = 0.01;
+const SCREEN_STEP_SLOPE_PER_S = 0.4;
+/** Frames further apart than this are a gap, not a step. */
+const SCREEN_STEP_MAX_GAP_MS = 250;
+/**
+ * Regions darker than this share of full scale (R + G + B against 3 x full scale) are a lost face, not skin:
+ * 30 of 765 on a 0 to 255 scale. Callers send either scale (the session's skin-masked mean is 0 to 1), so a
+ * fixed 30 would discard every frame of a 0 to 1 caller; the scale is read from the values themselves.
+ */
+const SCREEN_STEP_MIN_BRIGHTNESS_SHARE = 30 / 765;
+const brightnessFloor = (x) => (x <= 3 ? 3 : 765) * SCREEN_STEP_MIN_BRIGHTNESS_SHARE;
+/** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
+export const SCREEN_STEPS_PER_WINDOW = 10;
+/**
+ * A step counts only if its new level holds: within SCREEN_LEVEL_HOLD_MS no region gives back
+ * SCREEN_LEVEL_REVERSAL of it. A screen or a switched light moves the face to a new level that stays
+ * (200 ms or more on the generated screens); mains flicker filmed with uneven frame drops moves every
+ * region together too, but reverses on the next kept frame, so it is not a screen and a pulse under it
+ * is still read.
+ */
+export const SCREEN_LEVEL_HOLD_MS = 100;
+export const SCREEN_LEVEL_REVERSAL = 0.5;
+export function levelHolds(samples, k) {
+    const bright = (s, r) => s[1 + 3 * r] + s[2 + 3 * r] + s[3 + 3 * r];
+    const a = samples[k - 1];
+    const b = samples[k];
+    for (let j = k + 1; j < samples.length && samples[j][0] - b[0] <= SCREEN_LEVEL_HOLD_MS; j++)
+        for (let r = 0; r < 3; r++) {
+            const step = bright(b, r) - bright(a, r);
+            if ((bright(samples[j], r) - bright(a, r)) / step < 1 - SCREEN_LEVEL_REVERSAL)
+                return false;
+        }
+    return true;
+}
+/** Whether the change from sample `a` to sample `b` is one light stepping on all three regions alike. */
+export function equalLightStep(a, b) {
+    const dt = b[0] - a[0];
+    if (!(dt > 0) || dt > SCREEN_STEP_MAX_GAP_MS)
+        return false;
+    const d = [];
+    for (let r = 0; r < 3; r++) {
+        const x = a[1 + 3 * r] + a[2 + 3 * r] + a[3 + 3 * r];
+        const y = b[1 + 3 * r] + b[2 + 3 * r] + b[3 + 3 * r];
+        if (!(x >= brightnessFloor(x)) || !(y >= brightnessFloor(y)))
+            return false;
+        d.push((y - x) / x);
+    }
+    if (Math.sign(d[0]) !== Math.sign(d[1]) || Math.sign(d[1]) !== Math.sign(d[2]))
+        return false;
+    const size = d.map(Math.abs);
+    const least = Math.min(...size);
+    return (least > Math.max(SCREEN_STEP_MIN, (SCREEN_STEP_SLOPE_PER_S * dt) / 1000) &&
+        Math.max(...size) <= SCREEN_STEP_RATIO * least);
+}
+/** Equal light steps in the OWN_PULSE_WINDOW_S window ending at `atMs`. */
+export function screenSteps(samples, atMs) {
+    // One light change counts once: consecutive frames stepping the same way (auto exposure or white balance
+    // easing over several frames) are one event; a screen cut lands in one frame.
+    const from = atMs - OWN_PULSE_WINDOW_S * 1000;
+    const bright = (s) => s[1] + s[2] + s[3];
+    let n = 0;
+    let lastK = -2;
+    let lastSign = 0;
+    for (let k = 1; k < samples.length; k++) {
+        const t = samples[k][0];
+        if (t <= from || t > atMs)
+            continue;
+        if (!equalLightStep(samples[k - 1], samples[k]) || !levelHolds(samples, k))
+            continue;
+        const sign = Math.sign(bright(samples[k]) - bright(samples[k - 1]));
+        if (!(lastK === k - 1 && sign === lastSign))
+            n++;
+        lastK = k;
+        lastSign = sign;
+    }
+    return n;
+}
 const KEEP_MS = (OWN_PULSE_WINDOW_S + 2) * 1000;
 /**
  * The wall and head checks look back over OWN_PULSE_STRONG_STREAK windows, so they keep that much
@@ -615,8 +706,12 @@ export class PulseCheck {
         const windowHead = this.rules.headMotion && this.headHandedOver && est?.bpm != null
             ? headJudge(this.head, timestampMs, est.bpm)
             : null;
+        // A window a stepping light on the face fills is not evidence either (screenLight): it only withholds.
+        const windowScreenSteps = this.rules.screenLight ? screenSteps(this.samples, timestampMs) : null;
+        const screenLit = est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
         const tainted = est?.bpm != null &&
             ((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
+                screenLit ||
                 (windowHead != null && windowHead !== "clear"));
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
@@ -707,6 +802,8 @@ export class PulseCheck {
         this.state.provenBpm = this.provenBpm;
         this.state.anchorBpm = this.anchorBpm;
         this.state.anchorEnded = anchorEnded;
+        this.state.windowScreenSteps = windowScreenSteps;
+        this.state.screenLight = screenLit;
         this.evaluationCount += 1;
     }
     /**

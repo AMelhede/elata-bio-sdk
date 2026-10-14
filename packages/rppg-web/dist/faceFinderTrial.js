@@ -7,6 +7,17 @@ export const FINDER_DELEGATE_ORDER = ["GPU", "CPU"];
 export const FINDER_TRIAL_WARMUP_CALLS = 3;
 export const FINDER_TRIAL_TIMED_CALLS = 10;
 /**
+ * A candidate's trial also ends once its calls after the first have taken this long in total, and its mean so
+ * far is its result. The first call is not counted: it pays shader compilation or WASM warm-up. Why: on a
+ * heavily throttled device (cgroup CPU limit, 2 cores at 40%) the software GPU took about 3.3 s a call, so the
+ * full trial spent about 43 s on it before trying the CPU (about 0.15 s a call), and the face was analysed at
+ * 0.3 frames a second for a whole 74 s reading against 3.9 with the trial switched off (bench slowcause,
+ * 2026-10-14). 2 s still times every call of a candidate up to about 150 ms a call (12 calls), which covers a
+ * laptop CPU at its slowest measured (about 150 ms under the same limit), so only a candidate too slow to win
+ * is cut short.
+ */
+export const FINDER_TRIAL_BUDGET_MS = 2000;
+/**
  * How much faster a later candidate must be to displace an earlier one. CPU inference runs on the page's
  * own main thread and competes with every camera frame while the GPU mostly waits, so a CPU that wins a
  * short trial narrowly can still run slower live, with longer stalls; a lead inside 25% is not worth that.
@@ -62,7 +73,7 @@ export class TrialFaceFinder {
             throw new Error("TrialFaceFinder needs at least one candidate");
         this.candidates = [...candidates];
         this.current = this.candidates[0];
-        this.trial = this.candidates.length > 1 ? { index: 0, calls: 0, timed: [] } : null;
+        this.trial = this.candidates.length > 1 ? { index: 0, calls: 0, timed: [], afterFirst: [] } : null;
         this.now = opts.now ?? (() => (typeof performance !== "undefined" ? performance.now() : Date.now()));
         this.rebuild = opts.rebuild;
         this.onEvent = opts.onEvent;
@@ -132,9 +143,16 @@ export class TrialFaceFinder {
         trial.calls += 1;
         if (trial.calls > FINDER_TRIAL_WARMUP_CALLS)
             trial.timed.push(ms);
-        if (trial.timed.length < FINDER_TRIAL_TIMED_CALLS)
+        if (trial.calls > 1)
+            trial.afterFirst.push(ms);
+        const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+        if (trial.timed.length >= FINDER_TRIAL_TIMED_CALLS) {
+            this.finishTrialCandidate(mean(trial.timed));
             return;
-        this.finishTrialCandidate(trial.timed.reduce((a, b) => a + b, 0) / trial.timed.length);
+        }
+        // Too slow to be kept: stop paying for it (FINDER_TRIAL_BUDGET_MS).
+        if (trial.afterFirst.length && trial.afterFirst.reduce((a, b) => a + b, 0) >= FINDER_TRIAL_BUDGET_MS)
+            this.finishTrialCandidate(mean(trial.afterFirst));
     }
     /** Records the current candidate's mean call time (infinite: it failed) and moves the trial on. */
     finishTrialCandidate(meanMs) {
@@ -143,6 +161,7 @@ export class TrialFaceFinder {
         trial.index += 1;
         trial.calls = 0;
         trial.timed = [];
+        trial.afterFirst = [];
         if (trial.index < this.candidates.length) {
             this.current = this.candidates[trial.index];
             return;
@@ -191,6 +210,7 @@ export class TrialFaceFinder {
                 if (this.trial) {
                     this.trial.calls = 0;
                     this.trial.timed = [];
+                    this.trial.afterFirst = [];
                 }
             }
             this.failedRebuilds = 0;

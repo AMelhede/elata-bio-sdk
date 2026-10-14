@@ -91,6 +91,10 @@ export type PulseCheckState = {
     anchorBpm?: number | null;
     /** True on the evaluation at which rule anchorDrift ended a run because its rate moved too far from where it started. */
     anchorEnded?: boolean;
+    /** For diagnosis: equal light steps (equalLightStep) in the latest window, counted with rule screenLight on, else null. */
+    windowScreenSteps?: number | null;
+    /** True while rule screenLight holds the latest window's rate out of the evidence (SCREEN_STEPS_PER_WINDOW or more equal steps). */
+    screenLight?: boolean;
 };
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
@@ -197,6 +201,12 @@ export type PulseCheckRules = {
     /** A window whose rate the wall carries is not evidence of a pulse: it is not counted toward the proof. Off: it counts, and the rate shows the moment the wall line dips. */
     lightTaint?: boolean;
     /**
+     * A window in which one light steps on all three face regions alike at least SCREEN_STEPS_PER_WINDOW
+     * times (equalLightStep: a screen showing video, the wall dark) is not evidence of a pulse: it is not
+     * counted toward the proof. It only withholds. Off: such windows count, as before.
+     */
+    screenLight?: boolean;
+    /**
      * A rate the head's own movement keeps time with (a nod, a rock) is the movement's: not evidence,
      * and withheld once it holds for 4 windows. Needs the head (`push`'s `head`, headCentre); once a
      * head has been handed over, a window the head's rows do not cover is not evidence either. Off,
@@ -225,7 +235,7 @@ export type PulseCheckRules = {
     anchorDrift?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "headMotion", "darkWall", "followerMedian", "reproveOnDrift", "tooDark", "anchorDrift"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "followerMedian", "reproveOnDrift", "tooDark", "anchorDrift"];
 /** Rules that stay off unless set to true: the dim-light candidates, not yet judged on a chest-strap study. */
 export declare const PULSE_CHECK_RULES_OFF_BY_DEFAULT: readonly (keyof PulseCheckRules)[];
 /** Every rule resolved to true or false; left out means on, but for PULSE_CHECK_RULES_OFF_BY_DEFAULT (off unless true). */
@@ -321,6 +331,22 @@ export declare function wallLine(wall: [number, number, number, number][], atMs:
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
 export declare function wallCarries(wall: [number, number, number, number][], atMs: number, bpm: number, rules?: ResolvedPulseCheckRules): boolean;
+/** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
+export declare const SCREEN_STEPS_PER_WINDOW = 10;
+/**
+ * A step counts only if its new level holds: within SCREEN_LEVEL_HOLD_MS no region gives back
+ * SCREEN_LEVEL_REVERSAL of it. A screen or a switched light moves the face to a new level that stays
+ * (200 ms or more on the generated screens); mains flicker filmed with uneven frame drops moves every
+ * region together too, but reverses on the next kept frame, so it is not a screen and a pulse under it
+ * is still read.
+ */
+export declare const SCREEN_LEVEL_HOLD_MS = 100;
+export declare const SCREEN_LEVEL_REVERSAL = 0.5;
+export declare function levelHolds(samples: readonly (readonly number[])[], k: number): boolean;
+/** Whether the change from sample `a` to sample `b` is one light stepping on all three regions alike. */
+export declare function equalLightStep(a: readonly number[], b: readonly number[]): boolean;
+/** Equal light steps in the OWN_PULSE_WINDOW_S window ending at `atMs`. */
+export declare function screenSteps(samples: readonly (readonly number[])[], atMs: number): number;
 export declare class PulseCheck {
     constructor(opts?: {
         agreement?: boolean;
