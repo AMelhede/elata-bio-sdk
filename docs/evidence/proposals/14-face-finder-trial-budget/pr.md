@@ -45,7 +45,7 @@ at about 0.3 frames a second, before the CPU, at about 0.15 s a call, is even tr
   on e3e44c3 with `fix.patch` applied by `git am` (2026-10-14); the whole rppg-web jest suite there: 83 suites, 832
   tests pass.
 
-**Browser measurement (contributor-side; not rerunnable from this repo).** Chromium on generated faces, the session
+**Browser measurement (contributor-side; not rerunnable from this repo).** Chromium, the session
 with `faceMesh: "auto"`, under a cgroup CPU limit (2 cores at 40%), 6 captures: analysed face frames 0.19 to 0.92 a
 second without the budget, 2.5 to 2.84 with it. Without the limit: 17.9 to 23.5 a second either way.
 
