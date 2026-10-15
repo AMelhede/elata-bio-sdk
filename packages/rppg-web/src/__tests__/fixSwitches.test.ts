@@ -60,18 +60,20 @@ function mockProcessor() {
 }
 
 describe("resolveFixSwitches", () => {
-	const names = [
-		"noFaceNoReading",
-		"colourProjectionFix",
-		"realFrameRate",
-		"posFusion",
-		"noRateDoubling",
-	];
-	test("every fix is on by default", () => {
+	const names = ["noFaceNoReading", "colourProjectionFix", "posFusion", "noRateDoubling"];
+	// Off unless set to true since test.23 (no measured benefit on real recordings; see fixSwitches.ts).
+	const offByDefault = ["realFrameRate", "steadyAnalysis", "analysisWidth", "analysisWorker", "faceFinderTrial", "rgbPulse"];
+	test("the proven fixes are on by default and the unproven ones off", () => {
 		for (const v of [undefined, null, true, {}]) {
 			const r = resolveFixSwitches(v as never);
 			for (const n of names) expect(r[n as keyof typeof r]).toBe(true);
+			for (const n of offByDefault) expect(r[n as keyof typeof r]).toBe(false);
 		}
+	});
+	test("an off-by-default fix turns on only when set to true", () => {
+		const r = resolveFixSwitches({ faceFinderTrial: true });
+		expect(r.faceFinderTrial).toBe(true);
+		expect(r.analysisWorker).toBe(false);
 	});
 	test("false turns every fix off", () => {
 		const r = resolveFixSwitches(false);
@@ -80,7 +82,7 @@ describe("resolveFixSwitches", () => {
 	test("an object turns off only the fixes set to false", () => {
 		const r = resolveFixSwitches({ posFusion: false });
 		expect(r.posFusion).toBe(false);
-		expect(r.noFaceNoReading && r.realFrameRate && r.noRateDoubling).toBe(true);
+		expect(r.noFaceNoReading && r.noRateDoubling).toBe(true);
 		expect(r.colourProjectionFix).toBe(true);
 	});
 });
@@ -127,9 +129,13 @@ describe("switch realFrameRate", () => {
 		for (const t of times) src.emit(frame(t, true));
 		return { order: proc.order, times };
 	}
-	test("on (default): a 15 fps camera is filled in to the 30 a second grid", async () => {
-		const { order } = await slowCamera();
+	test("on: a 15 fps camera is filled in to the 30 a second grid", async () => {
+		const { order } = await slowCamera({ realFrameRate: true });
 		expect(order.length).toBe(61);
+	});
+	test("off by default since test.23: one sample per camera frame, as in 0.14.0", async () => {
+		const { order, times } = await slowCamera();
+		expect(order).toEqual(times);
 	});
 	test("off: one sample per camera frame at the frame's own time, as in 0.14.0", async () => {
 		const { order, times } = await slowCamera({ realFrameRate: false });

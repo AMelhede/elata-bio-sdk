@@ -31,14 +31,14 @@ function feed(p: RppgProcessor, fromMs: number, toMs: number, fps: number, onFra
 describe("switch steadyAnalysis", () => {
 	test("reading on every frame analyses once per step of sample time (two passes), not once per read", () => {
 		const { backend, counter } = countingBackend();
-		const p = new RppgProcessor(backend, 30, 10);
+		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 		feed(p, 1000, 3000, 30, () => p.getMetrics());
 		expect(counter.analyses).toBe(2 * Math.ceil(2000 / ANALYSIS_EVERY_MS));
 	});
 
 	test("a step is exactly ANALYSIS_EVERY_MS: at 40 frames a second, one step every 10th frame", () => {
 		const { backend, counter } = countingBackend();
-		const p = new RppgProcessor(backend, 30, 10);
+		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 		const changedAt: number[] = [];
 		let prev: number | null | undefined;
 		let frame = 0;
@@ -54,7 +54,7 @@ describe("switch steadyAnalysis", () => {
 
 	test("two reads in a row give one step and the same answer", () => {
 		const { backend, counter } = countingBackend();
-		const p = new RppgProcessor(backend, 30, 10);
+		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 		feed(p, 1000, 1500, 30);
 		const a = p.getMetrics();
 		const b = p.getMetrics();
@@ -67,8 +67,8 @@ describe("switch steadyAnalysis", () => {
 	test("the answer does not depend on how often it is read", () => {
 		const once = countingBackend();
 		const often = countingBackend();
-		const p1 = new RppgProcessor(once.backend, 30, 10);
-		const p2 = new RppgProcessor(often.backend, 30, 10);
+		const p1 = new RppgProcessor(once.backend, 30, 10, { fixes: { steadyAnalysis: true } });
+		const p2 = new RppgProcessor(often.backend, 30, 10, { fixes: { steadyAnalysis: true } });
 		const seen1: (number | null | undefined)[] = [];
 		const seen2: (number | null | undefined)[] = [];
 		let last1 = -Infinity;
@@ -98,7 +98,7 @@ describe("switch steadyAnalysis", () => {
 			(p: RppgProcessor) => p.updateMuseMetrics(70, 0.9, 1400),
 		]) {
 			const { backend, counter } = countingBackend();
-			const p = new RppgProcessor(backend, 30, 10);
+			const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 			feed(p, 1000, 1500, 30);
 			p.getMetrics();
 			act(p);
@@ -109,7 +109,7 @@ describe("switch steadyAnalysis", () => {
 
 	test("capture confidence is read fresh between analyses", () => {
 		const { backend } = countingBackend();
-		const p = new RppgProcessor(backend, 30, 10);
+		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 		feed(p, 1000, 1500, 30);
 		p.getMetrics();
 		p.pushCaptureFrame({ motion: 0.9, clipRatio: 0.5, skinRatio: 0.1, meanLuma: 0.05, faceBox: null });
@@ -131,7 +131,7 @@ describe("switch steadyAnalysis", () => {
 		});
 		for (const readsPerFrame of [1, 3]) {
 			const { backend } = countingBackend();
-			const p = new RppgProcessor(backend, 30, 10);
+			const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 			const got: (number | null | undefined)[] = [];
 			let last = -Infinity;
 			feed(p, 1000, 4000, 30, (ts) => {

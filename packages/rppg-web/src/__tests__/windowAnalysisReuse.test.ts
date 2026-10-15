@@ -58,7 +58,7 @@ beforeEach(() => analyzeMock.mockClear());
 describe("window analysis reuse", () => {
 	test("with steadyAnalysis, the window is analysed once per step; the core is still read twice", () => {
 		const { backend, counter } = stubBackend();
-		const p = new RppgProcessor(backend, 30, 10);
+		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 		feedPulse(p, 0, 3000, 30);
 		analyzeMock.mockClear();
 		feedPulse(p, 3000, 5000, 30, () => p.getMetrics());
@@ -95,7 +95,7 @@ describe("window analysis reuse", () => {
 
 	test("the kept analysis equals analysing the window again, at every step of a 40 s capture", () => {
 		const { backend } = stubBackend();
-		const p = new RppgProcessor(backend, 30, 10);
+		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
 		const internals = p as unknown as {
 			samples: Parameters<typeof analyzePulseWindow>[0];
 			samplesVersion: number;

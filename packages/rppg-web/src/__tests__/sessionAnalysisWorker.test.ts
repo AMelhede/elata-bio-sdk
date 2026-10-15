@@ -87,9 +87,13 @@ describe("analysisWorker switch", () => {
 	const make = (extra: object) =>
 		createRppgSession({ video: document.createElement("video"), faceMesh: "off", ...extra } as never);
 
-	test("on by default: the worker is tried", async () => {
-		await make({});
+	test("on when set: the worker is tried", async () => {
+		await make({ fixes: { analysisWorker: true } });
 		expect(mockedCreateWorker).toHaveBeenCalledTimes(1);
+	});
+	test("off by default since test.23: no worker is tried", async () => {
+		await make({});
+		expect(mockedCreateWorker).not.toHaveBeenCalled();
 	});
 	test("off: the analysis stays on the main thread, as published", async () => {
 		await make({ fixes: { analysisWorker: false } });

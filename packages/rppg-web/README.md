@@ -13,7 +13,7 @@ fields aside). It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.22` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.23` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
 - Everything below the "Switches" section is Elata's documentation from that same main
@@ -25,7 +25,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.22"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.23"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -42,18 +42,18 @@ the published 0.14.0 does for that part, so "off" is the comparison. Set them on
 const session = await createRppgSession({
   video,
   faceMesh: "auto",
-  // the defaults: every fix and speed change on but rgbPulse; `fixes: false` turns every one off
+  // the defaults: the four proven fixes on; rgbPulse and the unproven speed changes off (test.23); `fixes: false` turns every one off
   fixes: {
     noFaceNoReading: true,
     colourProjectionFix: true,
-    realFrameRate: true,
+    realFrameRate: false,
     posFusion: true,
     noRateDoubling: true,
-    steadyAnalysis: true,
+    steadyAnalysis: false,
     rgbPulse: false, // off by default: see its row
-    analysisWidth: true,
-    analysisWorker: true,
-    faceFinderTrial: true,
+    analysisWidth: false,
+    analysisWorker: false,
+    faceFinderTrial: false,
   },
   pulseCheck: true, // the default in this build
   experimentalVitals: false, // experimental, off by default: HRV and chest breathing in their own box (getExperimentalVitals)
@@ -269,7 +269,7 @@ or use the import-based options below to let Vite manage the asset URLs instead.
 
 ### The analysis worker in Vite's dev server
 
-This build runs the heart-rate analysis in a Web Worker (`fixes.analysisWorker`). Vite's dev
+With `fixes.analysisWorker: true` (off by default since test.23) the heart-rate analysis runs in a Web Worker. Vite's dev
 server pre-bundles dependencies and then cannot find the worker's file (a 404 for
 `processorWorker.js`), so the analysis quietly runs on the main thread instead. Exclude the
 package from pre-bundling, which the WASM setup below needs anyway:

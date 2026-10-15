@@ -167,15 +167,15 @@ describe("createRppgSession lifecycle", () => {
 		expect(session.faceTrackingMode).toBe("face_mesh");
 	});
 
-	test("faceMesh auto builds the finder through the delegate trial by default, and the CPU-only loader with faceFinderTrial off", async () => {
+	test("faceMesh auto builds the finder through the delegate trial with faceFinderTrial on, and the CPU-only loader by default", async () => {
 		const trial = loadTrialFaceFinder as jest.MockedFunction<typeof loadTrialFaceFinder>;
 		trial.mockClear();
 		mockedLoadFaceMesh.mockClear();
-		await createRppgSession({ video: document.createElement("video"), faceMesh: "auto", ensureVideoPlayback: false });
+		await createRppgSession({ video: document.createElement("video"), faceMesh: "auto", ensureVideoPlayback: false, fixes: { faceFinderTrial: true } });
 		expect(trial).toHaveBeenCalledTimes(1);
 		trial.mockClear();
 		mockedLoadFaceMesh.mockClear();
-		await createRppgSession({ video: document.createElement("video"), faceMesh: "auto", ensureVideoPlayback: false, fixes: { faceFinderTrial: false } });
+		await createRppgSession({ video: document.createElement("video"), faceMesh: "auto", ensureVideoPlayback: false });
 		expect(trial).not.toHaveBeenCalled();
 		expect(mockedLoadFaceMesh).toHaveBeenCalledTimes(1);
 	});

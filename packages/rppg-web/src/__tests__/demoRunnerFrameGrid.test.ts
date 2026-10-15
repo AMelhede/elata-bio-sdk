@@ -43,7 +43,7 @@ async function run(frameTimes: number[], sampleRate = 30, noRoisAt: number[] = [
   const order: number[] = [];
   const push = (t: number) => { order.push(t); };
   const proc = { pushFusedSample: jest.fn(push), pushSampleRgbMeta: jest.fn(push), getMetrics: jest.fn() };
-  const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, multiRoiFusion: true, sampleRate });
+  const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, multiRoiFusion: true, sampleRate, fixes: { realFrameRate: true } });
   await runner.start();
   for (const t of frameTimes) {
     const f = skinFrame(t);
@@ -99,7 +99,7 @@ describe('DemoRunner feeds the fuser and processor at the rate they were built f
     const order: number[] = [];
     const push = (t: number) => { order.push(t); };
     const proc = { pushFusedSample: jest.fn(push), pushSampleRgbMeta: jest.fn(push), getMetrics: jest.fn() };
-    const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30 });
+    const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30, fixes: { realFrameRate: true } });
     await runner.start();
     src.emit(skinFrame(1000));
     src.emit(skinFrame(1000 + 1000 / 30));
@@ -116,7 +116,7 @@ describe('DemoRunner feeds the fuser and processor at the rate they were built f
     // processor, which takes the region mean through pushSampleRgbMeta instead.
     const src = new MockFrameSource();
     const proc = { pushSampleRgbMeta: jest.fn(), getMetrics: jest.fn() };
-    const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30 });
+    const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30, fixes: { realFrameRate: true } });
     await runner.start();
     for (const t of framesAt(30, 120)) src.emit(skinFrame(t));
     const d = runner.getDiagnostics();
@@ -132,7 +132,7 @@ describe('DemoRunner feeds the fuser and processor at the rate they were built f
     try {
       const src = new MockFrameSource();
       const proc = { pushFusedSample: jest.fn(), getMetrics: jest.fn() };
-      const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30 });
+      const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30, fixes: { realFrameRate: true } });
       await runner.start();
       src.emit(skinFrame(1000, 140));
       src.emit(skinFrame(1000 + 1000 / 15, 150));
@@ -159,7 +159,7 @@ describe('a processor without pushFusedSample still gets every grid sample', () 
   ] as const)('%s only', async (method, expectedMethod, greenOf) => {
     const src = new MockFrameSource();
     const proc: any = { getMetrics: jest.fn(), [method]: jest.fn() };
-    const runner = new DemoRunner(src as any, proc, { useSkinMask: true, sampleRate: 30 });
+    const runner = new DemoRunner(src as any, proc, { useSkinMask: true, sampleRate: 30, fixes: { realFrameRate: true } });
     await runner.start();
     src.emit(skinFrame(1000, 140));
     src.emit(skinFrame(1000 + 1000 / 15, 150));
@@ -178,7 +178,7 @@ describe('a processor without pushFusedSample still gets every grid sample', () 
   test('no push method at all is a processor error, not silence', async () => {
     const src = new MockFrameSource();
     const onError = jest.fn();
-    const runner = new DemoRunner(src as any, { getMetrics: jest.fn() } as any, { useSkinMask: true, sampleRate: 30, onError });
+    const runner = new DemoRunner(src as any, { getMetrics: jest.fn() } as any, { useSkinMask: true, sampleRate: 30, onError, fixes: { realFrameRate: true } });
     await runner.start();
     src.emit(skinFrame(1000));
     await runner.stop();
@@ -204,7 +204,7 @@ describe('runner diagnostics still count camera frames', () => {
   test.each([15, 60])('at %i fps', async (fps) => {
     const src = new MockFrameSource();
     const proc = { pushFusedSample: jest.fn(), getMetrics: jest.fn() };
-    const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30 });
+    const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30, fixes: { realFrameRate: true } });
     await runner.start();
     for (const t of framesAt(fps, 31)) src.emit(skinFrame(t));
     const d = runner.getDiagnostics();
@@ -243,7 +243,7 @@ test('a frame with no usable timestamp costs that frame only, not the rest of th
   const src = new MockFrameSource();
   const pushes: FusedPush[] = [];
   const proc = { pushFusedSample: (t: number, value: number, snr: number) => { pushes.push({ t, value, snr }); }, getMetrics: jest.fn() };
-  const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30 });
+  const runner = new DemoRunner(src as any, proc as any, { useSkinMask: true, sampleRate: 30, fixes: { realFrameRate: true } });
   await runner.start();
   const r = rng(1);
   const times = framesAt(30, 241, 0);

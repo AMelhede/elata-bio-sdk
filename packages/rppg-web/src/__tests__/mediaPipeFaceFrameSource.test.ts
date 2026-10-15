@@ -311,7 +311,7 @@ describe('MediaPipeFaceFrameSource analysis width switch', () => {
     const restore = setupCanvasMock(1280, 960);
     const video = new FakeVideo(1280, 960) as unknown as HTMLVideoElement;
     const landmarker = fakeLandmarker([{ landmarks: lm }]);
-    const src = new MediaPipeFaceFrameSource(video, landmarker, 30);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { analysisWidth: true });
     (src as any).detectAndEmit(1000, { mediaTime: 0.001 });
     const canvas = (src as any).canvas;
     expect([canvas.width, canvas.height]).toEqual([640, 480]);
