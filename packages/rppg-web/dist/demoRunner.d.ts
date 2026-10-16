@@ -4,9 +4,9 @@ import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitche
 import { type FusionProjection, type FusionRoiName } from "./multiRoiFusion.js";
 import { type PulseCheck } from "./pulseCheck.js";
 import type { ChestMotion } from "./chestBreathing.js";
+import { RppgProcessor } from "./rppgProcessor.js";
 import { type RoiPixelSampler, type RppgRoiSampleV1 } from "./roiPixelSampler.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
-import type { RppgProcessorLike } from "./workerRppgProcessor.js";
 export type LastBlendshapes = {
     blendshapes: FrameBlendshape[];
     atMs: number;
@@ -19,7 +19,7 @@ export type LastFaceBox = {
 export type DemoRunnerOptions = {
     /**
      * Fix switches (see fixSwitches.ts). All on unless set to false. The runner applies
-     * noFaceNoReading, realFrameRate and posFusion; the processor applies the other two.
+     * noFaceNoReading and posFusion; the processor applies the other two.
      */
     fixes?: RppgFixesOption;
     /**
@@ -94,9 +94,7 @@ export type DemoRunnerDiagnostics = {
     framesWithMultiRoi: number;
     /**
      * Frames whose sample stage completed, so framesSeen = samplesPushed +
-     * droppedFrames. On the fusion grid (`realFrameRate` on) the processor receives
-     * one sample per `sampleRate` grid step rather than one per frame, so its own
-     * sample counts (`totalSamplesReceived`, `windowSampleCount`) can differ.
+     * droppedFrames.
      */
     samplesPushed: number;
     droppedFrames: number;
@@ -154,17 +152,12 @@ export declare class DemoRunner {
     private noFaceLastMs;
     /** When the face last came back after an absence long enough to restart the analysis; null if never. */
     private analysisRestartMs;
-    /** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
-    private gridPrev;
-    private gridNextT;
-    /** Whether the latest grid sample reached the processor as a fused one. */
-    private gridFused;
     /** The fix switches this runner applies. */
     readonly fixes: ResolvedRppgFixSwitches;
     /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
     private wallTracker;
     private lastOpinionMs;
-    constructor(source: FrameSource, processor: RppgProcessorLike, opts?: DemoRunnerOptions);
+    constructor(source: FrameSource, processor: RppgProcessor, opts?: DemoRunnerOptions);
     /**
      * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the
      * clock of `Frame.timestampMs`; by default it is the timestamp of the latest frame without a face.
@@ -188,27 +181,6 @@ export declare class DemoRunner {
     getDiagnostics(): DemoRunnerDiagnostics;
     getLastError(): DemoRunnerError | null;
     private onFrame;
-    /**
-     * Feed the fuser on the even `sampleRate` grid it is designed for, and hand
-     * the processor one sample per grid time. The fuser's band-pass, its
-     * spectral SNR (region weights and `fusedSnr`), its projection window and
-     * its warm-up are all counted in samples at `sampleRate`, but camera frames
-     * do not arrive at that rate: a UVC camera with auto-exposure priority may
-     * lower its frame rate to lengthen exposure (USB Video Class 1.5,
-     * Auto-Exposure Priority Control), and requestVideoFrameCallback skips
-     * frames the page was too busy to take (WICG video-rvfc, presentedFrames).
-     * The processor itself reads time from timestamps (the WASM core resamples
-     * by timestamp, resample_rgb_into in crates/elata-rppg/src/pipeline.rs, and
-     * analyzePulseWindow takes its rate from the window's timestamps). So each
-     * grid time between the previous frame and this one gets the two frames'
-     * values, linearly interpolated. At exactly `sampleRate` that is one sample
-     * per frame. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow
-     * camera: the grid restarts at the new frame instead of drawing a line
-     * across it. So does a timestamp that does not increase or is not a number;
-     * that frame is pushed at its own timestamp. Whichever push API the
-     * processor has takes the samples the fuser does not (see pushToProcessor).
-     */
-    private pushOnGrid;
     /**
      * Per-region skin-masked RGB for the fuser. The sub-ROIs arrive ordered as
      * {@link FUSION_ROIS} (forehead, leftCheek, rightCheek) from

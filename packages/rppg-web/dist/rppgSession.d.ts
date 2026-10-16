@@ -4,13 +4,12 @@ import { PulseCheck, type PulseCheckRules, type PulseCheckState, type ResolvedPu
 import { type PulseCheckRecording } from "./pulseCheckRecording.js";
 import { ChestMotion, type ChestSample } from "./chestBreathing.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
-import { type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
+import { RppgProcessor, type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
 import { type WasmImporter } from "./wasmBackend.js";
 import { DemoRunner, type DemoRunnerDiagnostics, type DemoRunnerOptions } from "./demoRunner.js";
 import type { BpmEvidenceQualityProvider, BpmTrackerConfigV1 } from "./bpmBayesTracker.js";
 import type { RppgModelDiagnosticsV1, WaveformReconstructionV1, WaveformReconstructor } from "./waveformModel.js";
 import { WaveformReconstructionController } from "./waveformReconstructionController.js";
-import { type RppgProcessorLike } from "./workerRppgProcessor.js";
 export type RppgSessionBackendPreference = "auto" | "wasm";
 export type RppgSessionBackendMode = "wasm" | "unavailable";
 export type RppgSessionFaceTrackingMode = "face_mesh" | "video_frame";
@@ -116,14 +115,6 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
         /** Reserved for later validation; reconstructed BPM evidence is disabled. */
         useReconstructedBpmEvidence?: false;
     };
-    /**
-     * Run the heart-rate analysis in a Web Worker, so it never blocks the camera frames (see
-     * workerRppgProcessor.ts). Defaults to the `analysisWorker` fix switch. Falls back to the main thread, exactly as
-     * without the option, when workers are unavailable, the worker cannot load the WASM core,
-     * or a function option is set that cannot cross to a worker (wasmImporter,
-     * bpmEvidenceQualityProvider).
-     */
-    analysisWorker?: boolean;
     sampleRate?: number;
     windowSec?: number;
     backend?: RppgSessionBackendPreference;
@@ -215,7 +206,7 @@ export declare function wantsChestMotion(options: {
 }): boolean;
 export declare class RppgSession {
     readonly source: FrameSource;
-    readonly processor: RppgProcessorLike;
+    readonly processor: RppgProcessor;
     readonly runner: DemoRunner;
     readonly backendMode: RppgSessionBackendMode;
     readonly faceTrackingMode: RppgSessionFaceTrackingMode;
@@ -223,7 +214,7 @@ export declare class RppgSession {
     private lastErrorValue;
     /** The engine read behind the latest getMetrics(), before any withholding (for getExperimentalVitals). */
     private lastEngineMetrics;
-    constructor(source: FrameSource, processor: RppgProcessorLike, runner: DemoRunner, backendMode: RppgSessionBackendMode, faceTrackingMode: RppgSessionFaceTrackingMode, internals?: SessionInternals);
+    constructor(source: FrameSource, processor: RppgProcessor, runner: DemoRunner, backendMode: RppgSessionBackendMode, faceTrackingMode: RppgSessionFaceTrackingMode, internals?: SessionInternals);
     get lastError(): RppgSessionError | null;
     get state(): RppgSessionState;
     getMetrics(): Metrics;
@@ -244,24 +235,13 @@ export declare class RppgSession {
      * when the option is off. Neither is a measurement yet (see the option).
      *
      * HRV is the engine's, from the session's latest `getMetrics()` read (reading the engine again here
-     * would run another analysis when steadyAnalysis is off, and move the engine's own rate). It is
+     * would run another analysis, and move the engine's own rate). It is
      * given only while all of these hold: a face is in view; the pulse check (when on) has proven a
      * pulse and still shows its rate, as `getMetrics()` does (an HRV of something that is not a pulse
      * means nothing). The engine's window holds no samples from before the face last came back: the
      * runner starts the engine's signal afresh then (`resetSignal()`).
      */
     getExperimentalVitals(): ExperimentalVitals | null;
-    /**
-     * The face finder's delegate and its trial (faceFinderTrial): which one this device runs on and the
-     * mean call time of each tried. Null when the session did not build the finder itself that way.
-     */
-    getFaceFinder(): {
-        delegate: string;
-        trial: readonly {
-            delegate: string;
-            meanMs: number;
-        }[];
-    } | null;
     /** Which fixes and checks this session runs, for logging results against a build. */
     getBuildSwitches(): {
         fixes: ResolvedRppgFixSwitches;

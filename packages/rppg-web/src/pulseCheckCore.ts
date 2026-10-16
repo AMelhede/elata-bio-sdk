@@ -747,11 +747,6 @@ export function ownPulseVerdict(
 	history: readonly (OwnPulseEstimate | null)[],
 	/** The rate the previous verdict was measured at, if it was; enables the hold. */
 	held: number | null = null,
-	/**
-	 * Rule reproveOnDrift (pulseCheck.ts): the rate of the last fresh proof, and how far a hold may move from it.
-	 * A hold further than `maxBpm` from `provenBpm` ends, and the rate needs a fresh proof. Left out: no limit.
-	 */
-	drift?: { provenBpm: number | null; maxBpm: number },
 ): {
 	verdict: OwnPulseVerdict;
 	bpm: number | null;
@@ -839,9 +834,7 @@ export function ownPulseVerdict(
 				? OWN_PULSE_DARK_HOLD_SNR_DB
 				: OWN_PULSE_MIN_SNR_DB;
 			const bpm = Math.round(avg(heldRates) * 10) / 10;
-			const drifted =
-				drift != null && drift.provenBpm != null && Math.abs(bpm - drift.provenBpm) > drift.maxBpm;
-			if (avg(heldSnrs) >= bar && !drifted) {
+			if (avg(heldSnrs) >= bar) {
 				return {
 					verdict: "measured",
 					bpm,

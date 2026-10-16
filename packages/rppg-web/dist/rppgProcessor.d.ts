@@ -204,19 +204,15 @@ export declare class RppgProcessor {
     private readonly bayesTracker;
     private readonly channelGain;
     private readonly chromPulse;
-    /** The colour path's pulse signal with the switch rgbPulse on (see computeLocalRgbIntensity). */
-    private readonly rgbPulse;
     private fusedQuality;
     private captureScorer;
     private lastCapture;
     private baselineBpm;
     private baselineDeviationStartMs;
     private lastBayesUpdateMs;
-    /** The last analysis and the sample time it ran at (switch steadyAnalysis); null forces the next read to analyse. */
-    private analysed;
     /**
      * The window analysis of the samples as they stand. It is a pure function of them, so a second analysis of the
-     * same samples (steadyAnalysis' second pass, or two reads with no sample between) reuses it; any change to the
+     * same samples (two reads with no sample between) reuses it; any change to the
      * samples bumps samplesVersion and the next analysis computes afresh.
      */
     private windowAnalysis;
@@ -227,7 +223,7 @@ export declare class RppgProcessor {
     private disposed;
     private readonly sampleRate;
     private readonly windowSec;
-    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling, steadyAnalysis, rgbPulse). */
+    /** The fix switches this processor applies (colourProjectionFix, noRateDoubling). */
     readonly fixes: ResolvedRppgFixSwitches;
     /** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
     private trackerSettings;
@@ -297,12 +293,7 @@ export declare class RppgProcessor {
         };
     };
     loadStateSnapshot(snapshot: unknown): void;
-    /**
-     * The heart rate and everything derived with it. With the switch steadyAnalysis (on by default) the
-     * analysis runs once per ANALYSIS_EVERY_MS of sample time, as the worker's answer did, and reads in between
-     * are answered from it, so the answer does not depend on how often it is read. Off, as published: every
-     * read analyses again, and the rate tracker takes the same window once per read.
-     */
+    /** The heart rate and everything derived with it. Every read analyses the window afresh, as published. */
     getMetrics(): Metrics;
     getDebugSnapshot(nowMs?: number): RppgDebugSnapshot;
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;
@@ -312,8 +303,7 @@ export declare class RppgProcessor {
     private releasePipeline;
     private pushLocalSample;
     /**
-     * The pulse value the processor keeps for its own window analysis from one colour sample. Switch rgbPulse on:
-     * RgbPulseExtractor (POS, then the fuser's band-pass at the measured sample rate). Off, as published: channel
+     * The pulse value the processor keeps for its own window analysis from one colour sample, as published: channel
      * gain then ChromPulseModel, whose X and Y keep an offset of about 1, so alpha's sample-to-sample wander lands in
      * the band; and while that model has no value (its first nine samples) or one near zero, raw green, about a
      * hundred grey levels beside a pulse of about 0.01, a step that stays in the 45 s window.

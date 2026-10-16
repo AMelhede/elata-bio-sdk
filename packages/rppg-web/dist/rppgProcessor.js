@@ -1,8 +1,7 @@
 import { BpmBayesTracker, } from "./bpmBayesTracker.js";
-import { ChannelGainController, ChromPulseModel, RgbPulseExtractor, } from "./rppgSignalModel.js";
+import { ChannelGainController, ChromPulseModel, } from "./rppgSignalModel.js";
 import { analyzePulseWindow, } from "./pulseAnalysis.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
-import { ANALYSIS_EVERY_MS } from "./processorWorkerProtocol.js";
 import { CaptureConfidenceScorer, } from "./captureConfidence.js";
 /** The samples the processor keeps for its window analysis (heart rate, HRV, breathing), in ms. */
 export const SAMPLE_HISTORY_MS = 45000;
@@ -238,8 +237,6 @@ export class RppgProcessor {
         this.fusion = new MuseFusionCalibrator();
         this.channelGain = new ChannelGainController();
         this.chromPulse = new ChromPulseModel();
-        /** The colour path's pulse signal with the switch rgbPulse on (see computeLocalRgbIntensity). */
-        this.rgbPulse = new RgbPulseExtractor();
         // Quality scalar supplied by an external multi-ROI fuser (see pushFusedSample).
         // When set, it overrides the backend's RGB-derived signal_quality, because the
         // fused path bypasses the backend CHROM stage. Cleared by any non-fused push.
@@ -252,11 +249,9 @@ export class RppgProcessor {
         this.baselineBpm = null;
         this.baselineDeviationStartMs = null;
         this.lastBayesUpdateMs = null;
-        /** The last analysis and the sample time it ran at (switch steadyAnalysis); null forces the next read to analyse. */
-        this.analysed = null;
         /**
          * The window analysis of the samples as they stand. It is a pure function of them, so a second analysis of the
-         * same samples (steadyAnalysis' second pass, or two reads with no sample between) reuses it; any change to the
+         * same samples (two reads with no sample between) reuses it; any change to the
          * samples bumps samplesVersion and the next analysis computes afresh.
          */
         this.windowAnalysis = null;
@@ -287,7 +282,6 @@ export class RppgProcessor {
         this.trackerSettings = [minBpm, maxBpm, numParticles];
         if (this.failedBackendError || this.disposed || !this.pipeline)
             return;
-        this.analysed = null;
         if (typeof this.pipeline.enable_tracker === "function") {
             try {
                 this.pipeline.enable_tracker(minBpm, maxBpm, numParticles);
@@ -462,7 +456,6 @@ export class RppgProcessor {
     }
     updateMuseMetrics(bpm, quality = 0, timestampMs = Date.now()) {
         this.fusion.updateMuse(bpm, quality, timestampMs);
-        this.analysed = null;
     }
     /**
      * Start the signal afresh after a break in it (for example the face out of view): drop the
@@ -480,10 +473,8 @@ export class RppgProcessor {
         this.samples.length = 0;
         this.samplesVersion += 1;
         this.windowAnalysis = null;
-        this.analysed = null;
         this.channelGain.reset();
         this.chromPulse.reset();
-        this.rgbPulse.reset();
         this.fusedQuality = null;
         this.releasePipeline();
         try {
@@ -503,12 +494,10 @@ export class RppgProcessor {
         }
     }
     resetCalibration() {
-        this.analysed = null;
         this.cameraCalibration.reset();
         this.bayesTracker.reset();
         this.channelGain.reset();
         this.chromPulse.reset();
-        this.rgbPulse.reset();
         this.fusedQuality = null;
         this.captureScorer?.reset();
         this.lastCapture = null;
@@ -529,7 +518,6 @@ export class RppgProcessor {
     loadStateSnapshot(snapshot) {
         if (!snapshot || typeof snapshot !== "object")
             return;
-        this.analysed = null;
         const raw = snapshot;
         if (raw.baselineBpm == null) {
             this.baselineBpm = null;
@@ -554,41 +542,13 @@ export class RppgProcessor {
         this.bayesTracker.loadSnapshot(raw.bayesTracker);
         this.fusion.loadSnapshot(raw.fusion);
     }
-    /**
-     * The heart rate and everything derived with it. With the switch steadyAnalysis (on by default) the
-     * analysis runs once per ANALYSIS_EVERY_MS of sample time, as the worker's answer did, and reads in between
-     * are answered from it, so the answer does not depend on how often it is read. Off, as published: every
-     * read analyses again, and the rate tracker takes the same window once per read.
-     */
+    /** The heart rate and everything derived with it. Every read analyses the window afresh, as published. */
     getMetrics() {
-        const atMs = this.samples.length ? this.samples[this.samples.length - 1].timestampMs : null;
-        const kept = this.analysed;
-        let core;
-        if (this.fixes.steadyAnalysis &&
-            kept != null &&
-            atMs != null &&
-            atMs >= kept.atMs &&
-            atMs - kept.atMs < ANALYSIS_EVERY_MS &&
-            !this.failedBackendError) {
-            core = kept.core;
-        }
-        else {
-            const backendMetrics = this.readBackendMetrics();
-            if (this.failedBackendError)
-                return backendMetrics;
-            const advanced = this.computeAdvancedMetrics(backendMetrics);
-            core = { ...backendMetrics, ...advanced };
-            if (this.fixes.steadyAnalysis) {
-                // The rate tracker in this build is tuned to the worker's answer, which analysed the same window
-                // twice (its debug snapshot read the metrics again). Doing the same once per step keeps every
-                // number the worker gave, on every read pattern; the first analysis is the answer.
-                const again = this.readBackendMetrics();
-                if (!this.failedBackendError)
-                    this.computeAdvancedMetrics(again);
-            }
-            this.analysed = atMs != null ? { atMs, core } : null;
-        }
-        const metrics = { ...core };
+        const backendMetrics = this.readBackendMetrics();
+        if (this.failedBackendError)
+            return backendMetrics;
+        const advanced = this.computeAdvancedMetrics(backendMetrics);
+        const metrics = { ...backendMetrics, ...advanced };
         // In multi-ROI fusion mode the backend CHROM (and its RGB-derived quality)
         // is bypassed — the fuser's in-band SNR is the authoritative quality.
         if (this.fusedQuality != null)
@@ -754,15 +714,12 @@ export class RppgProcessor {
         }
     }
     /**
-     * The pulse value the processor keeps for its own window analysis from one colour sample. Switch rgbPulse on:
-     * RgbPulseExtractor (POS, then the fuser's band-pass at the measured sample rate). Off, as published: channel
+     * The pulse value the processor keeps for its own window analysis from one colour sample, as published: channel
      * gain then ChromPulseModel, whose X and Y keep an offset of about 1, so alpha's sample-to-sample wander lands in
      * the band; and while that model has no value (its first nine samples) or one near zero, raw green, about a
      * hundred grey levels beside a pulse of about 0.01, a step that stays in the 45 s window.
      */
     computeLocalRgbIntensity(timestampMs, r, g, b) {
-        if (this.fixes.rgbPulse)
-            return this.rgbPulse.process(timestampMs, r, g, b);
         if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
             return Number.isFinite(g) ? g : 0;
         }

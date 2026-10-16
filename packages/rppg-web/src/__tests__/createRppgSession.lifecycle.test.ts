@@ -1,9 +1,6 @@
-// The session loads the finder through loadTrialFaceFinder (faceFinderTrial, on by default) or, with the
-// switch off, loadFaceLandmarker; both go through the one mock so a test sets the finder once.
-jest.mock("../mediapipeLoader", () => {
-	const loadFaceLandmarker = jest.fn(async () => null);
-	return { loadFaceLandmarker, loadTrialFaceFinder: jest.fn((...args: unknown[]) => (loadFaceLandmarker as any)(...args)) };
-});
+jest.mock("../mediapipeLoader", () => ({
+	loadFaceLandmarker: jest.fn(async () => null),
+}));
 
 jest.mock("../videoPlayback", () => ({
 	ensureVideoPlaying: jest.fn(async () => undefined),
@@ -75,7 +72,7 @@ jest.mock("../demoRunner", () => ({
 
 import { createRppgSession } from "../rppgSession";
 import { DemoRunner } from "../demoRunner";
-import { loadFaceLandmarker, loadTrialFaceFinder } from "../mediapipeLoader";
+import { loadFaceLandmarker } from "../mediapipeLoader";
 import { ensureVideoPlaying } from "../videoPlayback";
 import { MediaPipeFrameSource } from "../mediaPipeFrameSource";
 import { MediaPipeFaceFrameSource } from "../mediaPipeFaceFrameSource";
@@ -165,19 +162,6 @@ describe("createRppgSession lifecycle", () => {
 		expect(mockedLoadFaceMesh).toHaveBeenCalledTimes(1);
 		expect(mockedMediaPipeFaceFrameSource).toHaveBeenCalledTimes(1);
 		expect(session.faceTrackingMode).toBe("face_mesh");
-	});
-
-	test("faceMesh auto builds the finder through the delegate trial with faceFinderTrial on, and the CPU-only loader by default", async () => {
-		const trial = loadTrialFaceFinder as jest.MockedFunction<typeof loadTrialFaceFinder>;
-		trial.mockClear();
-		mockedLoadFaceMesh.mockClear();
-		await createRppgSession({ video: document.createElement("video"), faceMesh: "auto", ensureVideoPlayback: false, fixes: { faceFinderTrial: true } });
-		expect(trial).toHaveBeenCalledTimes(1);
-		trial.mockClear();
-		mockedLoadFaceMesh.mockClear();
-		await createRppgSession({ video: document.createElement("video"), faceMesh: "auto", ensureVideoPlayback: false });
-		expect(trial).not.toHaveBeenCalled();
-		expect(mockedLoadFaceMesh).toHaveBeenCalledTimes(1);
 	});
 
 	test("dispose frees the created backend pipeline", async () => {
@@ -334,7 +318,6 @@ describe("createRppgSession lifecycle", () => {
 				createRppgSession({ video: document.createElement("video"), faceMesh: "auto", recordPulseCheckInputs: { seconds } }),
 			).rejects.toThrow(RangeError);
 		}
-		expect(loadTrialFaceFinder).not.toHaveBeenCalled();
 		expect(mockedLoadFaceMesh).not.toHaveBeenCalled();
 		expect(mockedLoadWasmBackend).not.toHaveBeenCalled();
 		expect(mockedMediaPipeFrameSource).not.toHaveBeenCalled();

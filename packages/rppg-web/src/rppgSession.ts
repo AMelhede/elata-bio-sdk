@@ -5,7 +5,7 @@ import type {
 } from "./frameSource";
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
-import { loadFaceLandmarker, loadTrialFaceFinder, type FaceLandmarkerLike } from "./mediapipeLoader";
+import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
 import {
 	PulseCheck,
 	type PulseCheckRules,
@@ -18,7 +18,6 @@ import {
 	RecordingPulseCheck,
 } from "./pulseCheckRecording";
 import { ChestMotion, type ChestSample } from "./chestBreathing";
-import { TrialFaceFinder } from "./faceFinderTrial";
 import {
 	type ResolvedRppgFixSwitches,
 	resolveFixSwitches,
@@ -58,11 +57,6 @@ import type {
 	WaveformReconstructor,
 } from "./waveformModel";
 import { WaveformReconstructionController } from "./waveformReconstructionController";
-import {
-	type RppgProcessorLike,
-	createWorkerRppgProcessor,
-	WorkerRppgProcessor,
-} from "./workerRppgProcessor";
 
 export type RppgSessionBackendPreference = "auto" | "wasm";
 export type RppgSessionBackendMode = "wasm" | "unavailable";
@@ -186,14 +180,6 @@ export type CreateRppgSessionOptions = Omit<
 		/** Reserved for later validation; reconstructed BPM evidence is disabled. */
 		useReconstructedBpmEvidence?: false;
 	};
-	/**
-	 * Run the heart-rate analysis in a Web Worker, so it never blocks the camera frames (see
-	 * workerRppgProcessor.ts). Defaults to the `analysisWorker` fix switch. Falls back to the main thread, exactly as
-	 * without the option, when workers are unavailable, the worker cannot load the WASM core,
-	 * or a function option is set that cannot cross to a worker (wasmImporter,
-	 * bpmEvidenceQualityProvider).
-	 */
-	analysisWorker?: boolean;
 	sampleRate?: number;
 	windowSec?: number;
 	backend?: RppgSessionBackendPreference;
@@ -315,7 +301,7 @@ export class RppgSession {
 
 	constructor(
 		public readonly source: FrameSource,
-		public readonly processor: RppgProcessorLike,
+		public readonly processor: RppgProcessor,
 		public readonly runner: DemoRunner,
 		public readonly backendMode: RppgSessionBackendMode,
 		public readonly faceTrackingMode: RppgSessionFaceTrackingMode,
@@ -392,7 +378,7 @@ export class RppgSession {
 	 * when the option is off. Neither is a measurement yet (see the option).
 	 *
 	 * HRV is the engine's, from the session's latest `getMetrics()` read (reading the engine again here
-	 * would run another analysis when steadyAnalysis is off, and move the engine's own rate). It is
+	 * would run another analysis, and move the engine's own rate). It is
 	 * given only while all of these hold: a face is in view; the pulse check (when on) has proven a
 	 * pulse and still shows its rate, as `getMetrics()` does (an HRV of something that is not a pulse
 	 * means nothing). The engine's window holds no samples from before the face last came back: the
@@ -413,15 +399,6 @@ export class RppgSession {
 					: null,
 			breathing: this.internals.chestMotion?.rate() ?? null,
 		};
-	}
-
-	/**
-	 * The face finder's delegate and its trial (faceFinderTrial): which one this device runs on and the
-	 * mean call time of each tried. Null when the session did not build the finder itself that way.
-	 */
-	getFaceFinder(): { delegate: string; trial: readonly { delegate: string; meanMs: number }[] } | null {
-		const f = (this.source as { faceLandmarker?: unknown } | null)?.faceLandmarker;
-		return f instanceof TrialFaceFinder ? { delegate: f.delegate, trial: f.trialResults } : null;
 	}
 
 	/** Which fixes and checks this session runs, for logging results against a build. */
@@ -445,9 +422,7 @@ export class RppgSession {
 				colourProjectionFix:
 					procFixes?.colourProjectionFix ?? fixes.colourProjectionFix,
 				noRateDoubling: procFixes?.noRateDoubling ?? fixes.noRateDoubling,
-				rgbPulse: procFixes?.rgbPulse ?? fixes.rgbPulse,
 				analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
-				analysisWorker: this.processor instanceof WorkerRppgProcessor,
 			},
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
@@ -638,14 +613,11 @@ export async function createRppgSession(
 	const backendPreference = options.backend ?? "auto";
 	const enableTracker = options.enableTracker ?? true;
 	const pendingErrors: RppgSessionError[] = [];
-	// Built first: a bad recordPulseCheckInputs length throws here, before a face finder, a worker or an
+	// Built first: a bad recordPulseCheckInputs length throws here, before a face finder or an
 	// engine exists, so a refused call leaves nothing running that the caller has no session to dispose.
 	const pulseCheck = sessionPulseCheck(options);
 
-	const faceMeshResult = await resolveFaceMesh(
-		options.faceMesh,
-		resolveFixSwitches(options.fixes).faceFinderTrial,
-	);
+	const faceMeshResult = await resolveFaceMesh(options.faceMesh);
 	if (faceMeshResult.error) pendingErrors.push(faceMeshResult.error);
 
 	const faceTrackingMode: RppgSessionFaceTrackingMode = faceMeshResult.faceMesh
@@ -661,32 +633,14 @@ export async function createRppgSession(
 			)
 		: new MediaPipeFrameSource(options.video, { fps: sampleRate });
 
-	const workerProcessor =
-		(options.analysisWorker ??
-			resolveFixSwitches(options.fixes).analysisWorker) &&
-		!options.wasmImporter &&
-		!options.bpmEvidenceQualityProvider
-			? await createWorkerRppgProcessor({
-					sampleRate,
-					windowSec,
-					wasmJsUrl: options.wasmJsUrl,
-					wasmBinaryUrl: options.wasmBinaryUrl,
-					bpmTrackerConfig: options.bpmTrackerConfig,
-					fixes: options.fixes,
-				})
-			: null;
-	const backendResult = workerProcessor
-		? { mode: "wasm" as const }
-		: await resolveBackend(backendPreference, {
-				wasmJsUrl: options.wasmJsUrl,
-				wasmBinaryUrl: options.wasmBinaryUrl,
-				wasmImporter: options.wasmImporter,
-			});
+	const backendResult = await resolveBackend(backendPreference, {
+		wasmJsUrl: options.wasmJsUrl,
+		wasmBinaryUrl: options.wasmBinaryUrl,
+		wasmImporter: options.wasmImporter,
+	});
 	if ("error" in backendResult && backendResult.error)
 		pendingErrors.push(backendResult.error);
-	const processor: RppgProcessorLike =
-		workerProcessor ??
-		new RppgProcessor(
+	const processor: RppgProcessor = new RppgProcessor(
 			(backendResult as { backend: Backend }).backend,
 			sampleRate,
 			windowSec,
@@ -817,7 +771,6 @@ export function sessionPulseCheck(
 
 async function resolveFaceMesh(
 	faceMeshOption: CreateRppgSessionOptions["faceMesh"],
-	delegateTrial = false,
 ): Promise<{
 	faceMesh: FaceLandmarkerLike | null;
 	error: RppgSessionError | null;
@@ -830,8 +783,7 @@ async function resolveFaceMesh(
 	}
 
 	try {
-		// faceFinderTrial: the faster delegate for this device, timed on the live video (faceFinderTrial.ts).
-		const faceMesh = delegateTrial ? await loadTrialFaceFinder() : await loadFaceLandmarker();
+		const faceMesh = await loadFaceLandmarker();
 		return { faceMesh, error: null };
 	} catch (cause) {
 		return {
@@ -908,7 +860,7 @@ function describeWasmLoadFailure(error: unknown): string {
 }
 
 function applyTrackerConfiguration(
-	processor: RppgProcessorLike,
+	processor: RppgProcessor,
 	enableTracker: CreateRppgSessionOptions["enableTracker"],
 ) {
 	if (!enableTracker) return;

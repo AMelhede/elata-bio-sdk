@@ -35,7 +35,7 @@ export { analyzePulseWindow, calculateBpmViaAutocorrelation, cleanNnIntervalsMs,
 export type { HarmonicRelation, HilbertBeatOptions, HilbertBeatResult, PulseAcfResult, PulseEstimatorResult, PulsePeak, PulseWindowAnalysis, PulseWindowSample, } from "./pulseAnalysis.js";
 export { amplitudeEnvelope, dominantInBand, estimateRespiration, resampleTachogram, } from "./respirationAnalysis.js";
 export type { RespCueEstimate, RespirationEstimate, RespirationInput, RespSource, } from "./respirationAnalysis.js";
-export { Bandpass, ChannelGainController, ChromPulseModel, computeSignalSnrDb, PosPulseModel, RgbPulseExtractor, spectralSnr, zeroPhaseBandpass, } from "./rppgSignalModel.js";
+export { Bandpass, ChannelGainController, ChromPulseModel, computeSignalSnrDb, PosPulseModel, spectralSnr, zeroPhaseBandpass, } from "./rppgSignalModel.js";
 export { FUSION_ROIS, MultiRoiRppgFuser } from "./multiRoiFusion.js";
 export type { FusionProjection, FusionRoiName, MultiRoiFusionResult, RoiRgbSample, } from "./multiRoiFusion.js";
 export { applyNoReferenceDisplayGuard, shouldAllowDisplayJumpReset, } from "./displayGuard.js";
@@ -75,10 +75,9 @@ export { RppgSessionRecorder } from "./rppgSessionRecorder.js";
 export type { RppgRecorderOptions, RecordMetricsContext, } from "./rppgSessionRecorder.js";
 export { aggregateComparisons, maeOf, summarizeReplaySession, } from "./replayBenchmark.js";
 export type { AbsErrorAccumulator, CorpusComparison, SessionComparison, } from "./replayBenchmark.js";
-export { PulseCheck, type PulseCheckState, type PulseCheckRules, type ResolvedPulseCheckRules, PULSE_CHECK_RULE_NAMES, PULSE_CHECK_RULES_OFF_BY_DEFAULT, resolvePulseCheckRules, FOLLOWER_MEDIAN_K, REPROVE_DRIFT_BPM, ANCHOR_DRIFT_BPM, TOO_DARK_SNR_DB, tooDarkToShow, HEAD_LANDMARKS, headCentre, type HeadPosition, type HeadRow, headAtRate, type HeadAtRate, type HeadBlind, headJudge, type HeadJudgement, headCarries, headMatches, } from "./pulseCheck.js";
+export { PulseCheck, type PulseCheckState, type PulseCheckRules, type ResolvedPulseCheckRules, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, HEAD_LANDMARKS, headCentre, type HeadPosition, type HeadRow, headAtRate, type HeadAtRate, type HeadBlind, headJudge, type HeadJudgement, headCarries, headMatches, } from "./pulseCheck.js";
 export { RecordingPulseCheck, replayPulseCheck, serializePulseCheckRecording, parsePulseCheckRecording, PULSE_CHECK_RECORDING_FORMAT, PULSE_CHECK_RECORDING_VERSION, PULSE_CHECK_RECORDING_SECONDS, PULSE_CHECK_RECORDING_EVENTS_PER_SECOND, type PulseCheckRecording, type PulseCheckInputEvent, type PulseCheckRgb, type PulseCheckReadReason, type PulseCheckReplay, type PulseCheckReplayRead, type PulseCheckReplayEvaluation, } from "./pulseCheckRecording.js";
 export { breathingFromMotion, ChestMotion, type ChestSample, chestBox, CHEST_BOX_BOTTOM, CHEST_BOX_TOP, CHEST_BOX_WIDTH, CHEST_BREATH_BAND_HZ, CHEST_BREATH_WINDOW_S, verticalShift, } from "./chestBreathing.js";
-export { FIX_SWITCH_NAMES, FIX_SWITCHES_OFF_BY_DEFAULT, type ResolvedRppgFixSwitches, type RppgFixesOption, type RppgFixSwitches, resolveFixSwitches, } from "./fixSwitches.js";
+export { FIX_SWITCH_NAMES, type ResolvedRppgFixSwitches, type RppgFixesOption, type RppgFixSwitches, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
-export { createWorkerRppgProcessor, type RppgProcessorLike, WorkerRppgProcessor, } from "./workerRppgProcessor.js";
 //# sourceMappingURL=index.d.ts.map

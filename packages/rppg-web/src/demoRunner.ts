@@ -38,7 +38,6 @@ import {
 	ELATA_FACE_YCBCR_V1_PROFILE,
 	type RoiGeometryProfile,
 } from "./roiProfile";
-import type { RppgProcessorLike } from "./workerRppgProcessor";
 
 export type LastBlendshapes = {
 	blendshapes: FrameBlendshape[];
@@ -54,7 +53,7 @@ export type LastFaceBox = {
 export type DemoRunnerOptions = {
 	/**
 	 * Fix switches (see fixSwitches.ts). All on unless set to false. The runner applies
-	 * noFaceNoReading, realFrameRate and posFusion; the processor applies the other two.
+	 * noFaceNoReading and posFusion; the processor applies the other two.
 	 */
 	fixes?: RppgFixesOption;
 	/**
@@ -131,9 +130,7 @@ export type DemoRunnerDiagnostics = {
 	framesWithMultiRoi: number;
 	/**
 	 * Frames whose sample stage completed, so framesSeen = samplesPushed +
-	 * droppedFrames. On the fusion grid (`realFrameRate` on) the processor receives
-	 * one sample per `sampleRate` grid step rather than one per frame, so its own
-	 * sample counts (`totalSamplesReceived`, `windowSampleCount`) can differ.
+	 * droppedFrames.
 	 */
 	samplesPushed: number;
 	droppedFrames: number;
@@ -172,12 +169,6 @@ export type DemoRunnerError = {
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
 export const FACE_GONE_RESET_MS = 1000;
 type FusionSamples = Partial<Record<FusionRoiName, RoiRgbSample>>;
-type GridSample = {
-	t: number;
-	regions: FusionSamples;
-	rgb: { r: number; g: number; b: number };
-	intensity: number;
-};
 type ProcessorSample = {
 	t: number;
 	rgb: { r: number; g: number; b: number };
@@ -188,17 +179,8 @@ type ProcessorSample = {
 };
 
 /**
- * Longest gap between frames that the sample grid bridges. 250 ms covers a
- * camera down to 4 frames a second (the slowest measured here was 6, with
- * analysis on the main thread of a real laptop); a longer gap is a stall, and
- * a straight line across it would stand in for a third of a beat or more.
- */
-const GRID_MAX_GAP_MS = 250;
-
-/**
  * Push one sample through the richest push API the processor has. DemoRunner
- * duck-types its processor, so this order is part of its contract, on the fusion
- * grid as on every other path.
+ * duck-types its processor, so this order is part of its contract.
  */
 function pushToProcessor(
 	proc: any,
@@ -225,37 +207,6 @@ function pushToProcessor(
 		return "intensity";
 	}
 	throw new TypeError("processor has no push sample API");
-}
-
-function interpolateGrid(a: GridSample, b: GridSample, t: number): GridSample {
-	const w = (t - a.t) / (b.t - a.t);
-	const mix = (x: number, y: number) => x + w * (y - x);
-	const regions: FusionSamples = {};
-	for (const name of Object.keys(b.regions) as FusionRoiName[]) {
-		const p = a.regions[name];
-		const q = b.regions[name]!;
-		regions[name] = p
-			? {
-					r: mix(p.r, q.r),
-					g: mix(p.g, q.g),
-					b: mix(p.b, q.b),
-					skinFraction:
-						p.skinFraction != null && q.skinFraction != null
-							? mix(p.skinFraction, q.skinFraction)
-							: q.skinFraction,
-				}
-			: q;
-	}
-	return {
-		t,
-		regions,
-		rgb: {
-			r: mix(a.rgb.r, b.rgb.r),
-			g: mix(a.rgb.g, b.rgb.g),
-			b: mix(a.rgb.b, b.rgb.b),
-		},
-		intensity: mix(a.intensity, b.intensity),
-	};
 }
 
 export class DemoRunner {
@@ -298,11 +249,6 @@ export class DemoRunner {
 	private noFaceLastMs: number | null = null;
 	/** When the face last came back after an absence long enough to restart the analysis; null if never. */
 	private analysisRestartMs: number | null = null;
-	/** Last frame on the fusion path, and the next grid time, for {@link pushOnGrid}. */
-	private gridPrev: GridSample | null = null;
-	private gridNextT = 0;
-	/** Whether the latest grid sample reached the processor as a fused one. */
-	private gridFused = false;
 	/** The fix switches this runner applies. */
 	readonly fixes: ResolvedRppgFixSwitches;
 	/** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
@@ -311,7 +257,7 @@ export class DemoRunner {
 
 	constructor(
 		private source: FrameSource,
-		private processor: RppgProcessorLike,
+		private processor: RppgProcessor,
 		private opts: DemoRunnerOptions = {},
 	) {
 		this.source.onFrame = this.onFrame.bind(this);
@@ -374,7 +320,6 @@ export class DemoRunner {
 		this.fuser?.reset();
 		this.noFaceSinceMs = null;
 		this.analysisRestartMs = null;
-		this.gridPrev = null;
 		await this.source.stop();
 	}
 
@@ -441,7 +386,6 @@ export class DemoRunner {
 		let intensity = 0;
 		let motion = 0;
 		let roiSource: DemoRunnerDiagnostics["lastRoiSource"] = null;
-		let fusionSamples: FusionSamples | null = null;
 		let fusionResult: MultiRoiFusionResult | null = null;
 
 		const rois = frame.rois && frame.rois.length > 0 ? frame.rois : null;
@@ -482,12 +426,9 @@ export class DemoRunner {
 			// aggregate above is still computed for diagnostics/onStats and as the
 			// fallback if the fuser can't produce a valid frame this tick.
 			if (this.fuser && useSkinMask) {
-				fusionSamples = this.sampleFusionRegions(frame, rois);
-				if (fusionSamples && !this.fixes.realFrameRate) {
-					// Switch off: the published path, one fuser step per camera frame, here.
-					fusionResult = this.fuser.pushFrame(fusionSamples);
-					fusionSamples = null;
-				}
+				const fusionSamples = this.sampleFusionRegions(frame, rois);
+				// One fuser step per camera frame.
+				if (fusionSamples) fusionResult = this.fuser.pushFrame(fusionSamples);
 			}
 			if (
 				this.opts.pulseChecker &&
@@ -612,23 +553,12 @@ export class DemoRunner {
 		this.smoothedSkinRatio = skinRatio;
 		const ts = frame.timestampMs ?? Date.now();
 		const proc = this.processor as any;
-		// A frame that bypasses the grid pushes its own timestamp; the grid restarts after it, or
-		// it would later fill times before that timestamp and send the processor samples out of order.
-		if (!fusionSamples) this.gridPrev = null;
 		try {
-			if (fusionSamples) {
-				this.pushOnGrid(
-					proc,
-					{ t: ts, regions: fusionSamples, rgb, intensity },
-					skinRatio,
-					motion,
-					clipRatio,
-				);
-			} else if (
+			if (
 				fusionResult?.valid &&
 				typeof proc.pushFusedSample === "function"
 			) {
-				// realFrameRate off: the published path. Fused pulse already carries the
+				// Fused pulse already carries the
 				// per-region projection + SNR-weighted blending; feed it straight to
 				// spectral BPM/HRV, with the fused SNR as quality.
 				proc.pushFusedSample(ts, fusionResult.fused, fusionResult.fusedSnr);
@@ -686,79 +616,6 @@ export class DemoRunner {
 				motion,
 			});
 		}
-	}
-
-	/**
-	 * Feed the fuser on the even `sampleRate` grid it is designed for, and hand
-	 * the processor one sample per grid time. The fuser's band-pass, its
-	 * spectral SNR (region weights and `fusedSnr`), its projection window and
-	 * its warm-up are all counted in samples at `sampleRate`, but camera frames
-	 * do not arrive at that rate: a UVC camera with auto-exposure priority may
-	 * lower its frame rate to lengthen exposure (USB Video Class 1.5,
-	 * Auto-Exposure Priority Control), and requestVideoFrameCallback skips
-	 * frames the page was too busy to take (WICG video-rvfc, presentedFrames).
-	 * The processor itself reads time from timestamps (the WASM core resamples
-	 * by timestamp, resample_rgb_into in crates/elata-rppg/src/pipeline.rs, and
-	 * analyzePulseWindow takes its rate from the window's timestamps). So each
-	 * grid time between the previous frame and this one gets the two frames'
-	 * values, linearly interpolated. At exactly `sampleRate` that is one sample
-	 * per frame. A gap longer than GRID_MAX_GAP_MS is a stall, not a slow
-	 * camera: the grid restarts at the new frame instead of drawing a line
-	 * across it. So does a timestamp that does not increase or is not a number;
-	 * that frame is pushed at its own timestamp. Whichever push API the
-	 * processor has takes the samples the fuser does not (see pushToProcessor).
-	 */
-	private pushOnGrid(
-		proc: any,
-		cur: GridSample,
-		skinRatio: number,
-		motion: number,
-		clipRatio: number,
-	) {
-		const step = 1000 / (this.opts.sampleRate ?? 30);
-		const prev = this.gridPrev;
-		const ticks: GridSample[] = [];
-		// Stated as the one case that bridges, so a NaN timestamp (which fails every comparison)
-		// restarts the grid instead of becoming an interpolation weight that would leave NaN in
-		// the fuser's filters for the rest of the session.
-		const bridge =
-			prev !== null && cur.t > prev.t && cur.t - prev.t <= GRID_MAX_GAP_MS;
-		if (!bridge) {
-			ticks.push(cur);
-			this.gridNextT = cur.t + step;
-		} else {
-			// 1e-6 ms: a grid time that equals the frame time up to float rounding is this frame.
-			for (; this.gridNextT <= cur.t + 1e-6; this.gridNextT += step) {
-				ticks.push(interpolateGrid(prev, cur, this.gridNextT));
-			}
-		}
-		this.gridPrev = cur;
-		for (const tick of ticks) {
-			const fused = this.fuser?.pushFrame(tick.regions) ?? null;
-			if (fused?.valid && typeof proc.pushFusedSample === "function") {
-				// Fused pulse already carries CHROM + SNR-weighted blending; feed it
-				// straight to spectral BPM/HRV, with the fused SNR as quality.
-				proc.pushFusedSample(tick.t, fused.fused, fused.fusedSnr);
-				this.diagnostics.lastProcessorMethod = "fused";
-				this.diagnostics.lastFusionWeights = fused.weights;
-				this.diagnostics.lastFusedSnr = fused.fusedSnr;
-				this.gridFused = true;
-			} else {
-				this.diagnostics.lastProcessorMethod = pushToProcessor(proc, {
-					t: tick.t,
-					rgb: tick.rgb,
-					intensity: tick.intensity,
-					skinRatio,
-					motion,
-					clipRatio,
-				});
-				this.gridFused = false;
-			}
-		}
-		// framesWithFusion counts frames, not grid samples. A frame between two grid times
-		// (frames faster than `sampleRate`) adds no sample of its own; it still went through
-		// the fuser's grid, and the processor's latest sample is still the fused one.
-		if (this.gridFused) this.diagnostics.framesWithFusion += 1;
 	}
 
 	/**

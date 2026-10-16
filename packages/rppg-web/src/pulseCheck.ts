@@ -92,19 +92,11 @@ export type PulseCheckState = {
 	via?: "check" | "agreement" | null;
 	/**
 	 * The newest OWN_PULSE_SUPPORT_S line while a rate is proven and that line sits within OWN_PULSE_TRACK_BPM of
-	 * it (the value the shown rate follows), else null. For diagnosis; rule followerMedian shows a median of these.
+	 * it (the value the shown rate follows), else null. For diagnosis.
 	 */
 	followerBpm?: number | null;
-	/** True while rule tooDark withholds the rate: the newest windows' pulse line is no stronger than noise makes (TOO_DARK_SNR_DB). */
-	tooDark?: boolean;
 	/** For diagnosis: the rate the check holds as proven (before the follower), or null. */
 	heldBpm?: number | null;
-	/** For diagnosis: the rate of the last fresh proof (not the hold), which rule reproveOnDrift measures the hold against, or null. */
-	provenBpm?: number | null;
-	/** For diagnosis: the rate at which the current run of measured verdicts was first proven (rule anchorDrift), or null. */
-	anchorBpm?: number | null;
-	/** True on the evaluation at which rule anchorDrift ended a run because its rate moved too far from where it started. */
-	anchorEnded?: boolean;
 	/** For diagnosis: equal light steps (equalLightStep) in the latest window, counted with rule screenLight on, else null. */
 	windowScreenSteps?: number | null;
 	/** True while rule screenLight holds the latest window's rate out of the evidence (SCREEN_STEPS_PER_WINDOW or more equal steps). */
@@ -150,70 +142,6 @@ export const OWN_PULSE_SUPPORT_S = 8;
 export const OWN_PULSE_SUPPORT_MISS = 3;
 export const OWN_PULSE_TRACK_BPM = 4;
 
-/**
- * Rule followerMedian (off unless set): the rate shown is the median of the last FOLLOWER_MEDIAN_K follower values
- * (the newest OWN_PULSE_SUPPORT_S line, while within OWN_PULSE_TRACK_BPM of the proven rate). An 8 s window resolves
- * 7.5 bpm per bin, half the 16 s proof's 3.75, so the follower jitters around a right proof; windows one second
- * apart share 7/8 of their data, so K values span 8 + K - 1 s and add about (K - 1) / 2 s of lag.
- *
- * Value: 3, the smallest median that removes one outlying second, adding about 1 s of lag. Fixed before any
- * chest-strap data existed, by a rule written in advance: on generated dim and lit faces, 3, 5, 7 and the proven rate
- * itself tied on wrong seconds, and a tie goes to the least lag.
- */
-export const FOLLOWER_MEDIAN_K = 3;
-
-/**
- * Rule reproveOnDrift (off unless set): once proven, a rate is held while 6 of its last 8 windows sit within
- * OWN_PULSE_AGREE_BPM of it, and the held rate is recomputed from them each second, so in weak light it can walk
- * one bin at a time onto noise. With the rule on, a hold that has moved more than this from the rate of its last
- * fresh proof ends, and a fresh proof is needed.
- *
- * Value: the check's own agreement band, so a held rate further from its proof than that is, by the check's own
- * definition, not the rate it proved. Fixed before any chest-strap data existed: 4, 6 and 8 tied on generated faces.
- */
-export const REPROVE_DRIFT_BPM = OWN_PULSE_AGREE_BPM;
-
-/**
- * Rule anchorDrift (off unless set): a run of measured verdicts ends when its rate has moved more than this from the
- * rate it was first proven at, and the check's evidence starts over, so a new rate needs a whole new streak. In weak
- * light the dark path re-proves every second (its streak asks each window only to sit near the newest one), so a
- * slowly moving noise line is re-proven at each new place, which rule reproveOnDrift (a limit on the hold) cannot see.
- * A real rate that moves this far within one run also ends it, until a new streak proves it.
- *
- * Value: the check's own agreement band, as for REPROVE_DRIFT_BPM; chosen from no data, fixed before any chest-strap
- * data existed.
- */
-export const ANCHOR_DRIFT_BPM = OWN_PULSE_AGREE_BPM;
-
-/**
- * Rule tooDark (off unless set): no rate is shown while the mean SNR of the newest OWN_PULSE_STRONG_STREAK windows'
- * line (dB, whatever its rate) is below this: the level a face with no pulse reaches. Dim light leaves fewer photons,
- * so the pulse line sinks toward the noise; the face's brightness cannot say so, as auto exposure and gain raise a
- * dark face's level and its noise together.
- *
- * Value: the 95th percentile of that mean on generated faces with no pulse, dim and lit, rounded up to 0.5 dB, by
- * a rule written before any chest-strap data existed. It sits above the dark path's bars (OWN_PULSE_DARK_MIN_SNR_DB,
- * OWN_PULSE_DARK_HOLD_SNR_DB), so with this rule on, most rates proven only by the dark path are withheld.
- */
-export const TOO_DARK_SNR_DB = -4;
-
-/** Rule tooDark's test: the newest OWN_PULSE_STRONG_STREAK window SNRs (newest last; null for a window with no line). */
-export function tooDarkToShow(snrs: readonly (number | null)[]): boolean {
-	const last = snrs.slice(-OWN_PULSE_STRONG_STREAK);
-	if (last.length < OWN_PULSE_STRONG_STREAK) return true;
-	let sum = 0;
-	for (const v of last) {
-		if (v == null || !Number.isFinite(v)) return true;
-		sum += v;
-	}
-	return sum / last.length < TOO_DARK_SNR_DB;
-}
-
-function median(xs: readonly number[]): number {
-	const s = [...xs].sort((a, b) => a - b);
-	const m = s.length >> 1;
-	return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
 
 /** Brightness / colour amplitude ratio of the face regions within 0.1 Hz of `bpm`. */
 export function faceFlickerRatio(
@@ -320,17 +248,6 @@ export type PulseCheckRules = {
 	 * as in 0.15.0-test.6.
 	 */
 	darkWall?: boolean;
-	/**
-	 * OFF unless set to true, like the three below: candidates for dim light, to be judged on a chest-strap study.
-	 * The rate shown is the median of the last FOLLOWER_MEDIAN_K follower values instead of the newest one.
-	 */
-	followerMedian?: boolean;
-	/** A held rate that has moved more than REPROVE_DRIFT_BPM from the rate of its last fresh proof needs a fresh proof. */
-	reproveOnDrift?: boolean;
-	/** No rate is shown while the newest windows' pulse line is no stronger than noise makes (TOO_DARK_SNR_DB); the state says tooDark. */
-	tooDark?: boolean;
-	/** A run of measured verdicts ends, and the evidence starts over, once its rate moves more than ANCHOR_DRIFT_BPM from where it was first proven. */
-	anchorDrift?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -343,21 +260,9 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"screenLight",
 	"headMotion",
 	"darkWall",
-	"followerMedian",
-	"reproveOnDrift",
-	"tooDark",
-	"anchorDrift",
 ] as const;
 
-/** Rules that stay off unless set to true: the dim-light candidates, not yet judged on a chest-strap study. */
-export const PULSE_CHECK_RULES_OFF_BY_DEFAULT: readonly (keyof PulseCheckRules)[] = [
-	"followerMedian",
-	"reproveOnDrift",
-	"tooDark",
-	"anchorDrift",
-];
-
-/** Every rule resolved to true or false; left out means on, but for PULSE_CHECK_RULES_OFF_BY_DEFAULT (off unless true). */
+/** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules {
 	return {
 		wallBandEdge: rules?.wallBandEdge !== false,
@@ -367,10 +272,6 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		screenLight: rules?.screenLight !== false,
 		headMotion: rules?.headMotion !== false,
 		darkWall: rules?.darkWall !== false,
-		followerMedian: rules?.followerMedian === true,
-		reproveOnDrift: rules?.reproveOnDrift === true,
-		tooDark: rules?.tooDark === true,
-		anchorDrift: rules?.anchorDrift === true,
 	};
 }
 
@@ -827,14 +728,6 @@ export class PulseCheck {
 	private headHandedOver = false;
 	private history: (OwnPulseEstimate | null)[] = [];
 	private held: number | null = null;
-	/** The rate of the last fresh proof (not the hold), for rule reproveOnDrift; null while nothing is proven. */
-	private provenBpm: number | null = null;
-	/** The rate at which the current run of measured verdicts was first proven, for rule anchorDrift; null between runs. */
-	private anchorBpm: number | null = null;
-	/** The newest windows' SNR (null: no line), newest last, for rule tooDark. */
-	private windowSnrs: (number | null)[] = [];
-	/** The last FOLLOWER_MEDIAN_K in-band follower values since the rate was proven, for rule followerMedian. */
-	private follows: number[] = [];
 	/** The newest in-band follower value, or null (the state's followerBpm). */
 	private followerBpm: number | null = null;
 	/** Opt-in: also show the SDK's rate when it agrees with this check's window rate (agreementRate). */
@@ -948,25 +841,8 @@ export class PulseCheck {
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
-		let v = ownPulseVerdict(
-			this.history,
-			this.held,
-			this.rules.reproveOnDrift ? { provenBpm: this.provenBpm, maxBpm: REPROVE_DRIFT_BPM } : undefined,
-		);
-		let anchorEnded = false;
-		if (v.verdict !== "measured" || v.bpm == null) this.anchorBpm = null;
-		else if (this.anchorBpm == null) this.anchorBpm = v.bpm;
-		else if (this.rules.anchorDrift && Math.abs(v.bpm - this.anchorBpm) > ANCHOR_DRIFT_BPM) {
-			// The run has moved too far from where it was proven: it ends, and the evidence starts over.
-			anchorEnded = true;
-			this.history = [];
-			this.anchorBpm = null;
-			v = { verdict: "not-measured", bpm: null, snrDb: null, streak: 0, path: null };
-		}
+		const v = ownPulseVerdict(this.history, this.held);
 		this.held = v.verdict === "measured" ? v.bpm : null;
-		this.provenBpm = v.verdict !== "measured" ? null : v.path === "hold" ? this.provenBpm : v.bpm;
-		this.windowSnrs.push(est?.bpm != null ? (est.snrDb ?? null) : null);
-		if (this.windowSnrs.length > OWN_PULSE_STRONG_STREAK) this.windowSnrs.shift();
 		this.seconds.push({ sdk: this.second, win: est?.bpmFine ?? est?.bpm ?? null, winSnr: est?.snrDb ?? null });
 		if (this.seconds.length > AGREE_SECONDS) this.seconds.shift();
 		const agreed = this.agreement && this.held == null ? agreementRate(this.seconds) : null;
@@ -990,9 +866,8 @@ export class PulseCheck {
 			this.rules.headMotion &&
 			held != null &&
 			headMatches(this.head, timestampMs, held);
-		const tooDark = this.rules.tooDark && held != null && tooDarkToShow(this.windowSnrs);
 		this.followerBpm = null;
-		this.state = wallMatch || faceFlicker || headMatch || tooDark
+		this.state = wallMatch || faceFlicker || headMatch
 			? {
 					verdict: "not-measured",
 					bpm: null,
@@ -1011,7 +886,6 @@ export class PulseCheck {
 					faceFlicker,
 					headMatch,
 					windowHead,
-					tooDark,
 				}
 			: {
 					verdict: agreed != null ? "measured" : v.verdict,
@@ -1032,13 +906,9 @@ export class PulseCheck {
 					faceFlicker,
 					headMatch,
 					windowHead,
-					tooDark,
 				};
 		this.state.followerBpm = this.followerBpm;
 		this.state.heldBpm = this.held;
-		this.state.provenBpm = this.provenBpm;
-		this.state.anchorBpm = this.anchorBpm;
-		this.state.anchorEnded = anchorEnded;
 		this.state.windowScreenSteps = windowScreenSteps;
 		this.state.screenLight = screenLit;
 		this.evaluationCount += 1;
@@ -1056,7 +926,6 @@ export class PulseCheck {
 	private shownRate(timestampMs: number): number | null {
 		if (this.held == null) {
 			this.unsupported = 0;
-			this.follows = [];
 			return null;
 		}
 		const recent = estimateOwnPulse(
@@ -1070,10 +939,7 @@ export class PulseCheck {
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
 			this.unsupported = 0;
 			this.followerBpm = rate;
-			if (!this.rules.followerMedian) return rate;
-			this.follows.push(rate);
-			if (this.follows.length > FOLLOWER_MEDIAN_K) this.follows.shift();
-			return median(this.follows);
+			return rate;
 		}
 		this.unsupported += 1;
 		return this.unsupported >= OWN_PULSE_SUPPORT_MISS ? null : this.held;
@@ -1108,10 +974,6 @@ export class PulseCheck {
 		this.headHandedOver = false;
 		this.history = [];
 		this.held = null;
-		this.provenBpm = null;
-		this.anchorBpm = null;
-		this.windowSnrs = [];
-		this.follows = [];
 		this.followerBpm = null;
 		this.seconds = [];
 		this.second = null;

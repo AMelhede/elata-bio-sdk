@@ -1,4 +1,3 @@
-import { ANALYSIS_EVERY_MS } from "../processorWorkerProtocol";
 import { analyzePulseWindow } from "../pulseAnalysis";
 import { RppgProcessor } from "../rppgProcessor";
 
@@ -56,20 +55,9 @@ function feedPulse(p: RppgProcessor, fromMs: number, toMs: number, fps: number, 
 beforeEach(() => analyzeMock.mockClear());
 
 describe("window analysis reuse", () => {
-	test("with steadyAnalysis, the window is analysed once per step; the core is still read twice", () => {
+	test("two reads of the same samples analyse the window once", () => {
 		const { backend, counter } = stubBackend();
-		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
-		feedPulse(p, 0, 3000, 30);
-		analyzeMock.mockClear();
-		feedPulse(p, 3000, 5000, 30, () => p.getMetrics());
-		const steps = Math.ceil(2000 / ANALYSIS_EVERY_MS);
-		expect(analyzeMock).toHaveBeenCalledTimes(steps);
-		expect(counter.reads).toBe(2 * steps);
-	});
-
-	test("without steadyAnalysis, two reads of the same samples analyse the window once", () => {
-		const { backend, counter } = stubBackend();
-		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: false } });
+		const p = new RppgProcessor(backend, 30, 10);
 		feedPulse(p, 0, 3000, 30);
 		analyzeMock.mockClear();
 		let frames = 0;
@@ -84,7 +72,7 @@ describe("window analysis reuse", () => {
 
 	test("a new sample is a new window: the kept analysis is never reused across it", () => {
 		const { backend } = stubBackend();
-		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: false } });
+		const p = new RppgProcessor(backend, 30, 10);
 		feedPulse(p, 0, 3000, 30);
 		p.getMetrics();
 		analyzeMock.mockClear();
@@ -93,9 +81,9 @@ describe("window analysis reuse", () => {
 		expect(analyzeMock).toHaveBeenCalledTimes(1);
 	});
 
-	test("the kept analysis equals analysing the window again, at every step of a 40 s capture", () => {
+	test("the kept analysis equals analysing the window again, through a 40 s capture", () => {
 		const { backend } = stubBackend();
-		const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis: true } });
+		const p = new RppgProcessor(backend, 30, 10);
 		const internals = p as unknown as {
 			samples: Parameters<typeof analyzePulseWindow>[0];
 			samplesVersion: number;
@@ -106,7 +94,7 @@ describe("window analysis reuse", () => {
 		let lastCheck = -Infinity;
 		feedPulse(p, 0, 40000, 30, (ts) => {
 			p.getMetrics();
-			// Only where the kept analysis is of the samples as they stand (a step just ran), once a second.
+			// Where the kept analysis is of the samples as they stand, once a second.
 			if (internals.windowAnalysis?.version !== internals.samplesVersion || ts - lastCheck < 1000) return;
 			lastCheck = ts;
 			const fresh = actualAnalyze(internals.samples, { doublingRule: false });
@@ -118,17 +106,15 @@ describe("window analysis reuse", () => {
 		expect(withRate).toBeGreaterThan(30);
 	});
 
-	test("nothing downstream changes an analysis (results are frozen here), with the switch on and off", () => {
-		for (const steadyAnalysis of [true, false]) {
-			const { backend } = stubBackend();
-			const p = new RppgProcessor(backend, 30, 10, { fixes: { steadyAnalysis } });
-			expect(() =>
-				feedPulse(p, 0, 12000, 30, () => {
-					p.getMetrics();
-					p.getDebugSnapshot(0);
-				}),
-			).not.toThrow();
-			expect(p.getMetrics().spectral_bpm).not.toBeNull();
-		}
+	test("nothing downstream changes an analysis (results are frozen here)", () => {
+		const { backend } = stubBackend();
+		const p = new RppgProcessor(backend, 30, 10);
+		expect(() =>
+			feedPulse(p, 0, 12000, 30, () => {
+				p.getMetrics();
+				p.getDebugSnapshot(0);
+			}),
+		).not.toThrow();
+		expect(p.getMetrics().spectral_bpm).not.toBeNull();
 	});
 });

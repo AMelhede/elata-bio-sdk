@@ -165,7 +165,6 @@ export {
 	ChromPulseModel,
 	computeSignalSnrDb,
 	PosPulseModel,
-	RgbPulseExtractor,
 	spectralSnr,
 	zeroPhaseBandpass,
 } from "./rppgSignalModel";
@@ -354,13 +353,7 @@ export {
 	type PulseCheckRules,
 	type ResolvedPulseCheckRules,
 	PULSE_CHECK_RULE_NAMES,
-	PULSE_CHECK_RULES_OFF_BY_DEFAULT,
 	resolvePulseCheckRules,
-	FOLLOWER_MEDIAN_K,
-	REPROVE_DRIFT_BPM,
-	ANCHOR_DRIFT_BPM,
-	TOO_DARK_SNR_DB,
-	tooDarkToShow,
 	HEAD_LANDMARKS,
 	headCentre,
 	type HeadPosition,
@@ -404,15 +397,9 @@ export {
 } from "./chestBreathing";
 export {
 	FIX_SWITCH_NAMES,
-	FIX_SWITCHES_OFF_BY_DEFAULT,
 	type ResolvedRppgFixSwitches,
 	type RppgFixesOption,
 	type RppgFixSwitches,
 	resolveFixSwitches,
 } from "./fixSwitches";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo";
-export {
-	createWorkerRppgProcessor,
-	type RppgProcessorLike,
-	WorkerRppgProcessor,
-} from "./workerRppgProcessor";

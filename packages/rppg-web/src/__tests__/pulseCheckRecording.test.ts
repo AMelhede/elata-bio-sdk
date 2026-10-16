@@ -190,7 +190,6 @@ describe("RecordingPulseCheck: the check's inputs, kept, and replayed", () => {
 	it.each([
 		["headMotion off", { headMotion: false }, () => fixtureCalls(nod)],
 		["darkWall off", { darkWall: false }, screenCalls],
-		["the four dim-light candidates on", { followerMedian: true, reproveOnDrift: true, tooDark: true, anchorDrift: true }, mixedCalls],
 	] as [string, PulseCheckRules, () => Call[]][])(
 		"a recording made with the defaults, replayed with %s, equals a live check run with them",
 		(_name, rules, calls) => {
@@ -427,7 +426,7 @@ describe("through the session: getMetrics() as shown, and its replay", () => {
 	});
 
 	it("a replay with other rules equals a live session run with them", async () => {
-		const rules = { followerMedian: true, reproveOnDrift: true, tooDark: true, anchorDrift: true };
+		const rules = { lightTaint: false, faceFlicker: false, screenLight: false };
 		const { session } = await run({ record: true });
 		const live = await run({ record: false, rules });
 		const rec = session.getPulseCheckRecording();

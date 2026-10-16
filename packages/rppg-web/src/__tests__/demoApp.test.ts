@@ -1,12 +1,9 @@
 import { initDemo } from '../demoApp';
 import { loadFaceLandmarker } from '../mediapipeLoader';
 
-// The session loads the finder through loadTrialFaceFinder (faceFinderTrial, on by default) or, with the
-// switch off, loadFaceLandmarker; both go through the one mock so a test sets the finder once.
-jest.mock('../mediapipeLoader', () => {
-  const loadFaceLandmarker = jest.fn(async () => null);
-  return { loadFaceLandmarker, loadTrialFaceFinder: jest.fn((...args: unknown[]) => (loadFaceLandmarker as any)(...args)) };
-});
+jest.mock('../mediapipeLoader', () => ({
+  loadFaceLandmarker: jest.fn(async () => null),
+}));
 
 jest.mock('../wasmBackend', () => ({
   loadWasmBackend: jest.fn(async () => null),
