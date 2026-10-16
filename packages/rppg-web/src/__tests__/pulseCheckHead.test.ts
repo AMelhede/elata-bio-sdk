@@ -61,10 +61,10 @@ function fixtureHead(fx: Fx, t: number, m: { i: number }): { x: number; y: numbe
  */
 function replay(
 	fx: Fx,
-	opts: { rules?: PulseCheckRules; agreement?: boolean; second?: number; check?: PulseCheck },
+	opts: { rules?: PulseCheckRules; check?: PulseCheck },
 	each: (state: ReturnType<PulseCheck["getState"]>) => void,
 ): void {
-	const check = opts.check ?? new PulseCheck({ rules: opts.rules, agreement: opts.agreement });
+	const check = opts.check ?? new PulseCheck({ rules: opts.rules });
 	const wallAt = new Map(fx.background.map((w) => [w[0], w]));
 	const m = { i: 0 };
 	let next = fx.rawRois[0][0] + 1000;
@@ -82,7 +82,6 @@ function replay(
 			fixtureHead(fx, r[0], m),
 		);
 		if (r[0] >= next) {
-			if (opts.second != null) check.secondOpinion(opts.second);
 			each(check.getState());
 			next += 1000;
 		}
@@ -90,9 +89,9 @@ function replay(
 }
 
 /** Rates shown, once a second, replaying a fixture through a check with these rules. */
-function shown(fx: Fx, rules: PulseCheckRules, extra: { agreement?: boolean; second?: number } = {}): number[] {
+function shown(fx: Fx, rules: PulseCheckRules): number[] {
 	const out: number[] = [];
-	replay(fx, { rules, ...extra }, (s) => {
+	replay(fx, { rules }, (s) => {
 		if (s.bpm != null) out.push(s.bpm);
 	});
 	return out;
@@ -160,7 +159,7 @@ type Head = { x: number; y: number; faceWidth: number };
  */
 function pushPulse(
 	check: PulseCheck,
-	o: { seconds: number; bpm: number; from?: number; second?: number },
+	o: { seconds: number; bpm: number; from?: number },
 	headAt: (t: number) => Head | null | undefined,
 ): Array<ReturnType<PulseCheck["getState"]>> {
 	let s = 11;
@@ -175,7 +174,6 @@ function pushPulse(
 		if (head === undefined) check.push(t, [region(), region(), region()]);
 		else check.push(t, [region(), region(), region()], undefined, undefined, head);
 		if (t >= next) {
-			if (o.second != null) check.secondOpinion(o.second);
 			out.push(check.getState());
 			next += 1000;
 		}
@@ -263,18 +261,18 @@ describe("PulseCheck rule headMotion", () => {
 		expect(Math.max(...streaks({}))).toBe(0);
 	});
 
-	// The rule's second half: a rate the head has carried for 4 windows is withheld, however it was
-	// reached. The streak cannot reach it here (the first half), but the opt-in agreement path does:
-	// the SDK's own rate (60 on a nod, the strongest rhythm in the colour) agrees with the check's
-	// window rate for 8 seconds from 23 s, and only the withhold keeps it off the screen.
-	it("withholds the nod's rate when the agreement path reaches it", () => {
-		const agreeing = { agreement: true, second: 60 };
-		let withheld = 0;
-		replay(nod, agreeing, (s) => {
-			if (s.headMatch) withheld++;
-		});
-		expect(withheld).toBeGreaterThan(10);
-		expect(shown(nod, {}, agreeing)).toEqual([]);
+	// A real pulse at 72 is proven first, with the head still; then the head starts nodding at 72 too.
+	// The proof was honest, but the rate is now the movement's as much as the pulse's: the seconds the
+	// head carries stop counting as evidence (the rule's first half), the hold runs out, and the number
+	// goes. (Since the agreement path went in test.25, this is how the rule meets a proven rate; its
+	// second half, headMatch, is left as a guard for a held rate a few bpm from the window's.)
+	it("takes a proven rate off the screen once the head starts nodding at it", () => {
+		const nodLater = rowAt(headRows(70, [{ px: 3, bpm: 72, from: 30 }], 0.3, { fps: 30 }));
+		const states = pushPulse(new PulseCheck(), { seconds: 70, bpm: 72 }, nodLater);
+		expect(states.slice(0, 29).some((s) => s.bpm != null)).toBe(true);
+		const firstCarried = states.findIndex((s) => s.windowHead === "carried");
+		expect(firstCarried).toBeGreaterThan(29);
+		expect(states.slice(firstCarried + 3).every((s) => s.bpm == null)).toBe(true);
 	});
 });
 
@@ -461,30 +459,27 @@ describe("headMatches: the head carried the rate in each of the last 4 windows",
 describe("PulseCheck keeps the head rows the rule needs, and forgets them on reset", () => {
 	// The withhold judges 4 windows of 16 s, so the check must keep at least 19 s of head rows (16 s
 	// plus 3 one-second steps back). Kept for less, the older windows lose their start and are blind:
-	// a nod reached through the agreement path is then never withheld.
-	it("keeps 19 s of head rows: a nod at the rate is withheld once the agreement path reaches it", () => {
-		const nodding = rowAt(headRows(40, [{ px: 3, bpm: 72 }], 0.3, { fps: 30 }));
-		const states = pushPulse(new PulseCheck({ agreement: true }), { seconds: 40, bpm: 72, second: 72 }, nodding);
-		expect(states.filter((s) => s.headMatch).length).toBeGreaterThan(5);
-		expect(states.slice(19).every((s) => s.windowHead === "carried")).toBe(true);
-		expect(states.every((s) => s.bpm == null)).toBe(true);
+	// the nod is not seen in them and its seconds count as evidence.
+	it("keeps 19 s of head rows: every window after a nod at a proven rate starts sees it", () => {
+		const nodLater = rowAt(headRows(70, [{ px: 3, bpm: 72, from: 30 }], 0.3, { fps: 30 }));
+		const states = pushPulse(new PulseCheck(), { seconds: 70, bpm: 72 }, nodLater);
+		expect(states.slice(-20).every((s) => s.windowHead === "carried")).toBe(true);
+		expect(states.slice(-20).every((s) => s.bpm == null)).toBe(true);
 	});
 
 	// With a clock that runs on, no window judged after a reset reaches back before it (16 s of colour
 	// must come first), so stale head rows matter where the clock starts over: a replay, or a stream
 	// restarted under the same check. A replay after reset() must read exactly as a fresh check.
 	it("reset() clears the head rows: the same replay after a reset reads as on a fresh check", () => {
-		const run = (check: PulseCheck) => {
-			const out: Array<[boolean | undefined, number | null, string | null | undefined]> = [];
-			replay(nod, { check, second: 60 }, (s) => out.push([s.headMatch, s.bpm, s.windowHead]));
-			return out;
-		};
-		const fresh = run(new PulseCheck({ agreement: true }));
-		const reused = new PulseCheck({ agreement: true });
+		const nodLater = () => rowAt(headRows(70, [{ px: 3, bpm: 72, from: 30 }], 0.3, { fps: 30 }));
+		const run = (check: PulseCheck) =>
+			pushPulse(check, { seconds: 70, bpm: 72 }, nodLater()).map((s) => [s.headMatch, s.bpm, s.windowHead]);
+		const fresh = run(new PulseCheck());
+		const reused = new PulseCheck();
 		run(reused);
 		reused.reset();
 		const again = run(reused);
-		expect(fresh.filter(([m]) => m).length).toBeGreaterThan(10);
+		expect(fresh.filter(([, , w]) => w === "carried").length).toBeGreaterThan(20);
 		expect(again).toEqual(fresh);
 	});
 

@@ -74,8 +74,8 @@ export type PulseCheckState = {
     };
     /** True while the face's own rhythm at the proven rate is brightness, not colour (FACE_FLICKER_RATIO). */
     faceFlicker?: boolean;
-    /** How the shown rate was reached: the check's own streak, or agreement with the SDK's rate (agreementRate). */
-    via?: "check" | "agreement" | null;
+    /** How the shown rate was reached: the check's own streak, or null. */
+    via?: "check" | null;
     /**
      * The newest OWN_PULSE_SUPPORT_S line while a rate is proven and that line sits within OWN_PULSE_TRACK_BPM of
      * it (the value the shown rate follows), else null. For diagnosis.
@@ -283,17 +283,12 @@ export declare function equalLightStep(a: readonly number[], b: readonly number[
 export declare function screenSteps(samples: readonly (readonly number[])[], atMs: number): number;
 export declare class PulseCheck {
     constructor(opts?: {
-        agreement?: boolean;
         rules?: PulseCheckRules;
     });
     /** Which light rules this check runs (see PulseCheckRules). */
     readonly rules: ResolvedPulseCheckRules;
     /** The least wall against the face for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
     private get swapMinWall();
-    /** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
-    get agreementOn(): boolean;
-    /** The SDK's own current rate, given once a second; used only with `agreement` on. */
-    secondOpinion(bpm: number | null): void;
     private samples;
     private wall;
     private head;
@@ -303,10 +298,6 @@ export declare class PulseCheck {
     private held;
     /** The newest in-band follower value, or null (the state's followerBpm). */
     private followerBpm;
-    /** Opt-in: also show the SDK's rate when it agrees with this check's window rate (agreementRate). */
-    private readonly agreement;
-    private second;
-    private seconds;
     private lastEvalMs;
     private lostSinceMs;
     private wallTally;

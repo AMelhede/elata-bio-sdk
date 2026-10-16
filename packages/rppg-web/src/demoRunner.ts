@@ -253,7 +253,6 @@ export class DemoRunner {
 	readonly fixes: ResolvedRppgFixSwitches;
 	/** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
 	private wallTracker = new WallTracker();
-	private lastOpinionMs: number | null = null;
 
 	constructor(
 		private source: FrameSource,
@@ -584,18 +583,6 @@ export class DemoRunner {
 			return;
 		}
 		this.diagnostics.samplesPushed += 1;
-		// Once a second, the SDK's own rate to the pulse check, for its opt-in agreement path.
-		// Only when that path is on: reading the processor runs its analysis, and an extra read
-		// would change what the SDK's own rate does.
-		if (
-			this.opts.pulseChecker?.agreementOn &&
-			(this.lastOpinionMs == null || ts - this.lastOpinionMs >= 1000)
-		) {
-			this.lastOpinionMs = ts;
-			const bpm =
-				typeof proc.getMetrics === "function" ? proc.getMetrics()?.bpm : null;
-			this.opts.pulseChecker.secondOpinion(bpm ?? null);
-		}
 		this.diagnostics.lastDropReason = null;
 		this.diagnostics.lastTimestampMs = ts;
 		this.diagnostics.lastIntensity = intensity;

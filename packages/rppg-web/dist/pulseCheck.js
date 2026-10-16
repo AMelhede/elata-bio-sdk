@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkin } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, agreementRate, AGREE_SECONDS, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -501,8 +501,6 @@ export class PulseCheck {
         this.held = null;
         /** The newest in-band follower value, or null (the state's followerBpm). */
         this.followerBpm = null;
-        this.second = null;
-        this.seconds = [];
         this.lastEvalMs = null;
         this.lostSinceMs = null;
         this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
@@ -516,20 +514,11 @@ export class PulseCheck {
         /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
         this.unsupported = 0;
         this.evaluationCount = 0;
-        this.agreement = opts.agreement === true;
         this.rules = resolvePulseCheckRules(opts.rules);
     }
     /** The least wall against the face for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
     get swapMinWall() {
         return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL_TO_FACE : 0;
-    }
-    /** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
-    get agreementOn() {
-        return this.agreement;
-    }
-    /** The SDK's own current rate, given once a second; used only with `agreement` on. */
-    secondOpinion(bpm) {
-        this.second = bpm != null && Number.isFinite(bpm) ? bpm : null;
     }
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
@@ -634,14 +623,10 @@ export class PulseCheck {
             this.history.shift();
         const v = ownPulseVerdict(this.history, this.held);
         this.held = v.verdict === "measured" ? v.bpm : null;
-        this.seconds.push({ sdk: this.second, win: est?.bpmFine ?? est?.bpm ?? null, winSnr: est?.snrDb ?? null });
-        if (this.seconds.length > AGREE_SECONDS)
-            this.seconds.shift();
-        const agreed = this.agreement && this.held == null ? agreementRate(this.seconds) : null;
         // The wall check only withholds; it never changes what the check itself has proven.
         // Judged over the last 4 one-second windows at once, not counted forward from the
         // moment of proof, so a lamp's rate is withheld from its first second.
-        const held = this.held ?? agreed;
+        const held = this.held;
         const wallMatch = held != null &&
             Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => lineCarries(lineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
         const faceFlicker = this.rules.faceFlicker &&
@@ -675,9 +660,9 @@ export class PulseCheck {
                 windowHead,
             }
             : {
-                verdict: agreed != null ? "measured" : v.verdict,
-                bpm: agreed ?? this.shownRate(timestampMs),
-                via: agreed != null ? "agreement" : this.held != null ? "check" : null,
+                verdict: v.verdict,
+                bpm: this.shownRate(timestampMs),
+                via: this.held != null ? "check" : null,
                 snrDb: v.snrDb,
                 streak: v.streak,
                 wallMatch,
@@ -749,8 +734,6 @@ export class PulseCheck {
         this.history = [];
         this.held = null;
         this.followerBpm = null;
-        this.seconds = [];
-        this.second = null;
         this.lastEvalMs = null;
         this.lostSinceMs = null;
         this.wallTally = { seen: 0, noRoom: 0, skin: 0 };

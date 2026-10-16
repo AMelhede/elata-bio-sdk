@@ -24,8 +24,7 @@ declare const require: (id: string) => unknown;
 // session showed, and if recording changes nothing. Both are tested here on inputs where every
 // field the check reads changes its output: the wall and the wall as the camera read it (rule
 // darkWall), the head (rule headMotion, and a head left out against a head not found), why a
-// frame had no wall (the state's wallFrames), the face lost, the SDK's own rate (the agreement
-// path), and the session's own reasons for showing nothing (no face, a failed engine).
+// frame had no wall (the state's wallFrames), the face lost, and the session's own reasons for showing nothing (no face, a failed engine).
 
 type Fx = { rawRois: number[][]; motion?: number[][]; background?: number[][]; motionLandmarks?: number[] };
 const nod = require("./fixtures/nod60-nopulse.json") as Fx;
@@ -57,13 +56,11 @@ function headAt(fx: Fx, t: number, m: { i: number }): { x: number; y: number; fa
 /** Everything a caller can hand the check, one call at a time, so the same calls go to a live check and a recording one. */
 type Call =
 	| { push: Parameters<PulseCheck["push"]> }
-	| { lost: number }
-	| { opinion: number | null };
+	| { lost: number };
 
 function apply(check: PulseCheck, c: Call): void {
 	if ("push" in c) check.push(...c.push);
-	else if ("lost" in c) check.faceLost(c.lost);
-	else check.secondOpinion(c.opinion);
+	else check.faceLost(c.lost);
 }
 
 /** The screen-light fixture's wall as DemoRunner hands it: through a WallTracker, first second a brighter patch (rule darkWall reads the raw wall). */
@@ -92,7 +89,7 @@ function fixtureCalls(fx: Fx): Call[] {
 /**
  * Every other way in: a wall missing for skin or for no room, a head left out (undefined) for a
  * stretch and then handed over, regions given as four and as two, a timestamp that is not a number,
- * a lost face for 2 s, a gap in the frames, and the SDK's own rate once a second (agreement path).
+ * a lost face for 2 s, and a gap in the frames.
  */
 function mixedCalls(): Call[] {
 	const out: Call[] = [];
@@ -103,7 +100,6 @@ function mixedCalls(): Call[] {
 		const h = i < 200 ? undefined : i % 7 === 0 ? null : head;
 		const regs = i % 50 === 3 ? [...regions, regions[0]] : i % 97 === 5 ? regions.slice(0, 2) : regions;
 		out.push({ push: [i === 321 ? Number.NaN : t, regs, i % 11 === 0 ? undefined : wall, miss, h] as Parameters<PulseCheck["push"]> });
-		if (i % 30 === 0) out.push({ opinion: i % 90 === 0 ? null : 70.5 });
 	});
 	const end = base[base.length - 1].push[0];
 	for (let t = end + 33; t < end + 2000; t += 33) out.push({ lost: t });
@@ -115,28 +111,6 @@ function mixedCalls(): Call[] {
 		const [t, regions, wall, miss, head] = c.push;
 		out.push({ push: [t + 2 * end + 8000, regions, wall, miss, head] });
 	});
-	return out;
-}
-
-/**
- * A pulse at 75 in the forehead only, noise in both cheeks, the SDK's own rate 75 once a second
- * (pulseCheckAgreement.test.ts): the check's own streak cannot prove it, so only the agreement path,
- * fed by the SDK's rate, shows a number.
- */
-function oneRegionCalls(): Call[] {
-	let seed = 3;
-	const n = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.8;
-	const out: Call[] = [];
-	let next = 20000;
-	for (let t = 0; t <= 60000; t += 1000 / 30) {
-		const p = 0.004 * Math.sin((2 * Math.PI * 75 * t) / 60000);
-		const flat = () => ({ r: 150 + n(), g: 120 + n(), b: 100 + n() });
-		out.push({ push: [t, [{ r: 150 * (1 - 0.3 * p) + n(), g: 120 * (1 - p) + n(), b: 100 * (1 - 0.6 * p) + n() }, flat(), flat()]] });
-		if (t >= next) {
-			out.push({ opinion: 75 });
-			next += 1000;
-		}
-	}
 	return out;
 }
 
@@ -154,12 +128,11 @@ function evaluationsOf(check: PulseCheck, calls: readonly Call[]): PulseCheckSta
 const shownOf = (s: PulseCheckState) => (s.verdict === "measured" ? s.bpm : null);
 const roundTrip = (r: PulseCheckRecording) => parsePulseCheckRecording(serializePulseCheckRecording(r));
 
-const SCENES: [string, () => Call[], { rules?: PulseCheckRules; agreement?: boolean }][] = [
+const SCENES: [string, () => Call[], { rules?: PulseCheckRules }][] = [
 	["screen light over a dark wall (wall, raw wall)", screenCalls, {}],
 	["a nod with no pulse (head, wall)", () => fixtureCalls(nod), {}],
 	["a pulse under a nod (head, wall)", () => fixtureCalls(pulse), {}],
-	["every other way in (wall misses, head left out, NaN time, face lost, gap, agreement)", mixedCalls, { agreement: true }],
-	["a pulse only the agreement path can show (the SDK's own rate)", oneRegionCalls, { agreement: true }],
+	["every other way in (wall misses, head left out, NaN time, face lost, gap)", mixedCalls, {}],
 ];
 
 describe("RecordingPulseCheck: the check's inputs, kept, and replayed", () => {
@@ -181,10 +154,7 @@ describe("RecordingPulseCheck: the check's inputs, kept, and replayed", () => {
 		expect(shown(screenCalls())).toEqual(expect.arrayContaining([expect.closeTo(70, 0)]));
 		expect(shown(screenCalls()).every((b) => Math.abs(b - 70) <= 4)).toBe(true);
 		expect(shown(screenCalls(), { rules: { darkWall: false } }).some((b) => Math.abs(b - 90) <= 3)).toBe(true);
-		expect(shown(mixedCalls(), { agreement: true }).length).toBeGreaterThan(0);
-		expect(shown(oneRegionCalls(), { agreement: true }).length).toBeGreaterThan(20);
-		expect(shown(oneRegionCalls())).toEqual([]);
-		expect(shown(oneRegionCalls().filter((c) => !("opinion" in c)), { agreement: true })).toEqual([]);
+		expect(shown(mixedCalls()).length).toBeGreaterThan(0);
 	});
 
 	it.each([
@@ -194,22 +164,22 @@ describe("RecordingPulseCheck: the check's inputs, kept, and replayed", () => {
 		"a recording made with the defaults, replayed with %s, equals a live check run with them",
 		(_name, rules, calls) => {
 			const cs = calls();
-			const rec = new RecordingPulseCheck({ agreement: true });
+			const rec = new RecordingPulseCheck();
 			evaluationsOf(rec, cs);
-			const live = evaluationsOf(new PulseCheck({ rules, agreement: true }), cs);
+			const live = evaluationsOf(new PulseCheck({ rules }), cs);
 			expect(replayPulseCheck(roundTrip(rec.getRecording()), { rules }).evaluations.map((e) => e.state)).toEqual(live);
 			expect(replayPulseCheck(rec.getRecording()).evaluations.map((e) => e.state)).not.toEqual(live);
 		},
 	);
 
-	it("the recording carries its format, version, build, rules and agreement; replay uses them unless told otherwise", () => {
-		const rec = new RecordingPulseCheck({ rules: { headMotion: false }, agreement: true }).getRecording();
+	it("the recording carries its format, version, build, and rules; replay uses them unless told otherwise", () => {
+		const rec = new RecordingPulseCheck({ rules: { headMotion: false } }).getRecording();
 		expect(rec.format).toBe(PULSE_CHECK_RECORDING_FORMAT);
 		expect(rec.version).toBe(PULSE_CHECK_RECORDING_VERSION);
 		expect(typeof rec.build).toBe("string");
 		expect(rec.rules.headMotion).toBe(false);
 		expect(rec.rules.lightTaint).toBe(true);
-		expect(rec.agreement).toBe(true);
+		expect(rec.agreement).toBeUndefined();
 		expect(rec.seconds).toBe(PULSE_CHECK_RECORDING_SECONDS);
 		expect(rec.dropped).toBe(0);
 		const cs = fixtureCalls(nod);
@@ -347,9 +317,8 @@ describe("through the session: getMetrics() as shown, and its replay", () => {
 	 * check resets), and the engine failing for the last 2 s (the session shows nothing, whatever the
 	 * check holds). getMetrics() read on every third frame, twice in a row on every ninth.
 	 */
-	async function run(opts: { record: boolean; agreement?: boolean; rules?: PulseCheckRules }) {
+	async function run(opts: { record: boolean; rules?: PulseCheckRules }) {
 		const check = sessionPulseCheck({
-			pulseCheckAgreement: opts.agreement,
 			pulseCheckRules: opts.rules,
 			recordPulseCheckInputs: opts.record,
 		});
@@ -406,11 +375,8 @@ describe("through the session: getMetrics() as shown, and its replay", () => {
 		expect(on.session.getPulseCheckRecording()).not.toBeNull();
 	});
 
-	it.each([
-		["the defaults", {}],
-		["the agreement path", { agreement: true }],
-	] as [string, { agreement?: boolean }][])("with %s, the replay of a saved recording gives back every number the session showed", async (_name, o) => {
-		const { reads, session } = await run({ record: true, ...o });
+	it("the replay of a saved recording gives back every number the session showed", async () => {
+		const { reads, session } = await run({ record: true });
 		const rec = session.getPulseCheckRecording();
 		if (!rec) throw new Error("no recording");
 		const replay = replayPulseCheck(parsePulseCheckRecording(serializePulseCheckRecording(rec)));

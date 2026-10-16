@@ -146,7 +146,6 @@ export class RppgSession {
                 analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
             },
             pulseCheck: this.internals.pulseCheck != null,
-            pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
             experimentalVitals: this.internals.experimentalVitals === true,
         };
@@ -428,7 +427,7 @@ export async function createRppgSession(options) {
 export function sessionPulseCheck(options) {
     if (options.pulseCheck === false)
         return null;
-    const opts = { agreement: options.pulseCheckAgreement === true, rules: options.pulseCheckRules };
+    const opts = { rules: options.pulseCheckRules };
     const rec = options.recordPulseCheckInputs;
     if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
         return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds });

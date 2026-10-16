@@ -156,7 +156,6 @@ export declare class DemoRunner {
     readonly fixes: ResolvedRppgFixSwitches;
     /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
     private wallTracker;
-    private lastOpinionMs;
     constructor(source: FrameSource, processor: RppgProcessor, opts?: DemoRunnerOptions);
     /**
      * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the

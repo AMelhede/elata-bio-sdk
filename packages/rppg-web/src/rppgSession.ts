@@ -143,14 +143,8 @@ export type CreateRppgSessionOptions = Omit<
 	 */
 	pulseCheckRules?: PulseCheckRules;
 	/**
-	 * With `pulseCheck`, also report the SDK's own rate when it agrees with the check's window
-	 * rate for 8 seconds running (agreementRate in pulseCheckCore.ts). Off by default: a small
-	 * gain on new recordings, kept opt-in.
-	 */
-	pulseCheckAgreement?: boolean;
-	/**
-	 * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face,
-	 * the SDK's own rate when `pulseCheckAgreement` is on) and every `getMetrics()` read, so the check
+	 * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
+	 * and every `getMetrics()` read, so the check
 	 * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
 	 * Off by default. `true` keeps the newest PULSE_CHECK_RECORDING_SECONDS (5 minutes); `{ seconds }`
 	 * sets that. Recording changes no output; see pulseCheckRecording.ts for the format and the memory bound.
@@ -405,7 +399,6 @@ export class RppgSession {
 	getBuildSwitches(): {
 		fixes: ResolvedRppgFixSwitches;
 		pulseCheck: boolean;
-		pulseCheckAgreement: boolean;
 		pulseCheckRules: ResolvedPulseCheckRules | null;
 		experimentalVitals: boolean;
 	} {
@@ -425,7 +418,6 @@ export class RppgSession {
 				analysisWidth: srcFixes?.analysisWidth ?? fixes.analysisWidth,
 			},
 			pulseCheck: this.internals.pulseCheck != null,
-			pulseCheckAgreement: this.internals.pulseCheck?.agreementOn === true,
 			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
 			experimentalVitals: this.internals.experimentalVitals === true,
 		};
@@ -759,10 +751,10 @@ export async function createRppgSession(
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
 export function sessionPulseCheck(
-	options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "pulseCheckAgreement" | "recordPulseCheckInputs">,
+	options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs">,
 ): PulseCheck | null {
 	if (options.pulseCheck === false) return null;
-	const opts = { agreement: options.pulseCheckAgreement === true, rules: options.pulseCheckRules };
+	const opts = { rules: options.pulseCheckRules };
 	const rec = options.recordPulseCheckInputs;
 	if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
 		return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds });

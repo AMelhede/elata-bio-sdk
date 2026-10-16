@@ -33,9 +33,6 @@ import {
 	type RawRoiSample,
 	detrend,
 	estimateOwnPulse,
-	agreementRate,
-	type AgreementSecond,
-	AGREE_SECONDS,
 	ownPulseVerdict,
 	peakOfSpectrum,
 	resample,
@@ -88,8 +85,8 @@ export type PulseCheckState = {
 	wallFrames?: { seen: number; noRoom: number; skin: number };
 	/** True while the face's own rhythm at the proven rate is brightness, not colour (FACE_FLICKER_RATIO). */
 	faceFlicker?: boolean;
-	/** How the shown rate was reached: the check's own streak, or agreement with the SDK's rate (agreementRate). */
-	via?: "check" | "agreement" | null;
+	/** How the shown rate was reached: the check's own streak, or null. */
+	via?: "check" | null;
 	/**
 	 * The newest OWN_PULSE_SUPPORT_S line while a rate is proven and that line sits within OWN_PULSE_TRACK_BPM of
 	 * it (the value the shown rate follows), else null. For diagnosis.
@@ -698,8 +695,7 @@ const HISTORY_MAX = 120;
 const FACE_GONE_MS = EVAL_EVERY_MS;
 
 export class PulseCheck {
-	constructor(opts: { agreement?: boolean; rules?: PulseCheckRules } = {}) {
-		this.agreement = opts.agreement === true;
+	constructor(opts: { rules?: PulseCheckRules } = {}) {
 		this.rules = resolvePulseCheckRules(opts.rules);
 	}
 
@@ -711,16 +707,6 @@ export class PulseCheck {
 		return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL_TO_FACE : 0;
 	}
 
-	/** Whether the opt-in agreement path is on (the runner reads the SDK's rate only then). */
-	get agreementOn(): boolean {
-		return this.agreement;
-	}
-
-	/** The SDK's own current rate, given once a second; used only with `agreement` on. */
-	secondOpinion(bpm: number | null): void {
-		this.second = bpm != null && Number.isFinite(bpm) ? bpm : null;
-	}
-
 	private samples: RawRoiSample[] = [];
 	private wall: [number, number, number, number][] = [];
 	private head: HeadRow[] = [];
@@ -730,10 +716,6 @@ export class PulseCheck {
 	private held: number | null = null;
 	/** The newest in-band follower value, or null (the state's followerBpm). */
 	private followerBpm: number | null = null;
-	/** Opt-in: also show the SDK's rate when it agrees with this check's window rate (agreementRate). */
-	private readonly agreement: boolean;
-	private second: number | null = null;
-	private seconds: AgreementSecond[] = [];
 	private lastEvalMs: number | null = null;
 	private lostSinceMs: number | null = null;
 	private wallTally = { seen: 0, noRoom: 0, skin: 0 };
@@ -843,13 +825,10 @@ export class PulseCheck {
 		if (this.history.length > HISTORY_MAX) this.history.shift();
 		const v = ownPulseVerdict(this.history, this.held);
 		this.held = v.verdict === "measured" ? v.bpm : null;
-		this.seconds.push({ sdk: this.second, win: est?.bpmFine ?? est?.bpm ?? null, winSnr: est?.snrDb ?? null });
-		if (this.seconds.length > AGREE_SECONDS) this.seconds.shift();
-		const agreed = this.agreement && this.held == null ? agreementRate(this.seconds) : null;
 		// The wall check only withholds; it never changes what the check itself has proven.
 		// Judged over the last 4 one-second windows at once, not counted forward from the
 		// moment of proof, so a lamp's rate is withheld from its first second.
-		const held = this.held ?? agreed;
+		const held = this.held;
 		const wallMatch =
 			held != null &&
 			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
@@ -888,9 +867,9 @@ export class PulseCheck {
 					windowHead,
 				}
 			: {
-					verdict: agreed != null ? "measured" : v.verdict,
-					bpm: agreed ?? this.shownRate(timestampMs),
-					via: agreed != null ? "agreement" : this.held != null ? "check" : null,
+					verdict: v.verdict,
+					bpm: this.shownRate(timestampMs),
+					via: this.held != null ? "check" : null,
 					snrDb: v.snrDb,
 					streak: v.streak,
 					wallMatch,
@@ -975,8 +954,6 @@ export class PulseCheck {
 		this.history = [];
 		this.held = null;
 		this.followerBpm = null;
-		this.seconds = [];
-		this.second = null;
 		this.lastEvalMs = null;
 		this.lostSinceMs = null;
 		this.wallTally = { seen: 0, noRoom: 0, skin: 0 };

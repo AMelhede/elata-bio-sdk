@@ -76,14 +76,8 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      */
     pulseCheckRules?: PulseCheckRules;
     /**
-     * With `pulseCheck`, also report the SDK's own rate when it agrees with the check's window
-     * rate for 8 seconds running (agreementRate in pulseCheckCore.ts). Off by default: a small
-     * gain on new recordings, kept opt-in.
-     */
-    pulseCheckAgreement?: boolean;
-    /**
-     * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face,
-     * the SDK's own rate when `pulseCheckAgreement` is on) and every `getMetrics()` read, so the check
+     * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
+     * and every `getMetrics()` read, so the check
      * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
      * Off by default. `true` keeps the newest PULSE_CHECK_RECORDING_SECONDS (5 minutes); `{ seconds }`
      * sets that. Recording changes no output; see pulseCheckRecording.ts for the format and the memory bound.
@@ -246,7 +240,6 @@ export declare class RppgSession {
     getBuildSwitches(): {
         fixes: ResolvedRppgFixSwitches;
         pulseCheck: boolean;
-        pulseCheckAgreement: boolean;
         pulseCheckRules: ResolvedPulseCheckRules | null;
         experimentalVitals: boolean;
     };
@@ -279,6 +272,6 @@ export declare function createRppgSession(options: CreateRppgSessionOptions): Pr
  * records its inputs with `recordPulseCheckInputs` (RecordingPulseCheck); else a plain PulseCheck,
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
-export declare function sessionPulseCheck(options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "pulseCheckAgreement" | "recordPulseCheckInputs">): PulseCheck | null;
+export declare function sessionPulseCheck(options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs">): PulseCheck | null;
 export {};
 //# sourceMappingURL=rppgSession.d.ts.map

@@ -29,7 +29,7 @@ export type PulseCheckReadReason = "no_face" | "processor_failed" | null;
  *   wall was found ("no-room", "skin"), or null. `head`: `[x, y, faceWidth]` (pixels), `null` when
  *   the face mesh found no head that frame, or `false` when no head was handed over at all.
  * - `["l", t]`: a `faceLost`.
- * - `["o", t, bpm]`: a `secondOpinion` (the SDK's own rate, or null).
+ * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
  * - `["r", t, bpm, reason]`: a session `getMetrics()` read: the rate it showed (or null) and the
  *   session's own reason for showing none (PulseCheckReadReason).
  */
@@ -54,8 +54,8 @@ export type PulseCheckRecording = {
     build: string;
     /** The rules the live check ran (every rule named). */
     rules: ResolvedPulseCheckRules;
-    /** Whether the live check ran its agreement path (`pulseCheckAgreement`). */
-    agreement: boolean;
+    /** Written only by builds before 0.15.0-test.25 (the removed agreement path); ignored. */
+    agreement?: boolean;
     /** The most seconds this recording keeps. */
     seconds: number;
     /** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
@@ -68,7 +68,6 @@ export type PulseCheckRecording = {
  * pass one as their check.
  */
 export declare class RecordingPulseCheck extends PulseCheck {
-    private readonly recAgreement;
     private readonly recSeconds;
     private readonly recCap;
     /** A fixed-size circular buffer: `recCount` events from index `recHead`, oldest first. */
@@ -81,13 +80,11 @@ export declare class RecordingPulseCheck extends PulseCheck {
     /** The newest finite frame time seen, the clock that events without their own time are filed under. */
     private recLastT;
     constructor(opts?: {
-        agreement?: boolean;
         rules?: PulseCheckRules;
         seconds?: number;
     });
     push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss, head?: HeadPosition | null, wallRaw?: Rgb): void;
     faceLost(timestampMs: number): void;
-    secondOpinion(bpm: number | null): void;
     /** A session read: the rate it showed, and its own reason for showing none (RppgSession.getMetrics calls this). */
     noteRead(bpm: number | null, reason: PulseCheckReadReason): void;
     /** A copy of what is kept now, oldest event first. */
@@ -126,12 +123,10 @@ export type PulseCheckReplay = {
  * Replays a recording through a fresh PulseCheck, the same code the session runs.
  *
  * `rules`: as the session option `pulseCheckRules` (each rule left out takes its default); left out,
- * the rules the recording was made with. `agreement`: left out, the recording's own. With the
- * recording's own rules and `dropped: 0`, every read's `bpm` equals its `live`.
+ * the rules the recording was made with. With the recording's own rules and `dropped: 0`, every read's `bpm` equals its `live`.
  */
 export declare function replayPulseCheck(recording: PulseCheckRecording, options?: {
     rules?: PulseCheckRules;
-    agreement?: boolean;
 }): PulseCheckReplay;
 /** A recording as JSON text, every number kept exactly (see parsePulseCheckRecording). */
 export declare function serializePulseCheckRecording(recording: PulseCheckRecording): string;

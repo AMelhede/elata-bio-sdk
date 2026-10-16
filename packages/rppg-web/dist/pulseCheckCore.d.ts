@@ -383,22 +383,4 @@ export declare function beatRate(samples: readonly RawRoiSample[], fromMs: numbe
  * camera slowed for light, where the sweep had no evidence it holds.
  */
 export declare function earlyPulse(samples: readonly RawRoiSample[], atMs: number): number | null;
-/**
- * A second way to a number, for when the check's own streak falls short: the SDK's own rate (a
- * different estimator on the same face) and the check's window rate agree for AGREE_SECONDS
- * running, within AGREE_BPM, with the window line at AGREE_MIN_SNR_DB or stronger and the rate
- * at OWN_PULSE_LOW_BAND_BPM or above. Opt-in (`pulseCheckAgreement`).
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
- */
-export declare const AGREE_SECONDS = 8;
-export declare const AGREE_BPM = 3;
-export declare const AGREE_MIN_SNR_DB = -4;
-export type AgreementSecond = {
-    sdk: number | null;
-    win: number | null;
-    winSnr: number | null;
-};
-/** The SDK's rate when the last AGREE_SECONDS seconds all agree (see AGREE_SECONDS), else null. */
-export declare function agreementRate(seconds: readonly AgreementSecond[]): number | null;
 //# sourceMappingURL=pulseCheckCore.d.ts.map

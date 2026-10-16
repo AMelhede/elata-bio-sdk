@@ -990,32 +990,3 @@ export function earlyPulse(
 	return Math.round(((sp.bpm + bt.bpm) / 2) * 10) / 10;
 }
 
-/**
- * A second way to a number, for when the check's own streak falls short: the SDK's own rate (a
- * different estimator on the same face) and the check's window rate agree for AGREE_SECONDS
- * running, within AGREE_BPM, with the window line at AGREE_MIN_SNR_DB or stronger and the rate
- * at OWN_PULSE_LOW_BAND_BPM or above. Opt-in (`pulseCheckAgreement`).
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
- */
-export const AGREE_SECONDS = 8;
-export const AGREE_BPM = 3;
-export const AGREE_MIN_SNR_DB = -4;
-
-export type AgreementSecond = { sdk: number | null; win: number | null; winSnr: number | null };
-
-/** The SDK's rate when the last AGREE_SECONDS seconds all agree (see AGREE_SECONDS), else null. */
-export function agreementRate(seconds: readonly AgreementSecond[]): number | null {
-	if (seconds.length < AGREE_SECONDS) return null;
-	const recent = seconds.slice(-AGREE_SECONDS);
-	const ok = recent.every(
-		(s) =>
-			s.sdk != null &&
-			s.win != null &&
-			s.winSnr != null &&
-			Math.abs(s.sdk - s.win) <= AGREE_BPM &&
-			s.winSnr >= AGREE_MIN_SNR_DB &&
-			s.sdk >= OWN_PULSE_LOW_BAND_BPM,
-	);
-	return ok ? (recent[recent.length - 1]!.sdk as number) : null;
-}
