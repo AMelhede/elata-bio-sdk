@@ -43,6 +43,19 @@ export type RppgFixSwitches = {
 	 * the face finder reads the live video, as published.
 	 */
 	analysisWidth?: boolean;
+	/**
+	 * Fix 6. A break in the frames is not read across. While the session runs and no frame has
+	 * arrived for over FRAME_GAP_MS of wall-clock time (a frozen camera driver, an ended track, a
+	 * hidden tab, a locked screen, or a camera whose first frame has not come yet), `getMetrics()`
+	 * reports no reading (reason `no_frames`) and `getExperimentalVitals()` no HRV;
+	 * `getDebugSnapshot()` and `getPulseCheck()` stay raw. When the frames' own clock jumps by more
+	 * than FRAME_GAP_MS either way (frames that stopped, a stop and start, a looping video), the
+	 * analysis starts afresh; a frame older than the latest by less than that is out of order and is
+	 * dropped (drop reason `out_of_order`). Off: the published behaviour, which keeps reporting the
+	 * last number while no frames arrive, and reads one window across the break once they do (66
+	 * read as 51 for 35 s after a 10 s freeze).
+	 */
+	noFramesNoReading?: boolean;
 };
 
 /**
@@ -58,6 +71,7 @@ export const FIX_SWITCH_NAMES = [
 	"posFusion",
 	"noRateDoubling",
 	"analysisWidth",
+	"noFramesNoReading",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */

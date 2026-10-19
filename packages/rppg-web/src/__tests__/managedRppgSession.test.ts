@@ -12,6 +12,7 @@ function createDiagnostics(overrides: Partial<RppgSessionDiagnostics> = {}): Rpp
     backendMode: 'wasm',
     estimationAvailable: true,
     faceGone: false,
+    framesStopped: false,
     faceTrackingMode: 'video_frame',
     roiSource: 'fallback_roi',
     processorMethod: 'rgb_meta',
@@ -98,6 +99,22 @@ function createSessionStub(overrides: Partial<any> = {}) {
     ...overrides,
   };
 }
+
+describe('ManagedRppgSession and frames that stop', () => {
+  test('getDiagnostics().framesStopped reads the live session: a stopped camera fires no diagnostics event', async () => {
+    let stopped = false;
+    const session = createSessionStub({ framesStopped: jest.fn(() => stopped) });
+    const sessionFactory = jest.fn(async (options: CreateRppgSessionOptions) => {
+      session.attach(options);
+      return session as any;
+    });
+    const managed = new ManagedRppgSession({ video: document.createElement('video'), faceMesh: 'off' }, { sessionFactory });
+    await managed.start();
+    expect(managed.getDiagnostics()?.framesStopped).toBe(false);
+    stopped = true;
+    expect(managed.getDiagnostics()?.framesStopped).toBe(true);
+  });
+});
 
 describe('ManagedRppgSession', () => {
   test('createManagedRppgSession auto-starts and exposes running state', async () => {

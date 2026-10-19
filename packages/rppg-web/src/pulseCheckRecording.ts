@@ -15,7 +15,7 @@
  *   mesh found none, or that none was handed over);
  * - every `faceLost` (a frame with no forehead and cheeks);
  * - every `getMetrics()` read of the session: the rate it showed, and the session's own reason for
- *   showing none whatever the check held ("no_face", "processor_failed").
+ *   showing none whatever the check held ("no_face", "no_frames", "processor_failed").
  *
  * It changes nothing: it reads the arguments and then calls the check exactly as before. With the
  * option off the session builds a plain PulseCheck and none of this code runs.
@@ -59,7 +59,7 @@ export const PULSE_CHECK_RECORDING_EVENTS_PER_SECOND = 120;
 export type PulseCheckRgb = [number, number, number];
 
 /** Why a session read showed no rate whatever the check held; null when the read is the check's. */
-export type PulseCheckReadReason = "no_face" | "processor_failed" | null;
+export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" | null;
 
 /**
  * One event. Field `[1]` is always a time in ms on the frames' clock (for "o" and "r", the newest

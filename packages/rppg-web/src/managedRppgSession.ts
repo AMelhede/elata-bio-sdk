@@ -102,7 +102,11 @@ export class ManagedRppgSession {
 	}
 
 	getDiagnostics(): RppgSessionDiagnostics | null {
-		return this.lastDiagnosticsValue;
+		const cached = this.lastDiagnosticsValue;
+		const live = this.activeSession?.framesStopped?.();
+		// Diagnostics are cached from the session's events, which come with frames: a camera that stops
+		// sending fires none, so whether frames have stopped is read from the session itself.
+		return cached && typeof live === "boolean" ? { ...cached, framesStopped: live } : cached;
 	}
 
 	getMetrics(): Metrics {

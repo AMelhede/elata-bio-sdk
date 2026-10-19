@@ -42,6 +42,7 @@ import {
 import {
 	DemoRunner,
 	FACE_GONE_RESET_MS,
+	FRAME_GAP_MS,
 	type DemoRunnerDiagnostics,
 	type DemoRunnerError,
 	type DemoRunnerOptions,
@@ -119,6 +120,12 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 	 * raised hand) leaves it false, as it leaves the rate; `lastDropReason` describes one frame only.
 	 */
 	faceGone: boolean;
+	/**
+	 * No frame has arrived for over FRAME_GAP_MS of wall-clock time while the session runs (fix
+	 * noFramesNoReading), so `getMetrics()` reports no rate: the moment a status should say the camera
+	 * has stopped sending (a frozen driver, an ended track, a hidden tab, a locked screen).
+	 */
+	framesStopped: boolean;
 	modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
 
@@ -311,11 +318,17 @@ export class RppgSession {
 	}
 
 	getMetrics(): Metrics {
+		// Judged before this read's own analysis: no frame can arrive while it runs, so its time is not
+		// the camera's (on a slow phone one analysis can take most of a second).
+		const stopped = this.framesStopped();
 		const metrics = this.processor.getMetrics();
 		this.lastEngineMetrics = metrics;
 		// The engine failed: the runner has stopped, so no frame reaches the engine or the pulse
 		// check again and both keep their last state. Their last numbers are not a reading.
 		if (this.failed()) return this.noteRead(clearedMetrics(metrics, "processor_failed"), "processor_failed");
+		// No frame for over a second (fix noFramesNoReading): the engine and the check have seen nothing
+		// since, so their last numbers describe the past, however long the frames stay away.
+		if (stopped) return this.noteRead(clearedMetrics(metrics, "no_frames"), "no_frames");
 		// No face for a second (face tracking on): nothing to report, not the last number.
 		// One second rides out a brief face-finder miss without dropping a real reading.
 		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS)
@@ -381,7 +394,9 @@ export class RppgSession {
 	getExperimentalVitals(): ExperimentalVitals | null {
 		if (!this.internals.experimentalVitals) return null;
 		const faceGone =
-			this.failed() || (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
+			this.failed() ||
+			this.framesStopped() ||
+			(this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
 		const state = this.internals.pulseCheck?.getState();
 		const proven = !state || (state.verdict === "measured" && state.bpm != null);
 		const hrv = this.lastEngineMetrics?.hrv_rmssd;
@@ -457,6 +472,14 @@ export class RppgSession {
 		return this.internals.waveformController?.getDiagnostics() ?? null;
 	}
 
+	/**
+	 * No frame has arrived for over FRAME_GAP_MS by the wall clock while the session runs (fix
+	 * noFramesNoReading): what `getMetrics()` reports as `no_frames`. Cheap; it runs no analysis.
+	 */
+	framesStopped(): boolean {
+		return (this.runner.framesAbsentMs?.() ?? 0) > FRAME_GAP_MS;
+	}
+
 	/** The engine threw (the runner stops on that): the session can report nothing more. */
 	private failed(): boolean {
 		return (
@@ -526,6 +549,8 @@ export class RppgSession {
 	}
 
 	getDiagnostics(nowMs = Date.now()): RppgSessionDiagnostics {
+		// Before the debug snapshot's analysis, for the reason given in getMetrics.
+		const framesStopped = this.framesStopped();
 		const runnerDiagnostics = this.runner.getDiagnostics();
 		const debugSnapshot = this.processor.getDebugSnapshot(nowMs);
 		const processorFailure = this.processor.getBackendFailure();
@@ -556,6 +581,7 @@ export class RppgSession {
 			state,
 			lastError: this.lastErrorValue,
 			faceGone: (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS,
+			framesStopped,
 			modelDiagnostics: this.getModelDiagnostics(),
 		};
 	}
