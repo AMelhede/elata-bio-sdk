@@ -19,9 +19,14 @@ export type LastFaceBox = {
 export type DemoRunnerOptions = {
     /**
      * Fix switches (see fixSwitches.ts). All on unless set to false. The runner applies
-     * noFaceNoReading and posFusion; the processor applies the other two.
+     * noFaceNoReading, posFusion and noFramesNoReading; the processor and the frame source the others.
      */
     fixes?: RppgFixesOption;
+    /**
+     * The wall clock frames are aged against (`framesAbsentMs`), in ms. Defaults to
+     * `performance.now()`. For tests; leave out in an app.
+     */
+    now?: () => number;
     /**
      * The real-pulse check (see pulseCheck.ts), fed the same three face regions the fuser
      * reads plus a patch of wall beside the face. The session creates it (`pulseCheck`);
@@ -86,7 +91,7 @@ export type DemoRunnerOptions = {
     roiPixelSampler?: RoiPixelSampler;
     onRoiSamples?: (samples: readonly RppgRoiSampleV1[]) => void;
 };
-export type DemoRunnerDropReason = "frame_invalid" | "roi_missing" | "no_face" | "non_finite_intensity" | "processor_error";
+export type DemoRunnerDropReason = "frame_invalid" | "roi_missing" | "no_face" | "non_finite_intensity" | "out_of_order" | "processor_error";
 export type DemoRunnerDiagnostics = {
     framesSeen: number;
     framesWithFaceRoi: number;
@@ -130,6 +135,20 @@ export type DemoRunnerError = {
 };
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
 export declare const FACE_GONE_RESET_MS = 1000;
+/**
+ * A break in the frames (fix noFramesNoReading): none for longer than this by the wall clock, and the
+ * session reports no reading; a jump of the frames' own clock longer than this either way, and the
+ * analysis starts afresh (a smaller step back is a frame out of order, dropped). The same bound the
+ * pulse check (FACE_GONE_MS) and the chest motion (CHEST_GAP_MS) already apply to a gap in frames;
+ * the check times its gap from its own latest face frame, so with a face missing just before a gap
+ * the two can differ by that much. A gap it lets through costs little: the engine's window is 45 s
+ * (SAMPLE_HISTORY_MS) and a hole scales its rate by the hole's share of it, about 1/45 for one 1 s
+ * gap (several gaps in one window add up). Measured with the switch off on a known 66: 66 across a
+ * 1 s gap (the 3 bpm spectral grid hides 64.5), 63 for 43 s after a 2 s gap, 51 for 35 s after a
+ * 10 s one (the last is asserted in demoRunnerFrameGap.test.ts). A step back has no measured cost on
+ * a live camera either way: in 12 browser runs on a fake camera the frames' clock never went back.
+ */
+export declare const FRAME_GAP_MS = 1000;
 export declare class DemoRunner {
     private source;
     private processor;
@@ -150,8 +169,15 @@ export declare class DemoRunner {
     /** Timestamp of the first frame of the current run without a face; null while a face is in view. */
     private noFaceSinceMs;
     private noFaceLastMs;
-    /** When the face last came back after an absence long enough to restart the analysis; null if never. */
+    /** When the face last came back after an absence long enough to restart the analysis, or the frames after a break in them; null if never. */
     private analysisRestartMs;
+    /** The wall clock (`now`) when the latest frame arrived, or when start() ran if none has since. */
+    private lastFrameAt;
+    /** The frames' own clock at the latest frame that carried one: a break in it restarts the analysis. */
+    private lastFrameMs;
+    /** The wall clock (`now`) when the latest sample reached the processor; null before any. */
+    private lastSampleAt;
+    private readonly now;
     /** The fix switches this runner applies. */
     readonly fixes: ResolvedRppgFixSwitches;
     /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
@@ -163,8 +189,17 @@ export declare class DemoRunner {
      */
     faceAbsentMs(nowMs?: number): number;
     /**
-     * Time on the frame clock since the face came back after an absence of FACE_GONE_RESET_MS or more
-     * (when the analysis is asked to start afresh), up to the latest analysed frame; null if it never has.
+     * Wall-clock time (`now`) since the latest frame arrived, or since start() before the first, while the
+     * runner runs with fix noFramesNoReading on; 0 otherwise. A wall clock, because the frames' own clock
+     * stops with them. Stopped by the app (`stop()`) is not counted: the camera did not fail.
+     */
+    framesAbsentMs(nowMs?: number): number;
+    /** Wall-clock time (`now`) since the latest sample reached the processor; null before any. */
+    sampleAgeMs(nowMs?: number): number | null;
+    /**
+     * Time on the frame clock since the face came back after an absence of FACE_GONE_RESET_MS or more,
+     * or the frames after a break in them (when the analysis is asked to start afresh), up to the latest
+     * analysed frame; null if it never has.
      */
     msSinceAnalysisRestart(): number | null;
     /** Latest face blendshapes (for affect estimation), with capture timestamp. */
@@ -178,6 +213,15 @@ export declare class DemoRunner {
     start(): Promise<void>;
     stop(): Promise<void>;
     getDiagnostics(): DemoRunnerDiagnostics;
+    /**
+     * Fix noFramesNoReading, on the frames' own clock. A jump of more than FRAME_GAP_MS either way since
+     * the latest frame (frames that stopped, a looping video, a source whose first frame carries
+     * another clock) is a break: the analysis starts afresh, as when the face returns after an absence,
+     * since a window across it would read every rate wrong for as long as the break stays in it
+     * ("restart"). A frame older than the latest by less than that is out of order (a stale frame
+     * delivered again): it is dropped, not read, and nothing restarts ("out_of_order").
+     */
+    private frameBreak;
     getLastError(): DemoRunnerError | null;
     private onFrame;
     /**

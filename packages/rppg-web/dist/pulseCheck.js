@@ -115,6 +115,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "screenLight",
     "headMotion",
     "darkWall",
+    "clockBack",
 ];
 /** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
@@ -126,6 +127,7 @@ export function resolvePulseCheckRules(rules) {
         screenLight: rules?.screenLight !== false,
         headMotion: rules?.headMotion !== false,
         darkWall: rules?.darkWall !== false,
+        clockBack: rules?.clockBack !== false,
     };
 }
 /**
@@ -513,6 +515,8 @@ export class PulseCheck {
         };
         /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
         this.unsupported = 0;
+        /** The frames' clock at the latest push or faceLost, for rule clockBack; a reset keeps it. */
+        this.lastSeenMs = null;
         this.evaluationCount = 0;
         this.rules = resolvePulseCheckRules(opts.rules);
     }
@@ -540,16 +544,23 @@ export class PulseCheck {
     wallRaw) {
         if (regions.length < 3 || !Number.isFinite(timestampMs))
             return;
+        // Rule clockBack: a frame older than the latest is out of order (skipped) or, by more than
+        // FACE_GONE_MS, a clock that went back (start over).
+        const back = this.stepBack(timestampMs);
+        if (back === "skip")
+            return;
         if (wall)
             this.wallTally.seen++;
         else if (wallMiss === "no-room")
             this.wallTally.noRoom++;
         else if (wallMiss === "skin")
             this.wallTally.skin++;
-        // Frames that stopped arriving unannounced count as a lost face too.
+        // Frames that stopped arriving unannounced count as a lost face too: the windows would
+        // otherwise run across the break.
         const last = this.samples[this.samples.length - 1];
-        if (last && timestampMs - last[0] > FACE_GONE_MS)
+        if (back === "reset" || (last && timestampMs - last[0] > FACE_GONE_MS))
             this.reset();
+        this.lastSeenMs = timestampMs;
         this.lostSinceMs = null;
         const [f, l, r] = regions;
         this.samples.push([
@@ -710,6 +721,12 @@ export class PulseCheck {
     faceLost(timestampMs) {
         if (!Number.isFinite(timestampMs))
             return;
+        const back = this.stepBack(timestampMs);
+        if (back === "skip")
+            return;
+        if (back === "reset")
+            this.reset();
+        this.lastSeenMs = timestampMs;
         if (this.lostSinceMs == null)
             this.lostSinceMs = timestampMs;
         else if (timestampMs - this.lostSinceMs >= FACE_GONE_MS)
@@ -717,6 +734,15 @@ export class PulseCheck {
     }
     getState() {
         return this.state;
+    }
+    /**
+     * Rule clockBack: this frame's time is before the latest frame's by more than FACE_GONE_MS, a clock
+     * that went back ("reset"), or by less, a frame out of order ("skip"); else null.
+     */
+    stepBack(timestampMs) {
+        if (!this.rules.clockBack || this.lastSeenMs == null || timestampMs >= this.lastSeenMs)
+            return null;
+        return this.lastSeenMs - timestampMs > FACE_GONE_MS ? "reset" : "skip";
     }
     /**
      * How many times the check has judged a window (about once a second while frames arrive), counting

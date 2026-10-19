@@ -15,7 +15,7 @@
  *   mesh found none, or that none was handed over);
  * - every `faceLost` (a frame with no forehead and cheeks);
  * - every `getMetrics()` read of the session: the rate it showed, and the session's own reason for
- *   showing none whatever the check held ("no_face", "processor_failed").
+ *   showing none whatever the check held ("no_face", "no_frames", "processor_failed").
  *
  * It changes nothing: it reads the arguments and then calls the check exactly as before. With the
  * option off the session builds a plain PulseCheck and none of this code runs.
@@ -32,7 +32,7 @@
  * what was shown, until the check's memory of the earlier frames would have run out.
  */
 import { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
-import { PulseCheck, } from "./pulseCheck.js";
+import { PULSE_CHECK_RULE_NAMES, PulseCheck, } from "./pulseCheck.js";
 /** The `format` field of every recording. */
 export const PULSE_CHECK_RECORDING_FORMAT = "rppg-web/pulse-check-inputs";
 /** The `version` field: raised whenever the meaning of a field changes. A replay refuses other versions. */
@@ -142,11 +142,14 @@ const toRgb = (c) => ({ r: c[0], g: c[1], b: c[2] });
  * Replays a recording through a fresh PulseCheck, the same code the session runs.
  *
  * `rules`: as the session option `pulseCheckRules` (each rule left out takes its default); left out,
- * the rules the recording was made with. With the recording's own rules and `dropped: 0`, every read's `bpm` equals its `live`.
+ * the rules the recording was made with, and a rule the recording does not name is off: it did not
+ * exist in the build that made it, so its check ran without it. With the recording's own rules and
+ * `dropped: 0`, every read's `bpm` equals its `live`.
  */
 export function replayPulseCheck(recording, options = {}) {
     checkHeader(recording);
-    const check = new PulseCheck({ rules: options.rules ?? recording.rules });
+    const own = Object.fromEntries(PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true]));
+    const check = new PulseCheck({ rules: options.rules ?? own });
     const reads = [];
     const evaluations = [];
     for (const e of recording.events) {

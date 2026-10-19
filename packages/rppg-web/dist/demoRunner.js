@@ -8,6 +8,20 @@ import { ELATA_FACE_YCBCR_V1_PROFILE, } from "./roiProfile.js";
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
 export const FACE_GONE_RESET_MS = 1000;
 /**
+ * A break in the frames (fix noFramesNoReading): none for longer than this by the wall clock, and the
+ * session reports no reading; a jump of the frames' own clock longer than this either way, and the
+ * analysis starts afresh (a smaller step back is a frame out of order, dropped). The same bound the
+ * pulse check (FACE_GONE_MS) and the chest motion (CHEST_GAP_MS) already apply to a gap in frames;
+ * the check times its gap from its own latest face frame, so with a face missing just before a gap
+ * the two can differ by that much. A gap it lets through costs little: the engine's window is 45 s
+ * (SAMPLE_HISTORY_MS) and a hole scales its rate by the hole's share of it, about 1/45 for one 1 s
+ * gap (several gaps in one window add up). Measured with the switch off on a known 66: 66 across a
+ * 1 s gap (the 3 bpm spectral grid hides 64.5), 63 for 43 s after a 2 s gap, 51 for 35 s after a
+ * 10 s one (the last is asserted in demoRunnerFrameGap.test.ts). A step back has no measured cost on
+ * a live camera either way: in 12 browser runs on a fake camera the frames' clock never went back.
+ */
+export const FRAME_GAP_MS = 1000;
+/**
  * Push one sample through the richest push API the processor has. DemoRunner
  * duck-types its processor, so this order is part of its contract.
  */
@@ -67,8 +81,14 @@ export class DemoRunner {
         /** Timestamp of the first frame of the current run without a face; null while a face is in view. */
         this.noFaceSinceMs = null;
         this.noFaceLastMs = null;
-        /** When the face last came back after an absence long enough to restart the analysis; null if never. */
+        /** When the face last came back after an absence long enough to restart the analysis, or the frames after a break in them; null if never. */
         this.analysisRestartMs = null;
+        /** The wall clock (`now`) when the latest frame arrived, or when start() ran if none has since. */
+        this.lastFrameAt = null;
+        /** The frames' own clock at the latest frame that carried one: a break in it restarts the analysis. */
+        this.lastFrameMs = null;
+        /** The wall clock (`now`) when the latest sample reached the processor; null before any. */
+        this.lastSampleAt = null;
         /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
         this.wallTracker = new WallTracker();
         this.source.onFrame = this.onFrame.bind(this);
@@ -77,6 +97,9 @@ export class DemoRunner {
         this.diagnostics.roiPixelSamplerId =
             opts.roiPixelSampler?.id ?? ELATA_YCBCR_V1_PIXEL_SAMPLER.id;
         this.fixes = resolveFixSwitches(opts.fixes);
+        this.now =
+            opts.now ??
+                (() => (typeof performance !== "undefined" ? performance.now() : Date.now()));
         if (opts.multiRoiFusion !== false) {
             this.fuser = new MultiRoiRppgFuser(opts.sampleRate ?? 30, 8, 0.5, opts.fusionProjection ?? (this.fixes.posFusion ? "pos" : "chrom"));
         }
@@ -91,8 +114,23 @@ export class DemoRunner {
             : Math.max(0, nowMs - this.noFaceSinceMs);
     }
     /**
-     * Time on the frame clock since the face came back after an absence of FACE_GONE_RESET_MS or more
-     * (when the analysis is asked to start afresh), up to the latest analysed frame; null if it never has.
+     * Wall-clock time (`now`) since the latest frame arrived, or since start() before the first, while the
+     * runner runs with fix noFramesNoReading on; 0 otherwise. A wall clock, because the frames' own clock
+     * stops with them. Stopped by the app (`stop()`) is not counted: the camera did not fail.
+     */
+    framesAbsentMs(nowMs = this.now()) {
+        if (!this.running || !this.fixes.noFramesNoReading || this.lastFrameAt == null)
+            return 0;
+        return Math.max(0, nowMs - this.lastFrameAt);
+    }
+    /** Wall-clock time (`now`) since the latest sample reached the processor; null before any. */
+    sampleAgeMs(nowMs = this.now()) {
+        return this.lastSampleAt == null ? null : Math.max(0, nowMs - this.lastSampleAt);
+    }
+    /**
+     * Time on the frame clock since the face came back after an absence of FACE_GONE_RESET_MS or more,
+     * or the frames after a break in them (when the analysis is asked to start afresh), up to the latest
+     * analysed frame; null if it never has.
      */
     msSinceAnalysisRestart() {
         const last = this.diagnostics.lastTimestampMs;
@@ -114,6 +152,7 @@ export class DemoRunner {
     }
     async start() {
         this.running = true;
+        this.lastFrameAt = this.now();
         await this.source.start();
     }
     async stop() {
@@ -126,6 +165,39 @@ export class DemoRunner {
     getDiagnostics() {
         return { ...this.diagnostics };
     }
+    /**
+     * Fix noFramesNoReading, on the frames' own clock. A jump of more than FRAME_GAP_MS either way since
+     * the latest frame (frames that stopped, a looping video, a source whose first frame carries
+     * another clock) is a break: the analysis starts afresh, as when the face returns after an absence,
+     * since a window across it would read every rate wrong for as long as the break stays in it
+     * ("restart"). A frame older than the latest by less than that is out of order (a stale frame
+     * delivered again): it is dropped, not read, and nothing restarts ("out_of_order").
+     */
+    frameBreak(t) {
+        if (t == null || !Number.isFinite(t))
+            return null;
+        const prev = this.lastFrameMs;
+        if (!this.fixes.noFramesNoReading || prev == null) {
+            this.lastFrameMs = t;
+            return null;
+        }
+        if (t < prev && prev - t <= FRAME_GAP_MS)
+            return "out_of_order";
+        this.lastFrameMs = t;
+        if (Math.abs(t - prev) <= FRAME_GAP_MS)
+            return null;
+        // A face out of view stays out of view for as long as it already was: after a step back its
+        // start is moved onto the new clock.
+        if (t < prev && this.noFaceSinceMs != null) {
+            const absent = this.faceAbsentMs();
+            this.noFaceSinceMs = t - absent;
+            this.noFaceLastMs = t;
+        }
+        this.fuser?.reset();
+        this.processor.resetSignal();
+        this.analysisRestartMs = t;
+        return "restart";
+    }
     getLastError() {
         return this.lastError;
     }
@@ -133,6 +205,13 @@ export class DemoRunner {
         if (!this.running)
             return;
         this.diagnostics.framesSeen += 1;
+        this.lastFrameAt = this.now();
+        const brk = this.frameBreak(frame.timestampMs);
+        if (brk === "out_of_order") {
+            this.recordDrop("out_of_order");
+            return;
+        }
+        const restarted = brk === "restart";
         if (frame.blendshapes && frame.blendshapes.length) {
             this.lastBlendshapes = {
                 blendshapes: frame.blendshapes,
@@ -190,7 +269,7 @@ export class DemoRunner {
             // The face is back. After an absence long enough for the session to have stopped
             // reporting, start the analysis afresh, or the first number back would come from a
             // window still holding the frames before the face was lost.
-            if (this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
+            if (!restarted && this.faceAbsentMs() >= FACE_GONE_RESET_MS) {
                 this.fuser?.reset();
                 this.processor.resetSignal();
                 this.analysisRestartMs = frame.timestampMs ?? Date.now();
@@ -339,6 +418,7 @@ export class DemoRunner {
             return;
         }
         this.diagnostics.samplesPushed += 1;
+        this.lastSampleAt = this.now();
         this.diagnostics.lastDropReason = null;
         this.diagnostics.lastTimestampMs = ts;
         this.diagnostics.lastIntensity = intensity;

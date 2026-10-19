@@ -51,7 +51,14 @@ export class ManagedRppgSession {
         return this.stateValue.lastError;
     }
     getDiagnostics() {
-        return this.lastDiagnosticsValue;
+        const cached = this.lastDiagnosticsValue;
+        const live = this.activeSession?.framesStopped?.();
+        // Diagnostics are cached from the session's events, which come with frames: a camera that stops
+        // sending fires none, so whether frames have stopped is read from the session itself.
+        const withStopped = cached && typeof live === "boolean" ? { ...cached, framesStopped: live } : cached;
+        // And the last sample's age, which a cached copy would freeze at its value when frames stopped.
+        const age = this.activeSession?.runner?.sampleAgeMs?.();
+        return withStopped && age !== undefined ? { ...withStopped, lastSampleAgeMs: age } : withStopped;
     }
     getMetrics() {
         return this.activeSession?.getMetrics() ?? safeMetrics();

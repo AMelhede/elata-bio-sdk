@@ -18,10 +18,11 @@ export declare const PULSE_CHECK_RECORDING_EVENTS_PER_SECOND = 120;
 /** [r, g, b] as handed to the check. */
 export type PulseCheckRgb = [number, number, number];
 /** Why a session read showed no rate whatever the check held; null when the read is the check's. */
-export type PulseCheckReadReason = "no_face" | "processor_failed" | null;
+export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" | null;
 /**
- * One event. Field `[1]` is always a time in ms on the frames' clock (for "o" and "r", the newest
- * frame's time seen before it, or null before any).
+ * One event. Field `[1]` is always a time in ms on the frames' clock (for "o" and "r", the highest
+ * frame time seen before it, which after a clock that stepped back is not the newest frame's; null
+ * before any).
  *
  * - `["f", t, regions, wall, wallRaw, wallMiss, head]`: a `push`. `regions`: every region handed
  *   over, normally three. `wall`: the wall beside the face, or null when none was handed over.
@@ -123,7 +124,9 @@ export type PulseCheckReplay = {
  * Replays a recording through a fresh PulseCheck, the same code the session runs.
  *
  * `rules`: as the session option `pulseCheckRules` (each rule left out takes its default); left out,
- * the rules the recording was made with. With the recording's own rules and `dropped: 0`, every read's `bpm` equals its `live`.
+ * the rules the recording was made with, and a rule the recording does not name is off: it did not
+ * exist in the build that made it, so its check ran without it. With the recording's own rules and
+ * `dropped: 0`, every read's `bpm` equals its `live`.
  */
 export declare function replayPulseCheck(recording: PulseCheckRecording, options?: {
     rules?: PulseCheckRules;

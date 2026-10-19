@@ -56,6 +56,12 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
      * raised hand) leaves it false, as it leaves the rate; `lastDropReason` describes one frame only.
      */
     faceGone: boolean;
+    /**
+     * No frame has arrived for over FRAME_GAP_MS of wall-clock time while the session runs (fix
+     * noFramesNoReading), so `getMetrics()` reports no rate: the moment a status should say the camera
+     * has stopped sending (a frozen driver, an ended track, a hidden tab, a locked screen).
+     */
+    framesStopped: boolean;
     modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
 export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker" | "chestMotion"> & {
@@ -251,6 +257,11 @@ export declare class RppgSession {
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;
     getLatestWaveformReconstruction(): WaveformReconstructionV1 | null;
     getModelDiagnostics(): RppgModelDiagnosticsV1 | null;
+    /**
+     * No frame has arrived for over FRAME_GAP_MS by the wall clock while the session runs (fix
+     * noFramesNoReading): what `getMetrics()` reports as `no_frames`. Cheap; it runs no analysis.
+     */
+    framesStopped(): boolean;
     /** The engine threw (the runner stops on that): the session can report nothing more. */
     private failed;
     getState(): RppgSessionState;

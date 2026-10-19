@@ -169,9 +169,18 @@ export type PulseCheckRules = {
      * as in 0.15.0-test.6.
      */
     darkWall?: boolean;
+    /**
+     * The frames' clock stepping back by more than FACE_GONE_MS (a looping video, a source whose first
+     * frame carries another clock) starts the check over, as a jump forward of that much already does;
+     * a frame older than the latest by less is out of order and is skipped. Off: the check
+     * keeps its windows across the step and judges nothing new until the clock passes where it was
+     * (clock back 30 s and the pulse gone with it: a rate of 66 to 70 stayed shown for 37 s, and the
+     * verdict "measured" for 44 s), as in 0.15.0-test.25.
+     */
+    clockBack?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack"];
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
@@ -332,6 +341,13 @@ export declare class PulseCheck {
     /** A frame in which no face (no forehead and cheeks) was found. */
     faceLost(timestampMs: number): void;
     getState(): PulseCheckState;
+    /** The frames' clock at the latest push or faceLost, for rule clockBack; a reset keeps it. */
+    private lastSeenMs;
+    /**
+     * Rule clockBack: this frame's time is before the latest frame's by more than FACE_GONE_MS, a clock
+     * that went back ("reset"), or by less, a frame out of order ("skip"); else null.
+     */
+    private stepBack;
     /**
      * How many times the check has judged a window (about once a second while frames arrive), counting
      * from its creation; a reset does not clear it. A replay reads it to know which pushes produced a new
