@@ -114,6 +114,19 @@ describe('ManagedRppgSession and frames that stop', () => {
     stopped = true;
     expect(managed.getDiagnostics()?.framesStopped).toBe(true);
   });
+
+  test('getDiagnostics().lastSampleAgeMs reads the live session too, so it grows while no frames come', async () => {
+    let age = 10;
+    const session = createSessionStub({ runner: { sampleAgeMs: jest.fn(() => age) } });
+    const sessionFactory = jest.fn(async (options: CreateRppgSessionOptions) => {
+      session.attach(options);
+      return session as any;
+    });
+    const managed = new ManagedRppgSession({ video: document.createElement('video'), faceMesh: 'off' }, { sessionFactory });
+    await managed.start();
+    age = 5000;
+    expect(managed.getDiagnostics()?.lastSampleAgeMs).toBe(5000);
+  });
 });
 
 describe('ManagedRppgSession', () => {

@@ -573,7 +573,9 @@ export class RppgSession {
 			windowSampleCount: debugSnapshot.windowSampleCount,
 			windowDurationMs: debugSnapshot.windowDurationMs,
 			lastSampleTimestampMs: debugSnapshot.lastSampleTimestampMs,
-			lastSampleAgeMs: debugSnapshot.lastSampleAgeMs,
+			// On the runner's wall clock: the processor's own subtracts the frames' clock (page time,
+			// or the video's) from `nowMs` (Date.now() by default), about 55 years on most browsers.
+			lastSampleAgeMs: this.runner.sampleAgeMs?.() ?? debugSnapshot.lastSampleAgeMs,
 			lastSample: debugSnapshot.lastSample,
 			processorIssues: debugSnapshot.issues,
 			issues: Array.from(issues),

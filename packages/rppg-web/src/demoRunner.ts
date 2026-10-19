@@ -273,6 +273,8 @@ export class DemoRunner {
 	private lastFrameAt: number | null = null;
 	/** The frames' own clock at the latest frame that carried one: a break in it restarts the analysis. */
 	private lastFrameMs: number | null = null;
+	/** The wall clock (`now`) when the latest sample reached the processor; null before any. */
+	private lastSampleAt: number | null = null;
 	private readonly now: () => number;
 	/** The fix switches this runner applies. */
 	readonly fixes: ResolvedRppgFixSwitches;
@@ -321,6 +323,11 @@ export class DemoRunner {
 	framesAbsentMs(nowMs: number = this.now()): number {
 		if (!this.running || !this.fixes.noFramesNoReading || this.lastFrameAt == null) return 0;
 		return Math.max(0, nowMs - this.lastFrameAt);
+	}
+
+	/** Wall-clock time (`now`) since the latest sample reached the processor; null before any. */
+	sampleAgeMs(nowMs: number = this.now()): number | null {
+		return this.lastSampleAt == null ? null : Math.max(0, nowMs - this.lastSampleAt);
 	}
 
 	/**
@@ -661,6 +668,7 @@ export class DemoRunner {
 			return;
 		}
 		this.diagnostics.samplesPushed += 1;
+		this.lastSampleAt = this.now();
 		this.diagnostics.lastDropReason = null;
 		this.diagnostics.lastTimestampMs = ts;
 		this.diagnostics.lastIntensity = intensity;

@@ -137,6 +137,15 @@ describe("RppgSession when the camera stops sending frames", () => {
 		expect(session.getDiagnostics().framesStopped).toBe(false);
 	});
 
+	it("reports the age of the last sample on one clock (it subtracted the frames' clock from Date.now())", async () => {
+		const { session, frames, wait } = await setup();
+		frames(3);
+		wait(400);
+		// The frames here carry times from 0 (as rVFC's page clock does, near 0 at load) while
+		// Date.now() is about 1.7e12, so the old subtraction read about 55 years.
+		expect(session.getDiagnostics().lastSampleAgeMs).toBeCloseTo(400, 0);
+	});
+
 	it("says so for a camera that never sends a frame", async () => {
 		const { session, wait } = await setup();
 		wait(1500);
