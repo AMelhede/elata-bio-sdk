@@ -45,4 +45,11 @@ describe("the SDK demo page", () => {
 		expect(main.indexOf("getDiagnostics().faceGone")).toBeLessThan(main.indexOf("'Increase lighting'"));
 		expect(main).toContain("Looking for a pulse");
 	});
+
+	it("says when the camera has stopped sending pictures, before any advice that needs pictures", () => {
+		// A frozen camera leaves the capture score and the face at their last values, so their advice
+		// ("Increase lighting", "No face in view") would describe a picture that is no longer arriving.
+		expect(main).toContain("session.getDiagnostics().framesStopped");
+		expect(main.indexOf("getDiagnostics().framesStopped")).toBeLessThan(main.indexOf("getDiagnostics().faceGone"));
+	});
 });

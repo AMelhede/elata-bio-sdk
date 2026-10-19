@@ -540,12 +540,16 @@ async function startDemo() {
       reasonWrap.classList.add('hidden');
     }
 
-    // Status badge: what to fix first, else whether a pulse has been found. No face comes first,
+    // Status badge: what to fix first, else whether a pulse has been found. A camera that has
+    // stopped sending pictures comes first: the face and the capture score then keep their last
+    // values, so their advice would describe a picture that is no longer arriving. Then no face,
     // and only once the face has been gone long enough that the session reports no rate: one
     // missed frame is not "no face", and the capture score stops updating while no face is seen,
     // so its last value would keep asking an empty room to hold still.
     const capture = metrics.capture_confidence;
-    if (session.getDiagnostics().faceGone) {
+    if (session.getDiagnostics().framesStopped) {
+      setStatusBadge('The camera stopped sending pictures.', 'warning');
+    } else if (session.getDiagnostics().faceGone) {
       setStatusBadge('No face in view. Face the camera.', 'warning');
     } else if (bpm === null && capture != null && capture < 0.4) {
       setStatusBadge(
