@@ -191,6 +191,33 @@ describe("RecordingPulseCheck: the check's inputs, kept, and replayed", () => {
 	});
 });
 
+describe("a recording made before a rule existed", () => {
+	it("replays with that rule off, as its live check ran", () => {
+		// A 66 bpm pulse, then the frames' clock steps back 30 s and the pulse is gone: the one place
+		// rule clockBack changes the check's states.
+		let s = 7;
+		const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.4;
+		const cs: Call[] = [];
+		const feed = (fromMs: number, seconds: number, amp: number) => {
+			for (let t = fromMs; t <= fromMs + seconds * 1000; t += 1000 / 30) {
+				const p = amp * Math.sin((2 * Math.PI * 66 * t) / 60000);
+				const region = () => ({ r: 150 * (1 - 0.3 * p) + noise(), g: 120 * (1 - p) + noise(), b: 100 * (1 - 0.6 * p) + noise() });
+				cs.push({ push: [t, [region(), region(), region()]] });
+			}
+		};
+		feed(0, 45, 0.01);
+		feed(15000, 20, 0);
+		const old = new RecordingPulseCheck({ rules: { clockBack: false } });
+		const live = evaluationsOf(old, cs);
+		const rec = roundTrip(old.getRecording());
+		// As a build before clockBack wrote it: the rule is not named.
+		delete (rec.rules as Partial<typeof rec.rules>).clockBack;
+		expect(replayPulseCheck(rec).evaluations.map((e) => e.state)).toEqual(live);
+		// The rule does change these states, so the check above can fail.
+		expect(evaluationsOf(new PulseCheck(), cs)).not.toEqual(live);
+	});
+});
+
 describe("the recording's JSON", () => {
 	it("keeps numbers that JSON alone cannot carry, and keeps a head left out apart from a head not found", () => {
 		const rec = new RecordingPulseCheck();
