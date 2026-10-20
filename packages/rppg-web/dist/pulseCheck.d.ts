@@ -178,9 +178,15 @@ export type PulseCheckRules = {
      * verdict "measured" for 44 s), as in 0.15.0-test.25.
      */
     clockBack?: boolean;
+    /**
+     * The wall's line withholds a rate from WALL_FAINT_MIN_SNR_DB (6 dB) above its noise instead of
+     * WALL_MIN_SNR_DB (12 dB): a lamp the wall shows only faintly (a dim wall) is still the lamp's.
+     * Off: 12 dB, as in 0.15.0-test.26.
+     */
+    faintWall?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall"];
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**

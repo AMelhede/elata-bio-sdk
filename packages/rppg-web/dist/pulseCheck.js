@@ -107,6 +107,13 @@ const WALL_MIN_SAMPLES = 60;
  * Value chosen by measurement on recorded captures against a reference pulse.
  */
 const WALL_MIN_SNR_DB = 12;
+/**
+ * The wall bar with rule faintWall on. On synthetic video, a lamp at a heart-like rate with a colour
+ * part and no pulse in the face, on a dim wall, stood about 7 dB above the wall's noise: under the
+ * 12 dB bar, so the lamp showed as a heart rate in most seconds; from 6 dB it is withheld. Value
+ * chosen by measurement on recorded captures against a reference pulse (no shown reading lost).
+ */
+const WALL_FAINT_MIN_SNR_DB = 6;
 export const PULSE_CHECK_RULE_NAMES = [
     "wallBandEdge",
     "lightFamily",
@@ -116,6 +123,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "headMotion",
     "darkWall",
     "clockBack",
+    "faintWall",
 ];
 /** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
@@ -128,6 +136,7 @@ export function resolvePulseCheckRules(rules) {
         headMotion: rules?.headMotion !== false,
         darkWall: rules?.darkWall !== false,
         clockBack: rules?.clockBack !== false,
+        faintWall: rules?.faintWall !== false,
     };
 }
 /**
@@ -376,7 +385,7 @@ export function wallCarries(wall, atMs, bpm, rules = ALL_RULES_ON) {
 function lineCarries(line, bpm, rules) {
     const family = rules.lightFamily ? LIGHT_FAMILY : [1];
     return (line != null &&
-        line.snrDb >= WALL_MIN_SNR_DB &&
+        line.snrDb >= (rules.faintWall ? WALL_FAINT_MIN_SNR_DB : WALL_MIN_SNR_DB) &&
         family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM));
 }
 /**

@@ -211,6 +211,14 @@ const WALL_MIN_SAMPLES = 60;
 const WALL_MIN_SNR_DB = 12;
 
 /**
+ * The wall bar with rule faintWall on. On synthetic video, a lamp at a heart-like rate with a colour
+ * part and no pulse in the face, on a dim wall, stood about 7 dB above the wall's noise: under the
+ * 12 dB bar, so the lamp showed as a heart rate in most seconds; from 6 dB it is withheld. Value
+ * chosen by measurement on recorded captures against a reference pulse (no shown reading lost).
+ */
+const WALL_FAINT_MIN_SNR_DB = 6;
+
+/**
  * The pulse check's light rules, each behind its own switch so each can be tested alone (on unless
  * set to false). A switch turned off restores the behaviour from before that rule, nothing more.
  */
@@ -254,6 +262,12 @@ export type PulseCheckRules = {
 	 * verdict "measured" for 44 s), as in 0.15.0-test.25.
 	 */
 	clockBack?: boolean;
+	/**
+	 * The wall's line withholds a rate from WALL_FAINT_MIN_SNR_DB (6 dB) above its noise instead of
+	 * WALL_MIN_SNR_DB (12 dB): a lamp the wall shows only faintly (a dim wall) is still the lamp's.
+	 * Off: 12 dB, as in 0.15.0-test.26.
+	 */
+	faintWall?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -267,6 +281,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"headMotion",
 	"darkWall",
 	"clockBack",
+	"faintWall",
 ] as const;
 
 /** Every rule resolved to true or false; left out means on. */
@@ -280,6 +295,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		headMotion: rules?.headMotion !== false,
 		darkWall: rules?.darkWall !== false,
 		clockBack: rules?.clockBack !== false,
+		faintWall: rules?.faintWall !== false,
 	};
 }
 
@@ -586,7 +602,7 @@ function lineCarries(
 	const family = rules.lightFamily ? LIGHT_FAMILY : ([1] as const);
 	return (
 		line != null &&
-		line.snrDb >= WALL_MIN_SNR_DB &&
+		line.snrDb >= (rules.faintWall ? WALL_FAINT_MIN_SNR_DB : WALL_MIN_SNR_DB) &&
 		family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM)
 	);
 }
