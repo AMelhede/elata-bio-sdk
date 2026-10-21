@@ -27,7 +27,8 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  * - `["f", t, regions, wall, wallRaw, wallMiss, head]`: a `push`. `regions`: every region handed
  *   over, normally three. `wall`: the wall beside the face, or null when none was handed over.
  *   `wallRaw`: the wall as the camera read it, or null when not handed over. `wallMiss`: why no
- *   wall was found ("no-room", "skin"), or null. `head`: `[x, y, faceWidth]` (pixels), `null` when
+ *   wall was found ("no-room", "skin"), or null. `head`: `[x, y, faceWidth]` (pixels), plus a fourth number,
+ *   mouthOpen (share of face width), when the mesh gave the lips (from test.28), `null` when
  *   the face mesh found no head that frame, or `false` when no head was handed over at all.
  * - `["l", t]`: a `faceLost`.
  * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
@@ -45,7 +46,7 @@ export type PulseCheckInputEvent = [
         number,
         number,
         number
-    ] | null | false
+    ] | [number, number, number, number] | null | false
 ] | ["l", number] | ["o", number | null, number | null] | ["r", number | null, number | null, PulseCheckReadReason];
 /** A recording: what one session's pulse check was fed, with what it needs to be replayed. */
 export type PulseCheckRecording = {

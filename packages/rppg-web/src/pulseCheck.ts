@@ -315,7 +315,15 @@ export type HeadPosition = {
 	y: number;
 	/** The face's width in pixels, cheekbone to cheekbone: a movement is judged by its size against it. */
 	faceWidth: number;
+	/**
+	 * The inner-lip gap (face mesh 13 to 14) as a share of faceWidth: how open the mouth is. Recorded only, for an
+	 * app's talking step (a guided test confirms the tester talked); no rule of this check reads it.
+	 */
+	mouthOpen?: number;
 };
+
+/** Inner lips, upper and lower (MediaPipe face mesh 13 and 14). */
+const INNER_LIPS = [13, 14] as const;
 
 /**
  * The head's position this frame: the centre of HEAD_LANDMARKS in pixels, and the face's width
@@ -334,10 +342,14 @@ export function headCentre(
 		y += points[i].y * height;
 	}
 	const [l, r] = CHEEKBONES.map((i) => points[i]);
+	const faceWidth = Math.hypot((r.x - l.x) * width, (r.y - l.y) * height);
+	const [u, d] = INNER_LIPS.map((i) => points[i]);
+	const gap = Math.hypot((d.x - u.x) * width, (d.y - u.y) * height);
 	return {
 		x: x / HEAD_LANDMARKS.length,
 		y: y / HEAD_LANDMARKS.length,
-		faceWidth: Math.hypot((r.x - l.x) * width, (r.y - l.y) * height),
+		faceWidth,
+		...(faceWidth > 0 && Number.isFinite(gap) ? { mouthOpen: gap / faceWidth } : {}),
 	};
 }
 

@@ -76,7 +76,13 @@ export class RecordingPulseCheck extends PulseCheck {
             wall ? rgb3(wall) : null,
             wallRaw ? rgb3(wallRaw) : null,
             wallMiss ?? null,
-            head === undefined ? false : head === null ? null : [head.x, head.y, head.faceWidth],
+            head === undefined
+                ? false
+                : head === null
+                    ? null
+                    : head.mouthOpen != null
+                        ? [head.x, head.y, head.faceWidth, head.mouthOpen]
+                        : [head.x, head.y, head.faceWidth],
         ], timestampMs);
         super.push(timestampMs, regions, wall, wallMiss, head, wallRaw);
     }

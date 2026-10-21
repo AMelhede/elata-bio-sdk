@@ -201,6 +201,11 @@ export type HeadPosition = {
     y: number;
     /** The face's width in pixels, cheekbone to cheekbone: a movement is judged by its size against it. */
     faceWidth: number;
+    /**
+     * The inner-lip gap (face mesh 13 to 14) as a share of faceWidth: how open the mouth is. Recorded only, for an
+     * app's talking step (a guided test confirms the tester talked); no rule of this check reads it.
+     */
+    mouthOpen?: number;
 };
 /**
  * The head's position this frame: the centre of HEAD_LANDMARKS in pixels, and the face's width

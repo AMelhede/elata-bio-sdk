@@ -146,6 +146,8 @@ export function resolvePulseCheckRules(rules) {
 export const HEAD_LANDMARKS = [168, 6, 4, 10, 152, 33, 263, 234, 454];
 /** The cheekbones (MediaPipe face mesh 234 and 454): their distance is the face's width. */
 const CHEEKBONES = [234, 454];
+/** Inner lips, upper and lower (MediaPipe face mesh 13 and 14). */
+const INNER_LIPS = [13, 14];
 /**
  * The head's position this frame: the centre of HEAD_LANDMARKS in pixels, and the face's width
  * (cheekbone to cheekbone, in pixels), or null if the mesh lacks a landmark or the frame has no size.
@@ -160,10 +162,14 @@ export function headCentre(points, width, height) {
         y += points[i].y * height;
     }
     const [l, r] = CHEEKBONES.map((i) => points[i]);
+    const faceWidth = Math.hypot((r.x - l.x) * width, (r.y - l.y) * height);
+    const [u, d] = INNER_LIPS.map((i) => points[i]);
+    const gap = Math.hypot((d.x - u.x) * width, (d.y - u.y) * height);
     return {
         x: x / HEAD_LANDMARKS.length,
         y: y / HEAD_LANDMARKS.length,
-        faceWidth: Math.hypot((r.x - l.x) * width, (r.y - l.y) * height),
+        faceWidth,
+        ...(faceWidth > 0 && Number.isFinite(gap) ? { mouthOpen: gap / faceWidth } : {}),
     };
 }
 /**
