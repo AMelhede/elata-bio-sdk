@@ -34,7 +34,7 @@ export { WaveformModelError } from "./waveformModel.js";
 export { WaveformReconstructionController } from "./waveformReconstructionController.js";
 export { createWaveformMorphologyBaseline, extractWaveformMorphology, } from "./waveformMorphology.js";
 export { createPhysiologyInterpreter, DEFAULT_PHYSIOLOGY_INTERPRETER_CONFIG_V1, normalizePhysiologyFeatures, } from "./physiologyFeatures.js";
-export { DEFAULT_FRAMING_THRESHOLDS, FRAMING_MESSAGES, faceBoxFromLandmarks, faceFramingFromBox, padFaceBoxToHead, } from "./faceFraming.js";
+export { DEFAULT_FRAMING_THRESHOLDS, PUBLISHED_FRAMING_THRESHOLDS, FRAMING_MESSAGES, faceBoxFromLandmarks, faceFramingFromBox, padFaceBoxToHead, } from "./faceFraming.js";
 export { normalizeRppgError } from "./rppgErrors.js";
 export { createRppgAppAdapter, createRppgAppMonitor, RppgAppAdapter, RppgAppMonitor, } from "./rppgAppAdapter.js";
 export { ensureVideoPlaying } from "./videoPlayback.js";

@@ -280,6 +280,7 @@ export type {
 } from "./physiologyFeatures";
 export {
 	DEFAULT_FRAMING_THRESHOLDS,
+	PUBLISHED_FRAMING_THRESHOLDS,
 	FRAMING_MESSAGES,
 	faceBoxFromLandmarks,
 	faceFramingFromBox,

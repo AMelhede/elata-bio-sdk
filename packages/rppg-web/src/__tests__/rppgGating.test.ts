@@ -156,7 +156,7 @@ describe("RppgGatingController", () => {
 		const tooFar = gate.update({
 			nowMs: 100,
 			metrics: baseMetrics,
-			faceBox: { x: 0.43, y: 0.43, width: 0.14, height: 0.14 },
+			faceBox: { x: 0.47, y: 0.47, width: 0.06, height: 0.06 },
 		});
 		expect(tooFar.state).toBe("needs_position");
 		expect(tooFar.guidance.code).toBe("move_closer");

@@ -59,7 +59,7 @@ export { createWaveformMorphologyBaseline, extractWaveformMorphology, } from "./
 export type { WaveformMorphologyBaselineV1, WaveformMorphologySource, WaveformMorphologyV1, } from "./waveformMorphology.js";
 export { createPhysiologyInterpreter, DEFAULT_PHYSIOLOGY_INTERPRETER_CONFIG_V1, normalizePhysiologyFeatures, } from "./physiologyFeatures.js";
 export type { PhysiologyBaselineV1, PhysiologyFeaturesV1, PhysiologyInterpretationV1, PhysiologyInterpreter, PhysiologyInterpreterConfigV1, PhysiologyState, } from "./physiologyFeatures.js";
-export { DEFAULT_FRAMING_THRESHOLDS, FRAMING_MESSAGES, faceBoxFromLandmarks, faceFramingFromBox, padFaceBoxToHead, } from "./faceFraming.js";
+export { DEFAULT_FRAMING_THRESHOLDS, PUBLISHED_FRAMING_THRESHOLDS, FRAMING_MESSAGES, faceBoxFromLandmarks, faceFramingFromBox, padFaceBoxToHead, } from "./faceFraming.js";
 export type { FaceBox, FramingCode, FramingGuidance, FramingThresholds, } from "./faceFraming.js";
 export { normalizeRppgError } from "./rppgErrors.js";
 export type { RppgNormalizedError, RppgNormalizedErrorCode, } from "./rppgErrors.js";

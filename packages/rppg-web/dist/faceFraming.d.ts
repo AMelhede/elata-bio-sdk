@@ -31,6 +31,12 @@ export interface FramingThresholds {
     centerTol: number;
 }
 export declare const DEFAULT_FRAMING_THRESHOLDS: FramingThresholds;
+/**
+ * The published 0.14.0 thresholds, kept as the off switch for the measured minWidth:
+ * `createRppgAppAdapter({ gating: { framingThresholds: PUBLISHED_FRAMING_THRESHOLDS } })` brings back 0.14.0's
+ * "move closer" (and no heart rate) for any face under 0.34 of the frame width.
+ */
+export declare const PUBLISHED_FRAMING_THRESHOLDS: FramingThresholds;
 export declare const FRAMING_MESSAGES: Record<FramingCode, string>;
 /**
  * Map a face box to a single framing hint. Distance is corrected before

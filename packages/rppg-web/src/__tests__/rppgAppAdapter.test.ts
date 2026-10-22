@@ -123,6 +123,18 @@ describe("RppgAppAdapter", () => {
 		expect(snapshot.debug.estimationAvailable).toBe(true);
 	});
 
+	test("a face at a normal laptop distance publishes its heart rate", () => {
+		// Padded head box 0.2 of the frame width: about 60 cm from a laptop webcam. The published 0.34 framing
+		// rule held this at "Move a little closer" with no heart rate for as long as the person sat there.
+		const adapter = createRppgAppAdapter({ nowMs: () => 1000 });
+		const snapshot = adapter.getSnapshot({
+			...createSource(),
+			getLastFaceBox: () => ({ box: { x: 0.4, y: 0.3, width: 0.2, height: 0.26 }, atMs: 1000 }),
+		});
+		expect(snapshot.guidance.code).toBe("active_monitoring");
+		expect(snapshot.publishBpm).toBe(72);
+	});
+
 	test("surfaces retrying state without publishing stale data", () => {
 		const adapter = createRppgAppAdapter({ nowMs: () => 1000 });
 		const state: ManagedRppgSessionState = {

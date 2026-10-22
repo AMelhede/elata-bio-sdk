@@ -10,11 +10,28 @@
  * folds the result into its progressive guidance.
  */
 // Thresholds are in *head-box* terms (see padFaceBoxToHead): the box we frame
-// against is the padded head, not the bare mesh, so a face well-sized for a
-// clean rPPG read fills more of the frame. minWidth is deliberately assertive —
-// a slacker 0.22 lets a too-far face read "ok" while signal quality sags, so it
-// never says "come closer" when it should. Tune on-device if needed.
+// against is the padded head, not the bare mesh.
+//
+// minWidth is measured, not assumed. Below it the app adapter shows no heart rate and asks the person to move
+// closer, so it must sit under every face that reads well and above the size at which the face finder loses the
+// face. On real webcam recordings of people at rest, padded boxes were 0.136 to 0.263 of the frame width and read
+// right against a reference pulse, and smaller faces did not read worse. The same videos shrunk in the frame: the
+// face finder found the face in every frame down to 0.11 to 0.12 and in no frame at 0.09 to 0.10, and readings
+// held at 0.12 and began to thin at 0.11. So minWidth is 0.12: under every face that read well, a fifth above the
+// size at which the face is lost, so the hint comes while moving closer still helps.
+// The published 0.34 had no measurement behind it and asked a laptop user to sit about 38 cm from the camera.
+// maxWidth and centerTol are unchanged and still unmeasured.
 export const DEFAULT_FRAMING_THRESHOLDS = {
+    minWidth: 0.12,
+    maxWidth: 0.78,
+    centerTol: 0.18,
+};
+/**
+ * The published 0.14.0 thresholds, kept as the off switch for the measured minWidth:
+ * `createRppgAppAdapter({ gating: { framingThresholds: PUBLISHED_FRAMING_THRESHOLDS } })` brings back 0.14.0's
+ * "move closer" (and no heart rate) for any face under 0.34 of the frame width.
+ */
+export const PUBLISHED_FRAMING_THRESHOLDS = {
     minWidth: 0.34,
     maxWidth: 0.78,
     centerTol: 0.18,
