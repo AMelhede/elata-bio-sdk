@@ -26,6 +26,8 @@ import {
 	OWN_PULSE_DETREND_S,
 	OWN_PULSE_FS,
 	OWN_PULSE_COLOUR_SWITCH,
+	OWN_PULSE_EDGE_BPM,
+	OWN_PULSE_LOW_BAND_BPM,
 	OWN_PULSE_STRONG_STREAK,
 	OWN_PULSE_SWAP_MIN_WALL_TO_FACE,
 	OWN_PULSE_WINDOW_S,
@@ -268,6 +270,15 @@ export type PulseCheckRules = {
 	 * Off: 12 dB, as in 0.15.0-test.26.
 	 */
 	faintWall?: boolean;
+	/**
+	 * The low band, where a line counts only when all three regions carry it, starts at
+	 * OWN_PULSE_EDGE_BPM (52) instead of OWN_PULSE_LOW_BAND_BPM (58), so a resting rate of 52 to 57
+	 * seen by two regions counts like any other. Under 52 nothing changes (all three regions and the
+	 * edge bar). OFF unless asked for, the one rule that is: it adds readings, and is being measured
+	 * on real people at rest and on no-pulse captures before any build turns it on (a tester at rest,
+	 * 58 bpm by a reference, the camera's line at 56 in two regions: refused for most of 2 minutes).
+	 */
+	restBand?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -282,9 +293,10 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"darkWall",
 	"clockBack",
 	"faintWall",
+	"restBand",
 ] as const;
 
-/** Every rule resolved to true or false; left out means on. */
+/** Every rule resolved to true or false; left out means on, except restBand (left out means off). */
 export function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules {
 	return {
 		wallBandEdge: rules?.wallBandEdge !== false,
@@ -296,6 +308,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		darkWall: rules?.darkWall !== false,
 		clockBack: rules?.clockBack !== false,
 		faintWall: rules?.faintWall !== false,
+		restBand: rules?.restBand === true,
 	};
 }
 
@@ -868,7 +881,7 @@ export class PulseCheck {
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
-		const v = ownPulseVerdict(this.history, this.held);
+		const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
 		this.held = v.verdict === "measured" ? v.bpm : null;
 		// The wall check only withholds; it never changes what the check itself has proven.
 		// Judged over the last 4 one-second windows at once, not counted forward from the

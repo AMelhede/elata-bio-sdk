@@ -541,7 +541,7 @@ function slowedForLight(e) {
     return (e.fps >= OWN_PULSE_SLOW_CAMERA_MIN_FPS && e.fps < OWN_PULSE_SLOW_CAMERA_FPS);
 }
 /** A window from a camera slowed for light that the dark streak may count. */
-function countsInDark(e) {
+function countsInDark(e, lowBand) {
     if (e == null ||
         e.bpm == null ||
         e.snrDb == null ||
@@ -551,7 +551,7 @@ function countsInDark(e) {
         return false;
     if (e.agreeing.length < OWN_PULSE_DARK_MIN_AGREEING)
         return false;
-    return e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length;
+    return e.bpm >= lowBand || e.agreeing.length >= REGIONS.length;
 }
 /**
  * Regions that must carry a window's line for it to count, outside the dark
@@ -561,7 +561,7 @@ function countsInDark(e) {
  */
 export const OWN_PULSE_MIN_AGREEING = 2;
 /** Whether a window counts toward the verdict: a line and an SNR, every region behind a low-band line, and stronger evidence from a camera slowed by low light. */
-function counts(e) {
+function counts(e, lowBand) {
     if (e == null || e.bpm == null || e.snrDb == null)
         return false;
     if (slowedForLight(e) && e.snrDb < OWN_PULSE_SLOW_CAMERA_MIN_SNR_DB)
@@ -570,7 +570,7 @@ function counts(e) {
         return false;
     if (e.bpm < OWN_PULSE_EDGE_BPM && e.snrDb < OWN_PULSE_EDGE_MIN_SNR_DB)
         return false;
-    return e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length;
+    return e.bpm >= lowBand || e.agreeing.length >= REGIONS.length;
 }
 /**
  * The bottom of the band (OWN_PULSE_BAND_HZ, 42 bpm) is where slow drift that every region shares (room
@@ -590,14 +590,16 @@ export const OWN_PULSE_EDGE_MIN_SNR_DB = 0;
 export const OWN_PULSE_HOLD_MIN = 6;
 export function ownPulseVerdict(history, 
 /** The rate the previous verdict was measured at, if it was; enables the hold. */
-held = null) {
+held = null, 
+/** Where the low band starts (OWN_PULSE_LOW_BAND_BPM; OWN_PULSE_EDGE_BPM with rule restBand). */
+lowBand = OWN_PULSE_LOW_BAND_BPM) {
     let streak = 0;
     const rates = [];
     const fines = [];
     const snrs = [];
     for (let i = history.length - 1; i >= 0; i--) {
         const e = history[i];
-        if (!counts(e))
+        if (!counts(e, lowBand))
             break;
         if (rates.length && Math.abs(e.bpm - rates[0]) > OWN_PULSE_AGREE_BPM)
             break;
@@ -630,7 +632,7 @@ held = null) {
         const darkAgreeing = [];
         for (let i = history.length - 1; i >= 0; i--) {
             const e = history[i];
-            if (!countsInDark(e))
+            if (!countsInDark(e, lowBand))
                 break;
             if (darkRates.length &&
                 Math.abs(e.bpm - darkRates[0]) > OWN_PULSE_AGREE_BPM)
@@ -655,7 +657,7 @@ held = null) {
     if (held != null) {
         const recent = history.slice(-OWN_PULSE_STREAK);
         // A rate the dark entry measured is held by the windows that measured it.
-        const agreeing = recent.filter((e) => (counts(e) || countsInDark(e)) &&
+        const agreeing = recent.filter((e) => (counts(e, lowBand) || countsInDark(e, lowBand)) &&
             Math.abs(e.bpm - held) <= OWN_PULSE_AGREE_BPM);
         if (agreeing.length >= OWN_PULSE_HOLD_MIN) {
             const heldRates = agreeing.map((e) => (e.bpmFine ?? e.bpm));

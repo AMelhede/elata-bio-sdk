@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkin } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -124,8 +124,9 @@ export const PULSE_CHECK_RULE_NAMES = [
     "darkWall",
     "clockBack",
     "faintWall",
+    "restBand",
 ];
-/** Every rule resolved to true or false; left out means on. */
+/** Every rule resolved to true or false; left out means on, except restBand (left out means off). */
 export function resolvePulseCheckRules(rules) {
     return {
         wallBandEdge: rules?.wallBandEdge !== false,
@@ -137,6 +138,7 @@ export function resolvePulseCheckRules(rules) {
         darkWall: rules?.darkWall !== false,
         clockBack: rules?.clockBack !== false,
         faintWall: rules?.faintWall !== false,
+        restBand: rules?.restBand === true,
     };
 }
 /**
@@ -647,7 +649,7 @@ export class PulseCheck {
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
-        const v = ownPulseVerdict(this.history, this.held);
+        const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
         this.held = v.verdict === "measured" ? v.bpm : null;
         // The wall check only withholds; it never changes what the check itself has proven.
         // Judged over the last 4 one-second windows at once, not counted forward from the

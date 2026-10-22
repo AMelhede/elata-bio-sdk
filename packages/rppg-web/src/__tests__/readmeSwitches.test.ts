@@ -31,7 +31,7 @@ describe("README Switches section", () => {
 
 	it.each([...PULSE_CHECK_RULE_NAMES])("names pulse-check rule %s in the table and the example", (name) => {
 		expect(switches).toMatch(new RegExp(`^\\| \`pulseCheckRules\` \\|.*\`${name}\``, "m"));
-		expect(example).toMatch(new RegExp(`\\b${name}: true,`));
+		expect(example).toMatch(new RegExp(`\\b${name}: ${name === "restBand" ? "false" : "true"},`));
 	});
 
 	it.each([...PULSE_CHECK_RULE_NAMES])("llms.txt, read by tools and agents, names pulse-check rule %s", (name) => {

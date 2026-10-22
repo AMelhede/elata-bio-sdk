@@ -184,10 +184,19 @@ export type PulseCheckRules = {
      * Off: 12 dB, as in 0.15.0-test.26.
      */
     faintWall?: boolean;
+    /**
+     * The low band, where a line counts only when all three regions carry it, starts at
+     * OWN_PULSE_EDGE_BPM (52) instead of OWN_PULSE_LOW_BAND_BPM (58), so a resting rate of 52 to 57
+     * seen by two regions counts like any other. Under 52 nothing changes (all three regions and the
+     * edge bar). OFF unless asked for, the one rule that is: it adds readings, and is being measured
+     * on real people at rest and on no-pulse captures before any build turns it on (a tester at rest,
+     * 58 bpm by a reference, the camera's line at 56 in two regions: refused for most of 2 minutes).
+     */
+    restBand?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall"];
-/** Every rule resolved to true or false; left out means on. */
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand"];
+/** Every rule resolved to true or false; left out means on, except restBand (left out means off). */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
  * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,

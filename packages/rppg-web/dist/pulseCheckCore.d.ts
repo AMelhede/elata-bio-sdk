@@ -333,7 +333,9 @@ export type OwnPulseVerdict = "measured" | "not-measured" | "unknown";
 export type OwnPulseVerdictPath = "proof" | "dark" | "hold";
 export declare function ownPulseVerdict(history: readonly (OwnPulseEstimate | null)[], 
 /** The rate the previous verdict was measured at, if it was; enables the hold. */
-held?: number | null): {
+held?: number | null, 
+/** Where the low band starts (OWN_PULSE_LOW_BAND_BPM; OWN_PULSE_EDGE_BPM with rule restBand). */
+lowBand?: number): {
     verdict: OwnPulseVerdict;
     bpm: number | null;
     snrDb: number | null;
