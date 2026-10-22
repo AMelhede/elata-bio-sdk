@@ -16,9 +16,10 @@
 // closer, so it must sit under every face that reads well and above the size at which the face finder loses the
 // face. On real webcam recordings of people at rest, padded boxes were 0.136 to 0.263 of the frame width and read
 // right against a reference pulse, and smaller faces did not read worse. The same videos shrunk in the frame: the
-// face finder found the face in every frame down to 0.11 to 0.12 and in no frame at 0.09 to 0.10, and readings
-// held at 0.12 and began to thin at 0.11. So minWidth is 0.12: under every face that read well, a fifth above the
-// size at which the face is lost, so the hint comes while moving closer still helps.
+// face finder found the face in every frame down to 0.10 to 0.12 and lost it below that (0.087 to 0.10); at 0.10
+// to 0.12 the readings stayed right but grew fewer for some faces (as many as at full size for one, a tenth for
+// another). So minWidth is 0.12: under every face that read well, and where the face starts to be lost or read
+// less, so the hint comes while moving closer still helps.
 // The published 0.34 had no measurement behind it and asked a laptop user to sit about 38 cm from the camera.
 // maxWidth and centerTol are unchanged and still unmeasured.
 export const DEFAULT_FRAMING_THRESHOLDS = {

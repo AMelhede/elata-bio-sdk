@@ -88,7 +88,8 @@ Things to know while testing:
   little closer to the camera" while the face is smaller than the framing minimum. That minimum was 0.34 of the
   picture's width (a laptop user about 38 cm from the camera); on real webcam recordings faces were 0.136 to 0.263
   wide and read right against a reference pulse, yet every one was held at "move closer" with no number. It is
-  now 0.12, set by measurement: the face finder loses a face at about 0.10. To get 0.14.0's rule back, pass
+  now 0.12, set by measurement: the face finder loses a face at about 0.10, and between 0.10 and 0.12 some faces
+  read far less often. To get 0.14.0's rule back, pass
   `createRppgAppAdapter({ gating: { framingThresholds: PUBLISHED_FRAMING_THRESHOLDS } })`. The "move back" and
   "center your face" limits are unchanged and not yet measured.
 
