@@ -125,6 +125,12 @@ export declare const OWN_PULSE_TRACK_S = 12;
 export declare const OWN_PULSE_SUPPORT_S = 8;
 export declare const OWN_PULSE_SUPPORT_MISS = 3;
 export declare const OWN_PULSE_TRACK_BPM = 4;
+/** Margin around the proven rate and the 16 s window within which rule followerClamp keeps the follower (fixed
+ * before the held-out test, lane/follower prereg). */
+export declare const FOLLOWER_CLAMP_BPM = 1;
+/** Rule followerClamp: `follower` kept within [min(held, window) - margin, max(held, window) + margin]; unchanged
+ * when either slower line is missing. */
+export declare function clampFollower(follower: number, held: number | null, window: number | null, margin?: number): number;
 /** Brightness / colour amplitude ratio of the face regions within 0.1 Hz of `bpm`. */
 export declare function faceFlickerRatio(samples: readonly RawRoiSample[], atMs: number, bpm: number): number | null;
 /** Why no wall was found beside the face this frame (see wallBesideFace). */
@@ -195,10 +201,19 @@ export type PulseCheckRules = {
      * longer, every second within 5 bpm of a reference. Off: the 58 edge, as in 0.15.0-test.31.
      */
     restBand?: boolean;
+    /**
+     * The shown 8 s follower line is kept between the proven rate and the current 16 s window (FOLLOWER_CLAMP_BPM
+     * margin), so a short, noisy window cannot carry the number past both slower lines. Why: a real capture at rest
+     * showed 66 for 2 s while a reference read 57 to 58; the follower overshot both. A pre-registered held-out test
+     * at rest and after exercise, scored once, left the wrong seconds unchanged, lowered the mean error to the
+     * reference slightly and added no lag after exercise; seconds with a number are unchanged by construction. A
+     * weak pass, so OFF by default (unlike the other rules): turn it on with `followerClamp: true`.
+     */
+    followerClamp?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand"];
-/** Every rule resolved to true or false; left out means on. */
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "followerClamp"];
+/** Every rule resolved to true or false; left out means on, except followerClamp (off unless true). */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
  * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
