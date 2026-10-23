@@ -83,6 +83,13 @@ export type RppgGatingOptions = {
 	/** Distance/centering tolerances for positioning guidance (head-box terms). */
 	framingThresholds?: FramingThresholds;
 	/**
+	 * A mis-framed face (move closer, move back, center, too high or low) keeps its rate and gets the framing message
+	 * as advice, instead of `needs_position` withholding it. No face still withholds. Off by default (as published).
+	 * Measured 2026-10-23 on real webcam recordings: no face size or position that kept the face in the frame made a
+	 * wrong reading (centre up to 0.91 of the width, face up to 0.68 wide), so as a block framing withheld right ones.
+	 */
+	framingAdvice?: boolean;
+	/**
 	 * Below this `capture_confidence`, while still finding the pulse / calibrating,
 	 * guidance is overridden with the limiting motion/lighting hint so the user
 	 * fixes the environment instead of waiting on a stalled bar.
@@ -158,6 +165,7 @@ export class RppgGatingController {
 			stableDisplayHoldMs: options.stableDisplayHoldMs ?? 2500,
 			framingThresholds:
 				options.framingThresholds ?? DEFAULT_FRAMING_THRESHOLDS,
+			framingAdvice: options.framingAdvice === true,
 			minCaptureConfidence: options.minCaptureConfidence ?? 0.4,
 		};
 	}
@@ -258,7 +266,7 @@ export class RppgGatingController {
 		if (!hasFace) {
 			state = "needs_face";
 			reasons.push("no_face");
-		} else if (misframed) {
+		} else if (misframed && !this.opts.framingAdvice) {
 			// Fix positioning before light: re-sizing/centering the face is what
 			// actually recovers the signal here.
 			state = "needs_position";
@@ -282,7 +290,7 @@ export class RppgGatingController {
 		// Positioning carries five distinct messages, so surface the framing
 		// detail directly rather than the single-message fallback.
 		let guidance =
-			state === "needs_position" && framing
+			(state === "needs_position" || (this.opts.framingAdvice && misframed && hasFace)) && framing
 				? {
 						// `misframed` guarantees a positioning code here (never "ok").
 						code: framing.code as RppgGuidanceCode,

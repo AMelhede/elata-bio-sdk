@@ -13,7 +13,7 @@ fields aside). It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.33` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.34` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
 - Everything below the "Switches" section is Elata's documentation from that same main
@@ -25,7 +25,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.33"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.34"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -90,8 +90,12 @@ Things to know while testing:
   wide and read right against a reference pulse, yet every one was held at "move closer" with no number. It is
   now 0.12, set by measurement: the face finder loses a face at about 0.10, and between 0.10 and 0.12 some faces
   read far less often. To get 0.14.0's rule back, pass
-  `createRppgAppAdapter({ gating: { framingThresholds: PUBLISHED_FRAMING_THRESHOLDS } })`. The "move back" and
-  "center your face" limits are unchanged and not yet measured.
+  `createRppgAppAdapter({ gating: { framingThresholds: PUBLISHED_FRAMING_THRESHOLDS } })`. The "move back" (0.78) and
+  "center your face" (0.18) limits are unchanged. Measured since on real webcam recordings, no size or position
+  that kept the face in the picture gave a wrong reading (centre up to 0.91 of the width; faces up to 0.68 wide,
+  where readings fall off because a 16:9 picture no longer holds the face top to bottom), so as blocks they withhold
+  right readings. `createRppgAppAdapter({ gating: { framingAdvice: true } })` keeps the rate and shows the framing
+  message as advice; no face still withholds. Off by default.
 
 - **The pulse check needs face tracking.** With `faceMesh: "off"`, or if the face finder
   failed to load, there are no face regions to check, so no heart rate is shown. That is by

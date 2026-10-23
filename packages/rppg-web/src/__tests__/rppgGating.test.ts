@@ -170,5 +170,25 @@ describe("RppgGatingController", () => {
 		expect(framed.state).toBe("needs_light");
 		expect(framed.guidance.code).toBe("increase_lighting");
 	});
-});
 
+	test("framingAdvice: a mis-framed face keeps its rate, with the framing message as advice; no face still blocks", () => {
+		// Measured 2026-10-23 on real webcam recordings: an off-centre face (centre up to 0.91) and a close one read with
+		// 0 wrong seconds, so as a block framing withholds right readings. Off by default: the published behaviour.
+		const metrics = {
+			bpm: 72,
+			confidence: 0.9,
+			signal_quality: 0.9,
+			motion_mean: 0.01,
+			baseline_bpm: 72,
+		};
+		const offCentre = { x: 0.7, y: 0.4, width: 0.2, height: 0.25 };
+		const blocking = new RppgGatingController().update({ nowMs: 0, metrics, faceBox: offCentre });
+		expect(blocking.state).toBe("needs_position");
+		const advice = new RppgGatingController({ framingAdvice: true }).update({ nowMs: 0, metrics, faceBox: offCentre });
+		expect(advice.state).toBe("active");
+		expect(advice.publishBpm).toBe(72);
+		expect(advice.guidance.code).toBe("center_face");
+		const noFace = new RppgGatingController({ framingAdvice: true }).update({ nowMs: 0, metrics, faceBox: null });
+		expect(noFace.state).toBe("needs_face");
+	});
+});

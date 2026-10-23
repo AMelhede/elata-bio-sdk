@@ -46,6 +46,7 @@ export class RppgGatingController {
             minConfidenceForStable: options.minConfidenceForStable ?? 0.45,
             stableDisplayHoldMs: options.stableDisplayHoldMs ?? 2500,
             framingThresholds: options.framingThresholds ?? DEFAULT_FRAMING_THRESHOLDS,
+            framingAdvice: options.framingAdvice === true,
             minCaptureConfidence: options.minCaptureConfidence ?? 0.4,
         };
     }
@@ -130,7 +131,7 @@ export class RppgGatingController {
             state = "needs_face";
             reasons.push("no_face");
         }
-        else if (misframed) {
+        else if (misframed && !this.opts.framingAdvice) {
             // Fix positioning before light: re-sizing/centering the face is what
             // actually recovers the signal here.
             state = "needs_position";
@@ -157,7 +158,7 @@ export class RppgGatingController {
         }
         // Positioning carries five distinct messages, so surface the framing
         // detail directly rather than the single-message fallback.
-        let guidance = state === "needs_position" && framing
+        let guidance = (state === "needs_position" || (this.opts.framingAdvice && misframed && hasFace)) && framing
             ? {
                 // `misframed` guarantees a positioning code here (never "ok").
                 code: framing.code,
