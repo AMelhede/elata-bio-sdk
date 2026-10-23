@@ -191,4 +191,15 @@ describe("RppgGatingController", () => {
 		const noFace = new RppgGatingController({ framingAdvice: true }).update({ nowMs: 0, metrics, faceBox: null });
 		expect(noFace.state).toBe("needs_face");
 	});
+
+	test("a head too tall for the frame gets move back as advice and keeps its rate, framingAdvice or not", () => {
+		const metrics = { bpm: 72, confidence: 0.9, signal_quality: 0.9, motion_mean: 0.01, baseline_bpm: 72 };
+		const tall = { x: 0.3, y: 0.05, width: 0.42, height: 0.85 };
+		for (const framingAdvice of [false, true]) {
+			const out = new RppgGatingController({ framingAdvice }).update({ nowMs: 0, metrics, faceBox: tall });
+			expect(out.state).toBe("active");
+			expect(out.publishBpm).toBe(72);
+			expect(out.guidance.code).toBe("move_back");
+		}
+	});
 });

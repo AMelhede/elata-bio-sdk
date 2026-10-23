@@ -80,6 +80,32 @@ describe("move closer only for a face too small to find (measured, not assumed)"
 	});
 });
 
+describe("move back when the head no longer fits top to bottom (measured, advice only)", () => {
+	// Real webcam recordings zoomed in (lane/facesize run7): readings held while the padded head box was up to about
+	// 0.63 of the frame height and faded from about 0.8 (13 then 5 shown seconds of 73 at 0.80 and 0.89), at widths of
+	// only 0.34 to 0.48, far under maxWidth 0.78. No size gave a wrong reading, so this hint never withholds.
+	test("a head box taller than maxHeight says move back, marked as advice", () => {
+		const g = faceFramingFromBox({ x: 0.3, y: 0.05, width: 0.42, height: 0.85 });
+		expect(g.code).toBe("move_back");
+		expect(g.advisory).toBe(true);
+		expect(DEFAULT_FRAMING_THRESHOLDS.maxHeight).toBe(0.8);
+	});
+
+	test("a head that fits (0.63 tall, read like full size) is ok", () => {
+		expect(faceFramingFromBox({ x: 0.3, y: 0.18, width: 0.38, height: 0.63 }).code).toBe("ok");
+	});
+
+	test("too wide stays a blocking move back", () => {
+		const g = faceFramingFromBox({ x: 0.05, y: 0.1, width: 0.85, height: 0.7 });
+		expect(g.code).toBe("move_back");
+		expect(g.advisory).toBeUndefined();
+	});
+
+	test("PUBLISHED_FRAMING_THRESHOLDS has no height limit (the off switch)", () => {
+		expect(faceFramingFromBox({ x: 0.3, y: 0.05, width: 0.42, height: 0.85 }, PUBLISHED_FRAMING_THRESHOLDS).code).toBe("ok");
+	});
+});
+
 describe("faceBoxFromLandmarks", () => {
 	test("empty set is null", () => {
 		expect(faceBoxFromLandmarks([])).toBeNull();

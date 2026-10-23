@@ -23,6 +23,8 @@ export interface FramingGuidance {
 	code: FramingCode;
 	/** User-facing, head-relative (unambiguous regardless of camera mount). */
 	message: string;
+	/** True for a hint that never withholds the rate (the head too tall for the frame); absent for the others. */
+	advisory?: boolean;
 }
 
 /** Normalized face box: x/y top-left, width/height as fractions of the frame. */
@@ -40,6 +42,11 @@ export interface FramingThresholds {
 	maxWidth: number;
 	/** Allowed |center − 0.5| on each axis before we nudge. */
 	centerTol: number;
+	/**
+	 * Head-box height fraction above which the head no longer fits the frame top to bottom: "move back", as advice
+	 * only (the rate is never withheld for it). Left out, there is no height limit (as published).
+	 */
+	maxHeight?: number;
 }
 
 // Thresholds are in *head-box* terms (see padFaceBoxToHead): the box we frame
@@ -55,10 +62,15 @@ export interface FramingThresholds {
 // less, so the hint comes while moving closer still helps.
 // The published 0.34 had no measurement behind it and asked a laptop user to sit about 38 cm from the camera.
 // maxWidth and centerTol are unchanged and still unmeasured.
+// maxHeight is measured too (lane/facesize run7, the same recordings zoomed in, 640x360): readings held while the
+// padded head box was up to about 0.63 of the frame height and faded from about 0.8 (13, then 5 shown seconds of 73
+// at 0.80 and 0.89), at widths of only 0.34 to 0.48, so maxWidth never fired where it mattered. No size gave a wrong
+// reading, so this hint is advice: the rate is kept and the person is told to move back.
 export const DEFAULT_FRAMING_THRESHOLDS: FramingThresholds = {
 	minWidth: 0.12,
 	maxWidth: 0.78,
 	centerTol: 0.18,
+	maxHeight: 0.8,
 };
 
 /**
@@ -97,6 +109,8 @@ export function faceFramingFromBox(
 		return { code: "move_back", message: FRAMING_MESSAGES.move_back };
 	if (box.width < t.minWidth)
 		return { code: "move_closer", message: FRAMING_MESSAGES.move_closer };
+	if (t.maxHeight != null && box.height > t.maxHeight)
+		return { code: "move_back", message: FRAMING_MESSAGES.move_back, advisory: true };
 
 	const cx = box.x + box.width / 2;
 	if (Math.abs(cx - 0.5) > t.centerTol) {

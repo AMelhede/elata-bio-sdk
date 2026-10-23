@@ -14,6 +14,8 @@ export interface FramingGuidance {
     code: FramingCode;
     /** User-facing, head-relative (unambiguous regardless of camera mount). */
     message: string;
+    /** True for a hint that never withholds the rate (the head too tall for the frame); absent for the others. */
+    advisory?: boolean;
 }
 /** Normalized face box: x/y top-left, width/height as fractions of the frame. */
 export interface FaceBox {
@@ -29,6 +31,11 @@ export interface FramingThresholds {
     maxWidth: number;
     /** Allowed |center − 0.5| on each axis before we nudge. */
     centerTol: number;
+    /**
+     * Head-box height fraction above which the head no longer fits the frame top to bottom: "move back", as advice
+     * only (the rate is never withheld for it). Left out, there is no height limit (as published).
+     */
+    maxHeight?: number;
 }
 export declare const DEFAULT_FRAMING_THRESHOLDS: FramingThresholds;
 /**

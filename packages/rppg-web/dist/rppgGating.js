@@ -76,7 +76,9 @@ export class RppgGatingController {
                         !metrics.reason_codes.includes("no_face")));
         // A present-but-mis-framed face (move closer / center / …) — the most
         // actionable thing to fix, and a frequent root cause of low signal.
-        const misframed = framing != null && framing.code !== "ok" && framing.code !== "no_face";
+        const misframed = framing != null && framing.code !== "ok" && framing.code !== "no_face" && !framing.advisory;
+        // A hint that never withholds (the head too tall for the frame): shown whenever a face is there.
+        const advisoryFraming = framing != null && framing.advisory === true;
         const calibrated = metrics.baseline_bpm != null ||
             metrics.calibration_trained === true ||
             false;
@@ -158,7 +160,7 @@ export class RppgGatingController {
         }
         // Positioning carries five distinct messages, so surface the framing
         // detail directly rather than the single-message fallback.
-        let guidance = (state === "needs_position" || (this.opts.framingAdvice && misframed && hasFace)) && framing
+        let guidance = (state === "needs_position" || ((this.opts.framingAdvice && misframed) || advisoryFraming) && hasFace) && framing
             ? {
                 // `misframed` guarantees a positioning code here (never "ok").
                 code: framing.code,

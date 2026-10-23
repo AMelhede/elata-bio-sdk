@@ -13,7 +13,7 @@ fields aside). It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.34` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.35` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
 - Everything below the "Switches" section is Elata's documentation from that same main
@@ -25,7 +25,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.34"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.35"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -95,7 +95,10 @@ Things to know while testing:
   that kept the face in the picture gave a wrong reading (centre up to 0.91 of the width; faces up to 0.68 wide,
   where readings fall off because a 16:9 picture no longer holds the face top to bottom), so as blocks they withhold
   right readings. `createRppgAppAdapter({ gating: { framingAdvice: true } })` keeps the rate and shows the framing
-  message as advice; no face still withholds. Off by default.
+  message as advice; no face still withholds. Off by default. A head too tall for the frame top to bottom (padded head box over 0.8 of the frame height,
+  `maxHeight`, measured: readings fade from there while the face is still far under the 0.78 width limit) now gets
+  "move back" as advice in every mode; the rate is never withheld for it. `PUBLISHED_FRAMING_THRESHOLDS` has no
+  height limit.
 
 - **The pulse check needs face tracking.** With `faceMesh: "off"`, or if the face finder
   failed to load, there are no face regions to check, so no heart rate is shown. That is by
