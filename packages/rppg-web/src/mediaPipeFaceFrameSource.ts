@@ -94,7 +94,9 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		} else {
 			const tick = () => {
 				if (!this.running) return;
-				this.detectAndEmit(Date.now(), null);
+				// performance.now(), the clock requestVideoFrameCallback gives: every frame time in the library is on it.
+				// Date.now() here froze the page where the callback is missing (Safari before 15.4, Firefox before 132).
+				this.detectAndEmit(performance.now(), null);
 				setTimeout(tick, interval);
 			};
 			tick();

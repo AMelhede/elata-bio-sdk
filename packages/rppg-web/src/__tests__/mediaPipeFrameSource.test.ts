@@ -175,4 +175,24 @@ describe('MediaPipeFrameSource', () => {
       }),
     );
   });
+
+  test('the timer fallback stamps frames with performance.now, the clock requestVideoFrameCallback uses', async () => {
+    const createdCanvas = new FakeCanvas(2, 1);
+    document.createElement = (tagName: string) => {
+      if (tagName === 'canvas') return createdCanvas as unknown as HTMLCanvasElement;
+      return origCreateCanvas(tagName);
+    };
+    jest.useFakeTimers({ now: 1_760_000_000_000 });
+    const video = new FakeVideo(2, 1) as unknown as HTMLVideoElement;
+    const src = new MediaPipeFrameSource(video, { fps: 30 });
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    await src.start();
+    jest.advanceTimersByTime(100);
+    await src.stop();
+    const perf = performance.now();
+    jest.useRealTimers();
+    expect(frames.length).toBeGreaterThan(0);
+    for (const f of frames) expect(Math.abs((f.timestampMs ?? NaN) - perf)).toBeLessThan(1000);
+  });
 });

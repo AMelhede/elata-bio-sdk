@@ -46,7 +46,8 @@ export class MediaPipeFrameSource implements FrameSource {
 			this.vfcHandle = (this.video as any).requestVideoFrameCallback(cb);
 		} else {
 			this.timer = setInterval(
-				() => this.captureFrame(Date.now(), null),
+				// performance.now(), the clock requestVideoFrameCallback gives (Date.now() here froze the page).
+				() => this.captureFrame(performance.now(), null),
 				interval,
 			);
 		}
@@ -90,7 +91,7 @@ export class MediaPipeFrameSource implements FrameSource {
 					? metadata.mediaTime * 1000
 					: typeof now === "number"
 						? now
-						: Date.now();
+						: performance.now();
 			const frame: Frame = {
 				data: img.data,
 				width: this.canvas.width,

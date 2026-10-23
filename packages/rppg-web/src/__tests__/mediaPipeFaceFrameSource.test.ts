@@ -299,6 +299,27 @@ describe('MediaPipeFaceFrameSource edge cases', () => {
     restore();
     jest.useRealTimers();
   });
+
+  test('the timer fallback stamps frames on the same clock as requestVideoFrameCallback (performance.now)', async () => {
+    // Without requestVideoFrameCallback (Safari before 15.4, Firefox before 132) the fallback stamped frames with
+    // Date.now() (about 1.7e12 ms) while every other clock is performance.now(): in a browser the page froze.
+    jest.useFakeTimers({ now: 1_760_000_000_000 });
+    const restore = setupCanvasMock(200, 100);
+    const video = new FakeVideo(200, 100) as unknown as HTMLVideoElement;
+    const landmarker = fakeLandmarker([{}]);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30);
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    await src.start();
+    jest.advanceTimersByTime(100);
+    await src.stop();
+    restore();
+    const perf = performance.now();
+    jest.useRealTimers();
+    expect(frames.length).toBeGreaterThan(0);
+    for (const f of frames) expect(Math.abs((f.timestampMs ?? NaN) - perf)).toBeLessThan(1000);
+    for (const call of (landmarker.detectForVideo as jest.Mock).mock.calls) expect(Math.abs(call[1] - perf)).toBeLessThan(1000);
+  });
 });
 
 describe('MediaPipeFaceFrameSource analysis width switch', () => {
