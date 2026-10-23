@@ -570,8 +570,21 @@ function counts(e, lowBand) {
         return false;
     if (e.bpm < OWN_PULSE_EDGE_BPM && e.snrDb < OWN_PULSE_EDGE_MIN_SNR_DB)
         return false;
-    return e.bpm >= lowBand || e.agreeing.length >= REGIONS.length;
+    if (e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length)
+        return true;
+    // Only rule restBand (lowBand below OWN_PULSE_LOW_BAND_BPM) reaches here with a line at or over lowBand.
+    if (e.bpm < lowBand)
+        return false;
+    return e.snrDb >= OWN_PULSE_REST_BAND_MIN_SNR_DB;
 }
+/**
+ * Rule restBand only: a line from lowBand to OWN_PULSE_LOW_BAND_BPM that two of the three regions carry also needs
+ * this much SNR. Without it the rule let no-pulse video show invented seconds in that band (sitting at 52 to 58,
+ * the band floor's drift); with it, a pre-registered test on people and no-pulse video it had not been tuned on
+ * added no invented and no wrong second. The value was chosen on earlier recordings, where -3 (the usual bar) let
+ * invented seconds through and -2 did not; that test is what checked it.
+ */
+export const OWN_PULSE_REST_BAND_MIN_SNR_DB = -2;
 /**
  * The bottom of the band (OWN_PULSE_BAND_HZ, 42 bpm) is where slow drift that every region shares (room
  * light, exposure, a slowly moving head) piles up, and all three regions can agree on it. Below
