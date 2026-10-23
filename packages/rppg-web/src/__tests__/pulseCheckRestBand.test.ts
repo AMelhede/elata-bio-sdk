@@ -7,7 +7,8 @@ import {
 	ownPulseVerdict,
 } from "../pulseCheckCore";
 
-// Rule restBand (off by default until measured on real people): the low band, where every region must
+// Rule restBand (on by default since test.32, after a pre-registered held-out test added no invented or wrong
+// second; set false for the old 58 bpm edge): the low band, where every region must
 // carry the line, starts at OWN_PULSE_EDGE_BPM (52) instead of OWN_PULSE_LOW_BAND_BPM (58). A resting
 // rate of 56 seen by two of three regions was refused for a whole calm stretch (owner pilot 2026-10-22,
 // Muse 58.3, the camera's line at 56.3 to 57.8 in two regions).
@@ -17,11 +18,12 @@ const run = (bpm: number, regions: number[], lowBandBpm?: number, snrDb = 1) =>
 	ownPulseVerdict(Array.from({ length: 10 }, () => est(bpm, regions, snrDb)), null, lowBandBpm).verdict;
 
 describe("rule restBand", () => {
-	it("is off unless asked for", () => {
-		expect(resolvePulseCheckRules().restBand).toBe(false);
-		expect(resolvePulseCheckRules({ restBand: true }).restBand).toBe(true);
+	it("is on unless set to false", () => {
+		expect(resolvePulseCheckRules().restBand).toBe(true);
+		expect(resolvePulseCheckRules({ restBand: false }).restBand).toBe(false);
+		expect(new PulseCheck().rules.restBand).toBe(true);
 	});
-	it("default: 56 bpm in two regions is refused, in three it is proven", () => {
+	it("rule off (the 58 edge): 56 bpm in two regions is refused, in three it is proven", () => {
 		expect(run(56, [0, 1])).not.toBe("measured");
 		expect(run(56, [0, 1, 2])).toBe("measured");
 	});

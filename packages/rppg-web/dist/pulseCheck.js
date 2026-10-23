@@ -126,7 +126,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "faintWall",
     "restBand",
 ];
-/** Every rule resolved to true or false; left out means on, except restBand (left out means off). */
+/** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
     return {
         wallBandEdge: rules?.wallBandEdge !== false,
@@ -138,7 +138,7 @@ export function resolvePulseCheckRules(rules) {
         darkWall: rules?.darkWall !== false,
         clockBack: rules?.clockBack !== false,
         faintWall: rules?.faintWall !== false,
-        restBand: rules?.restBand === true,
+        restBand: rules?.restBand !== false,
     };
 }
 /**
