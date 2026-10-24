@@ -304,10 +304,16 @@ export class DemoRunner {
                 const wall = frame.landmarks
                     ? this.wallTracker.next(frame.landmarks, frame)
                     : null;
-                this.opts.pulseChecker.push(frame.timestampMs, rois.slice(0, 3).map((roi) => {
+                const regions = rois.slice(0, 3).map((roi) => {
                     const c = clampRoiToFrame(roi, frame.width, frame.height);
                     return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
-                }), wall?.rgb, frame.landmarks && !wall
+                });
+                // The face's brightness, for the "add light" hint (RppgGatingInputs.faceLuma).
+                if (this.lastFaceBox) {
+                    this.lastFaceBox.faceLuma =
+                        regions.reduce((sum, r) => sum + 0.299 * r.r + 0.587 * r.g + 0.114 * r.b, 0) / regions.length;
+                }
+                this.opts.pulseChecker.push(frame.timestampMs, regions, wall?.rgb, frame.landmarks && !wall
                     ? wallMissReason(frame.landmarks, frame.width, frame.height)
                     : undefined, 
                 // The head's position, for the headMotion rule: a rate the head's own

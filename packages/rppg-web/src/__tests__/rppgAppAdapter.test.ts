@@ -135,6 +135,17 @@ describe("RppgAppAdapter", () => {
 		expect(snapshot.publishBpm).toBe(72);
 	});
 
+	test("passes the face's brightness to gating: a dark face with no number yet is told to add light", () => {
+		const adapter = createRppgAppAdapter({ nowMs: () => 1000 });
+		const source = createSource();
+		const searching = {
+			...source,
+			getMetrics: () => ({ ...source.getMetrics(), bpm: null, baseline_bpm: null, calibration_trained: false }),
+			getLastFaceBox: () => ({ box: { x: 0.4, y: 0.3, width: 0.2, height: 0.26 }, atMs: 1000, faceLuma: 0.12 }),
+		};
+		expect(adapter.getSnapshot(searching).guidance.code).toBe("increase_lighting");
+	});
+
 	test("surfaces retrying state without publishing stale data", () => {
 		const adapter = createRppgAppAdapter({ nowMs: () => 1000 });
 		const state: ManagedRppgSessionState = {

@@ -192,6 +192,26 @@ describe("RppgGatingController", () => {
 		expect(noFace.state).toBe("needs_face");
 	});
 
+	test("a dark face with no number yet is told to add light; a lit face, or one already reading, is not", () => {
+		// Measured on real recordings with the light lowered (evidence lane/light run14b/run15): faces read at face
+		// brightness 0.37 to 0.40 and faded below about 0.3 while the capture score stayed about 0.56, so the only
+		// light advice (signal quality under 0.25) never fired. Advice only: the rate is never withheld for it.
+		const searching = { bpm: null, confidence: 0.3, signal_quality: 0.56, motion_mean: 0.01 };
+		const box = { x: 0.4, y: 0.3, width: 0.2, height: 0.3 };
+		const dark = new RppgGatingController().update({ nowMs: 0, metrics: searching, faceBox: box, faceLuma: 0.13 });
+		expect(dark.state).toBe("finding_pulse");
+		expect(dark.guidance.code).toBe("increase_lighting");
+		const lit = new RppgGatingController().update({ nowMs: 0, metrics: searching, faceBox: box, faceLuma: 0.38 });
+		expect(lit.guidance.code).toBe("finding_pulse");
+		const reading = { bpm: 70, confidence: 0.9, signal_quality: 0.9, motion_mean: 0.01, baseline_bpm: 70 };
+		const darkReading = new RppgGatingController().update({ nowMs: 0, metrics: reading, faceBox: box, faceLuma: 0.2 });
+		expect(darkReading.state).toBe("active");
+		expect(darkReading.publishBpm).toBe(70);
+		expect(darkReading.guidance.code).toBe("active_monitoring");
+		const unknown = new RppgGatingController().update({ nowMs: 0, metrics: searching, faceBox: box });
+		expect(unknown.guidance.code).toBe("finding_pulse");
+	});
+
 	test("a head too tall for the frame gets move back as advice and keeps its rate, framingAdvice or not", () => {
 		const metrics = { bpm: 72, confidence: 0.9, signal_quality: 0.9, motion_mean: 0.01, baseline_bpm: 72 };
 		const tall = { x: 0.3, y: 0.05, width: 0.42, height: 0.85 };

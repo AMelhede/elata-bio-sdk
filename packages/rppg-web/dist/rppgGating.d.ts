@@ -30,6 +30,11 @@ export type RppgGatingInputs = {
      * legacy skin-ratio face heuristic and no positioning hints.
      */
     faceBox?: FaceBox | null;
+    /**
+     * Mean brightness (0..1) of the face regions the pulse is read from, when known. A face darker than
+     * `minFaceLuma` that has no number yet gets "add light" as advice; the rate is never withheld for it.
+     */
+    faceLuma?: number | null;
 };
 export type RppgGatingOptions = {
     /**
@@ -59,6 +64,11 @@ export type RppgGatingOptions = {
      */
     framingAdvice?: boolean;
     /**
+     * Face brightness (0..1, the face regions' mean) under which a face with no number yet is told to add light.
+     * Default DEFAULT_MIN_FACE_LUMA (measured). 0 turns the hint off.
+     */
+    minFaceLuma?: number;
+    /**
      * Below this `capture_confidence`, while still finding the pulse / calibrating,
      * guidance is overridden with the limiting motion/lighting hint so the user
      * fixes the environment instead of waiting on a stalled bar.
@@ -83,6 +93,14 @@ export type RppgGatingOutput = {
         lastStableAtMs: number | null;
     };
 };
+/**
+ * Face brightness under which a face with no number yet is told to add light. Measured on real recordings with the
+ * light lowered (gain and camera noise, 3 Mbit/s like a webcam stream): faces read at a face-region brightness of
+ * 0.37 to 0.40 and the readings fell away below about 0.3 (to under half of the lit clip at 0.29 for one person, to
+ * nothing by 0.13 to 0.18 for all), while the capture score stayed about 0.56, above the 0.25 at which the only
+ * light advice fired. So until now a person in a dim room was never told to add light.
+ */
+export declare const DEFAULT_MIN_FACE_LUMA = 0.3;
 /**
  * Framework-agnostic progressive gating for rPPG heart rate.
  *
