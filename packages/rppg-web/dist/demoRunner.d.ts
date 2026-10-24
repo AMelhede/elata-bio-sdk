@@ -15,8 +15,6 @@ export type LastFaceBox = {
     /** Normalized (0..1) head box — the mesh bounds padded out to the head. */
     box: FaceBox;
     atMs: number;
-    /** Mean brightness (0..1, BT.601) of the face regions the pulse check read on the latest frame, when known. */
-    faceLuma?: number;
 };
 export type DemoRunnerOptions = {
     /**

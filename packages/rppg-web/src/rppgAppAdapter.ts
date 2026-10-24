@@ -61,7 +61,7 @@ export type RppgAppAdapterSource = {
 	/** Latest face blendshapes (for affect). Optional — sources without face tracking omit it. */
 	getLastBlendshapes?(): { blendshapes: FaceBlendshapeCategory[]; atMs: number } | null;
 	/** Latest normalized head box (for framing). Optional — omitted by sources without face tracking. */
-	getLastFaceBox?(): { box: FaceBox; atMs: number; faceLuma?: number } | null;
+	getLastFaceBox?(): { box: FaceBox; atMs: number } | null;
 };
 
 export type CreateRppgAppAdapterOptions = {
@@ -302,7 +302,6 @@ export class RppgAppAdapter {
 				metrics,
 				hasFace: faceBox === undefined ? inferHasFace(diagnostics) : undefined,
 				faceBox,
-				faceLuma: faceBox ? faceBoxEntry?.faceLuma ?? null : null,
 			});
 		} else {
 			this.gating.reset();

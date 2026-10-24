@@ -150,7 +150,6 @@ export class RppgAppAdapter {
                 metrics,
                 hasFace: faceBox === undefined ? inferHasFace(diagnostics) : undefined,
                 faceBox,
-                faceLuma: faceBox ? faceBoxEntry?.faceLuma ?? null : null,
             });
         }
         else {

@@ -13,7 +13,7 @@ fields aside). It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.39` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.40` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
 - Everything below the "Switches" section is Elata's documentation from that same main
@@ -25,7 +25,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.39"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.40"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -101,10 +101,6 @@ Things to know while testing:
   height limit. The "move closer" floor is judged against the frame's longer side (`longSide`), so a phone held upright
   (a portrait frame) gets "move closer" before the face finder loses the face: in portrait the finder loses a face at
   about the same pixel size as in landscape, which is a far larger share of the narrow width.
-  A dark face with no number yet gets "Add light on your face" (`increase_lighting`, advice only, the rate never
-  withheld): the adapter passes the face regions' brightness to gating (`faceLuma`), and under `minFaceLuma`
-  (default 0.3, measured on recordings with the light lowered: readings fell away below it while the capture score
-  stayed high enough that no light advice fired) the hint shows. `gating: { minFaceLuma: 0 }` turns it off.
 
 - **The pulse check needs face tracking.** With `faceMesh: "off"`, or if the face finder
   failed to load, there are no face regions to check, so no heart rate is shown. That is by

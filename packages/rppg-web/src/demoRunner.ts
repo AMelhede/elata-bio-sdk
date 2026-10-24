@@ -48,8 +48,6 @@ export type LastFaceBox = {
 	/** Normalized (0..1) head box — the mesh bounds padded out to the head. */
 	box: FaceBox;
 	atMs: number;
-	/** Mean brightness (0..1, BT.601) of the face regions the pulse check read on the latest frame, when known. */
-	faceLuma?: number;
 };
 
 export type DemoRunnerOptions = {
@@ -529,18 +527,12 @@ export class DemoRunner {
 				const wall = frame.landmarks
 					? this.wallTracker.next(frame.landmarks, frame)
 					: null;
-				const regions = rois.slice(0, 3).map((roi) => {
-					const c = clampRoiToFrame(roi, frame.width, frame.height);
-					return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
-				});
-				// The face's brightness, for the "add light" hint (RppgGatingInputs.faceLuma).
-				if (this.lastFaceBox) {
-					this.lastFaceBox.faceLuma =
-						regions.reduce((sum, r) => sum + 0.299 * r.r + 0.587 * r.g + 0.114 * r.b, 0) / regions.length;
-				}
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
-					regions,
+					rois.slice(0, 3).map((roi) => {
+						const c = clampRoiToFrame(roi, frame.width, frame.height);
+						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
+					}),
 					wall?.rgb,
 					frame.landmarks && !wall
 						? wallMissReason(frame.landmarks, frame.width, frame.height)

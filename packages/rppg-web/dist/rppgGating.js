@@ -1,13 +1,5 @@
 import { DEFAULT_FRAMING_THRESHOLDS, faceFramingFromBox, } from "./faceFraming.js";
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
-/**
- * Face brightness under which a face with no number yet is told to add light. Measured on real recordings with the
- * light lowered (gain and camera noise, 3 Mbit/s like a webcam stream): faces read at a face-region brightness of
- * 0.37 to 0.40 and the readings fell away below about 0.3 (to under half of the lit clip at 0.29 for one person, to
- * nothing by 0.13 to 0.18 for all), while the capture score stayed about 0.56, above the 0.25 at which the only
- * light advice fired. So until now a person in a dim room was never told to add light.
- */
-export const DEFAULT_MIN_FACE_LUMA = 0.3;
 function pickGuidance(state) {
     switch (state) {
         case "needs_face":
@@ -55,7 +47,6 @@ export class RppgGatingController {
             stableDisplayHoldMs: options.stableDisplayHoldMs ?? 2500,
             framingThresholds: options.framingThresholds ?? DEFAULT_FRAMING_THRESHOLDS,
             framingAdvice: options.framingAdvice === true,
-            minFaceLuma: options.minFaceLuma ?? DEFAULT_MIN_FACE_LUMA,
             minCaptureConfidence: options.minCaptureConfidence ?? 0.4,
         };
     }
@@ -176,15 +167,6 @@ export class RppgGatingController {
                 message: framing.message,
             }
             : pickGuidance(state);
-        // A dark face with no number yet: the pulse scales with the light while the camera's noise does not, so the
-        // one thing that helps is light. Advice only; a face already reading is left alone.
-        if ((state === "finding_pulse" || state === "calibrating") &&
-            hasFace &&
-            input.faceLuma != null &&
-            input.faceLuma < this.opts.minFaceLuma) {
-            reasons.push("low_face_light");
-            guidance = { code: "increase_lighting", message: "Add light on your face" };
-        }
         // While still acquiring (finding pulse / calibrating), a stalled bar is
         // only frustrating if the user doesn't know why. When capture confidence
         // is low, replace the generic message with the limiting motion/lighting

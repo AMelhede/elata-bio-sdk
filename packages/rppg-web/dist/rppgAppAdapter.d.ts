@@ -27,7 +27,6 @@ export type RppgAppAdapterSource = {
     getLastFaceBox?(): {
         box: FaceBox;
         atMs: number;
-        faceLuma?: number;
     } | null;
 };
 export type CreateRppgAppAdapterOptions = {
