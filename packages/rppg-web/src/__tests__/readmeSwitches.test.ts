@@ -127,7 +127,7 @@ describe("PUBLISHING.md names this branch and this build", () => {
 // same lists, and the speed changes from the README rows that say "Speed.".
 describe("package.json description", () => {
 	const pkg = require("../../package.json") as { description: string };
-	const words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+	const words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"];
 	const speed = FIX_SWITCH_NAMES.filter((name) =>
 		new RegExp(`^\\| \`fixes\\.${name}\` \\| Speed\\.`, "m").test(switches),
 	).length;

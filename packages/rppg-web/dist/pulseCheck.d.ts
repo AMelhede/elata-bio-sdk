@@ -196,16 +196,17 @@ export type PulseCheckRules = {
      */
     restBand?: boolean;
     /**
-     * An early confirmation (the one earlyPulse implements, ported unchanged from an app that runs it): before the ordinary proof, a strong lit pulse
-     * whose beat rate and spectrum agree over the trailing 12 s (earlyPulse) stands as the proven rate for
-     * OWN_PULSE_EARLY_HOLD_S from when it fired, unless the wall or the head carried that rate in any of the last
-     * OWN_PULSE_STRONG_STREAK windows; the usual withholds still apply. OFF unless set to true until measured here.
+     * The shown rate is the proven rate (state.heldBpm), on exactly the seconds a rate would be shown, instead of the
+     * newest 8 s line following it. OFF unless set to true, being measured: on held-out webcam recordings at rest and
+     * after exercise it lowered the mean error with the same seconds shown and nothing invented, but the follower it
+     * replaces was added because it fixed wrong seconds on other cameras and on rising heart rates, so it stays off
+     * until it is tested there.
      */
-    earlyPath?: boolean;
+    showHeld?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "earlyPath"];
-/** Every rule resolved to true or false; left out means on, except earlyPath (off unless true). */
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld"];
+/** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
  * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
@@ -224,7 +225,30 @@ export type HeadPosition = {
      * app's talking step (a guided test confirms the tester talked); no rule of this check reads it.
      */
     mouthOpen?: number;
+    /**
+     * Head angles in degrees from the mesh's own depth (z), recorded only, for an app's pose steps (a guided test
+     * confirms the tester turned or looked down); no rule of this check reads them. Yaw: the cheekbone line's angle in
+     * the x-z plane; pitch: the forehead-to-chin line's angle in the y-z plane; roll: the cheekbone line's angle in the
+     * image. Absolute values carry the mesh's own bias, so an app compares them against the same person's straight-on
+     * step, never against a fixed number. Absent when the mesh gives no depth.
+     */
+    yawDeg?: number;
+    pitchDeg?: number;
+    rollDeg?: number;
 };
+/**
+ * Yaw, pitch and roll in degrees from three mesh lines (headCentre). MediaPipe gives z on roughly the scale of x
+ * (normalised by the image width), so z is scaled by the width. Null when any point lacks a finite z.
+ */
+export declare function headAngles(points: readonly {
+    x: number;
+    y: number;
+    z?: number;
+}[], width: number, height: number): {
+    yawDeg: number;
+    pitchDeg: number;
+    rollDeg: number;
+} | null;
 /**
  * The head's position this frame: the centre of HEAD_LANDMARKS in pixels, and the face's width
  * (cheekbone to cheekbone, in pixels), or null if the mesh lacks a landmark or the frame has no size.
@@ -232,6 +256,7 @@ export type HeadPosition = {
 export declare function headCentre(points: readonly {
     x: number;
     y: number;
+    z?: number;
 }[], width: number, height: number): HeadPosition | null;
 /** One frame of the head as the check keeps it: [time ms, x, y, face width], pixels (headCentre). */
 export type HeadRow = [number, number, number, number];
@@ -334,8 +359,6 @@ export declare class PulseCheck {
     private headHandedOver;
     private history;
     private held;
-    /** Rule earlyPath: the early confirmation standing, and when it fired. */
-    private early;
     /** The newest in-band follower value, or null (the state's followerBpm). */
     private followerBpm;
     private lastEvalMs;

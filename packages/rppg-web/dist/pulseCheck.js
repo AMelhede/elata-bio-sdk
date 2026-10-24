@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkin } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EARLY_HOLD_S, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, earlyPulse, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -125,9 +125,9 @@ export const PULSE_CHECK_RULE_NAMES = [
     "clockBack",
     "faintWall",
     "restBand",
-    "earlyPath",
+    "showHeld",
 ];
-/** Every rule resolved to true or false; left out means on, except earlyPath (off unless true). */
+/** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
     return {
         wallBandEdge: rules?.wallBandEdge !== false,
@@ -140,7 +140,7 @@ export function resolvePulseCheckRules(rules) {
         clockBack: rules?.clockBack !== false,
         faintWall: rules?.faintWall !== false,
         restBand: rules?.restBand !== false,
-        earlyPath: rules?.earlyPath === true,
+        showHeld: rules?.showHeld === true,
     };
 }
 /**
@@ -152,6 +152,23 @@ export const HEAD_LANDMARKS = [168, 6, 4, 10, 152, 33, 263, 234, 454];
 const CHEEKBONES = [234, 454];
 /** Inner lips, upper and lower (MediaPipe face mesh 13 and 14). */
 const INNER_LIPS = [13, 14];
+/** Forehead and chin (MediaPipe face mesh 10 and 152): the face's vertical line, for pitch. */
+const FOREHEAD_CHIN = [10, 152];
+/**
+ * Yaw, pitch and roll in degrees from three mesh lines (headCentre). MediaPipe gives z on roughly the scale of x
+ * (normalised by the image width), so z is scaled by the width. Null when any point lacks a finite z.
+ */
+export function headAngles(points, width, height) {
+    const [l, r] = CHEEKBONES.map((i) => points[i]);
+    const [f, c] = FOREHEAD_CHIN.map((i) => points[i]);
+    if (![l, r, f, c].every((p) => p && Number.isFinite(p.z)))
+        return null;
+    const deg = 180 / Math.PI;
+    const yawDeg = Math.atan2((r.z - l.z) * width, (r.x - l.x) * width) * deg;
+    const pitchDeg = Math.atan2((c.z - f.z) * width, (c.y - f.y) * height) * deg;
+    const rollDeg = Math.atan2((r.y - l.y) * height, (r.x - l.x) * width) * deg;
+    return { yawDeg, pitchDeg, rollDeg };
+}
 /**
  * The head's position this frame: the centre of HEAD_LANDMARKS in pixels, and the face's width
  * (cheekbone to cheekbone, in pixels), or null if the mesh lacks a landmark or the frame has no size.
@@ -174,6 +191,7 @@ export function headCentre(points, width, height) {
         y: y / HEAD_LANDMARKS.length,
         faceWidth,
         ...(faceWidth > 0 && Number.isFinite(gap) ? { mouthOpen: gap / faceWidth } : {}),
+        ...(headAngles(points, width, height) ?? {}),
     };
 }
 /**
@@ -520,8 +538,6 @@ export class PulseCheck {
         this.headHandedOver = false;
         this.history = [];
         this.held = null;
-        /** Rule earlyPath: the early confirmation standing, and when it fired. */
-        this.early = null;
         /** The newest in-band follower value, or null (the state's followerBpm). */
         this.followerBpm = null;
         this.lastEvalMs = null;
@@ -653,29 +669,7 @@ export class PulseCheck {
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
-        const ordinary = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
-        let v = ordinary;
-        if (this.rules.earlyPath) {
-            if (ordinary.verdict === "measured")
-                this.early = null;
-            else if (this.early == null && !tainted && est?.bpm != null) {
-                const e = earlyPulse(this.samples, timestampMs);
-                if (e != null)
-                    this.early = { bpm: e, atMs: timestampMs };
-            }
-            const standing = this.early;
-            if (standing != null) {
-                const lately = Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => timestampMs - k * EVAL_EVERY_MS);
-                if (timestampMs - standing.atMs > OWN_PULSE_EARLY_HOLD_S * 1000)
-                    this.early = null;
-                else if (lately.some((t) => lineCarries(lineAt(t), standing.bpm, this.rules)))
-                    this.early = null;
-                else if (this.rules.headMotion && this.headHandedOver && lately.some((t) => headCarries(this.head, t, standing.bpm)))
-                    this.early = null;
-            }
-            if (ordinary.verdict !== "measured" && this.early != null)
-                v = { ...ordinary, verdict: "measured", bpm: this.early.bpm };
-        }
+        const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
         this.held = v.verdict === "measured" ? v.bpm : null;
         // The wall check only withholds; it never changes what the check itself has proven.
         // Judged over the last 4 one-second windows at once, not counted forward from the
@@ -755,7 +749,7 @@ export class PulseCheck {
         if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
             this.unsupported = 0;
             this.followerBpm = rate;
-            return rate;
+            return this.rules.showHeld ? this.held : rate;
         }
         this.unsupported += 1;
         return this.unsupported >= OWN_PULSE_SUPPORT_MISS ? null : this.held;
@@ -802,7 +796,6 @@ export class PulseCheck {
         this.headHandedOver = false;
         this.history = [];
         this.held = null;
-        this.early = null;
         this.followerBpm = null;
         this.lastEvalMs = null;
         this.lostSinceMs = null;

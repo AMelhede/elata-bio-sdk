@@ -351,46 +351,4 @@ lowBand?: number): {
     /** How a "measured" verdict was reached (OwnPulseVerdictPath); null otherwise. */
     path: OwnPulseVerdictPath | null;
 };
-/**
- * A strong pulse in good light, confirmed from 12 s: the beat intervals and the
- * spectrum agree.
- *
- * The ordinary verdict needs a full 16 s window and then agreement over time,
- * which is why a capture took 25 s at the fastest. Two independent readings of
- * the same seconds are faster evidence than one reading repeated: the time
- * between beats (peaks of the POS signal, as a contact PPG counts) and the
- * spectrum's line. On a pulse they agree; on noise the peaks fall where the
- * noise puts them.
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
- */
-export declare const OWN_PULSE_EARLY_FROM_S = 12;
-/** Spectrum and beat rate within this many bpm. */
-export declare const OWN_PULSE_EARLY_AGREE_BPM = 3;
-/**
- * Beat-interval coefficient of variation below this: steady beats, not noise
- * peaks.
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
- */
-export declare const OWN_PULSE_EARLY_MAX_CV = 0.18;
-/**
- * How long an early confirmation stands in for the ordinary verdict, from the
- * moment it fired.
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
- */
-export declare const OWN_PULSE_EARLY_HOLD_S = 8;
-/** Beat rate from the peaks of the three regions' POS signals, summed; null when too few beats. */
-export declare function beatRate(samples: readonly RawRoiSample[], fromMs: number, toMs: number): {
-    bpm: number;
-    cv: number;
-} | null;
-/**
- * The early confirmation over a capture's own samples (first sample = the
- * press), judged at `atMs` on the trailing OWN_PULSE_EARLY_FROM_S seconds: a
- * rate, or null. Never before that much signal exists, and never from a
- * camera slowed for light, where the sweep had no evidence it holds.
- */
-export declare function earlyPulse(samples: readonly RawRoiSample[], atMs: number): number | null;
 //# sourceMappingURL=pulseCheckCore.d.ts.map

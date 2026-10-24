@@ -80,9 +80,11 @@ export class RecordingPulseCheck extends PulseCheck {
                 ? false
                 : head === null
                     ? null
-                    : head.mouthOpen != null
-                        ? [head.x, head.y, head.faceWidth, head.mouthOpen]
-                        : [head.x, head.y, head.faceWidth],
+                    : head.yawDeg != null
+                        ? [head.x, head.y, head.faceWidth, head.mouthOpen ?? null, head.yawDeg, head.pitchDeg ?? null, head.rollDeg ?? null]
+                        : head.mouthOpen != null
+                            ? [head.x, head.y, head.faceWidth, head.mouthOpen]
+                            : [head.x, head.y, head.faceWidth],
         ], timestampMs);
         super.push(timestampMs, regions, wall, wallMiss, head, wallRaw);
     }
