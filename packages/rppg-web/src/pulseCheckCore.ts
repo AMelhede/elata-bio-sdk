@@ -708,6 +708,7 @@ export const OWN_PULSE_MIN_AGREEING = 2;
 function counts(
 	e: OwnPulseEstimate | null,
 	lowBand: number,
+	slowTwo = false,
 ): e is OwnPulseEstimate & { bpm: number; snrDb: number } {
 	if (e == null || e.bpm == null || e.snrDb == null) return false;
 	if (slowedForLight(e) && e.snrDb < OWN_PULSE_SLOW_CAMERA_MIN_SNR_DB)
@@ -717,6 +718,8 @@ function counts(
 	if (e.bpm < OWN_PULSE_EDGE_BPM && e.snrDb < OWN_PULSE_EDGE_MIN_SNR_DB)
 		return false;
 	if (e.bpm >= OWN_PULSE_LOW_BAND_BPM || e.agreeing.length >= REGIONS.length) return true;
+	// Rule slowTwo: below OWN_PULSE_EDGE_BPM two regions count once the line reaches the edge bar (checked above).
+	if (slowTwo && e.bpm < OWN_PULSE_EDGE_BPM) return true;
 	// Only rule restBand (lowBand below OWN_PULSE_LOW_BAND_BPM) reaches here with a line at or over lowBand.
 	if (e.bpm < lowBand) return false;
 	return e.snrDb >= OWN_PULSE_REST_BAND_MIN_SNR_DB;
@@ -762,6 +765,8 @@ export function ownPulseVerdict(
 	held: number | null = null,
 	/** Where the low band starts (OWN_PULSE_LOW_BAND_BPM; OWN_PULSE_EDGE_BPM with rule restBand). */
 	lowBand: number = OWN_PULSE_LOW_BAND_BPM,
+	/** Rule slowTwo: below OWN_PULSE_EDGE_BPM two regions count at the edge bar. */
+	slowTwo = false,
 ): {
 	verdict: OwnPulseVerdict;
 	bpm: number | null;
@@ -776,7 +781,7 @@ export function ownPulseVerdict(
 	const snrs: number[] = [];
 	for (let i = history.length - 1; i >= 0; i--) {
 		const e = history[i];
-		if (!counts(e, lowBand)) break;
+		if (!counts(e, lowBand, slowTwo)) break;
 		if (rates.length && Math.abs(e.bpm - rates[0]) > OWN_PULSE_AGREE_BPM) break;
 		rates.push(e.bpm);
 		fines.push(e.bpmFine ?? e.bpm);
@@ -839,7 +844,7 @@ export function ownPulseVerdict(
 		// A rate the dark entry measured is held by the windows that measured it.
 		const agreeing = recent.filter(
 			(e): e is OwnPulseEstimate =>
-				(counts(e, lowBand) || countsInDark(e, lowBand)) &&
+				(counts(e, lowBand, slowTwo) || countsInDark(e, lowBand)) &&
 				Math.abs((e.bpm as number) - held) <= OWN_PULSE_AGREE_BPM,
 		);
 		if (agreeing.length >= OWN_PULSE_HOLD_MIN) {

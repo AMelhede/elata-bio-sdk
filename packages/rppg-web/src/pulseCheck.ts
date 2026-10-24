@@ -119,6 +119,9 @@ export type PulseCheckState = {
  * A lamp whose colour part is 0.15 or more still passes this rule; only the wall rules see it.
  */
 export const FACE_FLICKER_RATIO = 7;
+/** Rule flickerTight (being measured): a lower face flicker bar, between the largest ratio seen on real shown seconds
+ * and the smallest on a pulse-sized lamp at a heart-like rate. */
+export const FACE_FLICKER_RATIO_TIGHT = 4.3;
 
 /**
  * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
@@ -219,6 +222,9 @@ const WALL_MIN_SNR_DB = 12;
  * chosen by measurement on recorded captures against a reference pulse (no shown reading lost).
  */
 const WALL_FAINT_MIN_SNR_DB = 6;
+/** Rule wallFaint (being measured): a lower wall bar, under the level a pulse-sized colour flicker at a heart-like rate
+ * reached on a dim wall. */
+const WALL_FAINT_LOW_MIN_SNR_DB = 1.5;
 
 /**
  * The pulse check's light rules, each behind its own switch so each can be tested alone (on unless
@@ -289,6 +295,13 @@ export type PulseCheckRules = {
 	 * until it is tested there.
 	 */
 	showHeld?: boolean;
+	/** OFF unless true, being measured: the face flicker bar at FACE_FLICKER_RATIO_TIGHT instead of FACE_FLICKER_RATIO. */
+	flickerTight?: boolean;
+	/** OFF unless true, being measured: the wall bar at WALL_FAINT_LOW_MIN_SNR_DB instead of WALL_FAINT_MIN_SNR_DB. */
+	wallFaint?: boolean;
+	/** OFF unless true, being measured: below OWN_PULSE_EDGE_BPM a window with two regions counts at the edge bar, as
+	 * rule restBand allows just above it. */
+	slowTwo?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -305,6 +318,9 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"faintWall",
 	"restBand",
 	"showHeld",
+	"flickerTight",
+	"wallFaint",
+	"slowTwo",
 ] as const;
 
 /** Every rule resolved to true or false; left out means on. */
@@ -321,6 +337,9 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		faintWall: rules?.faintWall !== false,
 		restBand: rules?.restBand !== false,
 		showHeld: rules?.showHeld === true,
+		flickerTight: rules?.flickerTight === true,
+		wallFaint: rules?.wallFaint === true,
+		slowTwo: rules?.slowTwo === true,
 	};
 }
 
@@ -672,7 +691,7 @@ function lineCarries(
 	const family = rules.lightFamily ? LIGHT_FAMILY : ([1] as const);
 	return (
 		line != null &&
-		line.snrDb >= (rules.faintWall ? WALL_FAINT_MIN_SNR_DB : WALL_MIN_SNR_DB) &&
+		line.snrDb >= (rules.wallFaint ? WALL_FAINT_LOW_MIN_SNR_DB : rules.faintWall ? WALL_FAINT_MIN_SNR_DB : WALL_MIN_SNR_DB) &&
 		family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM)
 	);
 }
@@ -926,7 +945,7 @@ export class PulseCheck {
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
-		const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
+		const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM, this.rules.slowTwo);
 		this.held = v.verdict === "measured" ? v.bpm : null;
 		// The wall check only withholds; it never changes what the check itself has proven.
 		// Judged over the last 4 one-second windows at once, not counted forward from the
@@ -942,7 +961,7 @@ export class PulseCheck {
 			held != null &&
 			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => {
 				const q = faceFlickerRatio(this.samples, timestampMs - k * EVAL_EVERY_MS, held);
-				return q != null && q > FACE_FLICKER_RATIO;
+				return q != null && q > (this.rules.flickerTight ? FACE_FLICKER_RATIO_TIGHT : FACE_FLICKER_RATIO);
 			});
 		const headMatch =
 			this.rules.headMotion &&

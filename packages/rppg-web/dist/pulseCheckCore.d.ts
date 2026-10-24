@@ -343,7 +343,9 @@ export declare function ownPulseVerdict(history: readonly (OwnPulseEstimate | nu
 /** The rate the previous verdict was measured at, if it was; enables the hold. */
 held?: number | null, 
 /** Where the low band starts (OWN_PULSE_LOW_BAND_BPM; OWN_PULSE_EDGE_BPM with rule restBand). */
-lowBand?: number): {
+lowBand?: number, 
+/** Rule slowTwo: below OWN_PULSE_EDGE_BPM two regions count at the edge bar. */
+slowTwo?: boolean): {
     verdict: OwnPulseVerdict;
     bpm: number | null;
     snrDb: number | null;

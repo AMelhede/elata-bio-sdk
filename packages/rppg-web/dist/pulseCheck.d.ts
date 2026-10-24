@@ -105,6 +105,9 @@ export type PulseCheckState = {
  * A lamp whose colour part is 0.15 or more still passes this rule; only the wall rules see it.
  */
 export declare const FACE_FLICKER_RATIO = 7;
+/** Rule flickerTight (being measured): a lower face flicker bar, between the largest ratio seen on real shown seconds
+ * and the smallest on a pulse-sized lamp at a heart-like rate. */
+export declare const FACE_FLICKER_RATIO_TIGHT = 4.3;
 /**
  * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
  * moves the proven rate trails it. Once proven, the shown rate is the line in the newest 12 s
@@ -203,9 +206,16 @@ export type PulseCheckRules = {
      * until it is tested there.
      */
     showHeld?: boolean;
+    /** OFF unless true, being measured: the face flicker bar at FACE_FLICKER_RATIO_TIGHT instead of FACE_FLICKER_RATIO. */
+    flickerTight?: boolean;
+    /** OFF unless true, being measured: the wall bar at WALL_FAINT_LOW_MIN_SNR_DB instead of WALL_FAINT_MIN_SNR_DB. */
+    wallFaint?: boolean;
+    /** OFF unless true, being measured: below OWN_PULSE_EDGE_BPM a window with two regions counts at the edge bar, as
+     * rule restBand allows just above it. */
+    slowTwo?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "flickerTight", "wallFaint", "slowTwo"];
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
