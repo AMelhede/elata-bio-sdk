@@ -26,6 +26,7 @@ import {
 	OWN_PULSE_DETREND_S,
 	OWN_PULSE_FS,
 	OWN_PULSE_COLOUR_SWITCH,
+	OWN_PULSE_EARLY_HOLD_S,
 	OWN_PULSE_EDGE_BPM,
 	OWN_PULSE_LOW_BAND_BPM,
 	OWN_PULSE_STRONG_STREAK,
@@ -34,6 +35,7 @@ import {
 	type OwnPulseEstimate,
 	type RawRoiSample,
 	detrend,
+	earlyPulse,
 	estimateOwnPulse,
 	ownPulseVerdict,
 	peakOfSpectrum,
@@ -281,6 +283,13 @@ export type PulseCheckRules = {
 	 * longer, every second within 5 bpm of a reference. Off: the 58 edge, as in 0.15.0-test.31.
 	 */
 	restBand?: boolean;
+	/**
+	 * An early confirmation (the one earlyPulse implements, ported unchanged from an app that runs it): before the ordinary proof, a strong lit pulse
+	 * whose beat rate and spectrum agree over the trailing 12 s (earlyPulse) stands as the proven rate for
+	 * OWN_PULSE_EARLY_HOLD_S from when it fired, unless the wall or the head carried that rate in any of the last
+	 * OWN_PULSE_STRONG_STREAK windows; the usual withholds still apply. OFF unless set to true until measured here.
+	 */
+	earlyPath?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -296,9 +305,10 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"clockBack",
 	"faintWall",
 	"restBand",
+	"earlyPath",
 ] as const;
 
-/** Every rule resolved to true or false; left out means on. */
+/** Every rule resolved to true or false; left out means on, except earlyPath (off unless true). */
 export function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules {
 	return {
 		wallBandEdge: rules?.wallBandEdge !== false,
@@ -311,6 +321,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		clockBack: rules?.clockBack !== false,
 		faintWall: rules?.faintWall !== false,
 		restBand: rules?.restBand !== false,
+		earlyPath: rules?.earlyPath === true,
 	};
 }
 
@@ -768,6 +779,8 @@ export class PulseCheck {
 	private headHandedOver = false;
 	private history: (OwnPulseEstimate | null)[] = [];
 	private held: number | null = null;
+	/** Rule earlyPath: the early confirmation standing, and when it fired. */
+	private early: { bpm: number; atMs: number } | null = null;
 	/** The newest in-band follower value, or null (the state's followerBpm). */
 	private followerBpm: number | null = null;
 	private lastEvalMs: number | null = null;
@@ -883,7 +896,24 @@ export class PulseCheck {
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
-		const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
+		const ordinary = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
+		let v = ordinary;
+		if (this.rules.earlyPath) {
+			if (ordinary.verdict === "measured") this.early = null;
+			else if (this.early == null && !tainted && est?.bpm != null) {
+				const e = earlyPulse(this.samples, timestampMs);
+				if (e != null) this.early = { bpm: e, atMs: timestampMs };
+			}
+			const standing = this.early;
+			if (standing != null) {
+				const lately = Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => timestampMs - k * EVAL_EVERY_MS);
+				if (timestampMs - standing.atMs > OWN_PULSE_EARLY_HOLD_S * 1000) this.early = null;
+				else if (lately.some((t) => lineCarries(lineAt(t), standing.bpm, this.rules))) this.early = null;
+				else if (this.rules.headMotion && this.headHandedOver && lately.some((t) => headCarries(this.head, t, standing.bpm)))
+					this.early = null;
+			}
+			if (ordinary.verdict !== "measured" && this.early != null) v = { ...ordinary, verdict: "measured", bpm: this.early.bpm };
+		}
 		this.held = v.verdict === "measured" ? v.bpm : null;
 		// The wall check only withholds; it never changes what the check itself has proven.
 		// Judged over the last 4 one-second windows at once, not counted forward from the
@@ -1029,6 +1059,7 @@ export class PulseCheck {
 		this.headHandedOver = false;
 		this.history = [];
 		this.held = null;
+		this.early = null;
 		this.followerBpm = null;
 		this.lastEvalMs = null;
 		this.lostSinceMs = null;

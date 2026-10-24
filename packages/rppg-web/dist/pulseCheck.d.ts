@@ -195,10 +195,17 @@ export type PulseCheckRules = {
      * longer, every second within 5 bpm of a reference. Off: the 58 edge, as in 0.15.0-test.31.
      */
     restBand?: boolean;
+    /**
+     * An early confirmation (the one earlyPulse implements, ported unchanged from an app that runs it): before the ordinary proof, a strong lit pulse
+     * whose beat rate and spectrum agree over the trailing 12 s (earlyPulse) stands as the proven rate for
+     * OWN_PULSE_EARLY_HOLD_S from when it fired, unless the wall or the head carried that rate in any of the last
+     * OWN_PULSE_STRONG_STREAK windows; the usual withholds still apply. OFF unless set to true until measured here.
+     */
+    earlyPath?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand"];
-/** Every rule resolved to true or false; left out means on. */
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "earlyPath"];
+/** Every rule resolved to true or false; left out means on, except earlyPath (off unless true). */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
  * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
@@ -327,6 +334,8 @@ export declare class PulseCheck {
     private headHandedOver;
     private history;
     private held;
+    /** Rule earlyPath: the early confirmation standing, and when it fired. */
+    private early;
     /** The newest in-band follower value, or null (the state's followerBpm). */
     private followerBpm;
     private lastEvalMs;

@@ -62,6 +62,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			clockBack: true,
 			faintWall: true,
 			restBand: true,
+			earlyPath: false, // off unless true until measured
 		});
 		expect(resolvePulseCheckRules({ lightTaint: false }).lightTaint).toBe(false);
 		expect(new PulseCheck().rules.lightTaint).toBe(true);

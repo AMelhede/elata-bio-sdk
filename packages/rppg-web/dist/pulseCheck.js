@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkin } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EARLY_HOLD_S, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, earlyPulse, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -125,8 +125,9 @@ export const PULSE_CHECK_RULE_NAMES = [
     "clockBack",
     "faintWall",
     "restBand",
+    "earlyPath",
 ];
-/** Every rule resolved to true or false; left out means on. */
+/** Every rule resolved to true or false; left out means on, except earlyPath (off unless true). */
 export function resolvePulseCheckRules(rules) {
     return {
         wallBandEdge: rules?.wallBandEdge !== false,
@@ -139,6 +140,7 @@ export function resolvePulseCheckRules(rules) {
         clockBack: rules?.clockBack !== false,
         faintWall: rules?.faintWall !== false,
         restBand: rules?.restBand !== false,
+        earlyPath: rules?.earlyPath === true,
     };
 }
 /**
@@ -518,6 +520,8 @@ export class PulseCheck {
         this.headHandedOver = false;
         this.history = [];
         this.held = null;
+        /** Rule earlyPath: the early confirmation standing, and when it fired. */
+        this.early = null;
         /** The newest in-band follower value, or null (the state's followerBpm). */
         this.followerBpm = null;
         this.lastEvalMs = null;
@@ -649,7 +653,29 @@ export class PulseCheck {
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
-        const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
+        const ordinary = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
+        let v = ordinary;
+        if (this.rules.earlyPath) {
+            if (ordinary.verdict === "measured")
+                this.early = null;
+            else if (this.early == null && !tainted && est?.bpm != null) {
+                const e = earlyPulse(this.samples, timestampMs);
+                if (e != null)
+                    this.early = { bpm: e, atMs: timestampMs };
+            }
+            const standing = this.early;
+            if (standing != null) {
+                const lately = Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => timestampMs - k * EVAL_EVERY_MS);
+                if (timestampMs - standing.atMs > OWN_PULSE_EARLY_HOLD_S * 1000)
+                    this.early = null;
+                else if (lately.some((t) => lineCarries(lineAt(t), standing.bpm, this.rules)))
+                    this.early = null;
+                else if (this.rules.headMotion && this.headHandedOver && lately.some((t) => headCarries(this.head, t, standing.bpm)))
+                    this.early = null;
+            }
+            if (ordinary.verdict !== "measured" && this.early != null)
+                v = { ...ordinary, verdict: "measured", bpm: this.early.bpm };
+        }
         this.held = v.verdict === "measured" ? v.bpm : null;
         // The wall check only withholds; it never changes what the check itself has proven.
         // Judged over the last 4 one-second windows at once, not counted forward from the
@@ -776,6 +802,7 @@ export class PulseCheck {
         this.headHandedOver = false;
         this.history = [];
         this.held = null;
+        this.early = null;
         this.followerBpm = null;
         this.lastEvalMs = null;
         this.lostSinceMs = null;
