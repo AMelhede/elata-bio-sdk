@@ -346,17 +346,49 @@ export type HeadPosition = {
 	 * app's talking step (a guided test confirms the tester talked); no rule of this check reads it.
 	 */
 	mouthOpen?: number;
+	/**
+	 * Head angles in degrees from the mesh's own depth (z), recorded only, for an app's pose steps (a guided test
+	 * confirms the tester turned or looked down); no rule of this check reads them. Yaw: the cheekbone line's angle in
+	 * the x-z plane; pitch: the forehead-to-chin line's angle in the y-z plane; roll: the cheekbone line's angle in the
+	 * image. Absolute values carry the mesh's own bias, so an app compares them against the same person's straight-on
+	 * step, never against a fixed number. Absent when the mesh gives no depth.
+	 */
+	yawDeg?: number;
+	pitchDeg?: number;
+	rollDeg?: number;
 };
 
 /** Inner lips, upper and lower (MediaPipe face mesh 13 and 14). */
 const INNER_LIPS = [13, 14] as const;
+
+/** Forehead and chin (MediaPipe face mesh 10 and 152): the face's vertical line, for pitch. */
+const FOREHEAD_CHIN = [10, 152] as const;
+
+/**
+ * Yaw, pitch and roll in degrees from three mesh lines (headCentre). MediaPipe gives z on roughly the scale of x
+ * (normalised by the image width), so z is scaled by the width. Null when any point lacks a finite z.
+ */
+export function headAngles(
+	points: readonly { x: number; y: number; z?: number }[],
+	width: number,
+	height: number,
+): { yawDeg: number; pitchDeg: number; rollDeg: number } | null {
+	const [l, r] = CHEEKBONES.map((i) => points[i]);
+	const [f, c] = FOREHEAD_CHIN.map((i) => points[i]);
+	if (![l, r, f, c].every((p) => p && Number.isFinite(p.z))) return null;
+	const deg = 180 / Math.PI;
+	const yawDeg = Math.atan2(((r.z as number) - (l.z as number)) * width, (r.x - l.x) * width) * deg;
+	const pitchDeg = Math.atan2(((c.z as number) - (f.z as number)) * width, (c.y - f.y) * height) * deg;
+	const rollDeg = Math.atan2((r.y - l.y) * height, (r.x - l.x) * width) * deg;
+	return { yawDeg, pitchDeg, rollDeg };
+}
 
 /**
  * The head's position this frame: the centre of HEAD_LANDMARKS in pixels, and the face's width
  * (cheekbone to cheekbone, in pixels), or null if the mesh lacks a landmark or the frame has no size.
  */
 export function headCentre(
-	points: readonly { x: number; y: number }[],
+	points: readonly { x: number; y: number; z?: number }[],
 	width: number,
 	height: number,
 ): HeadPosition | null {
@@ -376,6 +408,7 @@ export function headCentre(
 		y: y / HEAD_LANDMARKS.length,
 		faceWidth,
 		...(faceWidth > 0 && Number.isFinite(gap) ? { mouthOpen: gap / faceWidth } : {}),
+		...(headAngles(points, width, height) ?? {}),
 	};
 }
 

@@ -71,7 +71,8 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  *   over, normally three. `wall`: the wall beside the face, or null when none was handed over.
  *   `wallRaw`: the wall as the camera read it, or null when not handed over. `wallMiss`: why no
  *   wall was found ("no-room", "skin"), or null. `head`: `[x, y, faceWidth]` (pixels), plus a fourth number,
- *   mouthOpen (share of face width), when the mesh gave the lips (from test.28), `null` when
+ *   mouthOpen (share of face width), when the mesh gave the lips (from test.28), and from test.41 three more,
+ *   yaw, pitch and roll in degrees (mouthOpen then written as null when absent), `null` when
  *   the face mesh found no head that frame, or `false` when no head was handed over at all.
  * - `["l", t]`: a `faceLost`.
  * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
@@ -86,7 +87,7 @@ export type PulseCheckInputEvent =
 			PulseCheckRgb | null,
 			PulseCheckRgb | null,
 			WallMiss | null,
-			[number, number, number] | [number, number, number, number] | null | false,
+			[number, number, number] | [number, number, number, number] | [number, number, number, number | null, number, number | null, number | null] | null | false,
 	  ]
 	| ["l", number]
 	| ["o", number | null, number | null]
@@ -158,9 +159,11 @@ export class RecordingPulseCheck extends PulseCheck {
 					? false
 					: head === null
 						? null
-						: head.mouthOpen != null
-							? [head.x, head.y, head.faceWidth, head.mouthOpen]
-							: [head.x, head.y, head.faceWidth],
+						: head.yawDeg != null
+							? [head.x, head.y, head.faceWidth, head.mouthOpen ?? null, head.yawDeg, head.pitchDeg ?? null, head.rollDeg ?? null]
+							: head.mouthOpen != null
+								? [head.x, head.y, head.faceWidth, head.mouthOpen]
+								: [head.x, head.y, head.faceWidth],
 			],
 			timestampMs,
 		);
