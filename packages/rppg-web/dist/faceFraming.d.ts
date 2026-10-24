@@ -23,6 +23,8 @@ export interface FaceBox {
     y: number;
     width: number;
     height: number;
+    /** The frame's width over its height, when known (under 1 for a portrait frame such as a phone held upright). */
+    frameAspect?: number;
 }
 export interface FramingThresholds {
     /** Face width fraction below which the face is too far (move closer). */
@@ -36,6 +38,11 @@ export interface FramingThresholds {
      * only (the rate is never withheld for it). Left out, there is no height limit (as published).
      */
     maxHeight?: number;
+    /**
+     * Judge minWidth against the frame's longer side instead of its width (same for landscape; a portrait face's
+     * width share is scaled by the frame's aspect). Left out, width alone (as published).
+     */
+    longSide?: boolean;
 }
 export declare const DEFAULT_FRAMING_THRESHOLDS: FramingThresholds;
 /**

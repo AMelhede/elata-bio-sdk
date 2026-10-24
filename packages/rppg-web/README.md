@@ -13,7 +13,7 @@ fields aside). It exists so the team can try
 the changes in real apps before anything is proposed to the official SDK. It is published
 under the npm `test` tag only; `latest` never points at it.
 
-- Version: `0.15.0-test.36` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
+- Version: `0.15.0-test.37` (also exported as `RPPG_WEB_BUILD_VERSION`, for logging results
   against the exact build).
 - Source: https://github.com/AMelhede/elata-bio-sdk, branch `release/test-1`.
 - Everything below the "Switches" section is Elata's documentation from that same main
@@ -25,7 +25,7 @@ Keep every import as it is (`@elata-biosciences/rppg-web`) and point the depende
 build with an npm alias, one line in the app's `package.json`:
 
 ```json
-"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.36"
+"@elata-biosciences/rppg-web": "npm:@amelhede/rppg-web@0.15.0-test.37"
 ```
 
 Then reinstall (`npm install`, `pnpm install` or `yarn`). Subpath imports such as
@@ -99,7 +99,9 @@ Things to know while testing:
   message as advice; no face still withholds. Off by default. A head too tall for the frame top to bottom (padded head box over 0.8 of the frame height,
   `maxHeight`, measured: readings fade from there while the face is still far under the 0.78 width limit) now gets
   "move back" as advice in every mode; the rate is never withheld for it. `PUBLISHED_FRAMING_THRESHOLDS` has no
-  height limit.
+  height limit. The "move closer" floor is judged against the frame's longer side (`longSide`), so a phone held upright
+  (a portrait frame) gets "move closer" before the face finder loses the face: in portrait the finder loses a face at
+  about the same pixel size as in landscape, which is a far larger share of the narrow width.
 
 - **The pulse check needs face tracking.** With `faceMesh: "off"`, or if the face finder
   failed to load, there are no face regions to check, so no heart rate is shown. That is by

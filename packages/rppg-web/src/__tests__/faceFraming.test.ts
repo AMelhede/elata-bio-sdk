@@ -106,6 +106,34 @@ describe("move back when the head no longer fits top to bottom (measured, advice
 	});
 });
 
+describe("move closer is judged against the frame's longer side (portrait frames, measured)", () => {
+	// The face finder reads the whole frame scaled into a small square, so the face it can find is a fixed size against
+	// the frame's longer side, not its width. Landscape 640x360 lost faces at a box of 0.087 to 0.10 of the width (56 to
+	// 64 px); a portrait 360x640 frame (a phone held upright) found one at 0.195 of its width and lost it at about 0.16
+	// (59 px) (lane/portrait run13). Judged by width alone, a portrait face is lost before "move closer" ever shows.
+	test("a portrait face under the floor says move closer although its width share is above minWidth", () => {
+		const g = faceFramingFromBox({ x: 0.41, y: 0.4, width: 0.17, height: 0.15, frameAspect: 360 / 640 });
+		expect(g.code).toBe("move_closer");
+	});
+
+	test("a portrait face well above the floor is ok", () => {
+		expect(faceFramingFromBox({ x: 0.33, y: 0.35, width: 0.34, height: 0.25, frameAspect: 360 / 640 }).code).toBe("ok");
+	});
+
+	test("landscape frames are judged as before", () => {
+		expect(faceFramingFromBox({ x: 0.43, y: 0.35, width: 0.136, height: 0.2, frameAspect: 640 / 360 }).code).toBe("ok");
+		expect(faceFramingFromBox({ x: 0.45, y: 0.35, width: 0.1, height: 0.15, frameAspect: 640 / 360 }).code).toBe("move_closer");
+	});
+
+	test("PUBLISHED_FRAMING_THRESHOLDS judges width alone (the off switch)", () => {
+		expect(faceFramingFromBox({ x: 0.3, y: 0.3, width: 0.36, height: 0.25, frameAspect: 360 / 640 }, PUBLISHED_FRAMING_THRESHOLDS).code).toBe("ok");
+	});
+
+	test("padFaceBoxToHead keeps the frame's aspect", () => {
+		expect(padFaceBoxToHead({ x: 0.4, y: 0.4, width: 0.2, height: 0.2, frameAspect: 0.5625 }).frameAspect).toBe(0.5625);
+	});
+});
+
 describe("faceBoxFromLandmarks", () => {
 	test("empty set is null", () => {
 		expect(faceBoxFromLandmarks([])).toBeNull();

@@ -22,6 +22,10 @@
 // less, so the hint comes while moving closer still helps.
 // The published 0.34 had no measurement behind it and asked a laptop user to sit about 38 cm from the camera.
 // maxWidth and centerTol are unchanged and still unmeasured.
+// longSide is measured: the face finder reads the whole frame scaled into a small square, so the face it can find
+// is a fixed size against the frame's longer side. A portrait 360x640 frame found a face at 0.195 of its width and
+// lost it at about 0.16 (59 px), the same pixel size as the landscape floor (56 to 64 px at 640 wide) (lane/portrait
+// run13). Judged by width alone a phone held upright loses the face before "move closer" can show.
 // maxHeight is measured too (lane/facesize run7, the same recordings zoomed in, 640x360): readings held while the
 // padded head box was up to about 0.63 of the frame height and faded from about 0.8 (13, then 5 shown seconds of 73
 // at 0.80 and 0.89), at widths of only 0.34 to 0.48, so maxWidth never fired where it mattered. No size gave a wrong
@@ -31,6 +35,7 @@ export const DEFAULT_FRAMING_THRESHOLDS = {
     maxWidth: 0.78,
     centerTol: 0.18,
     maxHeight: 0.8,
+    longSide: true,
 };
 /**
  * The published 0.14.0 thresholds, kept as the off switch for the measured minWidth:
@@ -61,7 +66,8 @@ export function faceFramingFromBox(box, t = DEFAULT_FRAMING_THRESHOLDS) {
         return { code: "no_face", message: FRAMING_MESSAGES.no_face };
     if (box.width > t.maxWidth)
         return { code: "move_back", message: FRAMING_MESSAGES.move_back };
-    if (box.width < t.minWidth)
+    const sizeShare = t.longSide && box.frameAspect != null && box.frameAspect < 1 ? box.width * box.frameAspect : box.width;
+    if (sizeShare < t.minWidth)
         return { code: "move_closer", message: FRAMING_MESSAGES.move_closer };
     if (t.maxHeight != null && box.height > t.maxHeight)
         return { code: "move_back", message: FRAMING_MESSAGES.move_back, advisory: true };
@@ -98,6 +104,7 @@ export function padFaceBoxToHead(box) {
         y: box.y - topPad,
         width: box.width + sidePad * 2,
         height: box.height + topPad + botPad,
+        ...(box.frameAspect != null ? { frameAspect: box.frameAspect } : {}),
     };
 }
 /**

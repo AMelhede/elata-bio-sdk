@@ -227,7 +227,8 @@ export class DemoRunner {
         if (frame.landmarks && frame.landmarks.length) {
             const mesh = faceBoxFromLandmarks(frame.landmarks);
             if (mesh) {
-                this.lastFaceBox = { box: padFaceBoxToHead(mesh), atMs: Date.now() };
+                const frameAspect = frame.width > 0 && frame.height > 0 ? frame.width / frame.height : undefined;
+                this.lastFaceBox = { box: padFaceBoxToHead(frameAspect != null ? { ...mesh, frameAspect } : mesh), atMs: Date.now() };
             }
         }
         const now = typeof performance !== "undefined" ? performance.now() : Date.now();
