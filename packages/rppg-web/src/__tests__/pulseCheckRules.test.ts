@@ -62,7 +62,6 @@ describe("PulseCheck light rules, one switch each", () => {
 			clockBack: true,
 			faintWall: true,
 			restBand: true,
-			followerClamp: false, // off by default: a weak pass (see the rule)
 		});
 		expect(resolvePulseCheckRules({ lightTaint: false }).lightTaint).toBe(false);
 		expect(new PulseCheck().rules.lightTaint).toBe(true);

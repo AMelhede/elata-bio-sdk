@@ -58,16 +58,6 @@ export const OWN_PULSE_TRACK_S = 12;
 export const OWN_PULSE_SUPPORT_S = 8;
 export const OWN_PULSE_SUPPORT_MISS = 3;
 export const OWN_PULSE_TRACK_BPM = 4;
-/** Margin around the proven rate and the 16 s window within which rule followerClamp keeps the follower (fixed
- * before the held-out test, lane/follower prereg). */
-export const FOLLOWER_CLAMP_BPM = 1;
-/** Rule followerClamp: `follower` kept within [min(held, window) - margin, max(held, window) + margin]; unchanged
- * when either slower line is missing. */
-export function clampFollower(follower, held, window, margin = FOLLOWER_CLAMP_BPM) {
-    if (held == null || window == null)
-        return follower;
-    return Math.min(Math.max(follower, Math.min(held, window) - margin), Math.max(held, window) + margin);
-}
 /** Brightness / colour amplitude ratio of the face regions within 0.1 Hz of `bpm`. */
 export function faceFlickerRatio(samples, atMs, bpm) {
     const win = samples.filter((s) => s[0] > atMs - OWN_PULSE_WINDOW_S * 1000 && s[0] <= atMs);
@@ -135,9 +125,8 @@ export const PULSE_CHECK_RULE_NAMES = [
     "clockBack",
     "faintWall",
     "restBand",
-    "followerClamp",
 ];
-/** Every rule resolved to true or false; left out means on, except followerClamp (off unless true). */
+/** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
     return {
         wallBandEdge: rules?.wallBandEdge !== false,
@@ -150,7 +139,6 @@ export function resolvePulseCheckRules(rules) {
         clockBack: rules?.clockBack !== false,
         faintWall: rules?.faintWall !== false,
         restBand: rules?.restBand !== false,
-        followerClamp: rules?.followerClamp === true,
     };
 }
 /**
@@ -701,7 +689,7 @@ export class PulseCheck {
             }
             : {
                 verdict: v.verdict,
-                bpm: this.shownRate(timestampMs, est?.bpm ?? null),
+                bpm: this.shownRate(timestampMs),
                 via: this.held != null ? "check" : null,
                 snrDb: v.snrDb,
                 streak: v.streak,
@@ -731,7 +719,7 @@ export class PulseCheck {
      * window has not carried it for OWN_PULSE_SUPPORT_MISS evaluations in a row. The proof itself
      * (this.held, the verdict, the hold) is unchanged.
      */
-    shownRate(timestampMs, windowBpm = null) {
+    shownRate(timestampMs) {
         if (this.held == null) {
             this.unsupported = 0;
             return null;
@@ -741,7 +729,7 @@ export class PulseCheck {
         if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
             this.unsupported = 0;
             this.followerBpm = rate;
-            return this.rules.followerClamp ? clampFollower(rate, this.held, windowBpm) : rate;
+            return rate;
         }
         this.unsupported += 1;
         return this.unsupported >= OWN_PULSE_SUPPORT_MISS ? null : this.held;
