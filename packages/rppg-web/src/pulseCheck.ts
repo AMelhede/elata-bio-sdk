@@ -119,8 +119,13 @@ export type PulseCheckState = {
  * A lamp whose colour part is 0.15 or more still passes this rule; only the wall rules see it.
  */
 export const FACE_FLICKER_RATIO = 7;
-/** Rule flickerTight (being measured): a lower face flicker bar, between the largest ratio seen on real shown seconds
- * and the smallest on a pulse-sized lamp at a heart-like rate. */
+/** Rule flickerTight (off): a lower face flicker bar, between the largest ratio seen on real shown seconds and the
+ * smallest on a pulse-sized lamp at a heart-like rate. Passed its pre-registered test lane/fix3 (2026-10-25: refused all
+ * 272 seconds the bar of 7 showed on 24 brightness and lamp flicker videos with no pulse; on 168 held-out webcam
+ * recordings shown seconds -0.01 per 100, wrong 33 -> 33). Kept off because the same night, replayed on the real guided
+ * files from phones and laptops (lane/fix3/real), it removed 331 of 2981 shown seconds, 316 of them within max(5, 10%)
+ * of the person's own rate, and on the library's own auto-exposure fixture a true 70 went from 27 to 10 seconds at a 6%
+ * exposure swing. The held-out set was well-lit lab video; the rule costs real readings where exposure moves. */
 export const FACE_FLICKER_RATIO_TIGHT = 4.3;
 
 /**
