@@ -66,6 +66,13 @@ export declare function averageRgbInROINonSkin(frame: Frame, x: number, y: numbe
     g: number;
     b: number;
 } | null;
+/** averageRgbInROINonSkin, with `n`, how many pixels it averaged (for the recording's wall diagnostics). */
+export declare function averageRgbInROINonSkinCounted(frame: Frame, x: number, y: number, w: number, h: number): {
+    r: number;
+    g: number;
+    b: number;
+    n: number;
+} | null;
 export declare function averageRgbInROIWithSkinMaskStats(frame: Frame, x: number, y: number, w: number, h: number): {
     r: number;
     g: number;

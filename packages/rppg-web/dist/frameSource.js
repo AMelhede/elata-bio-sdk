@@ -83,6 +83,11 @@ export function averageGreenInROIWithSkinMaskStats(frame, x, y, w, h) {
  * patch that must be wall: a face edge or an ear drifting into it carries the person's pulse.
  */
 export function averageRgbInROINonSkin(frame, x, y, w, h) {
+    const m = averageRgbInROINonSkinCounted(frame, x, y, w, h);
+    return m ? { r: m.r, g: m.g, b: m.b } : null;
+}
+/** averageRgbInROINonSkin, with `n`, how many pixels it averaged (for the recording's wall diagnostics). */
+export function averageRgbInROINonSkinCounted(frame, x, y, w, h) {
     const data = frame.data;
     const width = frame.width;
     let sumR = 0;
@@ -109,7 +114,7 @@ export function averageRgbInROINonSkin(frame, x, y, w, h) {
     }
     if (n < Math.max(10, count * 0.1))
         return null;
-    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255 };
+    return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, n };
 }
 export function averageRgbInROIWithSkinMaskStats(frame, x, y, w, h) {
     const data = frame.data;

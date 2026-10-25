@@ -31,6 +31,13 @@ export type PulseCheckState = {
     streak: number;
     /** True while the wall beside the face carries the proven rate, so the rate is withheld. */
     wallMatch: boolean;
+    /** Rule roomLight (off by default): true while the room (roomFromFrame) carries the proven rate, so it is withheld. */
+    roomMatch?: boolean;
+    /** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
+    roomLine?: {
+        bpm: number;
+        snrDb: number;
+    } | null;
     /**
      * The latest one-second window as it is, proven or not: its rate and how far its line
      * stands above the noise. For diagnosis only; nothing decides on these two.
@@ -105,8 +112,13 @@ export type PulseCheckState = {
  * A lamp whose colour part is 0.15 or more still passes this rule; only the wall rules see it.
  */
 export declare const FACE_FLICKER_RATIO = 7;
-/** Rule flickerTight (being measured): a lower face flicker bar, between the largest ratio seen on real shown seconds
- * and the smallest on a pulse-sized lamp at a heart-like rate. */
+/** Rule flickerTight (off): a lower face flicker bar, between the largest ratio seen on real shown seconds and the
+ * smallest on a pulse-sized lamp at a heart-like rate. Passed its pre-registered test lane/fix3 (2026-10-25: refused all
+ * 272 seconds the bar of 7 showed on 24 brightness and lamp flicker videos with no pulse; on 168 held-out webcam
+ * recordings shown seconds -0.01 per 100, wrong 33 -> 33). Kept off because the same night, replayed on the real guided
+ * files from phones and laptops (lane/fix3/real), it removed 331 of 2981 shown seconds, 316 of them within max(5, 10%)
+ * of the person's own rate, and on the library's own auto-exposure fixture a true 70 went from 27 to 10 seconds at a 6%
+ * exposure swing. The held-out set was well-lit lab video; the rule costs real readings where exposure moves. */
 export declare const FACE_FLICKER_RATIO_TIGHT = 4.3;
 /**
  * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
@@ -213,9 +225,16 @@ export type PulseCheckRules = {
     /** OFF unless true, being measured: below OWN_PULSE_EDGE_BPM a window with two regions counts at the edge bar, as
      * rule restBand allows just above it. */
     slowTwo?: boolean;
+    /**
+     * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
+     * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
+     * beside the face (same window, same line test, same bar), as a taint on the window and over the last
+     * windows. Only withholds. Needs the room handed to push (a recording's frame source computes it).
+     */
+    roomLight?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "flickerTight", "wallFaint", "slowTwo"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "flickerTight", "wallFaint", "slowTwo", "roomLight"];
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
@@ -364,6 +383,8 @@ export declare class PulseCheck {
     private get swapMinWall();
     private samples;
     private wall;
+    /** The room (roomFromFrame) as handed over, for rule roomLight, kept as long as the wall. */
+    private room;
     private head;
     /** A head argument (a position or null) has reached push since the last reset: the movement is judged. */
     private headHandedOver;
@@ -375,6 +396,8 @@ export declare class PulseCheck {
     private lostSinceMs;
     private wallTally;
     private state;
+    /** Whether push's diagnostics are kept (only a RecordingPulseCheck keeps them), so a caller can skip computing them. */
+    get wantsDiagnostics(): boolean;
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
      * and optionally the mean RGB of a patch of wall beside the face (see the wall check), on one
@@ -392,7 +415,9 @@ export declare class PulseCheck {
      * rule darkWall judges the wall's brightness on it. Leave it out when `wall` is read from one
      * patch and never rescaled; `wall` is then taken as read.
      */
-    wallRaw?: Rgb): void;
+    wallRaw?: Rgb, 
+    /** Recorded (RecordingPulseCheck); the check reads only `room`, and only under rule roomLight. */
+    diag?: PulseCheckFrameDiag): void;
     /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
     private unsupported;
     /**
@@ -441,6 +466,7 @@ export declare function wallBesideFace(points: readonly {
 }[], frame: Frame, preferIndex: number): {
     rgb: Rgb;
     gapIndex: number;
+    patch: WallPatchDiag;
 } | null;
 /**
  * The wall beside the face as ONE signal, although the patch it is read from may move between
@@ -468,6 +494,7 @@ export declare class WallTracker {
         rgb: Rgb;
         raw: Rgb;
         gapIndex: number;
+        patch?: WallPatchDiag;
     } | null;
     /**
      * Patch `gapIndex` read as `rgb`: `rgb` on one continuous scale (continuous), for the wall's
@@ -481,6 +508,42 @@ export declare class WallTracker {
     /** `rgb` from patch `gapIndex`, rescaled at a change of patch so the signal does not step. */
     continuous(gapIndex: number, rgb: Rgb): Rgb;
 }
+/** What a recording keeps beside each frame's inputs (lane/wallroom step 1); no rule reads it. */
+export type PulseCheckFrameDiag = {
+    room?: {
+        rgb: Rgb;
+        n: number;
+    } | null;
+    patch?: WallPatchDiag | null;
+};
+/** The wall patch as read this frame, for the recording only: x, y, w, h in pixels and how many non-skin pixels it averaged. */
+export type WallPatchDiag = [number, number, number, number, number];
+/** Share of the frame's width and height each upper-corner patch of the room spans (roomFromFrame). */
+export declare const ROOM_CORNER_SHARE = 0.2;
+/** How far clear of the face box, as a share of the face's width, a room pixel must lie (roomFromFrame). */
+export declare const ROOM_FACE_CLEAR = 0.5;
+/**
+ * roomFromFrame reads every ROOM_STRIDE-th pixel across and down. Measured (lane/wallroom, real frames with a 1% lamp,
+ * dark, after VP9): the lamp's line against its noise was 95.6 reading every pixel, 77.6 at 2, 67.5 at 3, 62.6 at 4;
+ * the room's noise is mostly shared between pixels, so a quarter of the pixels keeps 81% of it at a quarter of the
+ * cost (an independent review measured the full read at about 1 to 3 ms a frame on a mid-range phone).
+ */
+export declare const ROOM_STRIDE = 2;
+/**
+ * The room: mean RGB (0..1) of the non-skin pixels in the frame's two upper corners (each
+ * ROOM_CORNER_SHARE of the width and height), leaving out every pixel within ROOM_FACE_CLEAR face
+ * widths of the face box, with how many pixels it averaged. Null when fewer than 25 pixels, or under
+ * a tenth of those looked at, qualify. Recorded only (lane/wallroom step 1): no rule reads it. Placed
+ * independently of the face mesh, so the mesh's jitter cannot move it, which is the question step 1
+ * asks of the wall patch beside the face. Reads every ROOM_STRIDE-th pixel; null under 25 qualifying pixels.
+ */
+export declare function roomFromFrame(frame: Frame, points: readonly {
+    x: number;
+    y: number;
+}[] | null | undefined): {
+    rgb: Rgb;
+    n: number;
+} | null;
 /**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame
  * (the face fills it), otherwise "skin" (every patch looked like skin: an ear or neck, or a

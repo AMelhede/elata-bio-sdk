@@ -2,7 +2,7 @@ import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSourc
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FUSION_ROIS, MultiRoiRppgFuser, } from "./multiRoiFusion.js";
-import { WallTracker, headCentre, wallMissReason } from "./pulseCheck.js";
+import { WallTracker, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck.js";
 import { ELATA_YCBCR_V1_PIXEL_SAMPLER, sampleRppgRoi, } from "./roiPixelSampler.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, } from "./roiProfile.js";
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
@@ -315,7 +315,12 @@ export class DemoRunner {
                 frame.landmarks ? headCentre(frame.landmarks, frame.width, frame.height) : null, 
                 // The wall as the camera read it, for its brightness (rule darkWall): the
                 // continuous wall above carries a darker patch on at a brighter one's level.
-                wall?.raw);
+                wall?.raw, 
+                // Recorded only, and only computed when a recording keeps it (lane/wallroom step 1):
+                // the room in the frame's upper corners, and where the wall patch sat this frame.
+                this.opts.pulseChecker.wantsDiagnostics
+                    ? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null }
+                    : undefined);
             }
             if (frame.roi) {
                 motion = computeMotion(frame.roi, this.lastCenter);

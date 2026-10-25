@@ -1252,14 +1252,21 @@ export type WallPatchDiag = [number, number, number, number, number];
 export const ROOM_CORNER_SHARE = 0.2;
 /** How far clear of the face box, as a share of the face's width, a room pixel must lie (roomFromFrame). */
 export const ROOM_FACE_CLEAR = 0.5;
+/**
+ * roomFromFrame reads every ROOM_STRIDE-th pixel across and down. Measured (lane/wallroom, real frames with a 1% lamp,
+ * dark, after VP9): the lamp's line against its noise was 95.6 reading every pixel, 77.6 at 2, 67.5 at 3, 62.6 at 4;
+ * the room's noise is mostly shared between pixels, so a quarter of the pixels keeps 81% of it at a quarter of the
+ * cost (an independent review measured the full read at about 1 to 3 ms a frame on a mid-range phone).
+ */
+export const ROOM_STRIDE = 2;
 
 /**
  * The room: mean RGB (0..1) of the non-skin pixels in the frame's two upper corners (each
  * ROOM_CORNER_SHARE of the width and height), leaving out every pixel within ROOM_FACE_CLEAR face
- * widths of the face box, with how many pixels it averaged. Null when fewer than 100 pixels, or under
+ * widths of the face box, with how many pixels it averaged. Null when fewer than 25 pixels, or under
  * a tenth of those looked at, qualify. Recorded only (lane/wallroom step 1): no rule reads it. Placed
  * independently of the face mesh, so the mesh's jitter cannot move it, which is the question step 1
- * asks of the wall patch beside the face.
+ * asks of the wall patch beside the face. Reads every ROOM_STRIDE-th pixel; null under 25 qualifying pixels.
  */
 export function roomFromFrame(
 	frame: Frame,
@@ -1267,12 +1274,15 @@ export function roomFromFrame(
 ): { rgb: Rgb; n: number } | null {
 	const { width, height, data } = frame;
 	if (width <= 0 || height <= 0) return null;
+	// The face box from the points' extremes, in one pass with no allocation (percentiles are not needed: the box is
+	// widened by ROOM_FACE_CLEAR face widths anyway, and sorting 478 points twice a frame cost about 164 KB of garbage).
 	let fx0 = Number.POSITIVE_INFINITY, fy0 = Number.POSITIVE_INFINITY, fx1 = Number.NEGATIVE_INFINITY, fy1 = Number.NEGATIVE_INFINITY;
 	if (points?.length) {
-		const xs = points.map((p) => Math.min(1, Math.max(0, p.x)) * width).sort((a, b) => a - b);
-		const ys = points.map((p) => Math.min(1, Math.max(0, p.y)) * height).sort((a, b) => a - b);
-		const pick = (v: number[], q: number) => v[Math.min(v.length - 1, Math.max(0, Math.floor((v.length - 1) * q)))];
-		const x0 = pick(xs, 0.05), x1 = pick(xs, 0.95), y0 = pick(ys, 0.03), y1 = pick(ys, 0.97);
+		let x0 = Number.POSITIVE_INFINITY, x1 = Number.NEGATIVE_INFINITY, y0 = Number.POSITIVE_INFINITY, y1 = Number.NEGATIVE_INFINITY;
+		for (const p of points) {
+			const x = Math.min(1, Math.max(0, p.x)) * width, y = Math.min(1, Math.max(0, p.y)) * height;
+			if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+		}
 		const clear = (x1 - x0) * ROOM_FACE_CLEAR;
 		fx0 = x0 - clear; fx1 = x1 + clear; fy0 = y0 - clear; fy1 = y1 + clear;
 	}
@@ -1280,8 +1290,8 @@ export function roomFromFrame(
 	const ch = Math.max(1, Math.floor(height * ROOM_CORNER_SHARE));
 	let sumR = 0, sumG = 0, sumB = 0, n = 0, count = 0;
 	for (const xStart of [0, width - cw]) {
-		for (let row = 0; row < ch; row++) {
-			for (let col = xStart; col < xStart + cw; col++) {
+		for (let row = 0; row < ch; row += ROOM_STRIDE) {
+			for (let col = xStart; col < xStart + cw; col += ROOM_STRIDE) {
 				if (col >= fx0 && col <= fx1 && row >= fy0 && row <= fy1) continue;
 				count++;
 				const idx = (row * width + col) * 4;
@@ -1293,7 +1303,7 @@ export function roomFromFrame(
 			}
 		}
 	}
-	if (n < Math.max(100, count * 0.1)) return null;
+	if (n < Math.max(25, count * 0.1)) return null;
 	return { rgb: { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255 }, n };
 }
 

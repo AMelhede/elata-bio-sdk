@@ -68,4 +68,13 @@ describe("roomFromFrame (recorded only)", () => {
 		expect(f[8]).toEqual([1, 2, 3, 4, 12]);
 		expect(replayPulseCheck(a).reads.map((r) => r.bpm)).toEqual(replayPulseCheck(b).reads.map((r) => r.bpm));
 	});
+
+	it("writes the room to 7 decimals (no distinct value lost at the stride's pixel counts) and the patch as given", () => {
+		const rec = new RecordingPulseCheck();
+		const reg = { r: 0.5, g: 0.4, b: 0.3 };
+		rec.push(0, [reg, reg, reg], undefined, undefined, null, undefined, { room: { rgb: { r: 0.123456789, g: 0.2, b: 1 / 3 }, n: 6144 }, patch: [10, 20, 30, 40, 900] });
+		const f = rec.getRecording().events.find((e) => e[0] === "f")!;
+		expect(f[7]).toEqual([0.1234568, 0.2, 0.3333333, 6144]);
+		expect(f[8]).toEqual([10, 20, 30, 40, 900]);
+	});
 });

@@ -118,6 +118,7 @@ export type PulseCheckRecording = {
 };
 
 const rgb3 = (c: Rgb): PulseCheckRgb => [c.r, c.g, c.b];
+const r7 = (v: number) => Math.round(v * 1e7) / 1e7;
 
 /**
  * A PulseCheck that also keeps what it is fed (see the file comment). createRppgSession builds one
@@ -173,7 +174,10 @@ export class RecordingPulseCheck extends PulseCheck {
 								? [head.x, head.y, head.faceWidth, head.mouthOpen]
 								: [head.x, head.y, head.faceWidth],
 				// From test.42, recorded only: the room (roomFromFrame) and the wall patch's rectangle and pixel count.
-				diag?.room ? [...rgb3(diag.room.rgb), diag.room.n] : null,
+				// The room to 7 decimals: its values are whole sums over n pixels of /255 levels, so the step between them
+				// is 1/(n*255), about 6e-7 at the stride's ~6000 pixels; 7 decimals keep every distinct value and cut
+				// the file's growth (an independent review measured +18% at full precision).
+				diag?.room ? [r7(diag.room.rgb.r), r7(diag.room.rgb.g), r7(diag.room.rgb.b), diag.room.n] : null,
 				diag?.patch ?? null,
 			],
 			timestampMs,

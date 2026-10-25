@@ -45,6 +45,7 @@ export const PULSE_CHECK_RECORDING_SECONDS = 300;
  */
 export const PULSE_CHECK_RECORDING_EVENTS_PER_SECOND = 120;
 const rgb3 = (c) => [c.r, c.g, c.b];
+const r7 = (v) => Math.round(v * 1e7) / 1e7;
 /**
  * A PulseCheck that also keeps what it is fed (see the file comment). createRppgSession builds one
  * when `recordPulseCheckInputs` is set; an app that builds its own DemoRunner and RppgSession can
@@ -68,7 +69,7 @@ export class RecordingPulseCheck extends PulseCheck {
         this.recSeconds = seconds;
         this.recCap = Math.max(1, Math.ceil(seconds * PULSE_CHECK_RECORDING_EVENTS_PER_SECOND));
     }
-    push(timestampMs, regions, wall, wallMiss, head, wallRaw) {
+    push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag) {
         this.keep([
             "f",
             timestampMs,
@@ -85,8 +86,18 @@ export class RecordingPulseCheck extends PulseCheck {
                         : head.mouthOpen != null
                             ? [head.x, head.y, head.faceWidth, head.mouthOpen]
                             : [head.x, head.y, head.faceWidth],
+            // From test.42, recorded only: the room (roomFromFrame) and the wall patch's rectangle and pixel count.
+            // The room to 7 decimals: its values are whole sums over n pixels of /255 levels, so the step between them
+            // is 1/(n*255), about 6e-7 at the stride's ~6000 pixels; 7 decimals keep every distinct value and cut
+            // the file's growth (an independent review measured +18% at full precision).
+            diag?.room ? [r7(diag.room.rgb.r), r7(diag.room.rgb.g), r7(diag.room.rgb.b), diag.room.n] : null,
+            diag?.patch ?? null,
         ], timestampMs);
-        super.push(timestampMs, regions, wall, wallMiss, head, wallRaw);
+        super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
+    }
+    /** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */
+    get wantsDiagnostics() {
+        return true;
     }
     faceLost(timestampMs) {
         this.keep(["l", timestampMs], timestampMs);
@@ -162,9 +173,11 @@ export function replayPulseCheck(recording, options = {}) {
     const evaluations = [];
     for (const e of recording.events) {
         if (e[0] === "f") {
-            const [, t, regions, wall, wallRaw, wallMiss, head] = e;
+            const [, t, regions, wall, wallRaw, wallMiss, head, room] = e;
             const before = check.evaluations;
-            check.push(t, regions.map(toRgb), wall ? toRgb(wall) : undefined, wallMiss ?? undefined, head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2] }, wallRaw ? toRgb(wallRaw) : undefined);
+            check.push(t, regions.map(toRgb), wall ? toRgb(wall) : undefined, wallMiss ?? undefined, head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2] }, wallRaw ? toRgb(wallRaw) : undefined, 
+            // The room (from test.42), which only rule roomLight reads.
+            room ? { room: { rgb: { r: room[0], g: room[1], b: room[2] }, n: room[3] } } : undefined);
             if (check.evaluations !== before) {
                 const state = check.getState();
                 evaluations.push({ t, bpm: state.verdict === "measured" ? state.bpm : null, state });
