@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   createMetricsClient,
   type AppRecord,
@@ -11,25 +11,29 @@ export type MetricsState =
   | { status: 'ready'; client: MetricsClient }
   | { status: 'error'; message: string };
 
+// Created when this module is first imported, so its message listener is attached before the iframe's load
+// event. The host posts its one init message on that load event; a client created later in a React effect
+// can miss it, which left the game on "metrics host did not respond" on a cold dev server. One client per
+// page also survives StrictMode's mount, unmount, mount.
+const client = createMetricsClient();
+
 export function useMetricsClient(): MetricsState {
-  const clientRef = useRef<MetricsClient | null>(null);
   const [state, setState] = useState<MetricsState>({ status: 'connecting' });
 
   useEffect(() => {
-    const client = createMetricsClient();
-    clientRef.current = client;
+    let active = true;
     client
       .ready()
-      .then(() => setState({ status: 'ready', client }))
+      .then(() => active && setState({ status: 'ready', client }))
       .catch((err: Error) =>
+        active &&
         setState({
           status: 'error',
           message: err.message || 'Metrics host handshake failed.',
         }),
       );
     return () => {
-      client.dispose();
-      clientRef.current = null;
+      active = false;
     };
   }, []);
 

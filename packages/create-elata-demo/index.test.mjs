@@ -730,3 +730,35 @@ test('--help and -h print usage, --version and -v print the version, an unknown 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// npx and pnpm dlx/create pass a bare `--` through to the CLI, and the README's `-- --list-templates` depends on it; the
+// stricter option check above refused it (starter sweep, 2026-10-25).
+test('a bare -- is skipped: -- --list-templates lists, and a name before -- --template scaffolds', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ced-dashdash-'));
+  try {
+    const list = runCli(['--', '--list-templates'], dir);
+    assert.strictEqual(list.status, 0, list.stderr);
+    assert.match(list.stdout, /rppg-demo/);
+    const made = runCli(['dd-app', '--', '--template', 'rppg'], dir);
+    assert.strictEqual(made.status, 0, made.stderr);
+    assert.ok(readdirSync(dir).includes('dd-app'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// With no terminal nobody can answer the name prompt: that is a missing name (exit 1), not a cancel (130); a name with
+// spaces gets a quoted cd line that works when pasted (starter sweep, 2026-10-25).
+test('no name and no terminal exits 1 saying a name is required; a name with spaces gets a quoted cd', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ced-noname-'));
+  try {
+    const r = runCli([], dir);
+    assert.strictEqual(r.status, 1, r.stderr);
+    assert.match(r.stderr, /project name is required/);
+    const sp = runCli(['my app', '--template', 'rppg'], dir);
+    assert.strictEqual(sp.status, 0, sp.stderr);
+    assert.match(sp.stdout, /cd "my app"/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -344,6 +344,12 @@ function parseArgs(argv) {
       continue;
     }
 
+    // A bare `--` only separates the runner's options from ours (npx and pnpm dlx/create pass it through, and the
+    // README's `-- --list-templates` relies on it), so it is skipped, never refused.
+    if (arg === '--') {
+      continue;
+    }
+
     // Anything else that starts with "-" is an option this CLI does not know, never a project name: `--help` used to
     // create a folder named "--help".
     if (arg.startsWith('-')) {
@@ -419,7 +425,8 @@ if (templateName === null) {
   process.exit(130);
 }
 
-if (!projectName) {
+// Without a terminal nobody can answer the prompt, so a missing name is an error (exit 1), never a 'Cancelled.' (130).
+if (!projectName && isInteractive) {
   projectName = await prompt('Project name: ');
 }
 if (projectName === null) {
@@ -462,7 +469,8 @@ console.log(
   `\nCreated ${projectName} using ${describeSelection(starterChoice.name)}!\n`,
 );
 console.log('Next steps:\n');
-console.log(`  cd ${projectName}`);
+const cdName = /\s/.test(projectName) ? JSON.stringify(projectName) : projectName;
+console.log(`  cd ${cdName}`);
 console.log('  npm install');
 console.log('  npm run dev\n');
 
