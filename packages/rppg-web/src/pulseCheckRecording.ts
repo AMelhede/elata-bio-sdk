@@ -35,6 +35,8 @@ import { RPPG_WEB_BUILD_VERSION } from "./buildInfo";
 import {
 	type HeadPosition,
 	type PulseCheckFrameDiag,
+	type RoomCorner,
+	type RoomCorners,
 	PULSE_CHECK_RULE_NAMES,
 	PulseCheck,
 	type PulseCheckRules,
@@ -75,8 +77,10 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  *   mouthOpen (share of face width), when the mesh gave the lips (from test.28), and from test.41 three more,
  *   yaw, pitch and roll in degrees (mouthOpen then written as null when absent), `null` when
  *   the face mesh found no head that frame, or `false` when no head was handed over at all.
- *   From test.42 two more, recorded only: the room ([r, g, b, pixels], the frame's upper corners
- *   clear of the face, roomFromFrame) and the wall patch ([x, y, w, h, pixels]), each null when none.
+ *   From test.42 two more: the room (the frame's upper corners clear of the face, roomFromFrame;
+ *   from test.44 [left, right], each [r, g, b, pixels] or null; test.42 and test.43 wrote one
+ *   [r, g, b, pixels]), which rule roomLight reads, and the wall patch ([x, y, w, h, pixels]),
+ *   recorded only; each null when none.
  * - `["l", t]`: a `faceLost`.
  * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
  * - `["r", t, bpm, reason]`: a session `getMetrics()` read: the rate it showed (or null) and the
@@ -91,9 +95,11 @@ export type PulseCheckInputEvent =
 			PulseCheckRgb | null,
 			WallMiss | null,
 			[number, number, number] | [number, number, number, number] | [number, number, number, number | null, number, number | null, number | null] | null | false,
-			// From test.42, recorded only (no rule reads them, replay ignores them): the room as
-			// [r, g, b, pixels] (roomFromFrame) and the wall patch as [x, y, w, h, pixels]; null when none.
-			([number, number, number, number] | null)?,
+			// From test.42: the room (roomFromFrame), read by rule roomLight (off by default) and fed to it on replay;
+			// test.42 and test.43 wrote one [r, g, b, pixels] for both corners together, test.44 on writes
+			// [left, right], each [r, g, b, pixels] or null. Then the wall patch as [x, y, w, h, pixels], recorded
+			// only. Each null when none.
+			([number, number, number, number] | [[number, number, number, number] | null, [number, number, number, number] | null] | null)?,
 			([number, number, number, number, number] | null)?,
 	  ]
 	| ["l", number]
@@ -119,6 +125,16 @@ export type PulseCheckRecording = {
 
 const rgb3 = (c: Rgb): PulseCheckRgb => [c.r, c.g, c.b];
 const r7 = (v: number) => Math.round(v * 1e7) / 1e7;
+const quad = (c: RoomCorner | null): [number, number, number, number] | null => (c ? [r7(c.rgb.r), r7(c.rgb.g), r7(c.rgb.b), c.n] : null);
+const corner = (q: readonly (number | null)[] | null | undefined): RoomCorner | null =>
+	Array.isArray(q) && typeof q[0] === "number" ? { rgb: { r: q[0] as number, g: q[1] as number, b: q[2] as number }, n: q[3] as number } : null;
+/** A recorded room as the check takes it: test.44's [left, right], or test.42/43's one quad for both corners. */
+const roomOf = (r: unknown): RoomCorners | null => {
+	if (!Array.isArray(r)) return null;
+	if (typeof r[0] === "number") return { left: corner(r as number[]), right: null };
+	const left = corner(r[0] as number[] | null), right = corner(r[1] as number[] | null);
+	return left || right ? { left, right } : null;
+};
 
 /**
  * A PulseCheck that also keeps what it is fed (see the file comment). createRppgSession builds one
@@ -174,10 +190,11 @@ export class RecordingPulseCheck extends PulseCheck {
 								? [head.x, head.y, head.faceWidth, head.mouthOpen]
 								: [head.x, head.y, head.faceWidth],
 				// From test.42, recorded only: the room (roomFromFrame) and the wall patch's rectangle and pixel count.
-				// The room to 7 decimals: its values are whole sums over n pixels of /255 levels, so the step between them
-				// is 1/(n*255), about 6e-7 at the stride's ~6000 pixels; 7 decimals keep every distinct value and cut
-				// the file's growth (an independent review measured +18% at full precision).
-				diag?.room ? [r7(diag.room.rgb.r), r7(diag.room.rgb.g), r7(diag.room.rgb.b), diag.room.n] : null,
+				// The room per corner, to 7 decimals (roomFromFrame rounds, so the record is exactly what the check
+				// used): its values are sums over n pixels of /255 levels, a step of 1/(n*255), about 1e-6 at a corner's
+				// ~3000 pixels, so 7 decimals keep every distinct value and cut the file's growth (an independent
+				// review measured +18% at full precision).
+				diag?.room ? [quad(diag.room.left), quad(diag.room.right)] : null,
 				diag?.patch ?? null,
 			],
 			timestampMs,
@@ -310,7 +327,7 @@ export function replayPulseCheck(
 				head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2] },
 				wallRaw ? toRgb(wallRaw) : undefined,
 				// The room (from test.42), which only rule roomLight reads.
-				room ? { room: { rgb: { r: room[0], g: room[1], b: room[2] }, n: room[3] } } : undefined,
+				room ? { room: roomOf(room) } : undefined,
 			);
 			if (check.evaluations !== before) {
 				const state = check.getState();

@@ -14,7 +14,7 @@ function run(rules: { roomLight?: boolean }, room: "lamp" | "quiet" | "none", bp
 		const region = () => ({ r: 150 * (1 - 0.3 * p) + noise(), g: 120 * (1 - p) + noise(), b: 100 * (1 - 0.6 * p) + noise() });
 		const g = room === "lamp" ? 1 + p : 1;
 		const roomRgb = { r: (40 * g + noise()) / 255, g: (40 * g + noise()) / 255, b: (40 * g + noise()) / 255 };
-		check.push(t, [region(), region(), region()], undefined, undefined, undefined, undefined, room === "none" ? undefined : { room: { rgb: roomRgb, n: 5000 } });
+		check.push(t, [region(), region(), region()], undefined, undefined, undefined, undefined, room === "none" ? undefined : { room: { left: { rgb: roomRgb, n: 5000 }, right: null } });
 		if (t >= next) { const st = check.getState(); if (st.verdict === "measured" && st.bpm != null) shown.push(st.bpm); next += 1000; }
 	}
 	return { shown, state: check.getState() };

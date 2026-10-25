@@ -31,8 +31,10 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  *   mouthOpen (share of face width), when the mesh gave the lips (from test.28), and from test.41 three more,
  *   yaw, pitch and roll in degrees (mouthOpen then written as null when absent), `null` when
  *   the face mesh found no head that frame, or `false` when no head was handed over at all.
- *   From test.42 two more, recorded only: the room ([r, g, b, pixels], the frame's upper corners
- *   clear of the face, roomFromFrame) and the wall patch ([x, y, w, h, pixels]), each null when none.
+ *   From test.42 two more: the room (the frame's upper corners clear of the face, roomFromFrame;
+ *   from test.44 [left, right], each [r, g, b, pixels] or null; test.42 and test.43 wrote one
+ *   [r, g, b, pixels]), which rule roomLight reads, and the wall patch ([x, y, w, h, pixels]),
+ *   recorded only; each null when none.
  * - `["l", t]`: a `faceLost`.
  * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
  * - `["r", t, bpm, reason]`: a session `getMetrics()` read: the rate it showed (or null) and the
@@ -50,7 +52,7 @@ export type PulseCheckInputEvent = [
         number,
         number
     ] | [number, number, number, number] | [number, number, number, number | null, number, number | null, number | null] | null | false,
-    ([number, number, number, number] | null)?,
+    ([number, number, number, number] | [[number, number, number, number] | null, [number, number, number, number] | null] | null)?,
     ([number, number, number, number, number] | null)?
 ] | ["l", number] | ["o", number | null, number | null] | ["r", number | null, number | null, PulseCheckReadReason];
 /** A recording: what one session's pulse check was fed, with what it needs to be replayed. */

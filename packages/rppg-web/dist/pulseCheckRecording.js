@@ -46,6 +46,17 @@ export const PULSE_CHECK_RECORDING_SECONDS = 300;
 export const PULSE_CHECK_RECORDING_EVENTS_PER_SECOND = 120;
 const rgb3 = (c) => [c.r, c.g, c.b];
 const r7 = (v) => Math.round(v * 1e7) / 1e7;
+const quad = (c) => (c ? [r7(c.rgb.r), r7(c.rgb.g), r7(c.rgb.b), c.n] : null);
+const corner = (q) => Array.isArray(q) && typeof q[0] === "number" ? { rgb: { r: q[0], g: q[1], b: q[2] }, n: q[3] } : null;
+/** A recorded room as the check takes it: test.44's [left, right], or test.42/43's one quad for both corners. */
+const roomOf = (r) => {
+    if (!Array.isArray(r))
+        return null;
+    if (typeof r[0] === "number")
+        return { left: corner(r), right: null };
+    const left = corner(r[0]), right = corner(r[1]);
+    return left || right ? { left, right } : null;
+};
 /**
  * A PulseCheck that also keeps what it is fed (see the file comment). createRppgSession builds one
  * when `recordPulseCheckInputs` is set; an app that builds its own DemoRunner and RppgSession can
@@ -87,10 +98,11 @@ export class RecordingPulseCheck extends PulseCheck {
                             ? [head.x, head.y, head.faceWidth, head.mouthOpen]
                             : [head.x, head.y, head.faceWidth],
             // From test.42, recorded only: the room (roomFromFrame) and the wall patch's rectangle and pixel count.
-            // The room to 7 decimals: its values are whole sums over n pixels of /255 levels, so the step between them
-            // is 1/(n*255), about 6e-7 at the stride's ~6000 pixels; 7 decimals keep every distinct value and cut
-            // the file's growth (an independent review measured +18% at full precision).
-            diag?.room ? [r7(diag.room.rgb.r), r7(diag.room.rgb.g), r7(diag.room.rgb.b), diag.room.n] : null,
+            // The room per corner, to 7 decimals (roomFromFrame rounds, so the record is exactly what the check
+            // used): its values are sums over n pixels of /255 levels, a step of 1/(n*255), about 1e-6 at a corner's
+            // ~3000 pixels, so 7 decimals keep every distinct value and cut the file's growth (an independent
+            // review measured +18% at full precision).
+            diag?.room ? [quad(diag.room.left), quad(diag.room.right)] : null,
             diag?.patch ?? null,
         ], timestampMs);
         super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
@@ -177,7 +189,7 @@ export function replayPulseCheck(recording, options = {}) {
             const before = check.evaluations;
             check.push(t, regions.map(toRgb), wall ? toRgb(wall) : undefined, wallMiss ?? undefined, head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2] }, wallRaw ? toRgb(wallRaw) : undefined, 
             // The room (from test.42), which only rule roomLight reads.
-            room ? { room: { rgb: { r: room[0], g: room[1], b: room[2] }, n: room[3] } } : undefined);
+            room ? { room: roomOf(room) } : undefined);
             if (check.evaluations !== before) {
                 const state = check.getState();
                 evaluations.push({ t, bpm: state.verdict === "measured" ? state.bpm : null, state });

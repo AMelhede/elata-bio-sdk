@@ -582,9 +582,12 @@ export class PulseCheck {
     get swapMinWall() {
         return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL_TO_FACE : 0;
     }
-    /** Whether push's diagnostics are kept (only a RecordingPulseCheck keeps them), so a caller can skip computing them. */
+    /**
+     * Whether a caller should compute push's diagnostics: when rule roomLight needs the room, and always in a
+     * RecordingPulseCheck, which keeps them. Otherwise they are skipped, at no cost.
+     */
     get wantsDiagnostics() {
-        return false;
+        return this.rules.roomLight;
     }
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
@@ -653,8 +656,9 @@ export class PulseCheck {
             this.wall.push([timestampMs, wall.r, wall.g, wall.b]);
         while (this.wall.length && this.wall[0][0] < timestampMs - WALL_KEEP_MS)
             this.wall.shift();
-        if (this.rules.roomLight && diag?.room)
-            this.room.push([timestampMs, diag.room.rgb.r, diag.room.rgb.g, diag.room.rgb.b]);
+        const room = this.rules.roomLight ? combineRoom(diag?.room) : null;
+        if (room)
+            this.room.push([timestampMs, room.r, room.g, room.b]);
         while (this.room.length && this.room[0][0] < timestampMs - WALL_KEEP_MS)
             this.room.shift();
         if (head !== undefined)
@@ -939,6 +943,18 @@ export class WallTracker {
         return this.last;
     }
 }
+/** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
+export function combineRoom(room) {
+    const parts = [room?.left, room?.right].filter((c) => c != null && c.n > 0);
+    if (!parts.length)
+        return null;
+    const n = parts.reduce((a, c) => a + c.n, 0);
+    return {
+        r: parts.reduce((a, c) => a + c.rgb.r * c.n, 0) / n,
+        g: parts.reduce((a, c) => a + c.rgb.g * c.n, 0) / n,
+        b: parts.reduce((a, c) => a + c.rgb.b * c.n, 0) / n,
+    };
+}
 /** Share of the frame's width and height each upper-corner patch of the room spans (roomFromFrame). */
 export const ROOM_CORNER_SHARE = 0.2;
 /** How far clear of the face box, as a share of the face's width, a room pixel must lie (roomFromFrame). */
@@ -951,12 +967,12 @@ export const ROOM_FACE_CLEAR = 0.5;
  */
 export const ROOM_STRIDE = 2;
 /**
- * The room: mean RGB (0..1) of the non-skin pixels in the frame's two upper corners (each
- * ROOM_CORNER_SHARE of the width and height), leaving out every pixel within ROOM_FACE_CLEAR face
- * widths of the face box, with how many pixels it averaged. Null when fewer than 25 pixels, or under
- * a tenth of those looked at, qualify. Recorded only (lane/wallroom step 1): no rule reads it. Placed
- * independently of the face mesh, so the mesh's jitter cannot move it, which is the question step 1
- * asks of the wall patch beside the face. Reads every ROOM_STRIDE-th pixel; null under 25 qualifying pixels.
+ * The room: for each of the frame's two upper corners (each ROOM_CORNER_SHARE of the width and height), the mean RGB
+ * (0..1, to 7 decimals) of its non-skin pixels, leaving out every pixel within ROOM_FACE_CLEAR face widths of the face
+ * box, with how many pixels it averaged; a corner is null under 25 qualifying pixels or a tenth of those looked at, and
+ * the whole is null when both are. Reads every ROOM_STRIDE-th pixel. The corners are kept apart because the face box
+ * follows the mesh every frame: when a face reaches a corner, that corner's pixel set changes and its level can step,
+ * while the other corner stays a constant set. Rule roomLight (off by default) reads it, combined (combineRoom).
  */
 export function roomFromFrame(frame, points) {
     const { width, height, data } = frame;
@@ -986,8 +1002,10 @@ export function roomFromFrame(frame, points) {
     }
     const cw = Math.max(1, Math.floor(width * ROOM_CORNER_SHARE));
     const ch = Math.max(1, Math.floor(height * ROOM_CORNER_SHARE));
-    let sumR = 0, sumG = 0, sumB = 0, n = 0, count = 0;
-    for (const xStart of [0, width - cw]) {
+    // Each value to 7 decimals, so what a recording keeps is exactly what the check used (live and replay agree).
+    const r7 = (v) => Math.round(v * 1e7) / 1e7;
+    const corner = (xStart) => {
+        let sumR = 0, sumG = 0, sumB = 0, n = 0, count = 0;
         for (let row = 0; row < ch; row += ROOM_STRIDE) {
             for (let col = xStart; col < xStart + cw; col += ROOM_STRIDE) {
                 if (col >= fx0 && col <= fx1 && row >= fy0 && row <= fy1)
@@ -1005,10 +1023,12 @@ export function roomFromFrame(frame, points) {
                 n++;
             }
         }
-    }
-    if (n < Math.max(25, count * 0.1))
-        return null;
-    return { rgb: { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255 }, n };
+        if (n < Math.max(25, count * 0.1))
+            return null;
+        return { rgb: { r: r7(sumR / n / 255), g: r7(sumG / n / 255), b: r7(sumB / n / 255) }, n };
+    };
+    const left = corner(0), right = corner(width - cw);
+    return left || right ? { left, right } : null;
 }
 /**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame

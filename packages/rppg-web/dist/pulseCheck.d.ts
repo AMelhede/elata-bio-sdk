@@ -396,7 +396,10 @@ export declare class PulseCheck {
     private lostSinceMs;
     private wallTally;
     private state;
-    /** Whether push's diagnostics are kept (only a RecordingPulseCheck keeps them), so a caller can skip computing them. */
+    /**
+     * Whether a caller should compute push's diagnostics: when rule roomLight needs the room, and always in a
+     * RecordingPulseCheck, which keeps them. Otherwise they are skipped, at no cost.
+     */
     get wantsDiagnostics(): boolean;
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
@@ -508,14 +511,26 @@ export declare class WallTracker {
     /** `rgb` from patch `gapIndex`, rescaled at a change of patch so the signal does not step. */
     continuous(gapIndex: number, rgb: Rgb): Rgb;
 }
-/** What a recording keeps beside each frame's inputs (lane/wallroom step 1); no rule reads it. */
+/** One upper corner of the room: mean RGB (0..1, to 7 decimals) of its non-skin pixels, and how many it averaged. */
+export type RoomCorner = {
+    rgb: Rgb;
+    n: number;
+};
+/** The room, each upper corner on its own: a face reaching one corner changes only that corner's pixel set. */
+export type RoomCorners = {
+    left: RoomCorner | null;
+    right: RoomCorner | null;
+};
+/**
+ * What a recording keeps beside each frame's inputs (lane/wallroom). Rule roomLight (off by default) reads the room;
+ * replay feeds the recorded room to it. The patch is recorded only.
+ */
 export type PulseCheckFrameDiag = {
-    room?: {
-        rgb: Rgb;
-        n: number;
-    } | null;
+    room?: RoomCorners | null;
     patch?: WallPatchDiag | null;
 };
+/** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
+export declare function combineRoom(room: RoomCorners | null | undefined): Rgb | null;
 /** The wall patch as read this frame, for the recording only: x, y, w, h in pixels and how many non-skin pixels it averaged. */
 export type WallPatchDiag = [number, number, number, number, number];
 /** Share of the frame's width and height each upper-corner patch of the room spans (roomFromFrame). */
@@ -530,20 +545,17 @@ export declare const ROOM_FACE_CLEAR = 0.5;
  */
 export declare const ROOM_STRIDE = 2;
 /**
- * The room: mean RGB (0..1) of the non-skin pixels in the frame's two upper corners (each
- * ROOM_CORNER_SHARE of the width and height), leaving out every pixel within ROOM_FACE_CLEAR face
- * widths of the face box, with how many pixels it averaged. Null when fewer than 25 pixels, or under
- * a tenth of those looked at, qualify. Recorded only (lane/wallroom step 1): no rule reads it. Placed
- * independently of the face mesh, so the mesh's jitter cannot move it, which is the question step 1
- * asks of the wall patch beside the face. Reads every ROOM_STRIDE-th pixel; null under 25 qualifying pixels.
+ * The room: for each of the frame's two upper corners (each ROOM_CORNER_SHARE of the width and height), the mean RGB
+ * (0..1, to 7 decimals) of its non-skin pixels, leaving out every pixel within ROOM_FACE_CLEAR face widths of the face
+ * box, with how many pixels it averaged; a corner is null under 25 qualifying pixels or a tenth of those looked at, and
+ * the whole is null when both are. Reads every ROOM_STRIDE-th pixel. The corners are kept apart because the face box
+ * follows the mesh every frame: when a face reaches a corner, that corner's pixel set changes and its level can step,
+ * while the other corner stays a constant set. Rule roomLight (off by default) reads it, combined (combineRoom).
  */
 export declare function roomFromFrame(frame: Frame, points: readonly {
     x: number;
     y: number;
-}[] | null | undefined): {
-    rgb: Rgb;
-    n: number;
-} | null;
+}[] | null | undefined): RoomCorners | null;
 /**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame
  * (the face fills it), otherwise "skin" (every patch looked like skin: an ear or neck, or a
