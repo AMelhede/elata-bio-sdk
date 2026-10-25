@@ -51,6 +51,10 @@ export type PulseCheckState = {
 	streak: number;
 	/** True while the wall beside the face carries the proven rate, so the rate is withheld. */
 	wallMatch: boolean;
+	/** Rule roomLight (off by default): true while the room (roomFromFrame) carries the proven rate, so it is withheld. */
+	roomMatch?: boolean;
+	/** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
+	roomLine?: { bpm: number; snrDb: number } | null;
 	/**
 	 * The latest one-second window as it is, proven or not: its rate and how far its line
 	 * stands above the noise. For diagnosis only; nothing decides on these two.
@@ -307,6 +311,13 @@ export type PulseCheckRules = {
 	/** OFF unless true, being measured: below OWN_PULSE_EDGE_BPM a window with two regions counts at the edge bar, as
 	 * rule restBand allows just above it. */
 	slowTwo?: boolean;
+	/**
+	 * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
+	 * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
+	 * beside the face (same window, same line test, same bar), as a taint on the window and over the last
+	 * windows. Only withholds. Needs the room handed to push (a recording's frame source computes it).
+	 */
+	roomLight?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -326,6 +337,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"flickerTight",
 	"wallFaint",
 	"slowTwo",
+	"roomLight",
 ] as const;
 
 /** Every rule resolved to true or false; left out means on. */
@@ -345,6 +357,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		flickerTight: rules?.flickerTight === true,
 		wallFaint: rules?.wallFaint === true,
 		slowTwo: rules?.slowTwo === true,
+		roomLight: rules?.roomLight === true,
 	};
 }
 
@@ -830,6 +843,8 @@ export class PulseCheck {
 
 	private samples: RawRoiSample[] = [];
 	private wall: [number, number, number, number][] = [];
+	/** The room (roomFromFrame) as handed over, for rule roomLight, kept as long as the wall. */
+	private room: [number, number, number, number][] = [];
 	private head: HeadRow[] = [];
 	/** A head argument (a position or null) has reached push since the last reset: the movement is judged. */
 	private headHandedOver = false;
@@ -875,8 +890,8 @@ export class PulseCheck {
 		 * patch and never rescaled; `wall` is then taken as read.
 		 */
 		wallRaw?: Rgb,
-		/** Recorded only (RecordingPulseCheck); the check itself reads none of it. */
-		_diag?: PulseCheckFrameDiag,
+		/** Recorded (RecordingPulseCheck); the check reads only `room`, and only under rule roomLight. */
+		diag?: PulseCheckFrameDiag,
 	): void {
 		if (regions.length < 3 || !Number.isFinite(timestampMs)) return;
 		// Rule clockBack: a frame older than the latest is out of order (skipped) or, by more than
@@ -918,6 +933,9 @@ export class PulseCheck {
 		if (wall) this.wall.push([timestampMs, wall.r, wall.g, wall.b]);
 		while (this.wall.length && this.wall[0][0] < timestampMs - WALL_KEEP_MS)
 			this.wall.shift();
+		if (this.rules.roomLight && diag?.room) this.room.push([timestampMs, diag.room.rgb.r, diag.room.rgb.g, diag.room.rgb.b]);
+		while (this.room.length && this.room[0][0] < timestampMs - WALL_KEEP_MS)
+			this.room.shift();
 		if (head !== undefined) this.headHandedOver = true;
 		if (head && Number.isFinite(head.x) && Number.isFinite(head.y) && Number.isFinite(head.faceWidth) && head.faceWidth > 0)
 			this.head.push([timestampMs, head.x, head.y, head.faceWidth]);
@@ -937,6 +955,13 @@ export class PulseCheck {
 			if (!lines.has(ms)) lines.set(ms, wallLine(this.wall, ms, this.rules.wallBandEdge));
 			return lines.get(ms) ?? null;
 		};
+		// Rule roomLight: the room's line, found and judged exactly as the wall's.
+		const roomLines = new Map<number, ReturnType<typeof wallLine>>();
+		const roomLineAt = (ms: number) => {
+			if (!this.rules.roomLight) return null;
+			if (!roomLines.has(ms)) roomLines.set(ms, wallLine(this.room, ms, this.rules.wallBandEdge));
+			return roomLines.get(ms) ?? null;
+		};
 		// A window whose rate the wall carries is the light's, not evidence of a pulse (lightTaint):
 		// counted, it builds a streak under the light, and the rate shows the first second the wall
 		// line dips. Its cost on real pulses was measured on recorded captures against a reference
@@ -953,6 +978,7 @@ export class PulseCheck {
 		const tainted =
 			est?.bpm != null &&
 			((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
+				(this.rules.roomLight && lineCarries(roomLineAt(timestampMs), est.bpm, this.rules)) ||
 				screenLit ||
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
@@ -968,6 +994,12 @@ export class PulseCheck {
 			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
 				lineCarries(lineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules),
 			);
+		const roomMatch =
+			this.rules.roomLight &&
+			held != null &&
+			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
+				lineCarries(roomLineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules),
+			);
 		const faceFlicker =
 			this.rules.faceFlicker &&
 			held != null &&
@@ -980,7 +1012,7 @@ export class PulseCheck {
 			held != null &&
 			headMatches(this.head, timestampMs, held);
 		this.followerBpm = null;
-		this.state = wallMatch || faceFlicker || headMatch
+		this.state = wallMatch || roomMatch || faceFlicker || headMatch
 			? {
 					verdict: "not-measured",
 					bpm: null,
@@ -998,6 +1030,7 @@ export class PulseCheck {
 					wallFrames,
 					faceFlicker,
 					headMatch,
+					...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
 					windowHead,
 				}
 			: {
@@ -1018,6 +1051,7 @@ export class PulseCheck {
 					wallFrames,
 					faceFlicker,
 					headMatch,
+					...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
 					windowHead,
 				};
 		this.state.followerBpm = this.followerBpm;
@@ -1099,6 +1133,7 @@ export class PulseCheck {
 	reset(): void {
 		this.samples = [];
 		this.wall = [];
+		this.room = [];
 		this.head = [];
 		this.headHandedOver = false;
 		this.history = [];

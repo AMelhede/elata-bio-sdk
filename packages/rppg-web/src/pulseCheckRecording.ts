@@ -296,7 +296,7 @@ export function replayPulseCheck(
 	const evaluations: PulseCheckReplayEvaluation[] = [];
 	for (const e of recording.events) {
 		if (e[0] === "f") {
-			const [, t, regions, wall, wallRaw, wallMiss, head] = e;
+			const [, t, regions, wall, wallRaw, wallMiss, head, room] = e;
 			const before = check.evaluations;
 			check.push(
 				t,
@@ -305,6 +305,8 @@ export function replayPulseCheck(
 				wallMiss ?? undefined,
 				head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2] },
 				wallRaw ? toRgb(wallRaw) : undefined,
+				// The room (from test.42), which only rule roomLight reads.
+				room ? { room: { rgb: { r: room[0], g: room[1], b: room[2] }, n: room[3] } } : undefined,
 			);
 			if (check.evaluations !== before) {
 				const state = check.getState();
