@@ -161,6 +161,18 @@ export function averageRgbInROINonSkin(
 	w: number,
 	h: number,
 ): { r: number; g: number; b: number } | null {
+	const m = averageRgbInROINonSkinCounted(frame, x, y, w, h);
+	return m ? { r: m.r, g: m.g, b: m.b } : null;
+}
+
+/** averageRgbInROINonSkin, with `n`, how many pixels it averaged (for the recording's wall diagnostics). */
+export function averageRgbInROINonSkinCounted(
+	frame: Frame,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+): { r: number; g: number; b: number; n: number } | null {
 	const data = frame.data;
 	const width = frame.width;
 	let sumR = 0;
@@ -185,7 +197,7 @@ export function averageRgbInROINonSkin(
 		}
 	}
 	if (n < Math.max(10, count * 0.1)) return null;
-	return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255 };
+	return { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255, n };
 }
 
 export function averageRgbInROIWithSkinMaskStats(

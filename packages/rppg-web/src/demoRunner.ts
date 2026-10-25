@@ -25,7 +25,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, WallTracker, headCentre, wallMissReason } from "./pulseCheck";
+import { type PulseCheck, WallTracker, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck";
 import type { ChestMotion } from "./chestBreathing";
 import { RppgProcessor } from "./rppgProcessor";
 import {
@@ -543,6 +543,11 @@ export class DemoRunner {
 					// The wall as the camera read it, for its brightness (rule darkWall): the
 					// continuous wall above carries a darker patch on at a brighter one's level.
 					wall?.raw,
+					// Recorded only, and only computed when a recording keeps it (lane/wallroom step 1):
+					// the room in the frame's upper corners, and where the wall patch sat this frame.
+					this.opts.pulseChecker.wantsDiagnostics
+						? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null }
+						: undefined,
 				);
 			}
 			if (frame.roi) {

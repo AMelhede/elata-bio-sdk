@@ -19,7 +19,7 @@
  * pixels that do not look like skin are used: a face edge or an ear in the patch carries the
  * person's own pulse.
  */
-import { type Frame, averageRgbInROINonSkin } from "./frameSource";
+import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
 	OWN_PULSE_AGREE_BPM,
 	OWN_PULSE_BAND_HZ,
@@ -848,6 +848,11 @@ export class PulseCheck {
 		wallMatch: false,
 	};
 
+	/** Whether push's diagnostics are kept (only a RecordingPulseCheck keeps them), so a caller can skip computing them. */
+	get wantsDiagnostics(): boolean {
+		return false;
+	}
+
 	/**
 	 * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
 	 * and optionally the mean RGB of a patch of wall beside the face (see the wall check), on one
@@ -870,6 +875,8 @@ export class PulseCheck {
 		 * patch and never rescaled; `wall` is then taken as read.
 		 */
 		wallRaw?: Rgb,
+		/** Recorded only (RecordingPulseCheck); the check itself reads none of it. */
+		_diag?: PulseCheckFrameDiag,
 	): void {
 		if (regions.length < 3 || !Number.isFinite(timestampMs)) return;
 		// Rule clockBack: a frame older than the latest is out of order (skipped) or, by more than
@@ -1129,7 +1136,7 @@ export function wallBesideFace(
 	points: readonly { x: number; y: number }[],
 	frame: Frame,
 	preferIndex: number,
-): { rgb: Rgb; gapIndex: number } | null {
+): { rgb: Rgb; gapIndex: number; patch: WallPatchDiag } | null {
 	const order = [preferIndex, ...WALL_GAPS.map((_, i) => i).filter((i) => i !== preferIndex)];
 	for (const i of order) {
 		const gap = WALL_GAPS[i];
@@ -1140,8 +1147,8 @@ export function wallBesideFace(
 		const y = Math.max(0, Math.min(frame.height - 1, patch.y));
 		const w = Math.max(1, Math.min(frame.width - x, patch.w));
 		const h = Math.max(1, Math.min(frame.height - y, patch.h));
-		const rgb = averageRgbInROINonSkin(frame, x, y, w, h);
-		if (rgb) return { rgb, gapIndex: i };
+		const m = averageRgbInROINonSkinCounted(frame, x, y, w, h);
+		if (m) return { rgb: { r: m.r, g: m.g, b: m.b }, gapIndex: i, patch: [x, y, w, h, m.n] };
 	}
 	return null;
 }
@@ -1169,11 +1176,11 @@ export class WallTracker {
 	next(
 		points: readonly { x: number; y: number }[],
 		frame: Frame,
-	): { rgb: Rgb; raw: Rgb; gapIndex: number } | null {
+	): { rgb: Rgb; raw: Rgb; gapIndex: number; patch?: WallPatchDiag } | null {
 		const w = wallBesideFace(points, frame, this.gapIndex);
 		if (!w) return null;
 		this.gapIndex = w.gapIndex;
-		return this.track(w.gapIndex, w.rgb);
+		return { ...this.track(w.gapIndex, w.rgb), patch: w.patch };
 	}
 
 	/**
@@ -1198,6 +1205,61 @@ export class WallTracker {
 		this.last = { r: rgb.r * this.gain.r, g: rgb.g * this.gain.g, b: rgb.b * this.gain.b };
 		return this.last;
 	}
+}
+
+/** What a recording keeps beside each frame's inputs (lane/wallroom step 1); no rule reads it. */
+export type PulseCheckFrameDiag = { room?: { rgb: Rgb; n: number } | null; patch?: WallPatchDiag | null };
+
+/** The wall patch as read this frame, for the recording only: x, y, w, h in pixels and how many non-skin pixels it averaged. */
+export type WallPatchDiag = [number, number, number, number, number];
+
+/** Share of the frame's width and height each upper-corner patch of the room spans (roomFromFrame). */
+export const ROOM_CORNER_SHARE = 0.2;
+/** How far clear of the face box, as a share of the face's width, a room pixel must lie (roomFromFrame). */
+export const ROOM_FACE_CLEAR = 0.5;
+
+/**
+ * The room: mean RGB (0..1) of the non-skin pixels in the frame's two upper corners (each
+ * ROOM_CORNER_SHARE of the width and height), leaving out every pixel within ROOM_FACE_CLEAR face
+ * widths of the face box, with how many pixels it averaged. Null when fewer than 100 pixels, or under
+ * a tenth of those looked at, qualify. Recorded only (lane/wallroom step 1): no rule reads it. Placed
+ * independently of the face mesh, so the mesh's jitter cannot move it, which is the question step 1
+ * asks of the wall patch beside the face.
+ */
+export function roomFromFrame(
+	frame: Frame,
+	points: readonly { x: number; y: number }[] | null | undefined,
+): { rgb: Rgb; n: number } | null {
+	const { width, height, data } = frame;
+	if (width <= 0 || height <= 0) return null;
+	let fx0 = Number.POSITIVE_INFINITY, fy0 = Number.POSITIVE_INFINITY, fx1 = Number.NEGATIVE_INFINITY, fy1 = Number.NEGATIVE_INFINITY;
+	if (points?.length) {
+		const xs = points.map((p) => Math.min(1, Math.max(0, p.x)) * width).sort((a, b) => a - b);
+		const ys = points.map((p) => Math.min(1, Math.max(0, p.y)) * height).sort((a, b) => a - b);
+		const pick = (v: number[], q: number) => v[Math.min(v.length - 1, Math.max(0, Math.floor((v.length - 1) * q)))];
+		const x0 = pick(xs, 0.05), x1 = pick(xs, 0.95), y0 = pick(ys, 0.03), y1 = pick(ys, 0.97);
+		const clear = (x1 - x0) * ROOM_FACE_CLEAR;
+		fx0 = x0 - clear; fx1 = x1 + clear; fy0 = y0 - clear; fy1 = y1 + clear;
+	}
+	const cw = Math.max(1, Math.floor(width * ROOM_CORNER_SHARE));
+	const ch = Math.max(1, Math.floor(height * ROOM_CORNER_SHARE));
+	let sumR = 0, sumG = 0, sumB = 0, n = 0, count = 0;
+	for (const xStart of [0, width - cw]) {
+		for (let row = 0; row < ch; row++) {
+			for (let col = xStart; col < xStart + cw; col++) {
+				if (col >= fx0 && col <= fx1 && row >= fy0 && row <= fy1) continue;
+				count++;
+				const idx = (row * width + col) * 4;
+				const r = (data as any)[idx], g = (data as any)[idx + 1], b = (data as any)[idx + 2];
+				const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+				const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+				if (cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) continue;
+				sumR += r; sumG += g; sumB += b; n++;
+			}
+		}
+	}
+	if (n < Math.max(100, count * 0.1)) return null;
+	return { rgb: { r: sumR / n / 255, g: sumG / n / 255, b: sumB / n / 255 }, n };
 }
 
 /**

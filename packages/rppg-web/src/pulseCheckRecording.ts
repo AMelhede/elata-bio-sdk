@@ -34,6 +34,7 @@
 import { RPPG_WEB_BUILD_VERSION } from "./buildInfo";
 import {
 	type HeadPosition,
+	type PulseCheckFrameDiag,
 	PULSE_CHECK_RULE_NAMES,
 	PulseCheck,
 	type PulseCheckRules,
@@ -74,6 +75,8 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  *   mouthOpen (share of face width), when the mesh gave the lips (from test.28), and from test.41 three more,
  *   yaw, pitch and roll in degrees (mouthOpen then written as null when absent), `null` when
  *   the face mesh found no head that frame, or `false` when no head was handed over at all.
+ *   From test.42 two more, recorded only: the room ([r, g, b, pixels], the frame's upper corners
+ *   clear of the face, roomFromFrame) and the wall patch ([x, y, w, h, pixels]), each null when none.
  * - `["l", t]`: a `faceLost`.
  * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
  * - `["r", t, bpm, reason]`: a session `getMetrics()` read: the rate it showed (or null) and the
@@ -88,6 +91,10 @@ export type PulseCheckInputEvent =
 			PulseCheckRgb | null,
 			WallMiss | null,
 			[number, number, number] | [number, number, number, number] | [number, number, number, number | null, number, number | null, number | null] | null | false,
+			// From test.42, recorded only (no rule reads them, replay ignores them): the room as
+			// [r, g, b, pixels] (roomFromFrame) and the wall patch as [x, y, w, h, pixels]; null when none.
+			([number, number, number, number] | null)?,
+			([number, number, number, number, number] | null)?,
 	  ]
 	| ["l", number]
 	| ["o", number | null, number | null]
@@ -146,6 +153,7 @@ export class RecordingPulseCheck extends PulseCheck {
 		wallMiss?: WallMiss,
 		head?: HeadPosition | null,
 		wallRaw?: Rgb,
+		diag?: PulseCheckFrameDiag,
 	): void {
 		this.keep(
 			[
@@ -164,10 +172,18 @@ export class RecordingPulseCheck extends PulseCheck {
 							: head.mouthOpen != null
 								? [head.x, head.y, head.faceWidth, head.mouthOpen]
 								: [head.x, head.y, head.faceWidth],
+				// From test.42, recorded only: the room (roomFromFrame) and the wall patch's rectangle and pixel count.
+				diag?.room ? [...rgb3(diag.room.rgb), diag.room.n] : null,
+				diag?.patch ?? null,
 			],
 			timestampMs,
 		);
-		super.push(timestampMs, regions, wall, wallMiss, head, wallRaw);
+		super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
+	}
+
+	/** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */
+	override get wantsDiagnostics(): boolean {
+		return true;
 	}
 
 	override faceLost(timestampMs: number): void {
