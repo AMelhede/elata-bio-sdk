@@ -1,6 +1,6 @@
 {
   "name": "@amelhede/create-elata-demo",
-  "version": "0.12.2-test.4",
+  "version": "0.12.2-test.5",
   "description": "Test build of Elata's create-elata-demo 0.12.1 that starts again, whose five starters install with npm and pnpm and build, and whose heart-rate starter uses the rppg-web test build and shows only the checked rate; for testing only.",
   "license": "MIT",
   "author": "Elata",

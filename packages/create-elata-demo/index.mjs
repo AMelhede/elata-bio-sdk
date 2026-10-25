@@ -309,6 +309,9 @@ function parseArgs(argv) {
   let templateName = '';
   let listTemplates = false;
   let templateSpecified = false;
+  let help = false;
+  let version = false;
+  let unknownOption = '';
 
   while (args.length > 0) {
     const arg = args.shift();
@@ -331,13 +334,42 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === '--help' || arg === '-h') {
+      help = true;
+      continue;
+    }
+
+    if (arg === '--version' || arg === '-v') {
+      version = true;
+      continue;
+    }
+
+    // Anything else that starts with "-" is an option this CLI does not know, never a project name: `--help` used to
+    // create a folder named "--help".
+    if (arg.startsWith('-')) {
+      unknownOption ||= arg;
+      continue;
+    }
+
     if (!projectName) {
       projectName = arg;
       continue;
     }
   }
 
-  return { projectName, templateName, listTemplates, templateSpecified };
+  return { projectName, templateName, listTemplates, templateSpecified, help, version, unknownOption };
+}
+
+function printUsage() {
+  console.log(`Usage: create-elata-demo [project-name] [--template <name>]
+
+Creates a new Elata starter app in ./<project-name>.
+
+Options:
+  --template <name>   the starter to use (see --list-templates); asked if left out in a terminal, rppg-demo otherwise
+  --list-templates    list the starters and their aliases
+  -h, --help          show this help
+  -v, --version       show the version`);
 }
 
 const {
@@ -345,7 +377,26 @@ const {
   templateName: rawTemplateName,
   listTemplates,
   templateSpecified,
+  help,
+  version,
+  unknownOption,
 } = parseArgs(process.argv.slice(2));
+
+if (help) {
+  printUsage();
+  process.exit(0);
+}
+
+if (version) {
+  console.log(cliVersion);
+  process.exit(0);
+}
+
+if (unknownOption) {
+  console.error(`Error: unknown option "${unknownOption}".\n`);
+  printUsage();
+  process.exit(1);
+}
 
 if (listTemplates) {
   printTemplates();

@@ -58,12 +58,17 @@ function runCli(args, cwd) {
   });
 }
 
+// The pnpm the repo itself pins (root package.json packageManager), not whatever corepack thinks is latest: corepack
+// 0.34 resolved "latest" to pnpm 12.15.0, whose package has no bin/pnpm.cjs, so every pnpm install crashed before
+// reading the starter (2026-10-25). Pinned, the smoke tests the starters, not the toolchain's newest release.
+const REPO_PNPM = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).packageManager;
+
 function runCommand(cmd, args, cwd, timeoutMs = 5 * 60_000) {
   const resolved =
     cmd === 'pnpm'
       ? process.platform === 'win32'
-        ? { cmd: 'cmd.exe', args: ['/d', '/s', '/c', ['corepack', 'pnpm', ...args].join(' ')] }
-        : { cmd: 'corepack', args: ['pnpm', ...args] }
+        ? { cmd: 'cmd.exe', args: ['/d', '/s', '/c', ['corepack', REPO_PNPM, ...args].join(' ')] }
+        : { cmd: 'corepack', args: [REPO_PNPM, ...args] }
       : { cmd, args };
 
   const result = spawnSync(resolved.cmd, resolved.args, {
@@ -698,5 +703,30 @@ test('fails on unknown template', () => {
     assert.match(result.stderr, /unknown template/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// An argument that starts with "-" is an option, never a project name: `create-elata-demo --help` created a folder
+// named "--help" (2026-10-25).
+test('--help and -h print usage, --version and -v print the version, an unknown option is refused; none creates a folder', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ced-opts-'));
+  try {
+    for (const flag of ['--help', '-h']) {
+      const r = runCli([flag], dir);
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.match(r.stdout, /Usage: create-elata-demo \[project-name\]/);
+      assert.match(r.stdout, /--template/);
+    }
+    for (const flag of ['--version', '-v']) {
+      const r = runCli([flag], dir);
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.strictEqual(r.stdout.trim(), scaffolderPackage.version);
+    }
+    const bad = runCli(['--frobnicate'], dir);
+    assert.notStrictEqual(bad.status, 0);
+    assert.match(bad.stderr, /unknown option "--frobnicate"/);
+    assert.deepStrictEqual(readdirSync(dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
