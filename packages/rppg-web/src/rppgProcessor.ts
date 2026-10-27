@@ -533,6 +533,18 @@ export class RppgProcessor {
 	 */
 	private windowAnalysis: { version: number; result: PulseWindowAnalysis | null } | null = null;
 	private samplesVersion = 0;
+	/**
+	 * Bumped by every input to the legacy estimate other than the samples (a Muse reading, a reset, a loaded
+	 * snapshot, the tracker switched on): with samplesVersion it keys advancedCache.
+	 */
+	private advancedInputs = 0;
+	/**
+	 * The legacy estimate (computeAdvancedMetrics) for one set of inputs. It was rerun on every getMetrics() call: a
+	 * page polling 13 to 17 times a second paid for it 3.6 times per frame (1,409 runs for 388 frames, Chromium,
+	 * 2026-10-27), its Bayes tracker's prior step alone 31.8% of all CPU, and since each run pushes to the rate
+	 * history the legacy output moved with the polling rate. The pulse check never reads it.
+	 */
+	private advancedCache: { samples: number; inputs: number; result: Partial<Metrics> } | null = null;
 	private totalSamplesReceived = 0;
 	private failedBackendError: Error | null = null;
 	private failedOperation: string | null = null;
@@ -580,6 +592,7 @@ export class RppgProcessor {
 	}
 
 	enableTracker(minBpm = 50, maxBpm = 160, numParticles = 150) {
+		this.advancedInputs += 1;
 		this.trackerSettings = [minBpm, maxBpm, numParticles];
 		if (this.failedBackendError || this.disposed || !this.pipeline) return;
 		if (typeof this.pipeline.enable_tracker === "function") {
@@ -811,6 +824,7 @@ export class RppgProcessor {
 
 	updateMuseMetrics(bpm: number | null, quality = 0, timestampMs = Date.now()) {
 		this.fusion.updateMuse(bpm, quality, timestampMs);
+		this.advancedInputs += 1;
 	}
 
 	/**
@@ -847,6 +861,7 @@ export class RppgProcessor {
 	}
 
 	resetCalibration() {
+		this.advancedInputs += 1;
 		this.cameraCalibration.reset();
 		this.bayesTracker.reset();
 		this.channelGain.reset();
@@ -871,6 +886,7 @@ export class RppgProcessor {
 	}
 
 	loadStateSnapshot(snapshot: unknown) {
+		this.advancedInputs += 1;
 		if (!snapshot || typeof snapshot !== "object") return;
 		const raw = snapshot as {
 			baselineBpm?: number | null;
@@ -906,7 +922,14 @@ export class RppgProcessor {
 	getMetrics(): Metrics {
 		const backendMetrics = this.readBackendMetrics();
 		if (this.failedBackendError) return backendMetrics;
-		const advanced = this.computeAdvancedMetrics(backendMetrics);
+		const cached = this.advancedCache;
+		let advanced: Partial<Metrics>;
+		if (cached != null && cached.samples === this.samplesVersion && cached.inputs === this.advancedInputs) {
+			advanced = cached.result;
+		} else {
+			advanced = this.computeAdvancedMetrics(backendMetrics);
+			this.advancedCache = { samples: this.samplesVersion, inputs: this.advancedInputs, result: advanced };
+		}
 		const metrics = { ...backendMetrics, ...advanced };
 		// In multi-ROI fusion mode the backend CHROM (and its RGB-derived quality)
 		// is bypassed — the fuser's in-band SNR is the authoritative quality.

@@ -217,6 +217,18 @@ export declare class RppgProcessor {
      */
     private windowAnalysis;
     private samplesVersion;
+    /**
+     * Bumped by every input to the legacy estimate other than the samples (a Muse reading, a reset, a loaded
+     * snapshot, the tracker switched on): with samplesVersion it keys advancedCache.
+     */
+    private advancedInputs;
+    /**
+     * The legacy estimate (computeAdvancedMetrics) for one set of inputs. It was rerun on every getMetrics() call: a
+     * page polling 13 to 17 times a second paid for it 3.6 times per frame (1,409 runs for 388 frames, Chromium,
+     * 2026-10-27), its Bayes tracker's prior step alone 31.8% of all CPU, and since each run pushes to the rate
+     * history the legacy output moved with the polling rate. The pulse check never reads it.
+     */
+    private advancedCache;
     private totalSamplesReceived;
     private failedBackendError;
     private failedOperation;
