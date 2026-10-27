@@ -235,6 +235,28 @@ test('the heart-rate template shows only the checked heart rate, nothing unprove
   assert.match(readme, /getExperimentalVitals\(\)/);
 });
 
+test('every template that shows the camera shows it mirrored, like every front camera app', () => {
+  // The preview is a selfie view: the library reads camera frames, not this picture, and the face box overlay
+  // (faceRoiOverlay, mirrored = true by default) assumes a mirrored preview. Rule, not a list: any <video> with a
+  // class in any template must carry transform: scaleX(-1) in that template's CSS.
+  const root = join(__dirname, 'templates');
+  let checked = 0;
+  for (const name of readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
+    const files = readdirSync(join(root, name), { recursive: true }).map(String).filter((f) => !f.includes('node_modules'));
+    const src = files.filter((f) => /\.(tsx|ts|jsx|js|html)$/.test(f)).map((f) => readFileSync(join(root, name, f), 'utf8')).join('\n');
+    const css = files.filter((f) => f.endsWith('.css')).map((f) => readFileSync(join(root, name, f), 'utf8')).join('\n');
+    for (const m of src.matchAll(/<video\b[^>]*?class(?:Name)?=["']([^"']+)["']/gs)) {
+      for (const cls of m[1].split(/\s+/).filter(Boolean)) {
+        const rule = css.match(new RegExp(`\\.${cls}\\s*\\{([^}]*)\\}`));
+        if (!rule) continue;
+        checked++;
+        assert.match(rule[1], /transform:\s*scaleX\(-1\)/, `${name}: .${cls} is not mirrored`);
+      }
+    }
+  }
+  assert.ok(checked >= 2, `only ${checked} camera previews found`);
+});
+
 test('no template depends on vite-plugin-top-level-await, and each one allows esbuild for pnpm 11+', () => {
   // The behaviour test is the smoke test below (scaffold, install, build). This guard is the cheap
   // part of it that runs offline: the plugin's production build fails with @swc/core >= 1.16.0, and

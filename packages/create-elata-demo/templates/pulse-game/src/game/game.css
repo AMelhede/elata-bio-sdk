@@ -51,6 +51,9 @@ body {
   border-radius: 0.5rem;
   background: #000;
   object-fit: cover;
+  /* Selfie preview: shown as a mirror, like every front camera app. Display only: the library reads the
+     camera frames, not this picture, so no reading changes. */
+  transform: scaleX(-1);
 }
 
 .bpm-readout {

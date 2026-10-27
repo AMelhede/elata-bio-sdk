@@ -246,6 +246,9 @@ code {
   aspect-ratio: 4 / 3;
   object-fit: cover;
   background: #000;
+  /* Selfie preview: shown as a mirror, like every front camera app. Display only: the library reads the
+     camera frames, not this picture, so no reading changes. */
+  transform: scaleX(-1);
 }
 
 .video-label {
