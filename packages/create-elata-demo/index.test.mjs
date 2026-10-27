@@ -257,6 +257,25 @@ test('every template that shows the camera shows it mirrored, like every front c
   assert.ok(checked >= 2, `only ${checked} camera previews found`);
 });
 
+test('the heart-rate starters show no em dash and no AI-sounding words', () => {
+  // Owner, 2026-10-27: copy people read is plain, with no em dash and none of the words his voice rules ban. Scoped to
+  // the two heart-rate starters this fork owns; the EEG starters keep Elata's own copy until Elata changes it.
+  const banned = /\b(leverage|delve|tapestry|robust|seamless|enhance|foster|empower|unlock|elevate|harness|myriad|utilize|facilitate|crucial|pivotal|realm|testament)\b/i;
+  const hits = [];
+  for (const name of ['rppg-demo', 'pulse-game']) {
+    const root = join(__dirname, 'templates', name);
+    const files = readdirSync(root, { recursive: true }).map(String).filter((f) => !f.includes('node_modules') && /\.(tsx|ts|html)$/.test(f));
+    for (const f of files) {
+      const code = readFileSync(join(root, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+      for (const m of code.matchAll(/'((?:\\.|[^'\\\n])*)'|"((?:\\.|[^"\\\n])*)"|`((?:\\.|[^`\\])*)`|>([^<>{}]+)</g)) {
+        const t = m[1] ?? m[2] ?? m[3] ?? m[4];
+        if (t && /[A-Za-z]/.test(t) && (t.includes('\u2014') || (t.includes(' ') && banned.test(t)))) hits.push(`${name}/${f}: ${t.trim().slice(0, 70)}`);
+      }
+    }
+  }
+  assert.deepEqual(hits, []);
+});
+
 test('no template depends on vite-plugin-top-level-await, and each one allows esbuild for pnpm 11+', () => {
   // The behaviour test is the smoke test below (scaffold, install, build). This guard is the cheap
   // part of it that runs offline: the plugin's production build fails with @swc/core >= 1.16.0, and

@@ -259,7 +259,7 @@ export default function GameApp() {
       <div className="bpm-readout">
         <span className="bpm-label">BPM</span>
         <span className="bpm-value">
-          {currentBpm != null ? Math.round(currentBpm) : '—'}
+          {currentBpm != null ? Math.round(currentBpm) : '--'}
         </span>
         <span
           className="bpm-quality"

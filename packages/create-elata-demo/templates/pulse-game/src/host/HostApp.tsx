@@ -66,7 +66,7 @@ export default function HostApp() {
         <h1>Pulse-game host shell</h1>
         <p className="host-subtitle">
           You are looking at the appstore shell. The boxed area below is a sandboxed
-          iframe — the actual app. It talks to this shell over a transferred
+          iframe, the actual app. It talks to this shell over a transferred
           MessagePort; storage lives here, not in the app.
         </p>
         <div className="host-status">
@@ -98,8 +98,8 @@ export default function HostApp() {
         <p>
           The host’s only job here is: create the adapter, instantiate{' '}
           <code>createMetricsHost</code>, and call <code>host.start()</code> once
-          the iframe loads. Everything else — rPPG, the game, the leaderboard
-          read — happens inside the iframe.
+          the iframe loads. Everything else (rPPG, the game, the leaderboard
+          read) happens inside the iframe.
         </p>
       </footer>
     </div>

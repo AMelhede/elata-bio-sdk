@@ -16,7 +16,7 @@ const EMPTY_METRICS: Metrics = {
 
 function formatMetric(value: number | null | undefined, digits = 2): string {
   if (value == null || Number.isNaN(value)) {
-    return '—';
+    return '--';
   }
 
   return value.toFixed(digits);
@@ -24,7 +24,7 @@ function formatMetric(value: number | null | undefined, digits = 2): string {
 
 function formatInteger(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) {
-    return '—';
+    return '--';
   }
 
   return `${Math.round(value)}`;
@@ -48,7 +48,7 @@ function getStatusMessage(diagnostics: RppgSessionDiagnostics | null): string {
   }
 
   if (diagnostics.backendMode !== 'wasm') {
-    return 'WASM backend not active — check bundled asset URLs.';
+    return 'WASM backend not active. Check the bundled asset URLs.';
   }
 
   // Only once the face has been gone long enough that no rate is reported: one missed frame is not
@@ -61,7 +61,7 @@ function getStatusMessage(diagnostics: RppgSessionDiagnostics | null): string {
     diagnostics.issues.includes('no_samples_yet') ||
     diagnostics.issues.includes('insufficient_window')
   ) {
-    return 'Warming up — hold still, face the camera.';
+    return 'Warming up. Hold still and face the camera.';
   }
 
   return 'Estimating pulse from the live feed.';
@@ -116,7 +116,7 @@ export default function App() {
           audio: false,
         });
       } catch {
-        setStatus('Camera unavailable — allow access and reload.');
+        setStatus('Camera blocked. Allow access and reload.');
         return;
       }
 
@@ -239,7 +239,7 @@ export default function App() {
               <p className="bpm-label">Estimated heart rate</p>
               <div className="bpm-value-row">
                 <span className="bpm-number">
-                  {metrics.bpm != null ? formatMetric(metrics.bpm, 0) : '—'}
+                  {metrics.bpm != null ? formatMetric(metrics.bpm, 0) : '--'}
                 </span>
                 <span className="bpm-unit">BPM</span>
               </div>
@@ -257,14 +257,14 @@ export default function App() {
               </li>
               <li className="chip">
                 <span className="chip-key">ROI</span>
-                <span className="chip-val">{diagnostics?.roiSource ?? '—'}</span>
+                <span className="chip-val">{diagnostics?.roiSource ?? '--'}</span>
               </li>
             </ul>
           </aside>
         </section>
 
         <p className="deck">
-          Built with <code>createRppgSession()</code> — packaged WASM, live diagnostics, and a layout
+          Built with <code>createRppgSession()</code>: packaged WASM, live diagnostics, and a layout
           suited for demos and screen recordings.
         </p>
 
@@ -306,7 +306,7 @@ export default function App() {
               </div>
               <div className="stat-row">
                 <span className="stat-key">Processor method</span>
-                <span className="stat-value">{diagnostics?.processorMethod ?? '—'}</span>
+                <span className="stat-value">{diagnostics?.processorMethod ?? '--'}</span>
               </div>
               <div className="stat-row">
                 <span className="stat-key">Last drop reason</span>
