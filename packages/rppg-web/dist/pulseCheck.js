@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -141,7 +141,24 @@ export const PULSE_CHECK_RULE_NAMES = [
     "wallFaint",
     "slowTwo",
     "roomLight",
+    "showBuilding",
 ];
+/**
+ * Rule showBuilding: the rate a not-yet-proven streak may show, or null. Only while the verdict is not "measured" and
+ * nothing withholds the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
+ * streak the check ever accepts) whose mean SNR reaches OWN_PULSE_MIN_SNR_DB (the check's own bar).
+ */
+export function buildingRate(v, withheld) {
+    if (v.verdict === "measured" || withheld || v.streak < OWN_PULSE_STRONG_STREAK)
+        return null;
+    if (v.streakSnrDb == null || v.streakSnrDb < OWN_PULSE_MIN_SNR_DB)
+        return null;
+    return v.streakBpm ?? null;
+}
+/** The rate a check's state shows: the proven rate, else (rule showBuilding) the building streak's rate, else null. */
+export function shownPulseBpm(state) {
+    return state.verdict === "measured" ? state.bpm : (state.buildingBpm ?? null);
+}
 /** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
     return {
@@ -160,6 +177,7 @@ export function resolvePulseCheckRules(rules) {
         wallFaint: rules?.wallFaint === true,
         slowTwo: rules?.slowTwo === true,
         roomLight: rules?.roomLight === true,
+        showBuilding: rules?.showBuilding === true,
     };
 }
 /**
@@ -792,6 +810,10 @@ export class PulseCheck {
             };
         this.state.followerBpm = this.followerBpm;
         this.state.heldBpm = this.held;
+        // Rule showBuilding: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
+        this.state.buildingBpm = this.rules.showBuilding
+            ? buildingRate(v, wallMatch || roomMatch || faceFlicker || headMatch)
+            : null;
         this.state.windowScreenSteps = windowScreenSteps;
         this.state.screenLight = screenLit;
         this.evaluationCount += 1;

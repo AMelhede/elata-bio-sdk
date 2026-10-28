@@ -1,7 +1,7 @@
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
-import { PulseCheck, } from "./pulseCheck.js";
+import { PulseCheck, shownPulseBpm, } from "./pulseCheck.js";
 import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
 import { ChestMotion } from "./chestBreathing.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
@@ -81,7 +81,7 @@ export class RppgSession {
         const state = check.getState();
         return this.noteRead({
             ...metrics,
-            bpm: state.verdict === "measured" ? state.bpm : null,
+            bpm: shownPulseBpm(state),
             hrv_rmssd: null,
             respiration_rate: null,
             respiration_confidence: null,

@@ -352,5 +352,8 @@ slowTwo?: boolean): {
     streak: number;
     /** How a "measured" verdict was reached (OwnPulseVerdictPath); null otherwise. */
     path: OwnPulseVerdictPath | null;
+    /** Not measured: the current streak's mean fine rate and mean SNR (rule showBuilding), else left out. */
+    streakBpm?: number | null;
+    streakSnrDb?: number | null;
 };
 //# sourceMappingURL=pulseCheckCore.d.ts.map

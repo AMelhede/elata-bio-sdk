@@ -702,5 +702,7 @@ slowTwo = false) {
         snrDb: null,
         streak,
         path: null,
+        streakBpm: fines.length ? Math.round(avg(fines) * 10) / 10 : null,
+        streakSnrDb: snrs.length ? avg(snrs) : null,
     };
 }

@@ -120,7 +120,7 @@ export type PulseCheckReplayRead = {
 export type PulseCheckReplayEvaluation = {
     /** The time of the frame that brought it (ms). */
     t: number;
-    /** The rate the check shows: its `bpm` while the verdict is "measured", else null. */
+    /** The rate the check shows (shownPulseBpm): its `bpm` while the verdict is "measured", else its building rate under rule showBuilding, else null. */
     bpm: number | null;
     state: PulseCheckState;
 };

@@ -32,7 +32,7 @@
  * what was shown, until the check's memory of the earlier frames would have run out.
  */
 import { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
-import { PULSE_CHECK_RULE_NAMES, PulseCheck, } from "./pulseCheck.js";
+import { PULSE_CHECK_RULE_NAMES, PulseCheck, shownPulseBpm, } from "./pulseCheck.js";
 /** The `format` field of every recording. */
 export const PULSE_CHECK_RECORDING_FORMAT = "rppg-web/pulse-check-inputs";
 /** The `version` field: raised whenever the meaning of a field changes. A replay refuses other versions. */
@@ -192,7 +192,7 @@ export function replayPulseCheck(recording, options = {}) {
             room ? { room: roomOf(room) } : undefined);
             if (check.evaluations !== before) {
                 const state = check.getState();
-                evaluations.push({ t, bpm: state.verdict === "measured" ? state.bpm : null, state });
+                evaluations.push({ t, bpm: shownPulseBpm(state), state });
             }
         }
         else if (e[0] === "l")
@@ -202,7 +202,7 @@ export function replayPulseCheck(recording, options = {}) {
             const reason = e[3];
             reads.push({
                 t: e[1],
-                bpm: reason != null ? null : state.verdict === "measured" ? state.bpm : null,
+                bpm: reason != null ? null : shownPulseBpm(state),
                 live: e[2],
                 reason,
                 state,

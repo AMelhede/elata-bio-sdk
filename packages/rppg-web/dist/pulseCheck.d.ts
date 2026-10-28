@@ -84,6 +84,11 @@ export type PulseCheckState = {
     /** How the shown rate was reached: the check's own streak, or null. */
     via?: "check" | null;
     /**
+     * Rule showBuilding: while no pulse is proven, the current streak's mean fine rate when the streak is at least
+     * OWN_PULSE_STRONG_STREAK windows long at a mean SNR of at least OWN_PULSE_MIN_SNR_DB; else null.
+     */
+    buildingBpm?: number | null;
+    /**
      * The newest OWN_PULSE_SUPPORT_S line while a rate is proven and that line sits within OWN_PULSE_TRACK_BPM of
      * it (the value the shown rate follows), else null. For diagnosis.
      */
@@ -232,9 +237,34 @@ export type PulseCheckRules = {
      * windows. Only withholds. Needs the room handed to push (a recording's frame source computes it).
      */
     roomLight?: boolean;
+    /**
+     * OFF unless true, being measured (lane/confidence, lane/sessionbar): while no pulse is proven, a streak of at
+     * least OWN_PULSE_STRONG_STREAK counting windows (the shortest streak the check ever accepts) whose mean SNR is
+     * at least OWN_PULSE_MIN_SNR_DB is shown as `buildingBpm` (the streak's mean fine rate), and `shownPulseBpm` shows
+     * it. Every taint still breaks the streak, and the HRV gate still needs a proven pulse. Measured offline on
+     * recorded webcam sessions against a reference pulse and on real photo steps, not yet held out.
+     */
+    showBuilding?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "flickerTight", "wallFaint", "slowTwo", "roomLight"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "flickerTight", "wallFaint", "slowTwo", "roomLight", "showBuilding"];
+/**
+ * Rule showBuilding: the rate a not-yet-proven streak may show, or null. Only while the verdict is not "measured" and
+ * nothing withholds the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
+ * streak the check ever accepts) whose mean SNR reaches OWN_PULSE_MIN_SNR_DB (the check's own bar).
+ */
+export declare function buildingRate(v: {
+    verdict: string;
+    streak: number;
+    streakBpm?: number | null;
+    streakSnrDb?: number | null;
+}, withheld: boolean): number | null;
+/** The rate a check's state shows: the proven rate, else (rule showBuilding) the building streak's rate, else null. */
+export declare function shownPulseBpm(state: {
+    verdict: string;
+    bpm: number | null;
+    buildingBpm?: number | null;
+}): number | null;
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
 /**
