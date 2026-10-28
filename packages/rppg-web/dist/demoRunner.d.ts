@@ -34,6 +34,12 @@ export type DemoRunnerOptions = {
      */
     pulseChecker?: PulseCheck | null;
     /**
+     * Read the forehead region the check is fed from 49 small skin patches, weighted toward the cleanest
+     * (foreheadPool.ts), instead of one box. The cheeks stay boxes. Off unless true. The session creates it
+     * (`foreheadPool`).
+     */
+    foreheadPool?: boolean;
+    /**
      * Breathing from chest motion (see chestBreathing.ts), fed every analysed frame with its face
      * landmarks. The session creates it (`experimentalVitals`); null or left out: not read.
      */
@@ -182,6 +188,7 @@ export declare class DemoRunner {
     readonly fixes: ResolvedRppgFixSwitches;
     /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
     private wallTracker;
+    private foreheadPool;
     constructor(source: FrameSource, processor: RppgProcessor, opts?: DemoRunnerOptions);
     /**
      * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the

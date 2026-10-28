@@ -82,6 +82,12 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      */
     pulseCheckRules?: PulseCheckRules;
     /**
+     * With `pulseCheck`, read the forehead region from 49 small skin patches weighted toward the cleanest
+     * (foreheadPool.ts) instead of one box; the cheeks stay boxes. Off unless true. Costs a pixel pass over the
+     * forehead patches per frame and one small spectrum per patch per second.
+     */
+    foreheadPool?: boolean;
+    /**
      * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
      * and every `getMetrics()` read, so the check
      * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
@@ -182,6 +188,7 @@ type SessionInternals = {
     pulseCheck?: PulseCheck | null;
     chestMotion?: ChestMotion | null;
     experimentalVitals?: boolean;
+    foreheadPool?: boolean;
 };
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
 export type ExperimentalVitals = {
@@ -248,6 +255,7 @@ export declare class RppgSession {
         pulseCheck: boolean;
         pulseCheckRules: ResolvedPulseCheckRules | null;
         experimentalVitals: boolean;
+        foreheadPool: boolean;
     };
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
     getLastBlendshapes(): import("./demoRunner.js").LastBlendshapes | null;
