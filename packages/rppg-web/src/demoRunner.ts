@@ -25,7 +25,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, WallTracker, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck";
+import { type PulseCheck, WallTracker, eyeBlink, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck";
 import type { ChestMotion } from "./chestBreathing";
 import { RppgProcessor } from "./rppgProcessor";
 import {
@@ -539,7 +539,7 @@ export class DemoRunner {
 						: undefined,
 					// The head's position, for the headMotion rule: a rate the head's own
 					// movement keeps time with (a nod) is the movement's, not a pulse.
-					frame.landmarks ? headCentre(frame.landmarks, frame.width, frame.height) : null,
+					frame.landmarks ? withBlink(headCentre(frame.landmarks, frame.width, frame.height), eyeBlink(frame.blendshapes)) : null,
 					// The wall as the camera read it, for its brightness (rule darkWall): the
 					// continuous wall above carries a darker patch on at a brighter one's level.
 					wall?.raw,
@@ -881,4 +881,9 @@ function smooth01(prev: number | null, next: number, alpha: number): number {
 	const delta = n - prev;
 	const effectiveAlpha = Math.abs(delta) > 0.3 ? a * 0.35 : a;
 	return Math.max(0, Math.min(1, prev + delta * effectiveAlpha));
+}
+
+/** The head with the frame's blink score added when the landmarker gave one (recorded only, HeadPosition.blink). */
+function withBlink<T extends object>(head: T | null, blink: number | null): T | (T & { blink: number }) | null {
+	return head && blink != null ? { ...head, blink } : head;
 }

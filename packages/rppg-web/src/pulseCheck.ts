@@ -437,7 +437,21 @@ export type HeadPosition = {
 	yawDeg?: number;
 	pitchDeg?: number;
 	rollDeg?: number;
+	/**
+	 * How closed the eyes are, 0 open to 1 shut: the mean of the face landmarker's eyeBlinkLeft and eyeBlinkRight
+	 * scores (eyeBlink). Recorded only, so a liveness test (a photo does not blink) can be built and scored offline on
+	 * real recordings; no rule of this check reads it. Absent when the landmarker gave no blink scores.
+	 */
+	blink?: number;
 };
+
+/** The mean of the eyeBlinkLeft and eyeBlinkRight scores, or null when either is missing (HeadPosition.blink). */
+export function eyeBlink(blendshapes: readonly { categoryName: string; score: number }[] | null | undefined): number | null {
+	if (!blendshapes) return null;
+	const l = blendshapes.find((b) => b.categoryName === "eyeBlinkLeft")?.score;
+	const r = blendshapes.find((b) => b.categoryName === "eyeBlinkRight")?.score;
+	return l != null && r != null && Number.isFinite(l) && Number.isFinite(r) ? (l + r) / 2 : null;
+}
 
 /** Inner lips, upper and lower (MediaPipe face mesh 13 and 14). */
 const INNER_LIPS = [13, 14] as const;

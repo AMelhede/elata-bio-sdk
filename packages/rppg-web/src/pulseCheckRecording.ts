@@ -76,7 +76,8 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  *   `wallRaw`: the wall as the camera read it, or null when not handed over. `wallMiss`: why no
  *   wall was found ("no-room", "skin"), or null. `head`: `[x, y, faceWidth]` (pixels), plus a fourth number,
  *   mouthOpen (share of face width), when the mesh gave the lips (from test.28), and from test.41 three more,
- *   yaw, pitch and roll in degrees (mouthOpen then written as null when absent), `null` when
+ *   yaw, pitch and roll in degrees (mouthOpen then written as null when absent), from the next build an eighth,
+ *   the blink score (HeadPosition.blink, 0 open to 1 shut; absent fields before it null), `null` when
  *   the face mesh found no head that frame, or `false` when no head was handed over at all.
  *   From test.42 two more: the room (the frame's upper corners clear of the face, roomFromFrame;
  *   from test.44 [left, right], each [r, g, b, pixels] or null; test.42 and test.43 wrote one
@@ -95,7 +96,7 @@ export type PulseCheckInputEvent =
 			PulseCheckRgb | null,
 			PulseCheckRgb | null,
 			WallMiss | null,
-			[number, number, number] | [number, number, number, number] | [number, number, number, number | null, number, number | null, number | null] | null | false,
+			[number, number, number] | [number, number, number, number] | [number, number, number, number | null, number, number | null, number | null] | [number, number, number, number | null, number | null, number | null, number | null, number] | null | false,
 			// From test.42: the room (roomFromFrame), read by rule roomLight (off by default) and fed to it on replay;
 			// test.42 and test.43 wrote one [r, g, b, pixels] for both corners together, test.44 on writes
 			// [left, right], each [r, g, b, pixels] or null. Then the wall patch as [x, y, w, h, pixels], recorded
@@ -185,7 +186,9 @@ export class RecordingPulseCheck extends PulseCheck {
 					? false
 					: head === null
 						? null
-						: head.yawDeg != null
+						: head.blink != null
+							? [head.x, head.y, head.faceWidth, head.mouthOpen ?? null, head.yawDeg ?? null, head.pitchDeg ?? null, head.rollDeg ?? null, head.blink]
+							: head.yawDeg != null
 							? [head.x, head.y, head.faceWidth, head.mouthOpen ?? null, head.yawDeg, head.pitchDeg ?? null, head.rollDeg ?? null]
 							: head.mouthOpen != null
 								? [head.x, head.y, head.faceWidth, head.mouthOpen]
