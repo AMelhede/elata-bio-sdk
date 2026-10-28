@@ -65,6 +65,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			showHeld: false,
 			roomLight: false,
 			moreReadings: false,
+			blinkGate: false,
 		});
 		expect(resolvePulseCheckRules({ showHeld: true }).showHeld).toBe(true);
 		expect(resolvePulseCheckRules({ lightTaint: false }).lightTaint).toBe(false);

@@ -8,6 +8,7 @@ const OFF_SWITCHES: Record<string, string> = {
 	showHeld: "2026-11-30", // passed on the front webcam, not significant on two others; rising heart rates untested
 	roomLight: "2026-11-07", // CONFIRM tested it only paired with the removed foreheadPool (that pair failed on no-pulse shuffles); alone it needs new people
 	moreReadings: "2026-11-30", // testers' paired runs; shows more numbers on photos, needs liveness first
+	blinkGate: "2026-11-30", // passed MCD CONFIRM; real photos and screens on testers' devices next
 	experimentalVitals: "2026-12-31", // research box, never shown as a reading (a session option, not a rule)
 };
 const MAX_OFF = 5;

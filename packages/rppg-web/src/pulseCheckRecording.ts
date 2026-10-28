@@ -328,7 +328,7 @@ export function replayPulseCheck(
 				regions.map(toRgb),
 				wall ? toRgb(wall) : undefined,
 				wallMiss ?? undefined,
-				head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2] },
+				head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2], ...(head[7] != null ? { blink: head[7] } : {}) },
 				wallRaw ? toRgb(wallRaw) : undefined,
 				// The room (from test.42), which only rule roomLight reads.
 				room ? { room: roomOf(room) } : undefined,
