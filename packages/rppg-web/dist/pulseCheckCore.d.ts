@@ -350,7 +350,7 @@ lowBand?: number): {
     streak: number;
     /** How a "measured" verdict was reached (OwnPulseVerdictPath); null otherwise. */
     path: OwnPulseVerdictPath | null;
-    /** Not measured: the current streak's mean fine rate and mean SNR (rule showBuilding), else left out. */
+    /** The current streak's mean fine rate and mean SNR, on every verdict (rule moreReadings). */
     streakBpm?: number | null;
     streakSnrDb?: number | null;
 };

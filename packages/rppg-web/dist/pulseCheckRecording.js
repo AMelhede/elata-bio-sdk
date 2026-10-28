@@ -92,11 +92,13 @@ export class RecordingPulseCheck extends PulseCheck {
                 ? false
                 : head === null
                     ? null
-                    : head.yawDeg != null
-                        ? [head.x, head.y, head.faceWidth, head.mouthOpen ?? null, head.yawDeg, head.pitchDeg ?? null, head.rollDeg ?? null]
-                        : head.mouthOpen != null
-                            ? [head.x, head.y, head.faceWidth, head.mouthOpen]
-                            : [head.x, head.y, head.faceWidth],
+                    : head.blink != null
+                        ? [head.x, head.y, head.faceWidth, head.mouthOpen ?? null, head.yawDeg ?? null, head.pitchDeg ?? null, head.rollDeg ?? null, head.blink]
+                        : head.yawDeg != null
+                            ? [head.x, head.y, head.faceWidth, head.mouthOpen ?? null, head.yawDeg, head.pitchDeg ?? null, head.rollDeg ?? null]
+                            : head.mouthOpen != null
+                                ? [head.x, head.y, head.faceWidth, head.mouthOpen]
+                                : [head.x, head.y, head.faceWidth],
             // From test.42, recorded only: the room (roomFromFrame) and the wall patch's rectangle and pixel count.
             // The room per corner, to 7 decimals (roomFromFrame rounds, so the record is exactly what the check
             // used): its values are sums over n pixels of /255 levels, a step of 1/(n*255), about 1e-6 at a corner's
@@ -179,7 +181,7 @@ const toRgb = (c) => ({ r: c[0], g: c[1], b: c[2] });
  */
 export function replayPulseCheck(recording, options = {}) {
     checkHeader(recording);
-    const own = Object.fromEntries(PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true]));
+    const own = Object.fromEntries(PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true || (name === "moreReadings" && legacyMoreReadings(recording.rules))]));
     const check = new PulseCheck({ rules: options.rules ?? own });
     const reads = [];
     const evaluations = [];
@@ -187,7 +189,7 @@ export function replayPulseCheck(recording, options = {}) {
         if (e[0] === "f") {
             const [, t, regions, wall, wallRaw, wallMiss, head, room] = e;
             const before = check.evaluations;
-            check.push(t, regions.map(toRgb), wall ? toRgb(wall) : undefined, wallMiss ?? undefined, head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2] }, wallRaw ? toRgb(wallRaw) : undefined, 
+            check.push(t, regions.map(toRgb), wall ? toRgb(wall) : undefined, wallMiss ?? undefined, head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2], ...(head[7] != null ? { blink: head[7] } : {}) }, wallRaw ? toRgb(wallRaw) : undefined, 
             // The room (from test.42), which only rule roomLight reads.
             room ? { room: roomOf(room) } : undefined);
             if (check.evaluations !== before) {
@@ -223,4 +225,13 @@ export function parsePulseCheckRecording(text) {
     const r = JSON.parse(text, (_key, v) => (typeof v === "string" && v in SPECIAL ? SPECIAL[v] : v));
     checkHeader(r);
     return r;
+}
+/**
+ * Recordings from 0.15.0-test.49 and test.50 name the two halves of moreReadings separately (showBuilding, relock);
+ * with both on they ran exactly moreReadings. A test.48 recording, made with showBuilding alone, ran half of it,
+ * which no rule of this build reproduces: replay such a recording with the test.48 build.
+ */
+function legacyMoreReadings(rules) {
+    const r = rules;
+    return r.showBuilding === true && r.relock === true;
 }

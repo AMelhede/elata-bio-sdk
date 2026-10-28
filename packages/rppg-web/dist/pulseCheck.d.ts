@@ -84,10 +84,12 @@ export type PulseCheckState = {
     /** How the shown rate was reached: the check's own streak, or null. */
     via?: "check" | null;
     /**
-     * Rule showBuilding: while no pulse is proven, the current streak's mean fine rate when the streak is at least
+     * Rule moreReadings: while no proven rate is shown, the current streak's mean fine rate when the streak is at least
      * OWN_PULSE_STRONG_STREAK windows long at a mean SNR of at least OWN_PULSE_MIN_SNR_DB; else null.
      */
     buildingBpm?: number | null;
+    /** Rule blinkGate: true while a rate would show but no blink has been seen since the face appeared. */
+    waitingForBlink?: boolean;
     /**
      * The newest OWN_PULSE_SUPPORT_S line while a rate is proven and that line sits within OWN_PULSE_TRACK_BPM of
      * it (the value the shown rate follows), else null. For diagnosis.
@@ -223,36 +225,40 @@ export type PulseCheckRules = {
      */
     roomLight?: boolean;
     /**
-     * OFF unless true, being measured (lane/confidence, lane/sessionbar): while no pulse is proven, a streak of at
-     * least OWN_PULSE_STRONG_STREAK counting windows (the shortest streak the check ever accepts) whose mean SNR is
-     * at least OWN_PULSE_MIN_SNR_DB is shown as `buildingBpm` (the streak's mean fine rate), and `shownPulseBpm` shows
-     * it. Every taint still breaks the streak, and the HRV gate still needs a proven pulse. Measured offline on
-     * recorded webcam sessions against a reference pulse and on real photo steps, not yet held out.
+     * More readings. OFF unless true, being measured (lane/confidence, lane/sessionbar). Two halves, always together
+     * (merged from showBuilding and relock, 0.15.0-test.51: the page turned them on together and they were measured
+     * together). Building: while no pulse is proven, a streak of at least OWN_PULSE_STRONG_STREAK counting windows
+     * (the shortest streak the check ever accepts) whose mean SNR is at least OWN_PULSE_MIN_SNR_DB is shown as
+     * `buildingBpm` (the streak's mean fine rate), and `shownPulseBpm` shows it. Re-lock: a streak of at least
+     * RELOCK_STREAK counting windows at that SNR, within OWN_PULSE_AGREE_BPM of a rate proven in the last RELOCK_MS,
+     * is that rate again (verdict path "relock") instead of a new proof from nothing. Every taint still breaks the
+     * streak, and the HRV gate still needs a proven pulse. On real photo steps it shows more numbers than the check
+     * without it, so it is not to be turned on without a liveness check.
      */
-    showBuilding?: boolean;
+    moreReadings?: boolean;
     /**
-     * OFF unless true, being measured (lane/sessionbar): a streak of at least RELOCK_STREAK counting windows at a mean
-     * SNR of at least OWN_PULSE_MIN_SNR_DB, within OWN_PULSE_AGREE_BPM of a rate proven in the last RELOCK_MS, is that
-     * rate again (verdict path "relock"), instead of a new proof from nothing. A heart rate does not jump on its own
-     * within seconds, so a brief noisy stretch no longer costs a whole new proof. Only a rate the check already proved
-     * can come back; every taint still breaks the streak.
+     * OFF unless true, being measured (lane/liveness): no rate at any level (proven, building, re-lock) until the eyes
+     * have blinked once since the face appeared (BLINK_RISE), and again after the check resets. A photo does not
+     * blink. Per session, not per window, because people at a screen blink about 4 times a minute (Patel 1991). Needs
+     * the blink score in `push`'s head (HeadPosition.blink); with no blink scores handed over it withholds every rate.
+     * Does not catch a video of a face on a screen, which blinks.
      */
-    relock?: boolean;
+    blinkGate?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "roomLight", "showBuilding", "relock"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "roomLight", "moreReadings", "blinkGate"];
 /**
- * Rule relock: how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
+ * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
  * check's 16 s windows.
  */
 export declare const RELOCK_MS = 30000;
 /**
- * Rule relock: the shortest streak that returns to a proven rate. Two is the fewest windows that can agree with each
+ * Rule moreReadings (re-lock): the shortest streak that returns to a proven rate. Two is the fewest windows that can agree with each
  * other; one and two measured alike, three lost most of the shorter gaps on the side webcams (lane/sessionbar).
  */
 export declare const RELOCK_STREAK = 2;
-/** Rule relock: a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
+/** Rule moreReadings (re-lock): a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
 export declare function relockVerdict<V extends {
     verdict: string;
     bpm: number | null;
@@ -266,8 +272,8 @@ export declare function relockVerdict<V extends {
     t: number;
 } | null, timestampMs: number): V;
 /**
- * Rule showBuilding: the rate a not-yet-proven streak may show, or null. Only while the verdict is not "measured" and
- * nothing withholds the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
+ * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
+ * the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
  * streak the check ever accepts) whose mean SNR reaches OWN_PULSE_MIN_SNR_DB (the check's own bar).
  */
 export declare function buildingRate(v: {
@@ -276,7 +282,33 @@ export declare function buildingRate(v: {
     streakBpm?: number | null;
     streakSnrDb?: number | null;
 }, withheld: boolean): number | null;
-/** The rate a check's state shows: the proven rate, else (rule showBuilding) the building streak's rate, else null. */
+/** The rate a check's state shows: the proven rate when one is shown, else (rule moreReadings) the building streak's
+ * rate, else null. A proven rate whose newest windows no longer back it falls back to the building rate, so a proof
+ * (or a re-lock) never shows less than the streak behind it would. */
+/**
+ * Rule blinkGate: how far the blink score must rise above its own median of the previous BLINK_BASE_MS to start a
+ * blink. Set on MCD TUNE (25 people, FullHD webcam) at the log midpoint between the largest rise any photo of them
+ * reached (0.114: a frozen copy and a synthetic hand-held photo of each) and the 5th percentile of 527 real blink
+ * rises (0.218); held out on CONFIRM (25 other people): photos 0 of 50 passed, 25 of 25 people blinked, median first
+ * blink 1.8 s (evidence repo lane/liveness). A fixed bar failed: a photo caught with half-shut eyes shakes across it.
+ */
+export declare const BLINK_RISE = 0.1574;
+/** Rule blinkGate: the window whose median is the eyes' own open level. */
+export declare const BLINK_BASE_MS = 2000;
+/** Rule blinkGate: a blink ends within this long (a real blink lasts about 100 to 400 ms, Caffier 2003). */
+export declare const BLINK_MAX_MS = 500;
+/**
+ * Rule blinkGate: a blink detector over blink scores in time order. Feed every frame's score; `seen` turns true once a
+ * score rises BLINK_RISE above the median of the previous BLINK_BASE_MS and falls back under that level plus
+ * BLINK_RISE within BLINK_MAX_MS. Needs half of BLINK_BASE_MS covered before it judges (about 1 s at 30 frames a second).
+ */
+export declare class BlinkDetector {
+    private scores;
+    private start;
+    seen: boolean;
+    push(t: number, score: number): void;
+    reset(): void;
+}
 export declare function shownPulseBpm(state: {
     verdict: string;
     bpm: number | null;
@@ -311,7 +343,18 @@ export type HeadPosition = {
     yawDeg?: number;
     pitchDeg?: number;
     rollDeg?: number;
+    /**
+     * How closed the eyes are, 0 open to 1 shut: the mean of the face landmarker's eyeBlinkLeft and eyeBlinkRight
+     * scores (eyeBlink). Recorded only, so a liveness test (a photo does not blink) can be built and scored offline on
+     * real recordings; no rule of this check reads it. Absent when the landmarker gave no blink scores.
+     */
+    blink?: number;
 };
+/** The mean of the eyeBlinkLeft and eyeBlinkRight scores, or null when either is missing (HeadPosition.blink). */
+export declare function eyeBlink(blendshapes: readonly {
+    categoryName: string;
+    score: number;
+}[] | null | undefined): number | null;
 /**
  * Yaw, pitch and roll in degrees from three mesh lines (headCentre). MediaPipe gives z on roughly the scale of x
  * (normalised by the image width), so z is scaled by the width. Null when any point lacks a finite z.
@@ -450,7 +493,9 @@ export declare class PulseCheck {
     private headHandedOver;
     private history;
     private held;
-    /** Rule relock: the latest proven rate and when it was proven, or null. */
+    /** Rule blinkGate: the blinks seen since the face appeared. */
+    private blinks;
+    /** Rule moreReadings (re-lock): the latest proven rate and when it was proven, or null. */
     private lastProven;
     /** The newest in-band follower value, or null (the state's followerBpm). */
     private followerBpm;

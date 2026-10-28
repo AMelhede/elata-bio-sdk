@@ -1,10 +1,8 @@
-import { FOREHEAD_POOL_SIZE, foreheadPoolFromFrame } from "./facePatches.js";
-import { ForeheadPool } from "./foreheadPool.js";
 import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSource.js";
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FUSION_ROIS, MultiRoiRppgFuser, } from "./multiRoiFusion.js";
-import { WallTracker, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck.js";
+import { WallTracker, eyeBlink, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck.js";
 import { ELATA_YCBCR_V1_PIXEL_SAMPLER, sampleRppgRoi, } from "./roiPixelSampler.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, } from "./roiProfile.js";
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
@@ -93,7 +91,6 @@ export class DemoRunner {
         this.lastSampleAt = null;
         /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
         this.wallTracker = new WallTracker();
-        this.foreheadPool = null;
         this.source.onFrame = this.onFrame.bind(this);
         this.diagnostics.roiGeometryProfileId =
             opts.roiGeometryProfile?.id ?? ELATA_FACE_YCBCR_V1_PROFILE.id;
@@ -198,8 +195,6 @@ export class DemoRunner {
         }
         this.fuser?.reset();
         this.processor.resetSignal();
-        // The pool's running means and windows are ordered in time: a clock step starts them over too.
-        this.foreheadPool?.reset();
         this.analysisRestartMs = t;
         return "restart";
     }
@@ -309,24 +304,15 @@ export class DemoRunner {
                 const wall = frame.landmarks
                     ? this.wallTracker.next(frame.landmarks, frame)
                     : null;
-                const boxes = rois.slice(0, 3).map((roi) => {
+                this.opts.pulseChecker.push(frame.timestampMs, rois.slice(0, 3).map((roi) => {
                     const c = clampRoiToFrame(roi, frame.width, frame.height);
                     return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
-                });
-                // Switch foreheadPool: the forehead from the patch pool (the box until the pool has a value).
-                if (this.opts.foreheadPool && frame.landmarks) {
-                    this.foreheadPool ?? (this.foreheadPool = new ForeheadPool(FOREHEAD_POOL_SIZE));
-                    const pf = foreheadPoolFromFrame(frame, frame.landmarks);
-                    const v = pf ? this.foreheadPool.push({ t: frame.timestampMs, ...pf }) : null;
-                    if (v)
-                        boxes[0] = { ...boxes[0], r: v.r, g: v.g, b: v.b };
-                }
-                this.opts.pulseChecker.push(frame.timestampMs, boxes, wall?.rgb, frame.landmarks && !wall
+                }), wall?.rgb, frame.landmarks && !wall
                     ? wallMissReason(frame.landmarks, frame.width, frame.height)
                     : undefined, 
                 // The head's position, for the headMotion rule: a rate the head's own
                 // movement keeps time with (a nod) is the movement's, not a pulse.
-                frame.landmarks ? headCentre(frame.landmarks, frame.width, frame.height) : null, 
+                frame.landmarks ? withBlink(headCentre(frame.landmarks, frame.width, frame.height), eyeBlink(frame.blendshapes)) : null, 
                 // The wall as the camera read it, for its brightness (rule darkWall): the
                 // continuous wall above carries a darker patch on at a brighter one's level.
                 wall?.raw, 
@@ -610,4 +596,8 @@ function smooth01(prev, next, alpha) {
     const delta = n - prev;
     const effectiveAlpha = Math.abs(delta) > 0.3 ? a * 0.35 : a;
     return Math.max(0, Math.min(1, prev + delta * effectiveAlpha));
+}
+/** The head with the frame's blink score added when the landmarker gave one (recorded only, HeadPosition.blink). */
+function withBlink(head, blink) {
+    return head && blink != null ? { ...head, blink } : head;
 }

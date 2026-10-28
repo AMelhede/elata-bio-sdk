@@ -622,6 +622,11 @@ lowBand = OWN_PULSE_LOW_BAND_BPM) {
         streak += 1;
     }
     const avg = (xs) => xs.reduce((s, v) => s + v, 0) / xs.length;
+    // The current streak, carried on every verdict (rule moreReadings falls back to it when no proven rate is shown).
+    const streakStats = {
+        streakBpm: fines.length ? Math.round(avg(fines) * 10) / 10 : null,
+        streakSnrDb: snrs.length ? avg(snrs) : null,
+    };
     const excess = snrs.reduce((sum, v) => sum + (v - OWN_PULSE_MIN_SNR_DB), 0);
     if ((streak >= OWN_PULSE_STREAK && avg(snrs) >= OWN_PULSE_MIN_SNR_DB) ||
         (streak >= OWN_PULSE_STRONG_STREAK &&
@@ -634,6 +639,7 @@ lowBand = OWN_PULSE_LOW_BAND_BPM) {
             snrDb: Math.round(avg(snrs) * 10) / 10,
             streak,
             path: "proof",
+            ...streakStats,
         };
     }
     // The dark entry: the same shape of streak, longer, at a lower bar, only from
@@ -664,6 +670,7 @@ lowBand = OWN_PULSE_LOW_BAND_BPM) {
                 snrDb: Math.round(avg(darkSnrs) * 10) / 10,
                 streak: darkRates.length,
                 path: "dark",
+                ...streakStats,
             };
         }
     }
@@ -686,6 +693,7 @@ lowBand = OWN_PULSE_LOW_BAND_BPM) {
                     snrDb: Math.round(avg(heldSnrs) * 10) / 10,
                     streak,
                     path: "hold",
+                    ...streakStats,
                 };
             }
         }
@@ -697,7 +705,6 @@ lowBand = OWN_PULSE_LOW_BAND_BPM) {
         snrDb: null,
         streak,
         path: null,
-        streakBpm: fines.length ? Math.round(avg(fines) * 10) / 10 : null,
-        streakSnrDb: snrs.length ? avg(snrs) : null,
+        ...streakStats,
     };
 }

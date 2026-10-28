@@ -80,6 +80,4 @@ export { RecordingPulseCheck, replayPulseCheck, serializePulseCheckRecording, pa
 export { breathingFromMotion, ChestMotion, type ChestSample, chestBox, CHEST_BOX_BOTTOM, CHEST_BOX_TOP, CHEST_BOX_WIDTH, CHEST_BREATH_BAND_HZ, CHEST_BREATH_WINDOW_S, verticalShift, } from "./chestBreathing.js";
 export { FIX_SWITCH_NAMES, type ResolvedRppgFixSwitches, type RppgFixesOption, type RppgFixSwitches, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
-export { ForeheadPool, FOREHEAD_TAU_SKIN, FOREHEAD_TAU_SWING, FOREHEAD_PRUNE } from "./foreheadPool.js";
-export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches.js";
 //# sourceMappingURL=index.d.ts.map

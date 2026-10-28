@@ -127,21 +127,21 @@ export const PULSE_CHECK_RULE_NAMES = [
     "restBand",
     "showHeld",
     "roomLight",
-    "showBuilding",
-    "relock",
+    "moreReadings",
+    "blinkGate",
 ];
 /**
- * Rule relock: how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
+ * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
  * check's 16 s windows.
  */
 export const RELOCK_MS = 30000;
 /**
- * Rule relock: the shortest streak that returns to a proven rate. Two is the fewest windows that can agree with each
+ * Rule moreReadings (re-lock): the shortest streak that returns to a proven rate. Two is the fewest windows that can agree with each
  * other; one and two measured alike, three lost most of the shorter gaps on the side webcams (lane/sessionbar).
  */
 export const RELOCK_STREAK = 2;
-/** Rule relock: a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
+/** Rule moreReadings (re-lock): a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
 export function relockVerdict(v, lastProven, timestampMs) {
     if (v.verdict === "measured" || lastProven == null || timestampMs - lastProven.t > RELOCK_MS)
         return v;
@@ -152,8 +152,8 @@ export function relockVerdict(v, lastProven, timestampMs) {
     return { ...v, verdict: "measured", bpm: v.streakBpm, snrDb: Math.round(v.streakSnrDb * 10) / 10, path: "relock" };
 }
 /**
- * Rule showBuilding: the rate a not-yet-proven streak may show, or null. Only while the verdict is not "measured" and
- * nothing withholds the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
+ * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
+ * the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
  * streak the check ever accepts) whose mean SNR reaches OWN_PULSE_MIN_SNR_DB (the check's own bar).
  */
 export function buildingRate(v, withheld) {
@@ -163,9 +163,61 @@ export function buildingRate(v, withheld) {
         return null;
     return v.streakBpm ?? null;
 }
-/** The rate a check's state shows: the proven rate, else (rule showBuilding) the building streak's rate, else null. */
+/** The rate a check's state shows: the proven rate when one is shown, else (rule moreReadings) the building streak's
+ * rate, else null. A proven rate whose newest windows no longer back it falls back to the building rate, so a proof
+ * (or a re-lock) never shows less than the streak behind it would. */
+/**
+ * Rule blinkGate: how far the blink score must rise above its own median of the previous BLINK_BASE_MS to start a
+ * blink. Set on MCD TUNE (25 people, FullHD webcam) at the log midpoint between the largest rise any photo of them
+ * reached (0.114: a frozen copy and a synthetic hand-held photo of each) and the 5th percentile of 527 real blink
+ * rises (0.218); held out on CONFIRM (25 other people): photos 0 of 50 passed, 25 of 25 people blinked, median first
+ * blink 1.8 s (evidence repo lane/liveness). A fixed bar failed: a photo caught with half-shut eyes shakes across it.
+ */
+export const BLINK_RISE = 0.1574;
+/** Rule blinkGate: the window whose median is the eyes' own open level. */
+export const BLINK_BASE_MS = 2000;
+/** Rule blinkGate: a blink ends within this long (a real blink lasts about 100 to 400 ms, Caffier 2003). */
+export const BLINK_MAX_MS = 500;
+/**
+ * Rule blinkGate: a blink detector over blink scores in time order. Feed every frame's score; `seen` turns true once a
+ * score rises BLINK_RISE above the median of the previous BLINK_BASE_MS and falls back under that level plus
+ * BLINK_RISE within BLINK_MAX_MS. Needs half of BLINK_BASE_MS covered before it judges (about 1 s at 30 frames a second).
+ */
+export class BlinkDetector {
+    constructor() {
+        this.scores = [];
+        this.start = null;
+        this.seen = false;
+    }
+    push(t, score) {
+        const prev = this.scores.filter(([u]) => u >= t - BLINK_BASE_MS && u < t).map(([, v]) => v);
+        this.scores.push([t, score]);
+        while (this.scores.length && this.scores[0][0] < t - BLINK_BASE_MS)
+            this.scores.shift();
+        const covered = prev.length >= 2 && t - this.scores[0][0] >= BLINK_BASE_MS / 2;
+        if (this.start == null) {
+            if (!covered)
+                return;
+            const sorted = [...prev].sort((a, b) => a - b);
+            const n = sorted.length;
+            const base = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+            if (score >= base + BLINK_RISE)
+                this.start = { t, base };
+        }
+        else if (score < this.start.base + BLINK_RISE) {
+            if (t - this.start.t <= BLINK_MAX_MS)
+                this.seen = true;
+            this.start = null;
+        }
+    }
+    reset() {
+        this.scores = [];
+        this.start = null;
+        this.seen = false;
+    }
+}
 export function shownPulseBpm(state) {
-    return state.verdict === "measured" ? state.bpm : (state.buildingBpm ?? null);
+    return state.verdict === "measured" && state.bpm != null ? state.bpm : (state.buildingBpm ?? null);
 }
 /** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
@@ -182,8 +234,8 @@ export function resolvePulseCheckRules(rules) {
         restBand: rules?.restBand !== false,
         showHeld: rules?.showHeld === true,
         roomLight: rules?.roomLight === true,
-        showBuilding: rules?.showBuilding === true,
-        relock: rules?.relock === true,
+        moreReadings: rules?.moreReadings === true,
+        blinkGate: rules?.blinkGate === true,
     };
 }
 /**
@@ -193,6 +245,14 @@ export function resolvePulseCheckRules(rules) {
 export const HEAD_LANDMARKS = [168, 6, 4, 10, 152, 33, 263, 234, 454];
 /** The cheekbones (MediaPipe face mesh 234 and 454): their distance is the face's width. */
 const CHEEKBONES = [234, 454];
+/** The mean of the eyeBlinkLeft and eyeBlinkRight scores, or null when either is missing (HeadPosition.blink). */
+export function eyeBlink(blendshapes) {
+    if (!blendshapes)
+        return null;
+    const l = blendshapes.find((b) => b.categoryName === "eyeBlinkLeft")?.score;
+    const r = blendshapes.find((b) => b.categoryName === "eyeBlinkRight")?.score;
+    return l != null && r != null && Number.isFinite(l) && Number.isFinite(r) ? (l + r) / 2 : null;
+}
 /** Inner lips, upper and lower (MediaPipe face mesh 13 and 14). */
 const INNER_LIPS = [13, 14];
 /** Forehead and chin (MediaPipe face mesh 10 and 152): the face's vertical line, for pitch. */
@@ -596,7 +656,9 @@ export class PulseCheck {
         this.headHandedOver = false;
         this.history = [];
         this.held = null;
-        /** Rule relock: the latest proven rate and when it was proven, or null. */
+        /** Rule blinkGate: the blinks seen since the face appeared. */
+        this.blinks = new BlinkDetector();
+        /** Rule moreReadings (re-lock): the latest proven rate and when it was proven, or null. */
         this.lastProven = null;
         /** The newest in-band follower value, or null (the state's followerBpm). */
         this.followerBpm = null;
@@ -702,6 +764,8 @@ export class PulseCheck {
             this.room.shift();
         if (head !== undefined)
             this.headHandedOver = true;
+        if (head?.blink != null && Number.isFinite(head.blink))
+            this.blinks.push(timestampMs, head.blink);
         if (head && Number.isFinite(head.x) && Number.isFinite(head.y) && Number.isFinite(head.faceWidth) && head.faceWidth > 0)
             this.head.push([timestampMs, head.x, head.y, head.faceWidth]);
         while (this.head.length && this.head[0][0] < timestampMs - WALL_KEEP_MS)
@@ -754,8 +818,8 @@ export class PulseCheck {
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
         let v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
-        // Rule relock: a streak that agrees with a rate proven moments ago is that rate again (relockVerdict).
-        if (this.rules.relock)
+        // Rule moreReadings (re-lock): a streak that agrees with a rate proven moments ago is that rate again (relockVerdict).
+        if (this.rules.moreReadings)
             v = relockVerdict(v, this.lastProven, timestampMs);
         this.held = v.verdict === "measured" ? v.bpm : null;
         if (v.verdict === "measured" && v.bpm != null)
@@ -823,10 +887,17 @@ export class PulseCheck {
             };
         this.state.followerBpm = this.followerBpm;
         this.state.heldBpm = this.held;
-        // Rule showBuilding: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
-        this.state.buildingBpm = this.rules.showBuilding
-            ? buildingRate(v, wallMatch || roomMatch || faceFlicker || headMatch)
+        // Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
+        this.state.buildingBpm = this.rules.moreReadings
+            ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch)
             : null;
+        // Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
+        if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {
+            this.state.verdict = "not-measured";
+            this.state.bpm = null;
+            this.state.buildingBpm = null;
+            this.state.waitingForBlink = true;
+        }
         this.state.windowScreenSteps = windowScreenSteps;
         this.state.screenLight = screenLit;
         this.evaluationCount += 1;
@@ -896,6 +967,7 @@ export class PulseCheck {
         this.history = [];
         this.held = null;
         this.lastProven = null;
+        this.blinks.reset();
         this.followerBpm = null;
         this.lastEvalMs = null;
         this.lostSinceMs = null;

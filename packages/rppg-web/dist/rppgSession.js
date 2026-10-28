@@ -157,7 +157,6 @@ export class RppgSession {
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
             experimentalVitals: this.internals.experimentalVitals === true,
-            foreheadPool: this.internals.foreheadPool === true && this.internals.pulseCheck != null,
         };
     }
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -368,7 +367,6 @@ export async function createRppgSession(options) {
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
-        foreheadPool: options.foreheadPool === true,
         chestMotion,
         roi: options.roi,
         roiGeometryProfile: options.roiGeometryProfile,
@@ -421,7 +419,6 @@ export async function createRppgSession(options) {
         pulseCheck,
         chestMotion,
         experimentalVitals: options.experimentalVitals === true,
-        foreheadPool: options.foreheadPool === true,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
         waveformController,
