@@ -332,6 +332,14 @@ export type PulseCheckRules = {
 	 * recorded webcam sessions against a reference pulse and on real photo steps, not yet held out.
 	 */
 	showBuilding?: boolean;
+	/**
+	 * OFF unless true, being measured (lane/sessionbar): a streak of at least RELOCK_STREAK counting windows at a mean
+	 * SNR of at least OWN_PULSE_MIN_SNR_DB, within OWN_PULSE_AGREE_BPM of a rate proven in the last RELOCK_MS, is that
+	 * rate again (verdict path "relock"), instead of a new proof from nothing. A heart rate does not jump on its own
+	 * within seconds, so a brief noisy stretch no longer costs a whole new proof. Only a rate the check already proved
+	 * can come back; every taint still breaks the streak.
+	 */
+	relock?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -353,7 +361,30 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"slowTwo",
 	"roomLight",
 	"showBuilding",
+	"relock",
 ] as const;
+
+/**
+ * Rule relock: how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
+ * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
+ * check's 16 s windows.
+ */
+export const RELOCK_MS = 30_000;
+/**
+ * Rule relock: the shortest streak that returns to a proven rate. Two is the fewest windows that can agree with each
+ * other; one and two measured alike, three lost most of the shorter gaps on the side webcams (lane/sessionbar).
+ */
+export const RELOCK_STREAK = 2;
+
+/** Rule relock: a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
+export function relockVerdict<
+	V extends { verdict: string; bpm: number | null; snrDb: number | null; streak: number; path: unknown; streakBpm?: number | null; streakSnrDb?: number | null },
+>(v: V, lastProven: { bpm: number; t: number } | null, timestampMs: number): V {
+	if (v.verdict === "measured" || lastProven == null || timestampMs - lastProven.t > RELOCK_MS) return v;
+	if (v.streak < RELOCK_STREAK || v.streakBpm == null || v.streakSnrDb == null || v.streakSnrDb < OWN_PULSE_MIN_SNR_DB) return v;
+	if (Math.abs(v.streakBpm - lastProven.bpm) > OWN_PULSE_AGREE_BPM) return v;
+	return { ...v, verdict: "measured", bpm: v.streakBpm, snrDb: Math.round(v.streakSnrDb * 10) / 10, path: "relock" };
+}
 
 /**
  * Rule showBuilding: the rate a not-yet-proven streak may show, or null. Only while the verdict is not "measured" and
@@ -393,6 +424,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		slowTwo: rules?.slowTwo === true,
 		roomLight: rules?.roomLight === true,
 		showBuilding: rules?.showBuilding === true,
+		relock: rules?.relock === true,
 	};
 }
 
@@ -904,6 +936,8 @@ export class PulseCheck {
 	private headHandedOver = false;
 	private history: (OwnPulseEstimate | null)[] = [];
 	private held: number | null = null;
+	/** Rule relock: the latest proven rate and when it was proven, or null. */
+	private lastProven: { bpm: number; t: number } | null = null;
 	/** The newest in-band follower value, or null (the state's followerBpm). */
 	private followerBpm: number | null = null;
 	private lastEvalMs: number | null = null;
@@ -1041,8 +1075,11 @@ export class PulseCheck {
 				(windowHead != null && windowHead !== "clear"));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
-		const v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM, this.rules.slowTwo);
+		let v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM, this.rules.slowTwo);
+		// Rule relock: a streak that agrees with a rate proven moments ago is that rate again (relockVerdict).
+		if (this.rules.relock) v = relockVerdict(v, this.lastProven, timestampMs);
 		this.held = v.verdict === "measured" ? v.bpm : null;
+		if (v.verdict === "measured" && v.bpm != null) this.lastProven = { bpm: v.bpm, t: timestampMs };
 		// The wall check only withholds; it never changes what the check itself has proven.
 		// Judged over the last 4 one-second windows at once, not counted forward from the
 		// moment of proof, so a lamp's rate is withheld from its first second.
@@ -1200,6 +1237,7 @@ export class PulseCheck {
 		this.headHandedOver = false;
 		this.history = [];
 		this.held = null;
+		this.lastProven = null;
 		this.followerBpm = null;
 		this.lastEvalMs = null;
 		this.lostSinceMs = null;
