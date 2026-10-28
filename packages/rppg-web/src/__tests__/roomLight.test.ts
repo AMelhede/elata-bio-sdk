@@ -37,3 +37,21 @@ describe("rule roomLight", () => {
 		expect(run({ roomLight: true }, "none").shown).toEqual(run({}, "none").shown);
 	});
 });
+
+// The room judged with its own bar (lane lampdef ROOM2): a room has no pulse, so its line only has to clear the room's
+// own noise, not the wall's 6 dB. ROOM_MIN_SNR_DB is the 99th percentile of the room's line in the face rate's family
+// on 150 MCD TUNE recordings without a lamp (2.46 dB).
+import { roomCarries, ROOM_MIN_SNR_DB, resolvePulseCheckRules } from "../pulseCheck";
+describe("the room's own bar", () => {
+	const rules = resolvePulseCheckRules({ roomLight: true });
+	it("withholds on a room line between its own bar and the wall's", () => {
+		expect(ROOM_MIN_SNR_DB).toBeCloseTo(2.46, 2);
+		expect(roomCarries({ bpm: 72, snrDb: 3 }, 72, rules)).toBe(true);
+		expect(roomCarries({ bpm: 36, snrDb: 3 }, 72, rules)).toBe(true); // half the face's rate: the light family
+	});
+	it("does not withhold under the room's bar, at an unrelated rate, or without a room line", () => {
+		expect(roomCarries({ bpm: 72, snrDb: 2 }, 72, rules)).toBe(false);
+		expect(roomCarries({ bpm: 80, snrDb: 9 }, 72, rules)).toBe(false);
+		expect(roomCarries(null, 72, rules)).toBe(false);
+	});
+});
