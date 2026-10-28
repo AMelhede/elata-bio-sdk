@@ -357,6 +357,19 @@ export declare function wallLine(wall: [number, number, number, number][], atMs:
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
 export declare function wallCarries(wall: [number, number, number, number][], atMs: number, bpm: number, rules?: ResolvedPulseCheckRules): boolean;
+/**
+ * The room's own bar for rule roomLight. A room has no pulse, so its line only has to clear the room's own noise, not
+ * the wall's bar: the bar sits at the room line's noise level on recorded captures without a lamp, so the room vetoes
+ * a face rate only when it plainly carries a light at that rate.
+ *
+ * Value chosen by measurement on recorded captures without a lamp, checked on captures with one.
+ */
+export declare const ROOM_MIN_SNR_DB = 2.458;
+/** Whether the room's line carries the face's rate (rule roomLight): in the light family, at or over ROOM_MIN_SNR_DB. */
+export declare function roomCarries(line: {
+    bpm: number;
+    snrDb: number;
+} | null, bpm: number, rules: ResolvedPulseCheckRules): boolean;
 /** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
 export declare const SCREEN_STEPS_PER_WINDOW = 10;
 /**

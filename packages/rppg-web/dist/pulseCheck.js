@@ -428,6 +428,19 @@ export function wallLine(wall, atMs, bandEdge = true) {
 export function wallCarries(wall, atMs, bpm, rules = ALL_RULES_ON) {
     return lineCarries(wallLine(wall, atMs, rules.wallBandEdge), bpm, rules);
 }
+/**
+ * The room's own bar for rule roomLight. A room has no pulse, so its line only has to clear the room's own noise, not
+ * the wall's bar: the bar sits at the room line's noise level on recorded captures without a lamp, so the room vetoes
+ * a face rate only when it plainly carries a light at that rate.
+ *
+ * Value chosen by measurement on recorded captures without a lamp, checked on captures with one.
+ */
+export const ROOM_MIN_SNR_DB = 2.458;
+/** Whether the room's line carries the face's rate (rule roomLight): in the light family, at or over ROOM_MIN_SNR_DB. */
+export function roomCarries(line, bpm, rules) {
+    const family = rules.lightFamily ? LIGHT_FAMILY : [1];
+    return line != null && line.snrDb >= ROOM_MIN_SNR_DB && family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM);
+}
 /** wallCarries on a wall line already found (one evaluation reads the same line up to three times). */
 function lineCarries(line, bpm, rules) {
     const family = rules.lightFamily ? LIGHT_FAMILY : [1];
@@ -708,7 +721,7 @@ export class PulseCheck {
         const screenLit = est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
         const tainted = est?.bpm != null &&
             ((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
-                (this.rules.roomLight && lineCarries(roomLineAt(timestampMs), est.bpm, this.rules)) ||
+                (this.rules.roomLight && roomCarries(roomLineAt(timestampMs), est.bpm, this.rules)) ||
                 screenLit ||
                 (windowHead != null && windowHead !== "clear"));
         this.history.push(tainted ? null : est);
@@ -724,7 +737,7 @@ export class PulseCheck {
             Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => lineCarries(lineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
         const roomMatch = this.rules.roomLight &&
             held != null &&
-            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => lineCarries(roomLineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
+            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => roomCarries(roomLineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
         const faceFlicker = this.rules.faceFlicker &&
             held != null &&
             Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => {
