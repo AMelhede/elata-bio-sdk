@@ -11,6 +11,7 @@ import {
 	type PulseCheckRules,
 	type PulseCheckState,
 	type ResolvedPulseCheckRules,
+	shownPulseBpm,
 } from "./pulseCheck";
 import {
 	type PulseCheckReadReason,
@@ -351,7 +352,7 @@ export class RppgSession {
 		return this.noteRead(
 			{
 				...metrics,
-				bpm: state.verdict === "measured" ? state.bpm : null,
+				bpm: shownPulseBpm(state),
 				hrv_rmssd: null,
 				respiration_rate: null,
 				respiration_confidence: null,

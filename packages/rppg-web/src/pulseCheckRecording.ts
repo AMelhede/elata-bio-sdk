@@ -43,6 +43,7 @@ import {
 	type PulseCheckState,
 	type ResolvedPulseCheckRules,
 	type WallMiss,
+	shownPulseBpm,
 } from "./pulseCheck";
 
 type Rgb = { r: number; g: number; b: number };
@@ -275,7 +276,7 @@ export type PulseCheckReplayRead = {
 export type PulseCheckReplayEvaluation = {
 	/** The time of the frame that brought it (ms). */
 	t: number;
-	/** The rate the check shows: its `bpm` while the verdict is "measured", else null. */
+	/** The rate the check shows (shownPulseBpm): its `bpm` while the verdict is "measured", else its building rate under rule showBuilding, else null. */
 	bpm: number | null;
 	state: PulseCheckState;
 };
@@ -331,7 +332,7 @@ export function replayPulseCheck(
 			);
 			if (check.evaluations !== before) {
 				const state = check.getState();
-				evaluations.push({ t, bpm: state.verdict === "measured" ? state.bpm : null, state });
+				evaluations.push({ t, bpm: shownPulseBpm(state), state });
 			}
 		} else if (e[0] === "l") check.faceLost(e[1]);
 		else if (e[0] === "r") {
@@ -339,7 +340,7 @@ export function replayPulseCheck(
 			const reason = e[3];
 			reads.push({
 				t: e[1],
-				bpm: reason != null ? null : state.verdict === "measured" ? state.bpm : null,
+				bpm: reason != null ? null : shownPulseBpm(state),
 				live: e[2],
 				reason,
 				state,

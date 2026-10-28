@@ -355,6 +355,7 @@ export {
 	type ResolvedPulseCheckRules,
 	PULSE_CHECK_RULE_NAMES,
 	resolvePulseCheckRules,
+	shownPulseBpm,
 	HEAD_LANDMARKS,
 	headCentre,
 	type HeadPosition,
