@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -215,6 +215,33 @@ export class BlinkDetector {
         this.start = null;
         this.seen = false;
     }
+}
+export function pulseCheckCause(state, faceInView) {
+    if (!faceInView)
+        return "noFace";
+    if (shownPulseBpm(state) != null)
+        return "shown";
+    if (state.wallMatch || state.roomMatch || state.screenLight || state.faceFlicker)
+        return "lightFlicker";
+    if (state.headMatch)
+        return "headMotion";
+    if (state.waitingForBlink)
+        return "waitingForBlink";
+    if (state.windowSnrDb == null)
+        return "noRate";
+    if (state.windowSnrDb < OWN_PULSE_MIN_SNR_DB)
+        return "weakSignal";
+    return "agreeing";
+}
+/**
+ * The streak the running rules need before a rate shows: the proof's OWN_PULSE_STREAK, or with moreReadings its
+ * building bar OWN_PULSE_STRONG_STREAK, and RELOCK_STREAK while re-lock is open (`state.relockOpen`). An app's
+ * progress toward a number counts toward this, never toward a fixed 8.
+ */
+export function streakNeeded(rules, relockOpen) {
+    if (!rules.moreReadings)
+        return OWN_PULSE_STREAK;
+    return relockOpen ? RELOCK_STREAK : OWN_PULSE_STRONG_STREAK;
 }
 export function shownPulseBpm(state) {
     return state.verdict === "measured" && state.bpm != null ? state.bpm : (state.buildingBpm ?? null);
@@ -898,6 +925,7 @@ export class PulseCheck {
             this.state.buildingBpm = null;
             this.state.waitingForBlink = true;
         }
+        this.state.relockOpen = this.rules.moreReadings && this.lastProven != null && timestampMs - this.lastProven.t <= RELOCK_MS;
         this.state.windowScreenSteps = windowScreenSteps;
         this.state.screenLight = screenLit;
         this.evaluationCount += 1;

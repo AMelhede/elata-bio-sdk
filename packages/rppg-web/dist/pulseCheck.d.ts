@@ -90,6 +90,8 @@ export type PulseCheckState = {
     buildingBpm?: number | null;
     /** Rule blinkGate: true while a rate would show but no blink has been seen since the face appeared. */
     waitingForBlink?: boolean;
+    /** Rule moreReadings: true while a rate proven in the last RELOCK_MS can be returned to (re-lock is open). */
+    relockOpen?: boolean;
     /**
      * The newest OWN_PULSE_SUPPORT_S line while a rate is proven and that line sits within OWN_PULSE_TRACK_BPM of
      * it (the value the shown rate follows), else null. For diagnosis.
@@ -309,6 +311,21 @@ export declare class BlinkDetector {
     push(t: number, score: number): void;
     reset(): void;
 }
+/**
+ * Why a state shows no rate, the check's first blocking cause in a fixed priority (spec SPEC-reading-state.md in the
+ * testbed, section 4), so an app's one instruction comes from what the check itself saw: no face, a flickering light
+ * (wall, room, screen or face-flicker rule), the head moving at the rate, no rate in the window (colour damaged and
+ * the wall too dim for the backup method), a window under the SNR bar, a signal over the bar whose regions do not yet
+ * agree, the blink gate waiting, or shown. `faceInView`: the app's own face tracking this second.
+ */
+export type PulseCheckCause = "noFace" | "lightFlicker" | "headMotion" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
+export declare function pulseCheckCause(state: PulseCheckState, faceInView: boolean): PulseCheckCause;
+/**
+ * The streak the running rules need before a rate shows: the proof's OWN_PULSE_STREAK, or with moreReadings its
+ * building bar OWN_PULSE_STRONG_STREAK, and RELOCK_STREAK while re-lock is open (`state.relockOpen`). An app's
+ * progress toward a number counts toward this, never toward a fixed 8.
+ */
+export declare function streakNeeded(rules: ResolvedPulseCheckRules, relockOpen: boolean): number;
 export declare function shownPulseBpm(state: {
     verdict: string;
     bpm: number | null;
