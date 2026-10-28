@@ -28,3 +28,18 @@ describe("rule showBuilding", () => {
 		expect(shownPulseBpm({ verdict: "not-measured", bpm: null })).toBeNull();
 	});
 });
+
+describe("rule showBuilding when a proof stops being shown", () => {
+	it("every verdict carries its streak, a proven one included", () => {
+		const v = ownPulseVerdict(Array.from({ length: 10 }, () => win(70, 2)));
+		expect(v.verdict).toBe("measured");
+		expect(v.streakBpm).toBe(70.2);
+		expect(v.streakSnrDb).toBe(2);
+	});
+	it("a proven rate the newest windows no longer back falls back to the building rate", () => {
+		const v = ownPulseVerdict(Array.from({ length: 10 }, () => win(70, 2)));
+		expect(buildingRate({ ...v, verdict: "not-shown" }, false)).toBe(70.2);
+		expect(shownPulseBpm({ verdict: "measured", bpm: null, buildingBpm: 70.2 })).toBe(70.2);
+		expect(shownPulseBpm({ verdict: "measured", bpm: 68, buildingBpm: 70.2 })).toBe(68);
+	});
+});

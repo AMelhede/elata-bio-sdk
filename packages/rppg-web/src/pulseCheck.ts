@@ -95,7 +95,7 @@ export type PulseCheckState = {
 	/** How the shown rate was reached: the check's own streak, or null. */
 	via?: "check" | null;
 	/**
-	 * Rule showBuilding: while no pulse is proven, the current streak's mean fine rate when the streak is at least
+	 * Rule showBuilding: while no proven rate is shown, the current streak's mean fine rate when the streak is at least
 	 * OWN_PULSE_STRONG_STREAK windows long at a mean SNR of at least OWN_PULSE_MIN_SNR_DB; else null.
 	 */
 	buildingBpm?: number | null;
@@ -366,8 +366,8 @@ export function relockVerdict<
 }
 
 /**
- * Rule showBuilding: the rate a not-yet-proven streak may show, or null. Only while the verdict is not "measured" and
- * nothing withholds the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
+ * Rule showBuilding: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
+ * the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
  * streak the check ever accepts) whose mean SNR reaches OWN_PULSE_MIN_SNR_DB (the check's own bar).
  */
 export function buildingRate(
@@ -379,9 +379,11 @@ export function buildingRate(
 	return v.streakBpm ?? null;
 }
 
-/** The rate a check's state shows: the proven rate, else (rule showBuilding) the building streak's rate, else null. */
+/** The rate a check's state shows: the proven rate when one is shown, else (rule showBuilding) the building streak's
+ * rate, else null. A proven rate whose newest windows no longer back it falls back to the building rate, so a proof
+ * (or a re-lock) never shows less than the streak behind it would. */
 export function shownPulseBpm(state: { verdict: string; bpm: number | null; buildingBpm?: number | null }): number | null {
-	return state.verdict === "measured" ? state.bpm : (state.buildingBpm ?? null);
+	return state.verdict === "measured" && state.bpm != null ? state.bpm : (state.buildingBpm ?? null);
 }
 
 /** Every rule resolved to true or false; left out means on. */
@@ -1129,7 +1131,7 @@ export class PulseCheck {
 		this.state.heldBpm = this.held;
 		// Rule showBuilding: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
 		this.state.buildingBpm = this.rules.showBuilding
-			? buildingRate(v, wallMatch || roomMatch || faceFlicker || headMatch)
+			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch)
 			: null;
 		this.state.windowScreenSteps = windowScreenSteps;
 		this.state.screenLight = screenLit;
