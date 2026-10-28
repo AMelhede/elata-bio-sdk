@@ -769,7 +769,7 @@ export function ownPulseVerdict(
 	streak: number;
 	/** How a "measured" verdict was reached (OwnPulseVerdictPath); null otherwise. */
 	path: OwnPulseVerdictPath | null;
-	/** The current streak's mean fine rate and mean SNR, on every verdict (rule showBuilding). */
+	/** The current streak's mean fine rate and mean SNR, on every verdict (rule moreReadings). */
 	streakBpm?: number | null;
 	streakSnrDb?: number | null;
 } {
@@ -787,7 +787,7 @@ export function ownPulseVerdict(
 		streak += 1;
 	}
 	const avg = (xs: number[]) => xs.reduce((s, v) => s + v, 0) / xs.length;
-	// The current streak, carried on every verdict (rule showBuilding falls back to it when no proven rate is shown).
+	// The current streak, carried on every verdict (rule moreReadings falls back to it when no proven rate is shown).
 	const streakStats = {
 		streakBpm: fines.length ? Math.round(avg(fines) * 10) / 10 : null,
 		streakSnrDb: snrs.length ? avg(snrs) : null,

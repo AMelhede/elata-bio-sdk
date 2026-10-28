@@ -1,15 +1,15 @@
 import { ownPulseVerdict, OWN_PULSE_STRONG_STREAK, type OwnPulseEstimate } from "../pulseCheckCore";
 import { buildingRate, resolvePulseCheckRules, shownPulseBpm } from "../pulseCheck";
 
-// Rule showBuilding (off unless true): a not-yet-proven streak as long as the check's shortest accepted one, at the
+// Rule moreReadings, its building half (off unless true): a not-yet-proven streak as long as the check's shortest accepted one, at the
 // check's own SNR bar, is shown as the building rate.
 const win = (bpm: number, snrDb: number): OwnPulseEstimate =>
 	({ windowS: 16, frames: 480, fps: 30, regions: [], agreeing: ["forehead", "leftCheek", "rightCheek"], bpm, bpmFine: bpm + 0.2, snrDb }) as unknown as OwnPulseEstimate;
 
-describe("rule showBuilding", () => {
+describe("rule moreReadings (building)", () => {
 	it("is off unless set to true", () => {
-		expect(resolvePulseCheckRules().showBuilding).toBe(false);
-		expect(resolvePulseCheckRules({ showBuilding: true }).showBuilding).toBe(true);
+		expect(resolvePulseCheckRules().moreReadings).toBe(false);
+		expect(resolvePulseCheckRules({ moreReadings: true }).moreReadings).toBe(true);
 	});
 	it("a 4-window streak at -2 dB is not proven, and builds at its mean fine rate", () => {
 		const v = ownPulseVerdict(Array.from({ length: OWN_PULSE_STRONG_STREAK }, () => win(70, -2)));
@@ -29,7 +29,7 @@ describe("rule showBuilding", () => {
 	});
 });
 
-describe("rule showBuilding when a proof stops being shown", () => {
+describe("rule moreReadings (building) when a proof stops being shown", () => {
 	it("every verdict carries its streak, a proven one included", () => {
 		const v = ownPulseVerdict(Array.from({ length: 10 }, () => win(70, 2)));
 		expect(v.verdict).toBe("measured");

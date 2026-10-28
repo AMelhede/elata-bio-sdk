@@ -279,7 +279,7 @@ export type PulseCheckReplayRead = {
 export type PulseCheckReplayEvaluation = {
 	/** The time of the frame that brought it (ms). */
 	t: number;
-	/** The rate the check shows (shownPulseBpm): its `bpm` while the verdict is "measured", else its building rate under rule showBuilding, else null. */
+	/** The rate the check shows (shownPulseBpm): its `bpm` while the verdict is "measured", else its building rate under rule moreReadings, else null. */
 	bpm: number | null;
 	state: PulseCheckState;
 };
@@ -314,7 +314,7 @@ export function replayPulseCheck(
 ): PulseCheckReplay {
 	checkHeader(recording);
 	const own: PulseCheckRules = Object.fromEntries(
-		PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true]),
+		PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true || (name === "moreReadings" && legacyMoreReadings(recording.rules))]),
 	);
 	const check = new PulseCheck({ rules: options.rules ?? own });
 	const reads: PulseCheckReplayRead[] = [];
@@ -369,4 +369,14 @@ export function parsePulseCheckRecording(text: string): PulseCheckRecording {
 	const r = JSON.parse(text, (_key, v) => (typeof v === "string" && v in SPECIAL ? SPECIAL[v] : v)) as PulseCheckRecording;
 	checkHeader(r);
 	return r;
+}
+
+/**
+ * Recordings from 0.15.0-test.49 and test.50 name the two halves of moreReadings separately (showBuilding, relock);
+ * with both on they ran exactly moreReadings. A test.48 recording, made with showBuilding alone, ran half of it,
+ * which no rule of this build reproduces: replay such a recording with the test.48 build.
+ */
+function legacyMoreReadings(rules: object): boolean {
+	const r = rules as { showBuilding?: unknown; relock?: unknown };
+	return r.showBuilding === true && r.relock === true;
 }
