@@ -338,7 +338,7 @@ export type OwnPulseVerdict = "measured" | "not-measured" | "unknown";
  * entry), or "hold" (a rate measured before, still carried by most of the newest windows). The first two
  * are fresh proofs; the hold is not.
  */
-export type OwnPulseVerdictPath = "proof" | "dark" | "hold";
+export type OwnPulseVerdictPath = "proof" | "dark" | "hold" | "relock";
 export declare function ownPulseVerdict(history: readonly (OwnPulseEstimate | null)[], 
 /** The rate the previous verdict was measured at, if it was; enables the hold. */
 held?: number | null, 

@@ -42,7 +42,7 @@ export { RppgGatingController } from "./rppgGating.js";
 export { replayBayesSession } from "./rppgReplay.js";
 export { RppgSessionRecorder } from "./rppgSessionRecorder.js";
 export { aggregateComparisons, maeOf, summarizeReplaySession, } from "./replayBenchmark.js";
-export { PulseCheck, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, shownPulseBpm, HEAD_LANDMARKS, headCentre, headAtRate, headJudge, headCarries, headMatches, } from "./pulseCheck.js";
+export { PulseCheck, PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, shownPulseBpm, relockVerdict, RELOCK_MS, RELOCK_STREAK, HEAD_LANDMARKS, headCentre, headAtRate, headJudge, headCarries, headMatches, } from "./pulseCheck.js";
 export { RecordingPulseCheck, replayPulseCheck, serializePulseCheckRecording, parsePulseCheckRecording, PULSE_CHECK_RECORDING_FORMAT, PULSE_CHECK_RECORDING_VERSION, PULSE_CHECK_RECORDING_SECONDS, PULSE_CHECK_RECORDING_EVENTS_PER_SECOND, } from "./pulseCheckRecording.js";
 export { breathingFromMotion, ChestMotion, chestBox, CHEST_BOX_BOTTOM, CHEST_BOX_TOP, CHEST_BOX_WIDTH, CHEST_BREATH_BAND_HZ, CHEST_BREATH_WINDOW_S, verticalShift, } from "./chestBreathing.js";
 export { FIX_SWITCH_NAMES, resolveFixSwitches, } from "./fixSwitches.js";

@@ -245,9 +245,41 @@ export type PulseCheckRules = {
      * recorded webcam sessions against a reference pulse and on real photo steps, not yet held out.
      */
     showBuilding?: boolean;
+    /**
+     * OFF unless true, being measured (lane/sessionbar): a streak of at least RELOCK_STREAK counting windows at a mean
+     * SNR of at least OWN_PULSE_MIN_SNR_DB, within OWN_PULSE_AGREE_BPM of a rate proven in the last RELOCK_MS, is that
+     * rate again (verdict path "relock"), instead of a new proof from nothing. A heart rate does not jump on its own
+     * within seconds, so a brief noisy stretch no longer costs a whole new proof. Only a rate the check already proved
+     * can come back; every taint still breaks the streak.
+     */
+    relock?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "flickerTight", "wallFaint", "slowTwo", "roomLight", "showBuilding"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "flickerTight", "wallFaint", "slowTwo", "roomLight", "showBuilding", "relock"];
+/**
+ * Rule relock: how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
+ * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
+ * check's 16 s windows.
+ */
+export declare const RELOCK_MS = 30000;
+/**
+ * Rule relock: the shortest streak that returns to a proven rate. Two is the fewest windows that can agree with each
+ * other; one and two measured alike, three lost most of the shorter gaps on the side webcams (lane/sessionbar).
+ */
+export declare const RELOCK_STREAK = 2;
+/** Rule relock: a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
+export declare function relockVerdict<V extends {
+    verdict: string;
+    bpm: number | null;
+    snrDb: number | null;
+    streak: number;
+    path: unknown;
+    streakBpm?: number | null;
+    streakSnrDb?: number | null;
+}>(v: V, lastProven: {
+    bpm: number;
+    t: number;
+} | null, timestampMs: number): V;
 /**
  * Rule showBuilding: the rate a not-yet-proven streak may show, or null. Only while the verdict is not "measured" and
  * nothing withholds the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
@@ -433,6 +465,8 @@ export declare class PulseCheck {
     private headHandedOver;
     private history;
     private held;
+    /** Rule relock: the latest proven rate and when it was proven, or null. */
+    private lastProven;
     /** The newest in-band follower value, or null (the state's followerBpm). */
     private followerBpm;
     private lastEvalMs;
