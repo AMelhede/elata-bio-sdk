@@ -168,10 +168,10 @@ export function buildingRate(v, withheld) {
  * (or a re-lock) never shows less than the streak behind it would. */
 /**
  * Rule blinkGate: how far the blink score must rise above its own median of the previous BLINK_BASE_MS to start a
- * blink. Set on MCD TUNE (25 people, FullHD webcam) at the log midpoint between the largest rise any photo of them
- * reached (0.114: a frozen copy and a synthetic hand-held photo of each) and the 5th percentile of 527 real blink
- * rises (0.218); held out on CONFIRM (25 other people): photos 0 of 50 passed, 25 of 25 people blinked, median first
- * blink 1.8 s (evidence repo lane/liveness). A fixed bar failed: a photo caught with half-shut eyes shakes across it.
+ * blink. Set on one set of people at rest at the log midpoint between the largest rise any photo of them reached (a
+ * frozen copy and a hand-held photo of each) and the 5th percentile of their real blink rises, then held out on
+ * people it was not set on: no photo passed, and everyone blinked (evidence repo lane/liveness). A fixed bar failed:
+ * a photo caught with half-shut eyes shakes across it.
  */
 export const BLINK_RISE = 0.1574;
 /** Rule blinkGate: the window whose median is the eyes' own open level. */
