@@ -1,3 +1,5 @@
+import { FOREHEAD_POOL_SIZE, foreheadPoolFromFrame } from "./facePatches";
+import { ForeheadPool } from "./foreheadPool";
 import {
 	FrameSource,
 	Frame,
@@ -67,6 +69,12 @@ export type DemoRunnerOptions = {
 	 * null or left out: no check.
 	 */
 	pulseChecker?: PulseCheck | null;
+	/**
+	 * Read the forehead region the check is fed from 49 small skin patches, weighted toward the cleanest
+	 * (foreheadPool.ts), instead of one box. The cheeks stay boxes. Off unless true. The session creates it
+	 * (`foreheadPool`).
+	 */
+	foreheadPool?: boolean;
 	/**
 	 * Breathing from chest motion (see chestBreathing.ts), fed every analysed frame with its face
 	 * landmarks. The session creates it (`experimentalVitals`); null or left out: not read.
@@ -280,6 +288,7 @@ export class DemoRunner {
 	readonly fixes: ResolvedRppgFixSwitches;
 	/** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
 	private wallTracker = new WallTracker();
+	private foreheadPool: ForeheadPool | null = null;
 
 	constructor(
 		private source: FrameSource,
@@ -400,6 +409,8 @@ export class DemoRunner {
 		}
 		this.fuser?.reset();
 		this.processor.resetSignal();
+		// The pool's running means and windows are ordered in time: a clock step starts them over too.
+		this.foreheadPool?.reset();
 		this.analysisRestartMs = t;
 		return "restart";
 	}
@@ -527,12 +538,20 @@ export class DemoRunner {
 				const wall = frame.landmarks
 					? this.wallTracker.next(frame.landmarks, frame)
 					: null;
+				const boxes: { r: number; g: number; b: number }[] = rois.slice(0, 3).map((roi) => {
+					const c = clampRoiToFrame(roi, frame.width, frame.height);
+					return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
+				});
+				// Switch foreheadPool: the forehead from the patch pool (the box until the pool has a value).
+				if (this.opts.foreheadPool && frame.landmarks) {
+					this.foreheadPool ??= new ForeheadPool(FOREHEAD_POOL_SIZE);
+					const pf = foreheadPoolFromFrame(frame, frame.landmarks);
+					const v = pf ? this.foreheadPool.push({ t: frame.timestampMs, ...pf }) : null;
+					if (v) boxes[0] = { ...boxes[0], r: v.r, g: v.g, b: v.b };
+				}
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
-					rois.slice(0, 3).map((roi) => {
-						const c = clampRoiToFrame(roi, frame.width, frame.height);
-						return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
-					}),
+					boxes,
 					wall?.rgb,
 					frame.landmarks && !wall
 						? wallMissReason(frame.landmarks, frame.width, frame.height)
