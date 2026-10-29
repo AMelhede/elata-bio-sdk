@@ -380,6 +380,13 @@ export {
 	headMatches,
 } from "./pulseCheck";
 export {
+	PulseDisplay,
+	type PulseDisplayView,
+	PULSE_DISPLAY_MEDIAN_MS,
+	PULSE_DISPLAY_LIVE_MS,
+	PULSE_DISPLAY_RECENT_MS,
+} from "./pulseDisplay";
+export {
 	RecordingPulseCheck,
 	replayPulseCheck,
 	serializePulseCheckRecording,
