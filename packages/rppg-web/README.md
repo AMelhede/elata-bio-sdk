@@ -140,7 +140,7 @@ Things to know while testing:
 
 `PulseDisplay` turns the check's shown numbers into what the screen shows, so every app shows the same thing. Push
 `shownPulseBpm(session.getPulseCheck())` (or null) once a second with the time; `view(now)` gives `measuring`, `live`
-(the median of the numbers of the last 5 s), `recent` (no new number for over 2 s, up to 10 s: show it greyed) or `last`
+(the median of the numbers of the last 5 s), `recent` (no new number for over 5 s, up to 10 s: show it greyed) or `last`
 (older: show it with its age, `agoS`). Apple's structure, one number with the latest kept and its age shown, without
 Apple's 5 s block: on recorded webcam captures the block showed a number up to 10 s old and was right (within 5 bpm) 86.1% of
 the time against 92.3% for this median, which also jumped 3 bpm or more 1.6 times a minute against 2.6. Past 10 s a

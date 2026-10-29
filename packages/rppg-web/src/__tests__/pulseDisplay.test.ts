@@ -30,7 +30,8 @@ describe("PulseDisplay", () => {
 		for (let t = 0; t <= 4000; t += 1000) d.push(t, 66);
 		d.push(5000, null);
 		expect(d.view(4000 + PULSE_DISPLAY_LIVE_MS)).toEqual({ kind: "live", bpm: 66 });
-		expect(d.view(4000 + PULSE_DISPLAY_LIVE_MS + 1)).toEqual({ kind: "recent", bpm: 66, agoS: 2 });
+		expect(PULSE_DISPLAY_LIVE_MS).toBe(5000);
+		expect(d.view(4000 + PULSE_DISPLAY_LIVE_MS + 1)).toEqual({ kind: "recent", bpm: 66, agoS: 5 });
 		expect(d.view(4000 + PULSE_DISPLAY_RECENT_MS)).toEqual({ kind: "recent", bpm: 66, agoS: 10 });
 		expect(d.view(4000 + PULSE_DISPLAY_RECENT_MS + 1000)).toEqual({ kind: "last", bpm: 66, agoS: 11 });
 	});

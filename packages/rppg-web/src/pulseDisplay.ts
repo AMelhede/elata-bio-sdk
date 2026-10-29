@@ -16,10 +16,11 @@
 export const PULSE_DISPLAY_MEDIAN_MS = 5000;
 
 /**
- * A number stays live this long after the newest one. The check gives one number a second, so this lets one missed
- * second pass without greying the screen, and no more.
+ * A number stays live this long after the newest one, as Apple keeps a value current for its 5 s block. Measured on
+ * recorded webcam captures against a finger reference: live for 2 s, a number on 39.3% of seconds, 92.3% within 5 bpm;
+ * 5 s, 44.6% and 90.1%; 10 s, 51.1% and 86.8%. 5 s is the longest that keeps 90 of 100 numbers within 5 bpm.
  */
-export const PULSE_DISPLAY_LIVE_MS = 2000;
+export const PULSE_DISPLAY_LIVE_MS = 5000;
 
 /**
  * Up to this long after the last number the value is shown greyed as recent; after it, as the last reading with its age.
