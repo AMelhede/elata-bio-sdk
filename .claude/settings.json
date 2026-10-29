@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(npm pack*)",
+      "Bash(npm version*)",
+      "Bash(npm publish*)",
+      "Bash(pnpm pack*)",
+      "Bash(pnpm publish*)",
+      "Edit(packages/rppg-web/package.json)",
+      "Edit(packages/rppg-web/src/buildInfo.ts)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '(npm|pnpm) (pack|publish|version)|sed -i.*test\\.[0-9]+.*(package\\.json|buildInfo)' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"This cuts a new test build. Owner rule: a new build version needs the owner'\"'\"'s explicit word, every time.\"}}' || true",
+            "statusMessage": "Checking for a new test build"
+          }
+        ]
+      }
+    ]
+  }
+}
