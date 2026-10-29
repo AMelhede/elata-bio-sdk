@@ -56,6 +56,15 @@ export type RppgFixSwitches = {
 	 * read as 51 for 35 s after a 10 s freeze).
 	 */
 	noFramesNoReading?: boolean;
+	/**
+	 * Fix 7, speed. The face finder, most of a frame's cost, runs on every other frame; the frame between reuses its
+	 * landmarks (never when the last frame found no face, nor when they are over 100 ms old), and every frame's pixels
+	 * are still read. On testers' laptops and phones the camera gave 30 frames a second but only a median 16 and 12.5
+	 * were analysed, because each frame waited for the finder; replaying recorded captures at half the frames cost
+	 * about a fifth of the right numbers. Blink scores come only from frames the finder ran on. Off: the finder on every
+	 * frame, as published.
+	 */
+	landmarkEveryOther?: boolean;
 };
 
 /**
@@ -72,6 +81,7 @@ export const FIX_SWITCH_NAMES = [
 	"noRateDoubling",
 	"analysisWidth",
 	"noFramesNoReading",
+	"landmarkEveryOther",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */

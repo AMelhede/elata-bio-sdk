@@ -25,6 +25,8 @@ export declare function analysisSize(videoWidth: number, videoHeight: number): {
     width: number;
     height: number;
 };
+/** Fix landmarkEveryOther: landmarks older than this are never reused (three frames at 30 fps). */
+export declare const LANDMARK_REUSE_MAX_MS = 100;
 export declare class MediaPipeFaceFrameSource implements FrameSource {
     private video;
     private faceLandmarker;
@@ -38,6 +40,9 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     private vfcHandle;
     private smoothedFaceRoi;
     private lastError;
+    /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and whether the last frame reused them. */
+    private lastFound;
+    private lastWasReuse;
     constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
     start(): Promise<void>;
     stop(): Promise<void>;

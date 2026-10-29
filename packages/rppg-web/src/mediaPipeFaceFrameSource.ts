@@ -49,6 +49,9 @@ export function analysisSize(
 	};
 }
 
+/** Fix landmarkEveryOther: landmarks older than this are never reused (three frames at 30 fps). */
+export const LANDMARK_REUSE_MAX_MS = 100;
+
 export class MediaPipeFaceFrameSource implements FrameSource {
 	public onFrame: ((frame: Frame) => void) | null = null;
 	public onError: ((error: FrameSourceError) => void) | null = null;
@@ -58,6 +61,9 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 	private vfcHandle: number | null = null;
 	private smoothedFaceRoi: ROI | null = null;
 	private lastError: FrameSourceError | null = null;
+	/** Fix landmarkEveryOther: the last landmarks the face finder found and when, and whether the last frame reused them. */
+	private lastFound: { landmarks: FaceLandmarkPoint[]; atMs: number } | null = null;
+	private lastWasReuse = false;
 
 	constructor(
 		private video: HTMLVideoElement,
@@ -106,6 +112,8 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 	async stop(): Promise<void> {
 		this.running = false;
 		this.smoothedFaceRoi = null;
+		this.lastFound = null;
+		this.lastWasReuse = false;
 		const cancel = (this.video as any).cancelVideoFrameCallback;
 		if (this.vfcHandle !== null && typeof cancel === "function") {
 			cancel.call(this.video, this.vfcHandle);
@@ -163,12 +171,23 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 
 		let landmarks: FaceLandmarkPoint[] | null = null;
 		let blendshapes: FrameBlendshape[] | undefined;
-		try {
+		// Fix landmarkEveryOther: the frame after a found face reuses its landmarks while they are fresh.
+		const reuse =
+			this.fixes.landmarkEveryOther &&
+			this.lastFound != null &&
+			!this.lastWasReuse &&
+			now - this.lastFound.atMs <= LANDMARK_REUSE_MAX_MS;
+		if (reuse && this.lastFound) {
+			landmarks = this.lastFound.landmarks;
+			this.lastWasReuse = true;
+		} else try {
+			this.lastWasReuse = false;
 			const result = this.faceLandmarker.detectForVideo(
 				this.fixes.analysisWidth ? this.canvas : this.video,
 				now,
 			);
 			landmarks = result?.faceLandmarks?.[0] ?? null;
+			this.lastFound = landmarks ? { landmarks, atMs: now } : null;
 			const categories = result?.faceBlendshapes?.[0]?.categories;
 			if (categories && categories.length) {
 				blendshapes = categories.map((c) => ({

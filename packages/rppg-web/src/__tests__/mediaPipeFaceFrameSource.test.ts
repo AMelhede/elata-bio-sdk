@@ -363,13 +363,59 @@ describe('MediaPipeFaceFrameSource face finder', () => {
     for (let i = 0; i < frames; i++) (src as any).detectAndEmit(startMs + i * stepMs, { mediaTime: (startMs + i * stepMs) / 1000 });
   };
 
-  test('is asked on every frame, as published', () => {
+  test('is asked on every frame, as published, with landmarkEveryOther off', () => {
     const restore = setupCanvasMock(640, 480);
     const video = new FakeVideo(640, 480) as unknown as HTMLVideoElement;
     const landmarker = fakeLandmarker([{ landmarks: lm }]);
-    const src = new MediaPipeFaceFrameSource(video, landmarker, 30);
+    const src = new MediaPipeFaceFrameSource(video, landmarker, 30, undefined, { landmarkEveryOther: false });
     drive(src, 30, 1000 / 30);
     expect(landmarker.detectForVideo).toHaveBeenCalledTimes(30);
     restore();
+  });
+});
+
+// Fix landmarkEveryOther (speed): the face finder is most of a frame's cost, so it runs on every other frame and the
+// frames between reuse its landmarks; the pixels are still read on every frame, so the check gets every camera frame.
+describe('MediaPipeFaceFrameSource landmarkEveryOther', () => {
+  const landmarks = [
+    { x: 0.45, y: 0.4 },
+    { x: 0.55, y: 0.4 },
+    { x: 0.5, y: 0.5 },
+  ];
+  const blendshapes = [{ categoryName: 'eyeBlinkLeft', score: 0.1 }];
+  const run = (fixes: any, results: any[], times: number[]) => {
+    const restore = setupCanvasMock(200, 100);
+    const video = new FakeVideo(200, 100) as unknown as HTMLVideoElement;
+    const lm = fakeLandmarker(results);
+    const src = new MediaPipeFaceFrameSource(video, lm, 30, undefined, fixes);
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    for (const t of times) (src as any).detectAndEmit(t, null);
+    restore();
+    return { frames, calls: lm.detectForVideo.mock.calls.length };
+  };
+  const ten = Array.from({ length: 10 }, (_, i) => i * 33.3);
+
+  test('finds the face on every other frame and emits every frame with its regions', () => {
+    const { frames, calls } = run(undefined, [{ landmarks, blendshapes }], ten);
+    expect(calls).toBe(5);
+    expect(frames.length).toBe(10);
+    for (const f of frames) {
+      expect(f.landmarks).toBeDefined();
+      expect(f.roi).toBeDefined();
+    }
+    // Blink scores only from frames the finder ran on, never copied.
+    expect(frames.filter((f) => f.blendshapes).length).toBe(5);
+  });
+
+  test('off: the face finder runs on every frame, as published', () => {
+    expect(run({ landmarkEveryOther: false }, [{ landmarks, blendshapes }], ten).calls).toBe(10);
+  });
+
+  test('never reuses a frame without a face, nor landmarks older than 100 ms', () => {
+    const noFace = run(undefined, [{}], ten);
+    expect(noFace.calls).toBe(10);
+    const slow = run(undefined, [{ landmarks }], [0, 150, 300, 450]);
+    expect(slow.calls).toBe(4);
   });
 });

@@ -5,6 +5,7 @@ export const FIX_SWITCH_NAMES = [
     "noRateDoubling",
     "analysisWidth",
     "noFramesNoReading",
+    "landmarkEveryOther",
 ];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
 export function resolveFixSwitches(option) {
