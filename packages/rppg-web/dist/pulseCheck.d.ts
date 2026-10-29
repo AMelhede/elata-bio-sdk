@@ -247,9 +247,15 @@ export type PulseCheckRules = {
      * POOL_BUILDING_STREAK agreeing windows instead of OWN_PULSE_STRONG_STREAK. Proof and re-lock are unchanged.
      */
     foreheadPool?: boolean;
+    /**
+     * OFF unless true, being measured (lane fp52): the line is read from the regions' pulses added in time
+     * (coherentSpectrum) instead of their spectra added, and with rule moreReadings the building number needs
+     * COHERENT_BUILDING_STREAK agreeing windows. Reads a light that steps the whole face more often too.
+     */
+    coherentFusion?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -302,6 +308,15 @@ export declare function relockVerdict<V extends {
  * on the two weaker cameras and raised the good camera's by a fifth.
  */
 export declare const POOL_BUILDING_STREAK: number;
+/**
+ * Rule coherentFusion: the building number's streak (whatever the forehead). With the coherent line, on recorded
+ * webcam sessions of two sets of people against a finger reference, three windows gave about a fifth more seconds with a
+ * number than today's building streak at a mean error around the wearables' median, and somewhat more numbers on
+ * no-pulse copies and under a lamp flickering at a heart-like rate (lane fp52).
+ */
+export declare const COHERENT_BUILDING_STREAK: number;
+/** The building streak under the rules running. */
+export declare function buildingStreak(rules: ResolvedPulseCheckRules): number;
 /**
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
  * the window, and only for a streak at least `minStreak` windows long (OWN_PULSE_STRONG_STREAK, the shortest

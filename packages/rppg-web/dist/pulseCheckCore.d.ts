@@ -147,6 +147,18 @@ export declare function peakAndSnr(x: number[]): {
  *
  * Value chosen by measurement on recorded captures against a reference pulse.
  */
+/**
+ * Rule coherentFusion: the line read from the three regions' detrended pulses, each scaled to unit spread, added in
+ * time, then one spectrum. A pulse is in step across the face (DistancePPG, Kumar 2015: under 10 ms of delay), so it
+ * adds in amplitude while noise that the regions do not share adds only in power; the spectra's sum (combinedSpectrum)
+ * gains nothing from that. The cost: a light that steps every region alike adds coherently too.
+ */
+export declare function coherentSpectrum(pulses: readonly number[][]): Array<[number, number]>;
+/**
+ * Rule coherentFusion: dB taken off the coherent line's SNR so that on pure noise it clears the check's bars as often
+ * as the spectra's sum does (white-noise simulation, the null's own calibration; it is not tuned on people).
+ */
+export declare const COHERENT_SNR_OFFSET_DB = 1.8;
 export declare function combinedSpectrum(spectra: Array<Array<[number, number]>>): Array<[number, number]>;
 /**
  * The combined spectrum judged against its LOCAL noise floor.
@@ -214,7 +226,9 @@ atMs?: number,
 /** Colour damage at which green minus the wall replaces POS (OWN_PULSE_COLOUR_SWITCH). */
 colourSwitch?: number, 
 /** The least wall against the face at which it does (OWN_PULSE_SWAP_MIN_WALL_TO_FACE); 0 swaps over any wall seen. */
-swapMinWallToFace?: number): OwnPulseEstimate | null;
+swapMinWallToFace?: number, 
+/** Rule coherentFusion: read the line from the regions' pulses added in time (coherentSpectrum), not their spectra. */
+coherent?: boolean): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.

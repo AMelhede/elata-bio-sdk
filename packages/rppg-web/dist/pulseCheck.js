@@ -129,6 +129,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "moreReadings",
     "blinkGate",
     "foreheadPool",
+    "coherentFusion",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -179,6 +180,17 @@ export function relockVerdict(v, lastProven, timestampMs) {
  * on the two weaker cameras and raised the good camera's by a fifth.
  */
 export const POOL_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK + 1;
+/**
+ * Rule coherentFusion: the building number's streak (whatever the forehead). With the coherent line, on recorded
+ * webcam sessions of two sets of people against a finger reference, three windows gave about a fifth more seconds with a
+ * number than today's building streak at a mean error around the wearables' median, and somewhat more numbers on
+ * no-pulse copies and under a lamp flickering at a heart-like rate (lane fp52).
+ */
+export const COHERENT_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK - 1;
+/** The building streak under the rules running. */
+export function buildingStreak(rules) {
+    return rules.coherentFusion ? COHERENT_BUILDING_STREAK : rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
+}
 /**
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
  * the window, and only for a streak at least `minStreak` windows long (OWN_PULSE_STRONG_STREAK, the shortest
@@ -280,7 +292,7 @@ export function pulseCheckColourDamaged(state) {
 export function streakNeeded(rules, relockOpen) {
     if (!rules.moreReadings)
         return OWN_PULSE_STREAK;
-    return relockOpen ? RELOCK_STREAK : rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
+    return relockOpen ? RELOCK_STREAK : buildingStreak(rules);
 }
 export function shownPulseBpm(state) {
     return state.verdict === "measured" && state.bpm != null ? state.bpm : (state.buildingBpm ?? null);
@@ -302,6 +314,7 @@ export function resolvePulseCheckRules(rules) {
         moreReadings: rules?.moreReadings === true,
         blinkGate: rules?.blinkGate === true,
         foreheadPool: rules?.foreheadPool === true,
+        coherentFusion: rules?.coherentFusion === true,
     };
 }
 /**
@@ -843,7 +856,7 @@ export class PulseCheck {
         this.lastEvalMs = timestampMs;
         const wallFrames = this.wallTally;
         this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
-        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall);
+        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
         if (est && est.skip)
             return;
         // The wall's line for a window end, found once per evaluation: the taint, the wall check and
@@ -956,7 +969,7 @@ export class PulseCheck {
         this.state.heldBpm = this.held;
         // Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
         this.state.buildingBpm = this.rules.moreReadings
-            ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, this.rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK)
+            ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, buildingStreak(this.rules))
             : null;
         // Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
         if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {
@@ -981,7 +994,7 @@ export class PulseCheck {
             this.unsupported = 0;
             return null;
         }
-        const recent = estimateOwnPulse(this.samples, OWN_PULSE_SUPPORT_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall);
+        const recent = estimateOwnPulse(this.samples, OWN_PULSE_SUPPORT_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
         const rate = recent?.bpmFine ?? recent?.bpm ?? null;
         if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
             this.unsupported = 0;

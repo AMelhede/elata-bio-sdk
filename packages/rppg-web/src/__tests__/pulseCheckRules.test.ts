@@ -62,6 +62,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			clockBack: true,
 			faintWall: true,
 			foreheadPool: false,
+			coherentFusion: false,
 			restBand: true,
 			roomLight: false,
 			moreReadings: false,

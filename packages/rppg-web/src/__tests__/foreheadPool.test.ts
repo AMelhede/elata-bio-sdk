@@ -162,3 +162,27 @@ describe("the building number's bar sits two dB under the proof's", () => {
 		expect(buildingRate(v(-5.5), false)).toBeNull();
 	});
 });
+
+import { coherentSpectrum } from "../pulseCheckCore";
+import { COHERENT_BUILDING_STREAK, buildingStreak } from "../pulseCheck";
+
+describe("rule coherentFusion: the regions' pulses added in time", () => {
+	// Three regions carry the same 1.2 Hz pulse under their own noise: added in time the pulse grows against the noise
+	// that the regions do not share, so the coherent line stands higher over its band than the spectra's sum does.
+	const N = 320, fs = 20;
+	let seed = 5;
+	const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
+	const pulses = [0, 1, 2].map(() => Array.from({ length: N }, (_, k) => 0.3 * Math.sin((2 * Math.PI * 1.2 * k) / fs) + rnd()));
+	const peakShare = (P: Array<[number, number]>) => { const band = P.filter(([f]) => f >= 0.7 && f <= 3); const tot = band.reduce((a, [, p]) => a + p, 0); return Math.max(...band.map(([, p]) => p)) / tot; };
+	it("puts more of the band's power in the pulse's line than any one region does", () => {
+		const coh = coherentSpectrum(pulses);
+		const best = Math.max(...pulses.map((p) => peakShare(coherentSpectrum([p]))));
+		expect(peakShare(coh)).toBeGreaterThan(best);
+	});
+	it("the building number needs one window fewer under the rule, whatever the forehead", () => {
+		expect(COHERENT_BUILDING_STREAK).toBe(3);
+		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true, foreheadPool: true }))).toBe(3);
+		expect(streakNeeded(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true }), false)).toBe(3);
+		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, foreheadPool: true }))).toBe(5);
+	});
+});

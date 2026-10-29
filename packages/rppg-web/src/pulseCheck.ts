@@ -332,6 +332,12 @@ export type PulseCheckRules = {
 	 * POOL_BUILDING_STREAK agreeing windows instead of OWN_PULSE_STRONG_STREAK. Proof and re-lock are unchanged.
 	 */
 	foreheadPool?: boolean;
+	/**
+	 * OFF unless true, being measured (lane fp52): the line is read from the regions' pulses added in time
+	 * (coherentSpectrum) instead of their spectra added, and with rule moreReadings the building number needs
+	 * COHERENT_BUILDING_STREAK agreeing windows. Reads a light that steps the whole face more often too.
+	 */
+	coherentFusion?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -351,6 +357,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"moreReadings",
 	"blinkGate",
 	"foreheadPool",
+	"coherentFusion",
 ] as const;
 
 /**
@@ -404,6 +411,18 @@ export function relockVerdict<
  * on the two weaker cameras and raised the good camera's by a fifth.
  */
 export const POOL_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK + 1;
+
+/**
+ * Rule coherentFusion: the building number's streak (whatever the forehead). With the coherent line, on recorded
+ * webcam sessions of two sets of people against a finger reference, three windows gave about a fifth more seconds with a
+ * number than today's building streak at a mean error around the wearables' median, and somewhat more numbers on
+ * no-pulse copies and under a lamp flickering at a heart-like rate (lane fp52).
+ */
+export const COHERENT_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK - 1;
+/** The building streak under the rules running. */
+export function buildingStreak(rules: ResolvedPulseCheckRules): number {
+	return rules.coherentFusion ? COHERENT_BUILDING_STREAK : rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
+}
 
 /**
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
@@ -505,7 +524,7 @@ export function pulseCheckColourDamaged(state: PulseCheckState): boolean {
  */
 export function streakNeeded(rules: ResolvedPulseCheckRules, relockOpen: boolean): number {
 	if (!rules.moreReadings) return OWN_PULSE_STREAK;
-	return relockOpen ? RELOCK_STREAK : rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
+	return relockOpen ? RELOCK_STREAK : buildingStreak(rules);
 }
 
 export function shownPulseBpm(state: { verdict: string; bpm: number | null; buildingBpm?: number | null }): number | null {
@@ -529,6 +548,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		moreReadings: rules?.moreReadings === true,
 		blinkGate: rules?.blinkGate === true,
 		foreheadPool: rules?.foreheadPool === true,
+		coherentFusion: rules?.coherentFusion === true,
 	};
 }
 
@@ -1159,7 +1179,7 @@ export class PulseCheck {
 		this.lastEvalMs = timestampMs;
 		const wallFrames = this.wallTally;
 		this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
-		const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall);
+		const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// The wall's line for a window end, found once per evaluation: the taint, the wall check and
 		// the state read the newest one, and the wall rows do not change while this runs.
@@ -1275,7 +1295,7 @@ export class PulseCheck {
 		this.state.heldBpm = this.held;
 		// Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
 		this.state.buildingBpm = this.rules.moreReadings
-			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, this.rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK)
+			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, buildingStreak(this.rules))
 			: null;
 		// Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
 		if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {
@@ -1310,6 +1330,7 @@ export class PulseCheck {
 			timestampMs,
 			OWN_PULSE_COLOUR_SWITCH,
 			this.swapMinWall,
+			this.rules.coherentFusion,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {

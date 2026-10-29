@@ -194,6 +194,34 @@ export function peakAndSnr(x) {
  *
  * Value chosen by measurement on recorded captures against a reference pulse.
  */
+/**
+ * Rule coherentFusion: the line read from the three regions' detrended pulses, each scaled to unit spread, added in
+ * time, then one spectrum. A pulse is in step across the face (DistancePPG, Kumar 2015: under 10 ms of delay), so it
+ * adds in amplitude while noise that the regions do not share adds only in power; the spectra's sum (combinedSpectrum)
+ * gains nothing from that. The cost: a light that steps every region alike adds coherently too.
+ */
+export function coherentSpectrum(pulses) {
+    const N = pulses[0].length;
+    const sum = new Array(N).fill(0);
+    for (const d of pulses) {
+        let m = 0;
+        for (const v of d)
+            m += v;
+        m /= N;
+        let v2 = 0;
+        for (const v of d)
+            v2 += (v - m) ** 2;
+        const sd = Math.sqrt(v2 / N) || 1;
+        for (let k = 0; k < N; k++)
+            sum[k] += (d[k] - m) / sd;
+    }
+    return spectrum(sum);
+}
+/**
+ * Rule coherentFusion: dB taken off the coherent line's SNR so that on pure noise it clears the check's bars as often
+ * as the spectra's sum does (white-noise simulation, the null's own calibration; it is not tuned on people).
+ */
+export const COHERENT_SNR_OFFSET_DB = 1.8;
 export function combinedSpectrum(spectra) {
     const [lo, hi] = OWN_PULSE_BAND_HZ;
     const out = spectra[0].map(([f]) => [f, 0]);
@@ -363,7 +391,9 @@ atMs = samples.length ? samples[samples.length - 1][0] : 0,
 /** Colour damage at which green minus the wall replaces POS (OWN_PULSE_COLOUR_SWITCH). */
 colourSwitch = OWN_PULSE_COLOUR_SWITCH, 
 /** The least wall against the face at which it does (OWN_PULSE_SWAP_MIN_WALL_TO_FACE); 0 swaps over any wall seen. */
-swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE) {
+swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE, 
+/** Rule coherentFusion: read the line from the regions' pulses added in time (coherentSpectrum), not their spectra. */
+coherent = false) {
     if (samples.length < 8)
         return null;
     const end = atMs;
@@ -401,13 +431,16 @@ swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE) {
     // Rule darkWall: a wall too dark against the face to show the light on it cannot take it out of green.
     const wallLit = swapMinWallToFace <= 0 || (wallToFace != null && wallToFace >= swapMinWallToFace);
     const method = wall && wallLit && colourDamage >= colourSwitch ? "greenMinusWall" : "pos";
+    const pulses = [];
     const regions = REGIONS.map((region, ri) => {
         const [R, G, B] = channels[ri];
         const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
         const pulse = method === "greenMinusWall" && wall
             ? greenMinusWall(G, wall)
             : posOf[ri];
-        const P = spectrum(detrend(pulse, OWN_PULSE_DETREND_S));
+        const dpulse = detrend(pulse, OWN_PULSE_DETREND_S);
+        pulses.push(dpulse);
+        const P = spectrum(dpulse);
         spectra.push(P);
         const { bpm, snrDb } = peakOfSpectrum(P);
         return { region, bpm, snrDb, meanRgb: [mean(R), mean(G), mean(B)] };
@@ -416,9 +449,10 @@ swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE) {
     // per-region peaks stay for diagnostics and for the low-band agreement rule.
     // The line is chosen, and its rate fitted, against its local noise floor
     // (whitenedSpectrum); its SNR is judged on the spectrum as measured.
-    const measured = combinedSpectrum(spectra);
+    const measured = coherent ? coherentSpectrum(pulses) : combinedSpectrum(spectra);
     const comb = whitenedSpectrum(measured);
-    const combined = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
+    const line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
+    const combined = coherent && Number.isFinite(line.snrDb) ? { ...line, snrDb: line.snrDb - COHERENT_SNR_OFFSET_DB } : line;
     const found = Number.isFinite(combined.bpm);
     const agreeing = found
         ? regions
