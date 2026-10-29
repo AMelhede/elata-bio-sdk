@@ -1,3 +1,4 @@
+import type { LightLevel } from "./lightLevel";
 import type {
 	FrameSource,
 	FrameSourceError,
@@ -157,6 +158,13 @@ export type CreateRppgSessionOptions = Omit<
 	 */
 	foreheadPool?: boolean;
 	/**
+	 * With `pulseCheck`, decide how much light the screen should put on the face (lightLevel.ts): `session.light()`
+	 * gives the level, 0, 1 or 0.5 in linear light, and the app reports what it rendered with `session.reportLight()`.
+	 * An app that cannot light the screen can ignore it: the reading is unchanged. Off unless true. Costs a pass over
+	 * every second pixel of the three face region boxes per frame.
+	 */
+	light?: boolean;
+	/**
 	 * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
 	 * and every `getMetrics()` read, so the check
 	 * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
@@ -260,6 +268,7 @@ type SessionInternals = {
 	chestMotion?: ChestMotion | null;
 	experimentalVitals?: boolean;
 	foreheadPool?: boolean;
+	light?: boolean;
 };
 
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
@@ -379,6 +388,19 @@ export class RppgSession {
 		return check instanceof RecordingPulseCheck ? check.getRecording() : null;
 	}
 
+	/**
+	 * Switch `light`: the level the screen should light the face at (0, 1 or 0.5, linear light) and the face light it
+	 * was decided from; level 0 and nulls when the switch is off.
+	 */
+	light(): { level: LightLevel; faceLuma: number | null; faceRedClip: number | null } {
+		return this.internals.light === true ? this.runner.getLight() : { level: 0, faceLuma: null, faceRedClip: null };
+	}
+
+	/** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
+	reportLight(applied: LightLevel): void {
+		if (this.internals.light === true) this.runner.setAppliedLight(applied);
+	}
+
 	/** State of the real-pulse check; null when `pulseCheck` is off. */
 	getPulseCheck(): PulseCheckState | null {
 		return this.internals.pulseCheck?.getState() ?? null;
@@ -426,6 +448,7 @@ export class RppgSession {
 		pulseCheckRules: ResolvedPulseCheckRules | null;
 		experimentalVitals: boolean;
 		foreheadPool: boolean;
+		light: boolean;
 	} {
 		const fixes =
 			(this.runner as { fixes?: ResolvedRppgFixSwitches }).fixes ??
@@ -446,6 +469,7 @@ export class RppgSession {
 			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
 			experimentalVitals: this.internals.experimentalVitals === true,
 			foreheadPool: this.internals.foreheadPool === true && this.internals.pulseCheck != null,
+			light: this.internals.light === true,
 		};
 	}
 
@@ -701,6 +725,7 @@ export async function createRppgSession(
 		fixes: options.fixes,
 		pulseChecker: pulseCheck,
 		foreheadPool: options.foreheadPool === true,
+		light: options.light === true && pulseCheck != null,
 		chestMotion,
 		roi: options.roi,
 		roiGeometryProfile: options.roiGeometryProfile,
@@ -763,6 +788,7 @@ export async function createRppgSession(
 			chestMotion,
 			experimentalVitals: options.experimentalVitals === true,
 			foreheadPool: options.foreheadPool === true,
+			light: options.light === true && pulseCheck != null,
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,

@@ -106,7 +106,10 @@ export type PulseCheckInputEvent =
 			// From test.52, only with the session switch foreheadPool: the forehead box the pool replaced (regions[0] is
 			// the pool), recorded only, so the file replays with the box as well (regions[0] swapped for it, rule
 			// foreheadPool off). Left out entirely without the pool.
-			PulseCheckRgb?,
+			(PulseCheckRgb | null)?,
+			// From test.53, only with the session switch light: [face luma, face red clip, level asked for, level the app
+			// rendered], the face values null when unmeasured; [9] is then written null when the pool is off. Recorded only.
+			[number | null, number | null, number, number]?,
 	  ]
 	| ["l", number]
 	| ["o", number | null, number | null]
@@ -130,6 +133,8 @@ export type PulseCheckRecording = {
 };
 
 const rgb3 = (c: Rgb): PulseCheckRgb => [c.r, c.g, c.b];
+/** Six decimals: the face light is recorded only, a level of 1e-6 is far under any bar it is judged against. */
+const round6 = (v: number): number => Math.round(v * 1e6) / 1e6;
 const r7 = (v: number) => Math.round(v * 1e7) / 1e7;
 const quad = (c: RoomCorner | null): [number, number, number, number] | null => (c ? [r7(c.rgb.r), r7(c.rgb.g), r7(c.rgb.b), c.n] : null);
 const corner = (q: readonly (number | null)[] | null | undefined): RoomCorner | null =>
@@ -204,7 +209,11 @@ export class RecordingPulseCheck extends PulseCheck {
 				diag?.room ? [quad(diag.room.left), quad(diag.room.right)] : null,
 				diag?.patch ?? null,
 			];
-		if (diag?.foreheadBox) event.push(rgb3(diag.foreheadBox));
+		if (diag?.foreheadBox || diag?.light) event.push(diag?.foreheadBox ? rgb3(diag.foreheadBox) : null);
+		if (diag?.light) {
+			const f = diag.light.face;
+			event.push([f ? round6(f.luma) : null, f ? round6(f.redClip) : null, diag.light.wanted, diag.light.applied]);
+		}
 		this.keep(event, timestampMs);
 		super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
 	}

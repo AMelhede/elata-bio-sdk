@@ -55,7 +55,13 @@ export type PulseCheckInputEvent = [
     ] | [number, number, number, number] | [number, number, number, number | null, number, number | null, number | null] | [number, number, number, number | null, number | null, number | null, number | null, number] | null | false,
     ([number, number, number, number] | [[number, number, number, number] | null, [number, number, number, number] | null] | null)?,
     ([number, number, number, number, number] | null)?,
-    PulseCheckRgb?
+    (PulseCheckRgb | null)?,
+    [
+        number | null,
+        number | null,
+        number,
+        number
+    ]?
 ] | ["l", number] | ["o", number | null, number | null] | ["r", number | null, number | null, PulseCheckReadReason];
 /** A recording: what one session's pulse check was fed, with what it needs to be replayed. */
 export type PulseCheckRecording = {

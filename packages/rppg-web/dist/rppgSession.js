@@ -103,6 +103,18 @@ export class RppgSession {
         const check = this.internals.pulseCheck;
         return check instanceof RecordingPulseCheck ? check.getRecording() : null;
     }
+    /**
+     * Switch `light`: the level the screen should light the face at (0, 1 or 0.5, linear light) and the face light it
+     * was decided from; level 0 and nulls when the switch is off.
+     */
+    light() {
+        return this.internals.light === true ? this.runner.getLight() : { level: 0, faceLuma: null, faceRedClip: null };
+    }
+    /** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
+    reportLight(applied) {
+        if (this.internals.light === true)
+            this.runner.setAppliedLight(applied);
+    }
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck() {
         return this.internals.pulseCheck?.getState() ?? null;
@@ -158,6 +170,7 @@ export class RppgSession {
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
             experimentalVitals: this.internals.experimentalVitals === true,
             foreheadPool: this.internals.foreheadPool === true && this.internals.pulseCheck != null,
+            light: this.internals.light === true,
         };
     }
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -372,6 +385,7 @@ export async function createRppgSession(options) {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
         foreheadPool: options.foreheadPool === true,
+        light: options.light === true && pulseCheck != null,
         chestMotion,
         roi: options.roi,
         roiGeometryProfile: options.roiGeometryProfile,
@@ -425,6 +439,7 @@ export async function createRppgSession(options) {
         chestMotion,
         experimentalVitals: options.experimentalVitals === true,
         foreheadPool: options.foreheadPool === true,
+        light: options.light === true && pulseCheck != null,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
         waveformController,

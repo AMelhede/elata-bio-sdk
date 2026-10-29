@@ -1,3 +1,4 @@
+import { type LightLevel } from "./lightLevel.js";
 import { FrameSource, type FrameBlendshape } from "./frameSource.js";
 import { type FaceBox } from "./faceFraming.js";
 import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitches.js";
@@ -39,6 +40,12 @@ export type DemoRunnerOptions = {
      * (`foreheadPool`).
      */
     foreheadPool?: boolean;
+    /**
+     * Decide how much light the screen should put on the face (lightLevel.ts) from the face regions the check reads.
+     * Off unless true. Costs a pass over every second pixel of the three region boxes per frame. The session creates it
+     * (`light`).
+     */
+    light?: boolean;
     /**
      * Breathing from chest motion (see chestBreathing.ts), fed every analysed frame with its face
      * landmarks. The session creates it (`experimentalVitals`); null or left out: not read.
@@ -189,6 +196,9 @@ export declare class DemoRunner {
     /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
     private wallTracker;
     private foreheadPool;
+    private lightState;
+    private lightApplied;
+    private faceLight;
     constructor(source: FrameSource, processor: RppgProcessor, opts?: DemoRunnerOptions);
     /**
      * How long no face has been in view as of `nowMs` (0 while a face is in view). `nowMs` is on the
@@ -210,6 +220,14 @@ export declare class DemoRunner {
      */
     msSinceAnalysisRestart(): number | null;
     /** Latest face blendshapes (for affect estimation), with capture timestamp. */
+    /** Switch light: the level the screen should light the face at, and the face light it was decided from. */
+    getLight(): {
+        level: LightLevel;
+        faceLuma: number | null;
+        faceRedClip: number | null;
+    };
+    /** Switch light: the level the app actually rendered (the burnout step is judged only on full light rendered). */
+    setAppliedLight(level: LightLevel): void;
     getLastBlendshapes(): LastBlendshapes | null;
     /**
      * Latest normalized head box (for framing guidance), with capture timestamp.

@@ -1,5 +1,6 @@
 import { FOREHEAD_POOL_SIZE, foreheadPoolFromFrame } from "./facePatches.js";
 import { ForeheadPool } from "./foreheadPool.js";
+import { LIGHT_START, faceLightFromFrame, lightAfter } from "./lightLevel.js";
 import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSource.js";
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
@@ -94,6 +95,9 @@ export class DemoRunner {
         /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
         this.wallTracker = new WallTracker();
         this.foreheadPool = null;
+        this.lightState = LIGHT_START;
+        this.lightApplied = 0;
+        this.faceLight = null;
         this.source.onFrame = this.onFrame.bind(this);
         this.diagnostics.roiGeometryProfileId =
             opts.roiGeometryProfile?.id ?? ELATA_FACE_YCBCR_V1_PROFILE.id;
@@ -142,6 +146,14 @@ export class DemoRunner {
         return Math.max(0, last - this.analysisRestartMs);
     }
     /** Latest face blendshapes (for affect estimation), with capture timestamp. */
+    /** Switch light: the level the screen should light the face at, and the face light it was decided from. */
+    getLight() {
+        return { level: this.lightState.level, faceLuma: this.faceLight?.luma ?? null, faceRedClip: this.faceLight?.redClip ?? null };
+    }
+    /** Switch light: the level the app actually rendered (the burnout step is judged only on full light rendered). */
+    setAppliedLight(level) {
+        this.lightApplied = level;
+    }
     getLastBlendshapes() {
         return this.lastBlendshapes;
     }
@@ -310,10 +322,13 @@ export class DemoRunner {
                     ? this.wallTracker.next(frame.landmarks, frame)
                     : null;
                 let foreheadBox = null;
-                const boxes = rois.slice(0, 3).map((roi) => {
-                    const c = clampRoiToFrame(roi, frame.width, frame.height);
-                    return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
-                });
+                const rects = rois.slice(0, 3).map((roi) => clampRoiToFrame(roi, frame.width, frame.height));
+                const boxes = rects.map((c) => averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h));
+                // Switch light: the face's light from the same boxes, before the pool swaps the forehead.
+                if (this.opts.light) {
+                    this.faceLight = faceLightFromFrame(frame.data, frame.width, rects, boxes);
+                    this.lightState = lightAfter(this.lightState, this.faceLight, this.lightApplied, frame.timestampMs);
+                }
                 // Switch foreheadPool: the forehead from the patch pool (the box until the pool has a value).
                 if (this.opts.foreheadPool && frame.landmarks) {
                     this.foreheadPool ?? (this.foreheadPool = new ForeheadPool(FOREHEAD_POOL_SIZE));
@@ -336,7 +351,7 @@ export class DemoRunner {
                 // Recorded only, and only computed when a recording keeps it (lane/wallroom step 1):
                 // the room in the frame's upper corners, and where the wall patch sat this frame.
                 this.opts.pulseChecker.wantsDiagnostics
-                    ? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}) }
+                    ? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}), ...(this.opts.light ? { light: { face: this.faceLight, wanted: this.lightState.level, applied: this.lightApplied } } : {}) }
                     : undefined);
             }
             if (frame.roi) {

@@ -1510,6 +1510,11 @@ export type PulseCheckFrameDiag = {
 	 * the pool), recorded only, so a recording can be replayed both ways on the same seconds. Absent without the pool.
 	 */
 	foreheadBox?: Rgb | null;
+	/**
+	 * Session switch light: the face's light (lightLevel.ts) this frame, the level asked for and the level the app said it
+	 * rendered, recorded only. Absent without the switch.
+	 */
+	light?: { face: { luma: number; redClip: number } | null; wanted: number; applied: number } | null;
 };
 
 /** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */

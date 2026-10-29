@@ -1,5 +1,6 @@
 import { FOREHEAD_POOL_SIZE, foreheadPoolFromFrame } from "./facePatches";
 import { ForeheadPool } from "./foreheadPool";
+import { type FaceLight, LIGHT_START, type LightLevel, type LightState, faceLightFromFrame, lightAfter } from "./lightLevel";
 import {
 	FrameSource,
 	Frame,
@@ -75,6 +76,12 @@ export type DemoRunnerOptions = {
 	 * (`foreheadPool`).
 	 */
 	foreheadPool?: boolean;
+	/**
+	 * Decide how much light the screen should put on the face (lightLevel.ts) from the face regions the check reads.
+	 * Off unless true. Costs a pass over every second pixel of the three region boxes per frame. The session creates it
+	 * (`light`).
+	 */
+	light?: boolean;
 	/**
 	 * Breathing from chest motion (see chestBreathing.ts), fed every analysed frame with its face
 	 * landmarks. The session creates it (`experimentalVitals`); null or left out: not read.
@@ -289,6 +296,9 @@ export class DemoRunner {
 	/** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
 	private wallTracker = new WallTracker();
 	private foreheadPool: ForeheadPool | null = null;
+	private lightState: LightState = LIGHT_START;
+	private lightApplied: LightLevel = 0;
+	private faceLight: FaceLight | null = null;
 
 	constructor(
 		private source: FrameSource,
@@ -351,6 +361,16 @@ export class DemoRunner {
 	}
 
 	/** Latest face blendshapes (for affect estimation), with capture timestamp. */
+	/** Switch light: the level the screen should light the face at, and the face light it was decided from. */
+	getLight(): { level: LightLevel; faceLuma: number | null; faceRedClip: number | null } {
+		return { level: this.lightState.level, faceLuma: this.faceLight?.luma ?? null, faceRedClip: this.faceLight?.redClip ?? null };
+	}
+
+	/** Switch light: the level the app actually rendered (the burnout step is judged only on full light rendered). */
+	setAppliedLight(level: LightLevel): void {
+		this.lightApplied = level;
+	}
+
 	getLastBlendshapes(): LastBlendshapes | null {
 		return this.lastBlendshapes;
 	}
@@ -539,10 +559,15 @@ export class DemoRunner {
 					? this.wallTracker.next(frame.landmarks, frame)
 					: null;
 				let foreheadBox: { r: number; g: number; b: number } | null = null;
-				const boxes: { r: number; g: number; b: number }[] = rois.slice(0, 3).map((roi) => {
-					const c = clampRoiToFrame(roi, frame.width, frame.height);
-					return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
-				});
+				const rects = rois.slice(0, 3).map((roi) => clampRoiToFrame(roi, frame.width, frame.height));
+				const boxes: { r: number; g: number; b: number }[] = rects.map((c) =>
+					averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h),
+				);
+				// Switch light: the face's light from the same boxes, before the pool swaps the forehead.
+				if (this.opts.light) {
+					this.faceLight = faceLightFromFrame(frame.data, frame.width, rects, boxes);
+					this.lightState = lightAfter(this.lightState, this.faceLight, this.lightApplied, frame.timestampMs);
+				}
 				// Switch foreheadPool: the forehead from the patch pool (the box until the pool has a value).
 				if (this.opts.foreheadPool && frame.landmarks) {
 					this.foreheadPool ??= new ForeheadPool(FOREHEAD_POOL_SIZE);
@@ -569,7 +594,7 @@ export class DemoRunner {
 					// Recorded only, and only computed when a recording keeps it (lane/wallroom step 1):
 					// the room in the frame's upper corners, and where the wall patch sat this frame.
 					this.opts.pulseChecker.wantsDiagnostics
-						? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}) }
+						? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}), ...(this.opts.light ? { light: { face: this.faceLight, wanted: this.lightState.level, applied: this.lightApplied } } : {}) }
 						: undefined,
 				);
 			}

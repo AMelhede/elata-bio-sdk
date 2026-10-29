@@ -45,6 +45,8 @@ export const PULSE_CHECK_RECORDING_SECONDS = 300;
  */
 export const PULSE_CHECK_RECORDING_EVENTS_PER_SECOND = 120;
 const rgb3 = (c) => [c.r, c.g, c.b];
+/** Six decimals: the face light is recorded only, a level of 1e-6 is far under any bar it is judged against. */
+const round6 = (v) => Math.round(v * 1e6) / 1e6;
 const r7 = (v) => Math.round(v * 1e7) / 1e7;
 const quad = (c) => (c ? [r7(c.rgb.r), r7(c.rgb.g), r7(c.rgb.b), c.n] : null);
 const corner = (q) => Array.isArray(q) && typeof q[0] === "number" ? { rgb: { r: q[0], g: q[1], b: q[2] }, n: q[3] } : null;
@@ -107,8 +109,12 @@ export class RecordingPulseCheck extends PulseCheck {
             diag?.room ? [quad(diag.room.left), quad(diag.room.right)] : null,
             diag?.patch ?? null,
         ];
-        if (diag?.foreheadBox)
-            event.push(rgb3(diag.foreheadBox));
+        if (diag?.foreheadBox || diag?.light)
+            event.push(diag?.foreheadBox ? rgb3(diag.foreheadBox) : null);
+        if (diag?.light) {
+            const f = diag.light.face;
+            event.push([f ? round6(f.luma) : null, f ? round6(f.redClip) : null, diag.light.wanted, diag.light.applied]);
+        }
         this.keep(event, timestampMs);
         super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
     }

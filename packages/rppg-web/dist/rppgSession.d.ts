@@ -1,3 +1,4 @@
+import type { LightLevel } from "./lightLevel.js";
 import type { FrameSource } from "./frameSource.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { PulseCheck, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
@@ -87,6 +88,13 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * forehead patches per frame and one small spectrum per patch per second.
      */
     foreheadPool?: boolean;
+    /**
+     * With `pulseCheck`, decide how much light the screen should put on the face (lightLevel.ts): `session.light()`
+     * gives the level, 0, 1 or 0.5 in linear light, and the app reports what it rendered with `session.reportLight()`.
+     * An app that cannot light the screen can ignore it: the reading is unchanged. Off unless true. Costs a pass over
+     * every second pixel of the three face region boxes per frame.
+     */
+    light?: boolean;
     /**
      * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
      * and every `getMetrics()` read, so the check
@@ -190,6 +198,7 @@ type SessionInternals = {
     chestMotion?: ChestMotion | null;
     experimentalVitals?: boolean;
     foreheadPool?: boolean;
+    light?: boolean;
 };
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
 export type ExperimentalVitals = {
@@ -234,6 +243,17 @@ export declare class RppgSession {
      * option or the check is off.
      */
     getPulseCheckRecording(): PulseCheckRecording | null;
+    /**
+     * Switch `light`: the level the screen should light the face at (0, 1 or 0.5, linear light) and the face light it
+     * was decided from; level 0 and nulls when the switch is off.
+     */
+    light(): {
+        level: LightLevel;
+        faceLuma: number | null;
+        faceRedClip: number | null;
+    };
+    /** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
+    reportLight(applied: LightLevel): void;
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
     /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */
@@ -257,6 +277,7 @@ export declare class RppgSession {
         pulseCheckRules: ResolvedPulseCheckRules | null;
         experimentalVitals: boolean;
         foreheadPool: boolean;
+        light: boolean;
     };
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
     getLastBlendshapes(): import("./demoRunner.js").LastBlendshapes | null;
