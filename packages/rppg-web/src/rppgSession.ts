@@ -151,6 +151,12 @@ export type CreateRppgSessionOptions = Omit<
 	 */
 	pulseCheckRules?: PulseCheckRules;
 	/**
+	 * With `pulseCheck`, read the forehead region from 49 small skin patches weighted toward the cleanest
+	 * (foreheadPool.ts) instead of one box; the cheeks stay boxes. Off unless true. Costs a pixel pass over the
+	 * forehead patches per frame and one small spectrum per patch per second.
+	 */
+	foreheadPool?: boolean;
+	/**
 	 * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
 	 * and every `getMetrics()` read, so the check
 	 * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
@@ -253,6 +259,7 @@ type SessionInternals = {
 	pulseCheck?: PulseCheck | null;
 	chestMotion?: ChestMotion | null;
 	experimentalVitals?: boolean;
+	foreheadPool?: boolean;
 };
 
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
@@ -418,6 +425,7 @@ export class RppgSession {
 		pulseCheck: boolean;
 		pulseCheckRules: ResolvedPulseCheckRules | null;
 		experimentalVitals: boolean;
+		foreheadPool: boolean;
 	} {
 		const fixes =
 			(this.runner as { fixes?: ResolvedRppgFixSwitches }).fixes ??
@@ -437,6 +445,7 @@ export class RppgSession {
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
 			experimentalVitals: this.internals.experimentalVitals === true,
+			foreheadPool: this.internals.foreheadPool === true && this.internals.pulseCheck != null,
 		};
 	}
 
@@ -691,6 +700,7 @@ export async function createRppgSession(
 	const runner = new DemoRunner(source, processor, {
 		fixes: options.fixes,
 		pulseChecker: pulseCheck,
+		foreheadPool: options.foreheadPool === true,
 		chestMotion,
 		roi: options.roi,
 		roiGeometryProfile: options.roiGeometryProfile,
@@ -752,6 +762,7 @@ export async function createRppgSession(
 			pulseCheck,
 			chestMotion,
 			experimentalVitals: options.experimentalVitals === true,
+			foreheadPool: options.foreheadPool === true,
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,
@@ -784,10 +795,11 @@ export async function createRppgSession(
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
 export function sessionPulseCheck(
-	options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs">,
+	options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs" | "foreheadPool">,
 ): PulseCheck | null {
 	if (options.pulseCheck === false) return null;
-	const opts = { rules: options.pulseCheckRules };
+	// Switch foreheadPool sets the check's rule of the same name, so the check always knows what it is fed.
+	const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules };
 	const rec = options.recordPulseCheckInputs;
 	if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
 		return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds });

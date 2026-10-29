@@ -157,6 +157,7 @@ export class RppgSession {
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
             experimentalVitals: this.internals.experimentalVitals === true,
+            foreheadPool: this.internals.foreheadPool === true && this.internals.pulseCheck != null,
         };
     }
     /** Latest face blendshapes for affect estimation (null until a face is tracked). */
@@ -370,6 +371,7 @@ export async function createRppgSession(options) {
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
+        foreheadPool: options.foreheadPool === true,
         chestMotion,
         roi: options.roi,
         roiGeometryProfile: options.roiGeometryProfile,
@@ -422,6 +424,7 @@ export async function createRppgSession(options) {
         pulseCheck,
         chestMotion,
         experimentalVitals: options.experimentalVitals === true,
+        foreheadPool: options.foreheadPool === true,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
         waveformController,
@@ -451,7 +454,8 @@ export async function createRppgSession(options) {
 export function sessionPulseCheck(options) {
     if (options.pulseCheck === false)
         return null;
-    const opts = { rules: options.pulseCheckRules };
+    // Switch foreheadPool sets the check's rule of the same name, so the check always knows what it is fed.
+    const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules };
     const rec = options.recordPulseCheckInputs;
     if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
         return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds });

@@ -61,6 +61,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			darkWall: true,
 			clockBack: true,
 			faintWall: true,
+			foreheadPool: false,
 			restBand: true,
 			showHeld: false,
 			roomLight: false,

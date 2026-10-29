@@ -81,7 +81,7 @@ export class RecordingPulseCheck extends PulseCheck {
         this.recCap = Math.max(1, Math.ceil(seconds * PULSE_CHECK_RECORDING_EVENTS_PER_SECOND));
     }
     push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag) {
-        this.keep([
+        const event = [
             "f",
             timestampMs,
             regions.map(rgb3),
@@ -106,7 +106,10 @@ export class RecordingPulseCheck extends PulseCheck {
             // review measured +18% at full precision).
             diag?.room ? [quad(diag.room.left), quad(diag.room.right)] : null,
             diag?.patch ?? null,
-        ], timestampMs);
+        ];
+        if (diag?.foreheadBox)
+            event.push(rgb3(diag.foreheadBox));
+        this.keep(event, timestampMs);
         super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
     }
     /** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */

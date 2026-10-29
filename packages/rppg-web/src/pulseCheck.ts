@@ -334,6 +334,12 @@ export type PulseCheckRules = {
 	 * Does not catch a video of a face on a screen, which blinks.
 	 */
 	blinkGate?: boolean;
+	/**
+	 * OFF unless true. Set by the session with its `foreheadPool` switch (the forehead the check is fed is the patch
+	 * pool, foreheadPool.ts), never on its own: with rule moreReadings, the building number then needs
+	 * POOL_BUILDING_STREAK agreeing windows instead of OWN_PULSE_STRONG_STREAK. Proof and re-lock are unchanged.
+	 */
+	foreheadPool?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -353,6 +359,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"roomLight",
 	"moreReadings",
 	"blinkGate",
+	"foreheadPool",
 ] as const;
 
 /**
@@ -387,15 +394,27 @@ export function relockVerdict<
 }
 
 /**
+ * Rule foreheadPool: the building number's streak while the forehead is the patch pool. The pool reads the forehead
+ * far cleaner, so the combined line agrees more often, on no pulse as well. Measured on block-shuffled no-pulse copies
+ * of recorded webcam captures (three cameras): at streak 4 the pool showed about a sixth more made-up seconds than the
+ * box, most of them the building number, while its gain on real pulses was mostly proven numbers. At streak 5 it showed
+ * fewer made-up seconds than the box at streak 4, and against a finger reference still nearly doubled the right numbers
+ * on the two weaker cameras and raised the good camera's by a fifth.
+ */
+export const POOL_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK + 1;
+
+/**
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
- * the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
- * streak the check ever accepts) whose mean SNR reaches OWN_PULSE_MIN_SNR_DB (the check's own bar).
+ * the window, and only for a streak at least `minStreak` windows long (OWN_PULSE_STRONG_STREAK, the shortest
+ * streak the check ever accepts; POOL_BUILDING_STREAK under rule foreheadPool) whose mean SNR reaches
+ * OWN_PULSE_MIN_SNR_DB (the check's own bar).
  */
 export function buildingRate(
 	v: { verdict: string; streak: number; streakBpm?: number | null; streakSnrDb?: number | null },
 	withheld: boolean,
+	minStreak: number = OWN_PULSE_STRONG_STREAK,
 ): number | null {
-	if (v.verdict === "measured" || withheld || v.streak < OWN_PULSE_STRONG_STREAK) return null;
+	if (v.verdict === "measured" || withheld || v.streak < minStreak) return null;
 	if (v.streakSnrDb == null || v.streakSnrDb < OWN_PULSE_MIN_SNR_DB) return null;
 	return v.streakBpm ?? null;
 }
@@ -484,7 +503,7 @@ export function pulseCheckColourDamaged(state: PulseCheckState): boolean {
  */
 export function streakNeeded(rules: ResolvedPulseCheckRules, relockOpen: boolean): number {
 	if (!rules.moreReadings) return OWN_PULSE_STREAK;
-	return relockOpen ? RELOCK_STREAK : OWN_PULSE_STRONG_STREAK;
+	return relockOpen ? RELOCK_STREAK : rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
 }
 
 export function shownPulseBpm(state: { verdict: string; bpm: number | null; buildingBpm?: number | null }): number | null {
@@ -508,6 +527,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		roomLight: rules?.roomLight === true,
 		moreReadings: rules?.moreReadings === true,
 		blinkGate: rules?.blinkGate === true,
+		foreheadPool: rules?.foreheadPool === true,
 	};
 }
 
@@ -1254,7 +1274,7 @@ export class PulseCheck {
 		this.state.heldBpm = this.held;
 		// Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
 		this.state.buildingBpm = this.rules.moreReadings
-			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch)
+			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, this.rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK)
 			: null;
 		// Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
 		if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {
@@ -1460,7 +1480,15 @@ export type RoomCorners = { left: RoomCorner | null; right: RoomCorner | null };
  * What a recording keeps beside each frame's inputs (lane/wallroom). Rule roomLight (off by default) reads the room;
  * replay feeds the recorded room to it. The patch is recorded only.
  */
-export type PulseCheckFrameDiag = { room?: RoomCorners | null; patch?: WallPatchDiag | null };
+export type PulseCheckFrameDiag = {
+	room?: RoomCorners | null;
+	patch?: WallPatchDiag | null;
+	/**
+	 * Switch foreheadPool: the forehead box the pool replaced this frame (the region the check would have read without
+	 * the pool), recorded only, so a recording can be replayed both ways on the same seconds. Absent without the pool.
+	 */
+	foreheadBox?: Rgb | null;
+};
 
 /** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
 export function combineRoom(room: RoomCorners | null | undefined): Rgb | null {

@@ -103,6 +103,10 @@ export type PulseCheckInputEvent =
 			// only. Each null when none.
 			([number, number, number, number] | [[number, number, number, number] | null, [number, number, number, number] | null] | null)?,
 			([number, number, number, number, number] | null)?,
+			// From test.52, only with the session switch foreheadPool: the forehead box the pool replaced (regions[0] is
+			// the pool), recorded only, so the file replays with the box as well (regions[0] swapped for it, rule
+			// foreheadPool off). Left out entirely without the pool.
+			PulseCheckRgb?,
 	  ]
 	| ["l", number]
 	| ["o", number | null, number | null]
@@ -174,8 +178,7 @@ export class RecordingPulseCheck extends PulseCheck {
 		wallRaw?: Rgb,
 		diag?: PulseCheckFrameDiag,
 	): void {
-		this.keep(
-			[
+		const event: PulseCheckInputEvent = [
 				"f",
 				timestampMs,
 				regions.map(rgb3),
@@ -200,9 +203,9 @@ export class RecordingPulseCheck extends PulseCheck {
 				// review measured +18% at full precision).
 				diag?.room ? [quad(diag.room.left), quad(diag.room.right)] : null,
 				diag?.patch ?? null,
-			],
-			timestampMs,
-		);
+			];
+		if (diag?.foreheadBox) event.push(rgb3(diag.foreheadBox));
+		this.keep(event, timestampMs);
 		super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
 	}
 

@@ -1,3 +1,5 @@
+import { FOREHEAD_POOL_SIZE, foreheadPoolFromFrame } from "./facePatches.js";
+import { ForeheadPool } from "./foreheadPool.js";
 import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSource.js";
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
@@ -91,6 +93,7 @@ export class DemoRunner {
         this.lastSampleAt = null;
         /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
         this.wallTracker = new WallTracker();
+        this.foreheadPool = null;
         this.source.onFrame = this.onFrame.bind(this);
         this.diagnostics.roiGeometryProfileId =
             opts.roiGeometryProfile?.id ?? ELATA_FACE_YCBCR_V1_PROFILE.id;
@@ -195,6 +198,8 @@ export class DemoRunner {
         }
         this.fuser?.reset();
         this.processor.resetSignal();
+        // The pool's running means and windows are ordered in time: a clock step starts them over too.
+        this.foreheadPool?.reset();
         this.analysisRestartMs = t;
         return "restart";
     }
@@ -304,10 +309,22 @@ export class DemoRunner {
                 const wall = frame.landmarks
                     ? this.wallTracker.next(frame.landmarks, frame)
                     : null;
-                this.opts.pulseChecker.push(frame.timestampMs, rois.slice(0, 3).map((roi) => {
+                let foreheadBox = null;
+                const boxes = rois.slice(0, 3).map((roi) => {
                     const c = clampRoiToFrame(roi, frame.width, frame.height);
                     return averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h);
-                }), wall?.rgb, frame.landmarks && !wall
+                });
+                // Switch foreheadPool: the forehead from the patch pool (the box until the pool has a value).
+                if (this.opts.foreheadPool && frame.landmarks) {
+                    this.foreheadPool ?? (this.foreheadPool = new ForeheadPool(FOREHEAD_POOL_SIZE));
+                    const pf = foreheadPoolFromFrame(frame, frame.landmarks);
+                    const v = pf ? this.foreheadPool.push({ t: frame.timestampMs, ...pf }) : null;
+                    if (v) {
+                        foreheadBox = boxes[0];
+                        boxes[0] = { ...boxes[0], r: v.r, g: v.g, b: v.b };
+                    }
+                }
+                this.opts.pulseChecker.push(frame.timestampMs, boxes, wall?.rgb, frame.landmarks && !wall
                     ? wallMissReason(frame.landmarks, frame.width, frame.height)
                     : undefined, 
                 // The head's position, for the headMotion rule: a rate the head's own
@@ -319,7 +336,7 @@ export class DemoRunner {
                 // Recorded only, and only computed when a recording keeps it (lane/wallroom step 1):
                 // the room in the frame's upper corners, and where the wall patch sat this frame.
                 this.opts.pulseChecker.wantsDiagnostics
-                    ? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null }
+                    ? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}) }
                     : undefined);
             }
             if (frame.roi) {

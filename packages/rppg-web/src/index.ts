@@ -365,6 +365,7 @@ export {
 	eyeBlink,
 	type PulseCheckCause,
 	streakNeeded,
+	POOL_BUILDING_STREAK,
 	relockVerdict,
 	RELOCK_MS,
 	RELOCK_STREAK,
@@ -425,3 +426,6 @@ export {
 	resolveFixSwitches,
 } from "./fixSwitches";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo";
+
+export { ForeheadPool, FOREHEAD_TAU_SKIN, FOREHEAD_TAU_SWING, FOREHEAD_PRUNE } from "./foreheadPool";
+export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches";

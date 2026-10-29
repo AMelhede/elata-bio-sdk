@@ -249,9 +249,15 @@ export type PulseCheckRules = {
      * Does not catch a video of a face on a screen, which blinks.
      */
     blinkGate?: boolean;
+    /**
+     * OFF unless true. Set by the session with its `foreheadPool` switch (the forehead the check is fed is the patch
+     * pool, foreheadPool.ts), never on its own: with rule moreReadings, the building number then needs
+     * POOL_BUILDING_STREAK agreeing windows instead of OWN_PULSE_STRONG_STREAK. Proof and re-lock are unchanged.
+     */
+    foreheadPool?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "roomLight", "moreReadings", "blinkGate"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "roomLight", "moreReadings", "blinkGate", "foreheadPool"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -286,16 +292,26 @@ export declare function relockVerdict<V extends {
     t: number;
 } | null, timestampMs: number): V;
 /**
+ * Rule foreheadPool: the building number's streak while the forehead is the patch pool. The pool reads the forehead
+ * far cleaner, so the combined line agrees more often, on no pulse as well. Measured on block-shuffled no-pulse copies
+ * of recorded webcam captures (three cameras): at streak 4 the pool showed about a sixth more made-up seconds than the
+ * box, most of them the building number, while its gain on real pulses was mostly proven numbers. At streak 5 it showed
+ * fewer made-up seconds than the box at streak 4, and against a finger reference still nearly doubled the right numbers
+ * on the two weaker cameras and raised the good camera's by a fifth.
+ */
+export declare const POOL_BUILDING_STREAK: number;
+/**
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
- * the window, and only for a streak at least OWN_PULSE_STRONG_STREAK windows long (the shortest
- * streak the check ever accepts) whose mean SNR reaches OWN_PULSE_MIN_SNR_DB (the check's own bar).
+ * the window, and only for a streak at least `minStreak` windows long (OWN_PULSE_STRONG_STREAK, the shortest
+ * streak the check ever accepts; POOL_BUILDING_STREAK under rule foreheadPool) whose mean SNR reaches
+ * OWN_PULSE_MIN_SNR_DB (the check's own bar).
  */
 export declare function buildingRate(v: {
     verdict: string;
     streak: number;
     streakBpm?: number | null;
     streakSnrDb?: number | null;
-}, withheld: boolean): number | null;
+}, withheld: boolean, minStreak?: number): number | null;
 /** The rate a check's state shows: the proven rate when one is shown, else (rule moreReadings) the building streak's
  * rate, else null. A proven rate whose newest windows no longer back it falls back to the building rate, so a proof
  * (or a re-lock) never shows less than the streak behind it would. */
@@ -670,6 +686,11 @@ export type RoomCorners = {
 export type PulseCheckFrameDiag = {
     room?: RoomCorners | null;
     patch?: WallPatchDiag | null;
+    /**
+     * Switch foreheadPool: the forehead box the pool replaced this frame (the region the check would have read without
+     * the pool), recorded only, so a recording can be replayed both ways on the same seconds. Absent without the pool.
+     */
+    foreheadBox?: Rgb | null;
 };
 /** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
 export declare function combineRoom(room: RoomCorners | null | undefined): Rgb | null;
