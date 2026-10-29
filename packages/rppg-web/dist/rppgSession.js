@@ -354,6 +354,9 @@ export async function createRppgSession(options) {
         bpmTrackerConfig: options.bpmTrackerConfig,
         bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
         fixes: options.fixes,
+        // With the pulse check on every read withholds the engine's breathing, and experimentalVitals reads
+        // breathing from the chest, so the engine does not compute it.
+        respiration: pulseCheck == null,
     });
     applyTrackerConfiguration(processor, enableTracker);
     let session = null;

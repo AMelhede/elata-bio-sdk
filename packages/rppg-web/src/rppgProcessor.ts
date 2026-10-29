@@ -512,6 +512,8 @@ export class RppgProcessor {
 	private readonly cameraCalibration = new MuseCalibrationModel();
 	private readonly fusion = new MuseFusionCalibrator();
 	private readonly bayesTracker: BpmBayesTracker;
+	/** Whether the window analysis estimates the breathing rate (constructor option `respiration`). */
+	private readonly respiration: boolean;
 	private readonly channelGain = new ChannelGainController();
 	private readonly chromPulse = new ChromPulseModel();
 	// Quality scalar supplied by an external multi-ROI fuser (see pushFusedSample).
@@ -565,8 +567,11 @@ export class RppgProcessor {
 			bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 			/** Fix switches, all on unless set to false (see fixSwitches.ts). */
 			fixes?: RppgFixesOption;
+			/** Estimate the breathing rate (default true); a session with the pulse check on turns it off (see PulseAnalysisOptions). */
+			respiration?: boolean;
 		} = {},
 	) {
+		this.respiration = options.respiration !== false;
 		this.sampleRate = sampleRate;
 		this.windowSec = windowSec;
 		this.fixes = resolveFixSwitches(options.fixes);
@@ -1147,6 +1152,7 @@ export class RppgProcessor {
 		if (kept != null && kept.version === this.samplesVersion) return kept.result;
 		const result = analyzePulseWindow(this.samples, {
 			doublingRule: !this.fixes.noRateDoubling,
+			respiration: this.respiration,
 		});
 		this.windowAnalysis = { version: this.samplesVersion, result };
 		return result;

@@ -39,6 +39,12 @@ export type PulseAnalysisOptions = {
      * `noRateDoubling`.
      */
     doublingRule?: boolean;
+    /**
+     * Whether to estimate the breathing rate (default true). The session turns it off while the pulse check is on:
+     * every read then withholds the engine's breathing and experimentalVitals reads breathing from the chest, so it
+     * would be computed for no one, at about a tenth of the page's CPU in a browser profile.
+     */
+    respiration?: boolean;
 };
 export declare function analyzePulseWindow(samples: PulseWindowSample[], options?: PulseAnalysisOptions): PulseWindowAnalysis | null;
 export declare function estimateDominantBpm(data: number[], sampleRate: number, minHz: number, maxHz: number, options?: PulseAnalysisOptions): PulseEstimatorResult | null;

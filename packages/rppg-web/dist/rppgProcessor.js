@@ -274,6 +274,7 @@ export class RppgProcessor {
         this.disposed = false;
         /** The last enableTracker arguments, so a pipeline started afresh (resetSignal) tracks again. */
         this.trackerSettings = null;
+        this.respiration = options.respiration !== false;
         this.sampleRate = sampleRate;
         this.windowSec = windowSec;
         this.fixes = resolveFixSwitches(options.fixes);
@@ -761,6 +762,7 @@ export class RppgProcessor {
             return kept.result;
         const result = analyzePulseWindow(this.samples, {
             doublingRule: !this.fixes.noRateDoubling,
+            respiration: this.respiration,
         });
         this.windowAnalysis = { version: this.samplesVersion, result };
         return result;

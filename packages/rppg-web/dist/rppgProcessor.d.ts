@@ -202,6 +202,8 @@ export declare class RppgProcessor {
     private readonly cameraCalibration;
     private readonly fusion;
     private readonly bayesTracker;
+    /** Whether the window analysis estimates the breathing rate (constructor option `respiration`). */
+    private readonly respiration;
     private readonly channelGain;
     private readonly chromPulse;
     private fusedQuality;
@@ -244,6 +246,8 @@ export declare class RppgProcessor {
         bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
         /** Fix switches, all on unless set to false (see fixSwitches.ts). */
         fixes?: RppgFixesOption;
+        /** Estimate the breathing rate (default true); a session with the pulse check on turns it off (see PulseAnalysisOptions). */
+        respiration?: boolean;
     });
     private newPipeline;
     enableTracker(minBpm?: number, maxBpm?: number, numParticles?: number): void;

@@ -104,7 +104,8 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * session's latest `getMetrics()` read. With `pulseCheck: false` it is the engine's own HRV, handed
      * over whether or not a heart rate is reported. With the pulse
      * check on, the session's own reads (`getMetrics()`, `getDebugSnapshot()`) withhold HRV and
-     * breathing whether this option is on or off; `session.processor`, the raw engine, is not filtered.
+     * breathing whether this option is on or off; `session.processor`, the raw engine, is not filtered, but with the
+     * pulse check on it does not estimate breathing at all (its `respiration_rate` stays null), since no read hands it over.
      */
     experimentalVitals?: boolean;
     bpmTrackerConfig?: BpmTrackerConfigV1;

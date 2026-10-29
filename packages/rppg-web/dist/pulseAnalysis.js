@@ -43,7 +43,7 @@ export function analyzePulseWindow(samples, options = {}) {
     // corrupts any single cue — where the old lone spectral peak either got fooled
     // or abstained. Reuses the Hilbert beats already computed above for the RSA
     // tachogram. See respirationAnalysis.ts.
-    const respirationResult = estimateRespiration({
+    const respirationResult = options.respiration === false ? null : estimateRespiration({
         signal: norm,
         sampleRate: fs,
         ibisMs: hilbertBeats.ibisMs,

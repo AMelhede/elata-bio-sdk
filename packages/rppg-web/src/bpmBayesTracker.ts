@@ -585,22 +585,27 @@ export class BpmBayesTracker {
 		const sigmaBpm = clamp(1.8 + dtSec * 2.8 + context.motion * 9, 1.5, 16);
 		const modeStay = clamp(0.9 - context.motion * 0.15, 0.55, 0.95);
 
+		// Each Gaussian once per pair of grid points, not once per pair of points for every pair of modes: the same
+		// values in the same order of summation, a ninth of the exp() calls. This step was the largest single cost on
+		// the page (19% of CPU in a browser profile).
+		const n = this.bpmGrid.length;
+		const kernel = new Float64Array(n * n);
+		for (let prevBpm = 0; prevBpm < n; prevBpm++)
+			for (let nextBpm = 0; nextBpm < n; nextBpm++)
+				kernel[prevBpm * n + nextBpm] = gaussian(this.bpmGrid[nextBpm], this.bpmGrid[prevBpm], sigmaBpm);
+
 		for (let prevMode = 0; prevMode < MODES.length; prevMode++) {
-			for (let prevBpm = 0; prevBpm < this.bpmGrid.length; prevBpm++) {
+			for (let prevBpm = 0; prevBpm < n; prevBpm++) {
 				const posteriorValue = this.posterior[this.toIndex(prevBpm, prevMode)];
 				if (posteriorValue <= 0) continue;
+				const row = prevBpm * n;
 
 				for (let nextMode = 0; nextMode < MODES.length; nextMode++) {
 					const modeTransition =
 						prevMode === nextMode ? modeStay : (1 - modeStay) / 2;
-					for (let nextBpm = 0; nextBpm < this.bpmGrid.length; nextBpm++) {
-						const kernel = gaussian(
-							this.bpmGrid[nextBpm],
-							this.bpmGrid[prevBpm],
-							sigmaBpm,
-						);
+					for (let nextBpm = 0; nextBpm < n; nextBpm++) {
 						prior[this.toIndex(nextBpm, nextMode)] +=
-							posteriorValue * modeTransition * kernel;
+							posteriorValue * modeTransition * kernel[row + nextBpm];
 					}
 				}
 			}

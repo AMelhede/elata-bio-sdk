@@ -54,6 +54,12 @@ export type PulseAnalysisOptions = {
 	 * `noRateDoubling`.
 	 */
 	doublingRule?: boolean;
+	/**
+	 * Whether to estimate the breathing rate (default true). The session turns it off while the pulse check is on:
+	 * every read then withholds the engine's breathing and experimentalVitals reads breathing from the chest, so it
+	 * would be computed for no one, at about a tenth of the page's CPU in a browser profile.
+	 */
+	respiration?: boolean;
 };
 
 export function analyzePulseWindow(
@@ -105,7 +111,7 @@ export function analyzePulseWindow(
 	// corrupts any single cue — where the old lone spectral peak either got fooled
 	// or abstained. Reuses the Hilbert beats already computed above for the RSA
 	// tachogram. See respirationAnalysis.ts.
-	const respirationResult = estimateRespiration({
+	const respirationResult = options.respiration === false ? null : estimateRespiration({
 		signal: norm,
 		sampleRate: fs,
 		ibisMs: hilbertBeats.ibisMs,
