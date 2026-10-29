@@ -148,6 +148,15 @@ Apple's 5 s block: on recorded webcam captures the block showed a number up to 1
 the time against 92.3% for this median, which also jumped 3 bpm or more 1.6 times a minute against 2.6. Past 10 s a
 resting heart rate has moved by more than 5 bpm in 15% of cases, so the value is a past reading. It changes no reading.
 
+## Why no number, in one word
+
+`pulseCheckCause(session.getPulseCheck(), faceInView)` names the check's first blocking cause: `noFace`, `lightFlicker`,
+`headMotion`, `waitingForBlink`, `collecting` (the 16 s window is still filling after a start or a reset: nothing to
+fix), `noRate`, `weakSignal`, `agreeing`, or `shown`. `pulseCheckColourDamaged(state)` says whether the latest window
+found the camera's colour damaged by the check's own measure; name light as the fix for a weak signal on a lit face
+only then. On recorded sessions from a laptop and a phone, "more white light" on a lit face fell from 1,800 seconds to
+501 this way, the rest being the window filling or a weak signal with nothing to say about light.
+
 ## Recording what the check was fed, and replaying it with other rules
 
 A rule that was on or off cannot be judged from the numbers an app showed. So the session can keep

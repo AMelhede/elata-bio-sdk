@@ -236,11 +236,21 @@ export function pulseCheckCause(state, faceInView) {
         return "headMotion";
     if (state.waitingForBlink)
         return "waitingForBlink";
+    if (state.collecting)
+        return "collecting";
     if (state.windowSnrDb == null)
         return "noRate";
     if (state.windowSnrDb < OWN_PULSE_MIN_SNR_DB)
         return "weakSignal";
     return "agreeing";
+}
+/**
+ * Whether the check's latest window found the camera's colour damaged, by its own measure: read by the
+ * damaged-colour method, or colour damage at its switch (OWN_PULSE_COLOUR_SWITCH). An app names light (white light,
+ * a night-light filter) as the fix for a weak signal only then, or when the face is measurably dark.
+ */
+export function pulseCheckColourDamaged(state) {
+    return state.windowMethod === "greenMinusWall" || (state.windowColourDamage ?? 0) >= OWN_PULSE_COLOUR_SWITCH;
 }
 /**
  * The streak the running rules need before a rate shows: the proof's OWN_PULSE_STREAK, or with moreReadings its
@@ -921,6 +931,7 @@ export class PulseCheck {
                 ...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
                 windowHead,
             };
+        this.state.collecting = !this.samples.length || timestampMs - this.samples[0][0] < OWN_PULSE_WINDOW_S * 1000;
         this.state.followerBpm = this.followerBpm;
         this.state.heldBpm = this.held;
         // Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.

@@ -1,5 +1,6 @@
 import { OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_STRONG_STREAK } from "../pulseCheckCore";
-import { PulseCheck, RELOCK_MS, RELOCK_STREAK, pulseCheckCause, resolvePulseCheckRules, streakNeeded, type PulseCheckState } from "../pulseCheck";
+import { PulseCheck, RELOCK_MS, RELOCK_STREAK, pulseCheckCause, pulseCheckColourDamaged, resolvePulseCheckRules, streakNeeded, type PulseCheckState } from "../pulseCheck";
+import { OWN_PULSE_COLOUR_SWITCH } from "../pulseCheckCore";
 
 // The check's first blocking cause, so every app says the same thing about why no number shows (spec
 // SPEC-reading-state.md section 4), and the streak the running rules need for a number (section 3).
@@ -34,6 +35,38 @@ describe("pulseCheckCause", () => {
 			causes.add(pulseCheckCause(check.getState(), true));
 		}
 		expect(causes.has("shown")).toBe(true);
+	});
+});
+
+describe("collecting", () => {
+	// The window is not yet full after a start or a reset (16 s): nothing is wrong, the check is filling it. On the
+	// owner's phone (2026-10-29) 52 of 86 seconds that said "more white light" were this, read as "no rate".
+	it("is named before no rate, after the blink gate", () => {
+		expect(pulseCheckCause(s({ collecting: true, windowSnrDb: null, windowBpm: null }), true)).toBe("collecting");
+		expect(pulseCheckCause(s({ collecting: true, waitingForBlink: true }), true)).toBe("waitingForBlink");
+		expect(pulseCheckCause(s({ collecting: false, windowSnrDb: null, windowBpm: null }), true)).toBe("noRate");
+	});
+	it("is reported by the live check until a full window has come in since the start", () => {
+		const check = new PulseCheck();
+		const seen: boolean[] = [];
+		for (let i = 0; i < 25 * 30; i++) {
+			const t = (i * 1000) / 30;
+			const p = Math.sin((2 * Math.PI * 1.2 * t) / 1000);
+			const c = { r: 100 + 0.12 * p, g: 100 + 0.4 * p, b: 100 + 0.24 * p };
+			check.push(t, [c, c, c]);
+			if (i % 30 === 0) seen.push(check.getState().collecting === true);
+		}
+		expect(seen.slice(2, 14).every(Boolean)).toBe(true);
+		expect(seen.slice(18).some(Boolean)).toBe(false);
+	});
+});
+
+describe("pulseCheckColourDamaged", () => {
+	it("is the check's own measure: the damaged-colour method, or colour damage at its switch", () => {
+		expect(pulseCheckColourDamaged(s({ windowMethod: "greenMinusWall" }))).toBe(true);
+		expect(pulseCheckColourDamaged(s({ windowMethod: "pos", windowColourDamage: OWN_PULSE_COLOUR_SWITCH }))).toBe(true);
+		expect(pulseCheckColourDamaged(s({ windowMethod: "pos", windowColourDamage: OWN_PULSE_COLOUR_SWITCH - 1 }))).toBe(false);
+		expect(pulseCheckColourDamaged(s({}))).toBe(false);
 	});
 });
 

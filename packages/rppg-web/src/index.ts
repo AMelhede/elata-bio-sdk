@@ -357,6 +357,7 @@ export {
 	resolvePulseCheckRules,
 	shownPulseBpm,
 	pulseCheckCause,
+	pulseCheckColourDamaged,
 	BlinkDetector,
 	BLINK_RISE,
 	BLINK_BASE_MS,

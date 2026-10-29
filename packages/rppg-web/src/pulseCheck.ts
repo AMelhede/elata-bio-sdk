@@ -63,6 +63,8 @@ export type PulseCheckState = {
 	 */
 	windowBpm?: number | null;
 	windowSnrDb?: number | null;
+	/** True until a full window (OWN_PULSE_WINDOW_S) has come in since the check started or last reset. */
+	collecting?: boolean;
 	/** How that window's pulse was read: "pos", or "greenMinusWall" for damaged colour. */
 	windowMethod?: "pos" | "greenMinusWall" | null;
 	/** That window's colour-damage measure, and whether the wall was seen through the whole window. */
@@ -453,16 +455,26 @@ export class BlinkDetector {
  * the wall too dim for the backup method), a window under the SNR bar, a signal over the bar whose regions do not yet
  * agree, the blink gate waiting, or shown. `faceInView`: the app's own face tracking this second.
  */
-export type PulseCheckCause = "noFace" | "lightFlicker" | "headMotion" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
+export type PulseCheckCause = "noFace" | "lightFlicker" | "headMotion" | "collecting" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
 export function pulseCheckCause(state: PulseCheckState, faceInView: boolean): PulseCheckCause {
 	if (!faceInView) return "noFace";
 	if (shownPulseBpm(state) != null) return "shown";
 	if (state.wallMatch || state.roomMatch || state.screenLight || state.faceFlicker) return "lightFlicker";
 	if (state.headMatch) return "headMotion";
 	if (state.waitingForBlink) return "waitingForBlink";
+	if (state.collecting) return "collecting";
 	if (state.windowSnrDb == null) return "noRate";
 	if (state.windowSnrDb < OWN_PULSE_MIN_SNR_DB) return "weakSignal";
 	return "agreeing";
+}
+
+/**
+ * Whether the check's latest window found the camera's colour damaged, by its own measure: read by the
+ * damaged-colour method, or colour damage at its switch (OWN_PULSE_COLOUR_SWITCH). An app names light (white light,
+ * a night-light filter) as the fix for a weak signal only then, or when the face is measurably dark.
+ */
+export function pulseCheckColourDamaged(state: PulseCheckState): boolean {
+	return state.windowMethod === "greenMinusWall" || (state.windowColourDamage ?? 0) >= OWN_PULSE_COLOUR_SWITCH;
 }
 
 /**
@@ -1237,6 +1249,7 @@ export class PulseCheck {
 					...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
 					windowHead,
 				};
+		this.state.collecting = !this.samples.length || timestampMs - this.samples[0][0] < OWN_PULSE_WINDOW_S * 1000;
 		this.state.followerBpm = this.followerBpm;
 		this.state.heldBpm = this.held;
 		// Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.

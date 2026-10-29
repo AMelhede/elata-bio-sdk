@@ -44,6 +44,8 @@ export type PulseCheckState = {
      */
     windowBpm?: number | null;
     windowSnrDb?: number | null;
+    /** True until a full window (OWN_PULSE_WINDOW_S) has come in since the check started or last reset. */
+    collecting?: boolean;
     /** How that window's pulse was read: "pos", or "greenMinusWall" for damaged colour. */
     windowMethod?: "pos" | "greenMinusWall" | null;
     /** That window's colour-damage measure, and whether the wall was seen through the whole window. */
@@ -328,8 +330,14 @@ export declare class BlinkDetector {
  * the wall too dim for the backup method), a window under the SNR bar, a signal over the bar whose regions do not yet
  * agree, the blink gate waiting, or shown. `faceInView`: the app's own face tracking this second.
  */
-export type PulseCheckCause = "noFace" | "lightFlicker" | "headMotion" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
+export type PulseCheckCause = "noFace" | "lightFlicker" | "headMotion" | "collecting" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
 export declare function pulseCheckCause(state: PulseCheckState, faceInView: boolean): PulseCheckCause;
+/**
+ * Whether the check's latest window found the camera's colour damaged, by its own measure: read by the
+ * damaged-colour method, or colour damage at its switch (OWN_PULSE_COLOUR_SWITCH). An app names light (white light,
+ * a night-light filter) as the fix for a weak signal only then, or when the face is measurably dark.
+ */
+export declare function pulseCheckColourDamaged(state: PulseCheckState): boolean;
 /**
  * The streak the running rules need before a rate shows: the proof's OWN_PULSE_STREAK, or with moreReadings its
  * building bar OWN_PULSE_STRONG_STREAK, and RELOCK_STREAK while re-lock is open (`state.relockOpen`). An app's
