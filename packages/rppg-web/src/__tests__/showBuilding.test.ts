@@ -1,5 +1,6 @@
 import { ownPulseVerdict, OWN_PULSE_STRONG_STREAK, type OwnPulseEstimate } from "../pulseCheckCore";
 import { buildingRate, resolvePulseCheckRules, shownPulseBpm } from "../pulseCheck";
+import { BUILDING_MIN_SNR_DB } from "../pulseCheck";
 
 // Rule moreReadings, its building half (off unless true): a not-yet-proven streak as long as the check's shortest accepted one, at the
 // check's own SNR bar, is shown as the building rate.
@@ -20,7 +21,7 @@ describe("rule moreReadings (building)", () => {
 	});
 	it("one window short, under the bar, or withheld: nothing", () => {
 		expect(buildingRate(ownPulseVerdict(Array.from({ length: OWN_PULSE_STRONG_STREAK - 1 }, () => win(70, -2))), false)).toBeNull();
-		expect(buildingRate(ownPulseVerdict(Array.from({ length: OWN_PULSE_STRONG_STREAK }, () => win(70, -3.5))), false)).toBeNull();
+		expect(buildingRate(ownPulseVerdict(Array.from({ length: OWN_PULSE_STRONG_STREAK }, () => win(70, BUILDING_MIN_SNR_DB - 0.5))), false)).toBeNull();
 		expect(buildingRate(ownPulseVerdict(Array.from({ length: OWN_PULSE_STRONG_STREAK }, () => win(70, -2))), true)).toBeNull();
 	});
 	it("a proven verdict shows its own rate, never the building one", () => {

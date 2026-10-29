@@ -149,3 +149,16 @@ describe("a recording with the pool keeps the forehead box it replaced, so the f
 		expect(replayPulseCheck(rec).evaluations.map((e) => ({ t: e.t, bpm: e.bpm }))).toEqual(live);
 	});
 });
+
+import { BUILDING_MIN_SNR_DB } from "../pulseCheck";
+import { OWN_PULSE_MIN_SNR_DB } from "../pulseCheckCore";
+
+describe("the building number's bar sits two dB under the proof's", () => {
+	const v = (snr: number) => ({ verdict: "not-measured", streak: 4, streakBpm: 70, streakSnrDb: snr });
+	it("shows a streak at -4.5 dB and not one at -5.5", () => {
+		expect(BUILDING_MIN_SNR_DB).toBe(OWN_PULSE_MIN_SNR_DB - 2);
+		expect(buildingRate(v(-4.5), false)).toBe(70);
+		expect(buildingRate(v(BUILDING_MIN_SNR_DB), false)).toBe(70);
+		expect(buildingRate(v(-5.5), false)).toBeNull();
+	});
+});

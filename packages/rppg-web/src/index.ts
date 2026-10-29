@@ -366,6 +366,7 @@ export {
 	type PulseCheckCause,
 	streakNeeded,
 	POOL_BUILDING_STREAK,
+	BUILDING_MIN_SNR_DB,
 	relockVerdict,
 	RELOCK_MS,
 	RELOCK_STREAK,

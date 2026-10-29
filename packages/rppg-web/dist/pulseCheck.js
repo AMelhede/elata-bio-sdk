@@ -150,6 +150,16 @@ export const RELOCK_STREAK = 2;
  * 100 s.
  */
 export const RELOCK_MIN_SNR_DB = -4;
+/**
+ * Rule moreReadings (building): the mean SNR a streak needs before a first proof to show as the building number, two
+ * dB under the proof's bar (OWN_PULSE_MIN_SNR_DB, -3). Wearables trade some accuracy for a number nearly always on
+ * screen; seated against ECG their mean error runs from about 3.6 bpm (best wrist devices) to 8.0 (a ring), median
+ * about 5 (Gielen 2026). Chosen on one set of recorded webcam sessions against a finger reference as the most numbers
+ * on screen at a mean error no worse than the ring's, and scored once on others: seconds with a number rose by about
+ * a third over three cameras (by half on the two weaker ones) at a mean error of 3.8 bpm against 3.3, while a number
+ * showed on about three times as many seconds of block-shuffled no-pulse copies, which the blink gate is for.
+ */
+export const BUILDING_MIN_SNR_DB = -5;
 /** Rule moreReadings (re-lock): a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
 export function relockVerdict(v, lastProven, timestampMs) {
     if (v.verdict === "measured" || lastProven == null || timestampMs - lastProven.t > RELOCK_MS)
@@ -173,12 +183,12 @@ export const POOL_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK + 1;
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
  * the window, and only for a streak at least `minStreak` windows long (OWN_PULSE_STRONG_STREAK, the shortest
  * streak the check ever accepts; POOL_BUILDING_STREAK under rule foreheadPool) whose mean SNR reaches
- * OWN_PULSE_MIN_SNR_DB (the check's own bar).
+ * BUILDING_MIN_SNR_DB (two dB under the proof's bar).
  */
 export function buildingRate(v, withheld, minStreak = OWN_PULSE_STRONG_STREAK) {
     if (v.verdict === "measured" || withheld || v.streak < minStreak)
         return null;
-    if (v.streakSnrDb == null || v.streakSnrDb < OWN_PULSE_MIN_SNR_DB)
+    if (v.streakSnrDb == null || v.streakSnrDb < BUILDING_MIN_SNR_DB)
         return null;
     return v.streakBpm ?? null;
 }
