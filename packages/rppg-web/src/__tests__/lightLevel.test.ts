@@ -1,12 +1,12 @@
-import { LIGHT_CLIP_MAX, LIGHT_DIM_LUMA, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, faceLightFromFrame, lightAfter } from "../lightLevel";
+import { LIGHT_CLIP_MAX, LIGHT_DIM_LUMA, LIGHT_DIM_LUMA_CENTRE, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter } from "../lightLevel";
 import { RecordingPulseCheck, parsePulseCheckRecording, replayPulseCheck, serializePulseCheckRecording } from "../pulseCheckRecording";
 import { shownPulseBpm } from "../pulseCheck";
 
 // Session switch light: how much light the screen should put on the face (lightLevel.ts).
 
-const dim = { luma: LIGHT_DIM_LUMA - 0.1, redClip: 0 };
-const lit = { luma: LIGHT_DIM_LUMA + 0.1, redClip: 0 };
-const burnt = { luma: 0.6, redClip: LIGHT_CLIP_MAX };
+const dim = { luma: LIGHT_DIM_LUMA - 0.1, redClip: 0, source: "face" as const };
+const lit = { luma: LIGHT_DIM_LUMA + 0.1, redClip: 0, source: "face" as const };
+const burnt = { luma: 0.6, redClip: LIGHT_CLIP_MAX, source: "face" as const };
 
 describe("lightAfter", () => {
 	it("asks for full light once the face reads dim for 2 s, and not before", () => {
@@ -53,7 +53,7 @@ describe("lightAfter", () => {
 		let s = { level: 1 as const, darkSince: 0, clipSince: null } as Parameters<typeof lightAfter>[0];
 		s = lightAfter(s, burnt, 1, 0);
 		s = lightAfter(s, burnt, 1, 1600);
-		s = lightAfter(s, { luma: 0.5, redClip: 0.1 }, 1, 1700);
+		s = lightAfter(s, { luma: 0.5, redClip: 0.1, source: "face" }, 1, 1700);
 		s = lightAfter(s, burnt, 1, 1800);
 		expect(lightAfter(s, burnt, 1, 1800 + LIGHT_LATCH_MS - 1).level).toBe(1);
 	});
@@ -61,7 +61,30 @@ describe("lightAfter", () => {
 	it("no face, or a broken measurement, leaves the level as it is", () => {
 		const on = { level: 1 as const, darkSince: 0, clipSince: null };
 		expect(lightAfter(on, null, 1, 10_000)).toBe(on);
-		expect(lightAfter(LIGHT_START, { luma: Number.NaN, redClip: 0 }, 0, 10_000)).toBe(LIGHT_START);
+		expect(lightAfter(LIGHT_START, { luma: Number.NaN, redClip: 0, source: "face" }, 0, 10_000)).toBe(LIGHT_START);
+	});
+});
+
+describe("with no face found, the centre of the picture stands in, on its own bar", () => {
+	it("a centre reading under 0.38 for 2 s lights; one between 0.38 and the face bar does not", () => {
+		const dark = { luma: LIGHT_DIM_LUMA_CENTRE - 0.05, redClip: 0, source: "centre" as const };
+		const mid = { luma: (LIGHT_DIM_LUMA_CENTRE + LIGHT_DIM_LUMA) / 2, redClip: 0, source: "centre" as const };
+		expect(lightAfter(lightAfter(LIGHT_START, dark, 0, 0), dark, 0, LIGHT_LATCH_MS).level).toBe(1);
+		expect(lightAfter(lightAfter(LIGHT_START, mid, 0, 0), mid, 0, LIGHT_LATCH_MS).level).toBe(0);
+	});
+	it("reads the plain luma and red clip of the centre box", () => {
+		const W = 20;
+		const H = 20;
+		const data = new Uint8ClampedArray(W * H * 4).fill(255);
+		for (let i = 0; i < data.length; i += 4) {
+			data[i] = 51;
+			data[i + 1] = 51;
+			data[i + 2] = 51;
+		}
+		const c = centreLightFromFrame(data, W, H)!;
+		expect(c.source).toBe("centre");
+		expect(c.luma).toBeCloseTo(0.2, 6);
+		expect(c.redClip).toBe(0);
 	});
 });
 

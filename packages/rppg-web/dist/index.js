@@ -50,4 +50,4 @@ export { FIX_SWITCH_NAMES, resolveFixSwitches, } from "./fixSwitches.js";
 export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
 export { ForeheadPool, FOREHEAD_TAU_SKIN, FOREHEAD_TAU_SWING, FOREHEAD_PRUNE } from "./foreheadPool.js";
 export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches.js";
-export { LIGHT_CLIP_MAX, LIGHT_DIM_LUMA, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, faceLightFromFrame, lightAfter, lumaOfRgb, } from "./lightLevel.js";
+export { CENTRE_BOX, LIGHT_CLIP_MAX, LIGHT_DIM_LUMA, LIGHT_DIM_LUMA_CENTRE, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter, lumaOfRgb, } from "./lightLevel.js";

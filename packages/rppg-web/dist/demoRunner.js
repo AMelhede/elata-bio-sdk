@@ -1,6 +1,6 @@
 import { FOREHEAD_POOL_SIZE, foreheadPoolFromFrame } from "./facePatches.js";
 import { ForeheadPool } from "./foreheadPool.js";
-import { LIGHT_START, faceLightFromFrame, lightAfter } from "./lightLevel.js";
+import { LIGHT_START, centreLightFromFrame, faceLightFromFrame, lightAfter } from "./lightLevel.js";
 import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSource.js";
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
@@ -276,6 +276,12 @@ export class DemoRunner {
         let roiSource = null;
         let fusionResult = null;
         const rois = frame.rois && frame.rois.length > 0 ? frame.rois : null;
+        // Switch light with no face regions this frame: a face too dark to be found is the case the light is for, so the
+        // centre of the picture stands in until a face is found.
+        if (this.opts.light && !(rois && rois.length >= 3) && frame.width > 0 && frame.data.length > 0 && frame.timestampMs != null) {
+            this.faceLight = centreLightFromFrame(frame.data, frame.width, frame.height);
+            this.lightState = lightAfter(this.lightState, this.faceLight, this.lightApplied, frame.timestampMs);
+        }
         // No forehead and cheeks this frame: tell the check, so a rate proven on a face
         // does not outlive the face (see FACE_GONE_MS in pulseCheck.ts).
         if (this.opts.pulseChecker &&

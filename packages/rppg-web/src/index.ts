@@ -434,14 +434,17 @@ export { ForeheadPool, FOREHEAD_TAU_SKIN, FOREHEAD_TAU_SWING, FOREHEAD_PRUNE } f
 export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches";
 
 export {
+	CENTRE_BOX,
 	type FaceLight,
 	LIGHT_CLIP_MAX,
 	LIGHT_DIM_LUMA,
+	LIGHT_DIM_LUMA_CENTRE,
 	LIGHT_LATCH_MS,
 	LIGHT_START,
 	type LightLevel,
 	type LightState,
 	RED_CLIP_LEVEL,
+	centreLightFromFrame,
 	faceLightFromFrame,
 	lightAfter,
 	lumaOfRgb,

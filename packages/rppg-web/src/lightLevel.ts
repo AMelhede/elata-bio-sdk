@@ -16,10 +16,15 @@
 export type LightLevel = 0 | 0.5 | 1;
 
 export interface FaceLight {
-	/** Rec.709 luma of the face regions' skin-masked mean colour, 0..1 (the same means the pulse check reads). */
+	/**
+	 * Rec.709 luma, 0..1: of the face regions' skin-masked mean colour (the same means the pulse check reads), or with
+	 * no face found of the plain mean over CENTRE_BOX.
+	 */
 	readonly luma: number;
 	/** Share of the face regions' pixels, skin or not, with red at or above RED_CLIP_LEVEL. */
 	readonly redClip: number;
+	/** Where it was read: the face regions, or the centre of the picture while no face is found. */
+	readonly source: "face" | "centre";
 }
 
 export interface LightState {
@@ -42,6 +47,14 @@ export const LIGHT_START: LightState = { level: 0, darkSince: null, clipSince: n
  * recording keeps this luma).
  */
 export const LIGHT_DIM_LUMA = 0.47;
+
+/**
+ * Where a centred face sits while none is found yet: the middle 30% of the width and 50% of the height. A face too dark
+ * to be found is exactly the case the light is for, so the level cannot wait for a face. The bar there is the app
+ * measure itself, 0.38, read on this same box.
+ */
+export const CENTRE_BOX = { x0: 0.35, x1: 0.65, y0: 0.25, y1: 0.75 } as const;
+export const LIGHT_DIM_LUMA_CENTRE = 0.38;
 
 /**
  * How long a face must read dim, or burnt out, before the level steps: a camera starting, or
@@ -69,7 +82,7 @@ export const LIGHT_CLIP_MAX = 0.5;
 export function lightAfter(prev: LightState, face: FaceLight | null, applied: LightLevel, now: number): LightState {
 	if (prev.level === 0.5 || face == null || !Number.isFinite(face.luma) || !Number.isFinite(face.redClip)) return prev;
 	if (prev.level === 0) {
-		if (face.luma >= LIGHT_DIM_LUMA) return LIGHT_START;
+		if (face.luma >= (face.source === "centre" ? LIGHT_DIM_LUMA_CENTRE : LIGHT_DIM_LUMA)) return LIGHT_START;
 		const darkSince = prev.darkSince ?? now;
 		return now - darkSince >= LIGHT_LATCH_MS ? { level: 1, darkSince, clipSince: null } : { level: 0, darkSince, clipSince: null };
 	}
@@ -113,5 +126,26 @@ export function faceLightFromFrame(
 	}
 	if (n === 0) return null;
 	const luma = means.reduce((s, c) => s + lumaOfRgb(c), 0) / means.length;
-	return { luma, redClip: clipped / n };
+	return { luma, redClip: clipped / n, source: "face" };
+}
+
+/** The light from CENTRE_BOX of one RGBA frame, every second pixel each way, for frames with no face found. */
+export function centreLightFromFrame(data: ArrayLike<number>, width: number, height: number): FaceLight | null {
+	const x0 = Math.floor(width * CENTRE_BOX.x0);
+	const x1 = Math.ceil(width * CENTRE_BOX.x1);
+	const y0 = Math.floor(height * CENTRE_BOX.y0);
+	const y1 = Math.ceil(height * CENTRE_BOX.y1);
+	let n = 0;
+	let clipped = 0;
+	let luma = 0;
+	for (let y = y0; y < y1; y += 2) {
+		for (let x = x0; x < x1; x += 2) {
+			const i = (y * width + x) * 4;
+			if (i + 2 >= data.length) continue;
+			n++;
+			luma += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+			if (data[i] >= RED_CLIP_LEVEL) clipped++;
+		}
+	}
+	return n === 0 ? null : { luma: luma / n, redClip: clipped / n, source: "centre" };
 }
