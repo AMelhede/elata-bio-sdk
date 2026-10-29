@@ -125,7 +125,6 @@ export const PULSE_CHECK_RULE_NAMES = [
     "clockBack",
     "faintWall",
     "restBand",
-    "showHeld",
     "roomLight",
     "moreReadings",
     "blinkGate",
@@ -289,7 +288,6 @@ export function resolvePulseCheckRules(rules) {
         clockBack: rules?.clockBack !== false,
         faintWall: rules?.faintWall !== false,
         restBand: rules?.restBand !== false,
-        showHeld: rules?.showHeld === true,
         roomLight: rules?.roomLight === true,
         moreReadings: rules?.moreReadings === true,
         blinkGate: rules?.blinkGate === true,
@@ -978,7 +976,7 @@ export class PulseCheck {
         if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
             this.unsupported = 0;
             this.followerBpm = rate;
-            return this.rules.showHeld ? this.held : rate;
+            return rate;
         }
         this.unsupported += 1;
         return this.unsupported >= OWN_PULSE_SUPPORT_MISS ? null : this.held;

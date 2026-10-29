@@ -50,7 +50,7 @@ function litWall(bpm: number, amp = 0.03): [number, number, number, number][] {
 }
 
 describe("PulseCheck light rules, one switch each", () => {
-	it("every rule is on unless set to false, but showHeld, which is off unless set to true", () => {
+	it("every rule is on unless set to false, but the ones off unless set to true", () => {
 		expect(resolvePulseCheckRules()).toEqual({
 			wallBandEdge: true,
 			lightFamily: true,
@@ -63,12 +63,10 @@ describe("PulseCheck light rules, one switch each", () => {
 			faintWall: true,
 			foreheadPool: false,
 			restBand: true,
-			showHeld: false,
 			roomLight: false,
 			moreReadings: false,
 			blinkGate: false,
 		});
-		expect(resolvePulseCheckRules({ showHeld: true }).showHeld).toBe(true);
 		expect(resolvePulseCheckRules({ lightTaint: false }).lightTaint).toBe(false);
 		expect(new PulseCheck().rules.lightTaint).toBe(true);
 	});

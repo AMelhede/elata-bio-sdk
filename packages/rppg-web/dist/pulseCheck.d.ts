@@ -214,19 +214,11 @@ export type PulseCheckRules = {
      */
     restBand?: boolean;
     /**
-     * The shown rate is the proven rate (state.heldBpm), on exactly the seconds a rate would be shown, instead of the
-     * newest 8 s line following it. OFF unless set to true, being measured: on held-out webcam recordings at rest and
-     * after exercise it lowered the mean error with the same seconds shown and nothing invented, but the follower it
-     * replaces was added because it fixed wrong seconds on other cameras and on rising heart rates, so it stays off
-     * until it is tested there.
-     */
-    showHeld?: boolean;
-    /**
-     * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
-     * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
-     * beside the face (same window, same line test, same bar), as a taint on the window and over the last
-     * windows. Only withholds. Needs the room handed to push (a recording's frame source computes it).
-     */
+ * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
+ * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
+ * beside the face (same window, same line test, same bar), as a taint on the window and over the last
+ * windows. Only withholds. Needs the room handed to push (a recording's frame source computes it).
+ */
     roomLight?: boolean;
     /**
      * More readings. OFF unless true, being measured (lane/confidence, lane/sessionbar). Two halves, always together
@@ -257,7 +249,7 @@ export type PulseCheckRules = {
     foreheadPool?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "showHeld", "roomLight", "moreReadings", "blinkGate", "foreheadPool"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the

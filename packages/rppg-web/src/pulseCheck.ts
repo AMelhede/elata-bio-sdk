@@ -298,15 +298,7 @@ export type PulseCheckRules = {
 	 * longer, every second within 5 bpm of a reference. Off: the 58 edge, as in 0.15.0-test.31.
 	 */
 	restBand?: boolean;
-	/**
-	 * The shown rate is the proven rate (state.heldBpm), on exactly the seconds a rate would be shown, instead of the
-	 * newest 8 s line following it. OFF unless set to true, being measured: on held-out webcam recordings at rest and
-	 * after exercise it lowered the mean error with the same seconds shown and nothing invented, but the follower it
-	 * replaces was added because it fixed wrong seconds on other cameras and on rising heart rates, so it stays off
-	 * until it is tested there.
-	 */
-	showHeld?: boolean;
-	/**
+		/**
 	 * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
 	 * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
 	 * beside the face (same window, same line test, same bar), as a taint on the window and over the last
@@ -355,7 +347,6 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"clockBack",
 	"faintWall",
 	"restBand",
-	"showHeld",
 	"roomLight",
 	"moreReadings",
 	"blinkGate",
@@ -523,7 +514,6 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		clockBack: rules?.clockBack !== false,
 		faintWall: rules?.faintWall !== false,
 		restBand: rules?.restBand !== false,
-		showHeld: rules?.showHeld === true,
 		roomLight: rules?.roomLight === true,
 		moreReadings: rules?.moreReadings === true,
 		blinkGate: rules?.blinkGate === true,
@@ -1314,7 +1304,7 @@ export class PulseCheck {
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
 			this.unsupported = 0;
 			this.followerBpm = rate;
-			return this.rules.showHeld ? this.held : rate;
+			return rate;
 		}
 		this.unsupported += 1;
 		return this.unsupported >= OWN_PULSE_SUPPORT_MISS ? null : this.held;
