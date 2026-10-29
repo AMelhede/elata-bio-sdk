@@ -1,0 +1,35 @@
+#!/bin/sh
+# Refuse a push whose packages do not pass their own gate. For each package under packages/ that the pushed commits
+# change: its typecheck, its tests and its build; for rppg-web also its release check (dist committed and in step).
+# The checks run on the working tree, so the tree must be exactly the commit being pushed: no uncommitted changes to
+# tracked files, and the pushed commit checked out. Enable once per clone: git config core.hooksPath .githooks
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "pre-push: REFUSED, uncommitted changes to tracked files; the gate would check them, not the commit being pushed"; exit 1
+fi
+head=$(git rev-parse HEAD)
+zero=0000000000000000000000000000000000000000
+pkgs=""
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "$zero" ] && continue
+  if [ "$lsha" != "$head" ]; then echo "pre-push: REFUSED, pushing $lsha but $head is checked out; check out what you push"; exit 1; fi
+  if [ "$rsha" = "$zero" ]; then range="$lsha"; base=$(git merge-base "$lsha" origin/HEAD 2>/dev/null || true); [ -n "$base" ] && range="$base..$lsha"; else range="$rsha..$lsha"; fi
+  pkgs="$pkgs $(git diff --name-only $range -- packages | cut -d/ -f2 | sort -u | tr '\n' ' ')"
+done
+pkgs=$(echo $pkgs | tr ' ' '\n' | sort -u | tr '\n' ' ')
+[ -z "$(echo $pkgs | tr -d ' ')" ] && { echo "pre-push: no package changed"; exit 0; }
+log=.git/pre-push.log; : > $log
+for p in $pkgs; do
+  d=packages/$p; [ -f $d/package.json ] || continue
+  echo "pre-push: $p"
+  if [ -f $d/tsconfig.json ]; then (cd $d && npx tsc --noEmit -p .) >> $log 2>&1 || { echo "pre-push: REFUSED, $p typecheck fails; see $log"; tail -20 $log; exit 1; }; fi
+  if [ "$p" = "rppg-web" ]; then
+    (cd $d && npx jest) >> $log 2>&1 || { echo "pre-push: REFUSED, $p tests fail; see $log"; grep -E "●|Tests:" $log | head -20; exit 1; }
+    (cd $d && npm run build && node ./scripts/check-test-release.mjs) >> $log 2>&1 || { echo "pre-push: REFUSED, $p build or release check fails; see $log"; tail -20 $log; exit 1; }
+    git diff --quiet || { echo "pre-push: REFUSED, the build changed committed files (dist out of step with src); commit them"; git diff --stat | tail -5; exit 1; }
+  elif grep -q '"test"' $d/package.json; then
+    (cd $d && npm test) >> $log 2>&1 || { echo "pre-push: REFUSED, $p tests fail; see $log"; tail -20 $log; exit 1; }
+  fi
+done
+echo "pre-push: green ($pkgs)"
