@@ -367,6 +367,7 @@ export {
 	relockVerdict,
 	RELOCK_MS,
 	RELOCK_STREAK,
+	RELOCK_MIN_SNR_DB,
 	HEAD_LANDMARKS,
 	headCentre,
 	type HeadPosition,

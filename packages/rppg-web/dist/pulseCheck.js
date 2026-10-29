@@ -141,11 +141,20 @@ export const RELOCK_MS = 30000;
  * other; one and two measured alike, three lost most of the shorter gaps on the side webcams (lane/sessionbar).
  */
 export const RELOCK_STREAK = 2;
+/**
+ * Rule moreReadings (re-lock): the mean SNR a returning streak needs, a dB under the first proof's bar
+ * (OWN_PULSE_MIN_SNR_DB, -3). The gaps after a number are mostly windows just under -3 dB, and a rate proven seconds
+ * ago is evidence of its own. Chosen on one set of recorded webcam sessions against a finger reference (-4, -5 and -6
+ * tied; the highest taken) and scored once on others: right seconds per 100 rose from 43.1 to 45.8 on a good webcam
+ * and 9.8 to 10.5 on weaker ones, within 5 bpm unchanged (95.8%) and made-up seconds on no-pulse copies 5.4 to 6.0 per
+ * 100 s.
+ */
+export const RELOCK_MIN_SNR_DB = -4;
 /** Rule moreReadings (re-lock): a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
 export function relockVerdict(v, lastProven, timestampMs) {
     if (v.verdict === "measured" || lastProven == null || timestampMs - lastProven.t > RELOCK_MS)
         return v;
-    if (v.streak < RELOCK_STREAK || v.streakBpm == null || v.streakSnrDb == null || v.streakSnrDb < OWN_PULSE_MIN_SNR_DB)
+    if (v.streak < RELOCK_STREAK || v.streakBpm == null || v.streakSnrDb == null || v.streakSnrDb < RELOCK_MIN_SNR_DB)
         return v;
     if (Math.abs(v.streakBpm - lastProven.bpm) > OWN_PULSE_AGREE_BPM)
         return v;

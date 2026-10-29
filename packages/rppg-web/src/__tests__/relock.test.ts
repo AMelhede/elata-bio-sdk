@@ -1,4 +1,4 @@
-import { RELOCK_MS, RELOCK_STREAK, relockVerdict, resolvePulseCheckRules } from "../pulseCheck";
+import { RELOCK_MIN_SNR_DB, RELOCK_MS, RELOCK_STREAK, relockVerdict, resolvePulseCheckRules } from "../pulseCheck";
 import { OWN_PULSE_AGREE_BPM } from "../pulseCheckCore";
 
 // Rule relock (off unless true): a short streak that agrees with a rate proven moments ago is that rate again.
@@ -16,11 +16,18 @@ describe("rule moreReadings (re-lock)", () => {
 		expect(v.bpm).toBe(66);
 		expect(v.path).toBe("relock");
 	});
+	it("returns at a streak weaker than a first proof needs, down to RELOCK_MIN_SNR_DB, -4 dB", () => {
+		// The gaps after a number are mostly windows just under the -3 dB bar; a rate proven seconds ago is evidence of
+		// its own (held out: lane/recapture).
+		expect(RELOCK_MIN_SNR_DB).toBe(-4);
+		expect(relockVerdict(notYet(RELOCK_STREAK, 66, -3.5), { bpm: 64, t: 0 }, 1000).verdict).toBe("measured");
+		expect(relockVerdict(notYet(RELOCK_STREAK, 66, -4), { bpm: 64, t: 0 }, 1000).verdict).toBe("measured");
+	});
 	it("not too long after, not on a different rate, not on a shorter or weaker streak, never without a proof", () => {
 		expect(relockVerdict(notYet(RELOCK_STREAK, 66, -2), { bpm: 64, t: 0 }, RELOCK_MS + 1).verdict).toBe("not-measured");
 		expect(relockVerdict(notYet(RELOCK_STREAK, 64 + OWN_PULSE_AGREE_BPM + 1, -2), { bpm: 64, t: 0 }, 1000).verdict).toBe("not-measured");
 		expect(relockVerdict(notYet(RELOCK_STREAK - 1, 66, -2), { bpm: 64, t: 0 }, 1000).verdict).toBe("not-measured");
-		expect(relockVerdict(notYet(RELOCK_STREAK, 66, -3.5), { bpm: 64, t: 0 }, 1000).verdict).toBe("not-measured");
+		expect(relockVerdict(notYet(RELOCK_STREAK, 66, RELOCK_MIN_SNR_DB - 0.5), { bpm: 64, t: 0 }, 1000).verdict).toBe("not-measured");
 		expect(relockVerdict(notYet(RELOCK_STREAK, 66, -2), null, 1000).verdict).toBe("not-measured");
 	});
 });
