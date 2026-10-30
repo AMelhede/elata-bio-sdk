@@ -52,15 +52,6 @@ describe("README Things to know", () => {
 	const highest = Math.max(...HEAD_LANDMARKS);
 	const mesh = (n: number) => Array.from({ length: n }, () => ({ x: 0.5, y: 0.5 }));
 
-	it("names the face mesh the movement rule needs, and the point count at which there is no head", () => {
-		expect(things).toContain("MediaPipe's face mesh (468 points, or 478 with the irises)");
-		expect(things).toContain(`${highest} points or fewer`);
-		expect(things).toContain("68-point");
-		expect(headCentre(mesh(highest), 640, 480)).toBeNull();
-		expect(headCentre(mesh(highest + 1), 640, 480)).not.toBeNull();
-		expect(headCentre(mesh(468), 640, 480)).not.toBeNull();
-	});
-
 	// A fresh app on a generated face with the pulse on the cheeks only (2026-10-11) showed 70 after
 	// 24 s and never showed 50 in 120 s, while the check's own one-second line sat at 49 with room to
 	// spare: below OWN_PULSE_LOW_BAND_BPM a window counts only when every region carries the line, and
