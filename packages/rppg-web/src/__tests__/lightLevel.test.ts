@@ -1,4 +1,4 @@
-import { LIGHT_CLIP_MAX, LIGHT_DIM_LUMA, LIGHT_DIM_LUMA_CENTRE, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter } from "../lightLevel";
+import { LIGHT_CLIP_MAX, LIGHT_DIM_LUMA, LIGHT_DIM_LUMA_CENTRE, LIGHT_LATCH_MS, LIGHT_START, LIGHT_WEAK_MS, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter } from "../lightLevel";
 import { RecordingPulseCheck, parsePulseCheckRecording, replayPulseCheck, serializePulseCheckRecording } from "../pulseCheckRecording";
 import { shownPulseBpm } from "../pulseCheck";
 
@@ -62,6 +62,25 @@ describe("lightAfter", () => {
 		const on = { level: 1 as const, darkSince: 0, clipSince: null };
 		expect(lightAfter(on, null, 1, 10_000)).toBe(on);
 		expect(lightAfter(LIGHT_START, { luma: Number.NaN, redClip: 0, source: "face" }, 0, 10_000)).toBe(LIGHT_START);
+	});
+});
+
+describe("a faint pulse lights a face that does not read dim", () => {
+	it("lights after LIGHT_WEAK_MS of a face with no number, and not before", () => {
+		let s = lightAfter(LIGHT_START, lit, 0, 0, true);
+		s = lightAfter(s, lit, 0, LIGHT_WEAK_MS - 1, true);
+		expect(s.level).toBe(0);
+		expect(lightAfter(s, lit, 0, LIGHT_WEAK_MS, true).level).toBe(1);
+	});
+	it("a number arriving restarts the wait", () => {
+		let s = lightAfter(LIGHT_START, lit, 0, 0, true);
+		s = lightAfter(s, lit, 0, LIGHT_WEAK_MS - 1, false);
+		expect(lightAfter(s, lit, 0, LIGHT_WEAK_MS, true).level).toBe(0);
+	});
+	it("a strong pulse on a lit face never lights", () => {
+		let s = LIGHT_START;
+		for (let t = 0; t <= 60_000; t += 500) s = lightAfter(s, lit, 0, t, false);
+		expect(s.level).toBe(0);
 	});
 });
 

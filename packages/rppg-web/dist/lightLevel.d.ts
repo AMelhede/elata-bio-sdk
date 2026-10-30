@@ -29,8 +29,10 @@ export interface LightState {
     readonly level: LightLevel;
     /** When the current unbroken run of dim frames began, or null. */
     readonly darkSince: number | null;
-    /** When the current unbroken run of burnt-out frames at full light began, or null. */
+    /** When the current unbroken run of frames at full light that burnt the face out began, or null. */
     readonly clipSince: number | null;
+    /** When the current unbroken run of frames with a face but too faint a pulse to show began, or null. */
+    readonly weakSince?: number | null;
 }
 export declare const LIGHT_START: LightState;
 /**
@@ -59,6 +61,15 @@ export declare const LIGHT_DIM_LUMA_CENTRE = 0.38;
  * answering the screen's new light, settles its exposure in about 1.6 s; 2 s clears that.
  */
 export declare const LIGHT_LATCH_MS = 2000;
+/**
+ * How long a face in view may show no number, once the check has a full window, before the light comes on although the
+ * face does not read dim: the light is for the pulse, so the pulse's own strength is the measure that decides, the way
+ * a phone's front flash fires on what its camera measures. On a recorded laptop session after a workout the face
+ * read 0.49, just over the dim bar, the check's windows read 90 to 94 against a ring's 89 to 96 at -2 to -8 dB, and the
+ * light never came on: 6 seconds with a number in 128. The same laptop with the light from the start showed 38 seconds in 94
+ * against 11 without. 10 s: five of the check's agreeing windows' worth, so a number about to arrive is not lit over.
+ */
+export declare const LIGHT_WEAK_MS = 10000;
 /** A red level at or above this counts as clipped (255 is full scale). */
 export declare const RED_CLIP_LEVEL = 250;
 /**
@@ -72,9 +83,10 @@ export declare const LIGHT_CLIP_MAX = 0.5;
  * The next level. Latched both ways, 0 to 1 once and 1 to 0.5 once, never back: a lamp that lit the face then read the
  * brighter face, switched itself off and the reading died (an app's dark capture, 2026-09-24), and the pulse check
  * withholds a pulse when the light on the face keeps stepping (rule screenLight). Burnout is judged only on full light
- * the app says it rendered (`applied`), so an app that cannot light is never asked to light less.
+ * the app says it rendered (`applied`), so an app that cannot light is never asked to light less. `weak`: a face is in
+ * view and the check, past its first window, shows no number; held LIGHT_WEAK_MS it lights a face that is not dim.
  */
-export declare function lightAfter(prev: LightState, face: FaceLight | null, applied: LightLevel, now: number): LightState;
+export declare function lightAfter(prev: LightState, face: FaceLight | null, applied: LightLevel, now: number, weak?: boolean): LightState;
 /** Rec.709 luma of a 0..1 colour. */
 export declare function lumaOfRgb(c: {
     r: number;

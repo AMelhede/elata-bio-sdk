@@ -5,7 +5,7 @@ import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSourc
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FUSION_ROIS, MultiRoiRppgFuser, } from "./multiRoiFusion.js";
-import { WallTracker, eyeBlink, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck.js";
+import { WallTracker, eyeBlink, headCentre, roomFromFrame, shownPulseBpm, wallMissReason } from "./pulseCheck.js";
 import { ELATA_YCBCR_V1_PIXEL_SAMPLER, sampleRppgRoi, } from "./roiPixelSampler.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, } from "./roiProfile.js";
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
@@ -333,7 +333,10 @@ export class DemoRunner {
                 // Switch light: the face's light from the same boxes, before the pool swaps the forehead.
                 if (this.opts.light) {
                     this.faceLight = faceLightFromFrame(frame.data, frame.width, rects, boxes);
-                    this.lightState = lightAfter(this.lightState, this.faceLight, this.lightApplied, frame.timestampMs);
+                    // A face with the check past its first window and no number: the pulse is too faint (lightLevel.ts LIGHT_WEAK_MS).
+                    const st = this.opts.pulseChecker?.getState();
+                    const weak = st != null && !st.collecting && shownPulseBpm(st) == null;
+                    this.lightState = lightAfter(this.lightState, this.faceLight, this.lightApplied, frame.timestampMs, weak);
                 }
                 // Switch foreheadPool: the forehead from the patch pool (the box until the pool has a value).
                 if (this.opts.foreheadPool && frame.landmarks) {
