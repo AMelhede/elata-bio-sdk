@@ -20,7 +20,6 @@
  * person's own pulse.
  */
 import { type Frame } from "./frameSource.js";
-import { type RawRoiSample } from "./pulseCheckCore.js";
 export type PulseCheckState = {
     /** "measured" while a pulse is proven; otherwise "not-measured" or "unknown". */
     verdict: "measured" | "not-measured" | "unknown";
@@ -36,13 +35,6 @@ export type PulseCheckState = {
     countingStreak?: number;
     /** True while the wall beside the face carries the proven rate, so the rate is withheld. */
     wallMatch: boolean;
-    /** Rule roomLight (off by default): true while the room (roomFromFrame) carries the proven rate, so it is withheld. */
-    roomMatch?: boolean;
-    /** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
-    roomLine?: {
-        bpm: number;
-        snrDb: number;
-    } | null;
     /**
      * The latest one-second window as it is, proven or not: its rate and how far its line
      * stands above the noise. For diagnosis only; nothing decides on these two.
@@ -64,14 +56,6 @@ export type PulseCheckState = {
     windowWallLevel?: number | null;
     /** That window's wall against the face (OwnPulseEstimate.wallToFace), which rule darkWall judges; null when the wall was not seen throughout. */
     windowWallToFace?: number | null;
-    /** The head's own movement carried the rate in each of the last OWN_PULSE_STRONG_STREAK windows (rule headMotion). */
-    headMatch?: boolean;
-    /**
-     * How rule headMotion judged the latest window at its rate (headJudge): 'blind' when the head's
-     * rows do not cover it, which counts as no evidence. Null when the rule is off, the window has no
-     * rate, or no head has been handed to the check since it was last reset.
-     */
-    windowHead?: HeadJudgement | null;
     /** Diagnostic: the wall's strongest brightness line in this window (wallLine), or null. */
     wallLine?: {
         bpm: number;
@@ -86,8 +70,6 @@ export type PulseCheckState = {
         noRoom: number;
         skin: number;
     };
-    /** True while the face's own rhythm at the proven rate is brightness, not colour (FACE_FLICKER_RATIO). */
-    faceFlicker?: boolean;
     /** How the shown rate was reached: the check's own streak, or null. */
     via?: "check" | null;
     /**
@@ -112,23 +94,6 @@ export type PulseCheckState = {
     screenLight?: boolean;
 };
 /**
- * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
- * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
- * So at the proven rate, each region's relative colour is split into brightness (the part
- * common to all three channels) and colour (the rest), and the pooled brightness / colour
- * amplitude ratio is judged. A synthetic blood-volume pulse in the PBV direction (de Haan &
- * van Leest 2014) reads about 3; real captures read higher and wider (median 1.3, 99th
- * percentile 8.5 on recorded captures against a reference pulse), so the bar sits above that.
- * Withheld when the ratio exceeds this in each of the last OWN_PULSE_STRONG_STREAK one-second
- * windows, judged at once like the wall check.
- *
- * Value chosen by measurement: 7 withholds a lamp whose blood-coloured part is 0.1 of its
- * brightness swing (10 showed it in 35 to 40 of 60 s) and showed the same right and wrong
- * seconds as 10 on recorded captures against a reference pulse; 5 cost 9 right seconds.
- * A lamp whose colour part is 0.15 or more still passes this rule; only the wall rules see it.
- */
-export declare const FACE_FLICKER_RATIO = 7;
-/**
  * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
  * moves the proven rate trails it. Once proven, the shown rate is the line in the newest 12 s
  * if it is within 4 bpm of the proven rate.
@@ -148,8 +113,6 @@ export declare const OWN_PULSE_TRACK_S = 12;
 export declare const OWN_PULSE_SUPPORT_S = 8;
 export declare const OWN_PULSE_SUPPORT_MISS = 3;
 export declare const OWN_PULSE_TRACK_BPM = 4;
-/** Brightness / colour amplitude ratio of the face regions within 0.1 Hz of `bpm`. */
-export declare function faceFlickerRatio(samples: readonly RawRoiSample[], atMs: number, bpm: number): number | null;
 /** Why no wall was found beside the face this frame (see wallBesideFace). */
 export type WallMiss = "no-room" | "skin";
 type Rgb = {
@@ -374,7 +337,7 @@ export declare class BlinkDetector {
  * the wall too dim for the backup method), a window under the SNR bar, a signal over the bar whose regions do not yet
  * agree, the blink gate waiting, or shown. `faceInView`: the app's own face tracking this second.
  */
-export type PulseCheckCause = "noFace" | "lightFlicker" | "headMotion" | "collecting" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
+export type PulseCheckCause = "noFace" | "lightFlicker" | "collecting" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
 export declare function pulseCheckCause(state: PulseCheckState, faceInView: boolean): PulseCheckCause;
 /**
  * Whether the check's latest window found the camera's colour damaged, by its own measure: read by the
@@ -458,62 +421,6 @@ export declare function headCentre(points: readonly {
 }[], width: number, height: number): HeadPosition | null;
 /** One frame of the head as the check keeps it: [time ms, x, y, face width], pixels (headCentre). */
 export type HeadRow = [number, number, number, number];
-/**
- * How far the head's movement AT THE RATE must stand above the rest of its movement (dB), with the
- * strongest other rhythm taken out of the rest, for the rate to count as the movement's. Set
- * together with HEAD_MIN_SIZE, between still heads with a pulse and generated faces with no pulse
- * nodding, with and without a second sway. The 5 dB it replaced was set on the statistic before
- * (the strongest line against every other rhythm, which a second sway could hide a nod under).
- * Pinned in pulseCheckHead.test.ts.
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
- */
-export declare const HEAD_MIN_SNR_DB = 3.9;
-/**
- * The smallest movement at the rate that can be a nod: the line's amplitude over the face's width.
- * A heartbeat shakes the head too, and in a still person that shake can be the head's strongest
- * rhythm, but it is tiny next to a nod. A clean 3 px nod on a 190 px face is 1.6% of its width.
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
- */
-export declare const HEAD_MIN_SIZE = 0.003;
-/** Why a window's head movement cannot be judged (headAtRate). */
-export type HeadBlind = "rows" | "start" | "end" | "gap" | "rate";
-/** The head's movement at a rate on one axis (headAtRate). */
-export type HeadAtRate = {
-    /** The movement at the rate (its line and second harmonic) over the rest, the strongest other rhythm left out (dB). */
-    snrDb: number;
-    /** The line's amplitude over the face's width. */
-    size: number;
-};
-/**
- * The head's movement at `bpm` in the 16 s window ending at `atMs`, one entry per axis that has a
- * line there (side to side, then up and down), or why the window cannot be judged ('blind'): fewer
- * than HEAD_MIN_ROWS rows, rows starting or ending more than 1 s from the window's edges, a gap over
- * 1 s, or fewer than HEAD_MIN_ROWS_PER_CYCLE rows per cycle of the rate. Judged at the rate claimed,
- * on a fixed grid (bins of 0.0625 Hz whatever span the rows have).
- */
-export declare function headAtRate(head: readonly HeadRow[], atMs: number, bpm: number): {
-    axes: HeadAtRate[];
-} | {
-    blind: HeadBlind;
-};
-/** Whether the head's movement carries a rate in a window ('carried'), does not ('clear'), or cannot be judged ('blind'). */
-export type HeadJudgement = "carried" | "clear" | "blind";
-/**
- * Whether the head's movement carries `bpm` in the window ending at `atMs`: on either axis, both
- * HEAD_MIN_SNR_DB above the rest of its movement and HEAD_MIN_SIZE of the face's width. A window the
- * head's rows do not cover is 'blind', never 'clear'.
- */
-export declare function headJudge(head: readonly HeadRow[], atMs: number, bpm: number): HeadJudgement;
-/** Whether the head's movement carries `bpm` in the window ending at `atMs` (headJudge is 'carried'). */
-export declare function headCarries(head: readonly HeadRow[], atMs: number, bpm: number): boolean;
-/**
- * Whether the head's movement carried `bpm` in each of the last OWN_PULSE_STRONG_STREAK one-second
- * windows ending at `atMs` (headCarries in each): rule headMotion's withhold, the state's headMatch.
- * Judged over the windows at once, like the wall check, so one window's coincidence withholds nothing.
- */
-export declare function headMatches(head: readonly HeadRow[], atMs: number, bpm: number): boolean;
 export declare function wallLine(wall: [number, number, number, number][], atMs: number, bandEdge?: boolean): {
     bpm: number;
     snrDb: number;
@@ -534,11 +441,6 @@ export declare function wallCarries(wall: [number, number, number, number][], at
  * Value chosen by measurement on recorded captures without a lamp, checked on captures with one.
  */
 export declare const ROOM_MIN_SNR_DB = 2.458;
-/** Whether the room's line carries the face's rate (rule roomLight): in the light family, at or over ROOM_MIN_SNR_DB. */
-export declare function roomCarries(line: {
-    bpm: number;
-    snrDb: number;
-} | null, bpm: number, rules: ResolvedPulseCheckRules): boolean;
 /** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
 export declare const SCREEN_STEPS_PER_WINDOW = 10;
 /**
@@ -565,8 +467,6 @@ export declare class PulseCheck {
     private get swapMinWall();
     private samples;
     private wall;
-    /** The room (roomFromFrame) as handed over, for rule roomLight, kept as long as the wall. */
-    private room;
     private head;
     /** A head argument (a position or null) has reached push since the last reset: the movement is judged. */
     private headHandedOver;
@@ -725,33 +625,8 @@ export type PulseCheckFrameDiag = {
         applied: number;
     } | null;
 };
-/** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
-export declare function combineRoom(room: RoomCorners | null | undefined): Rgb | null;
 /** The wall patch as read this frame, for the recording only: x, y, w, h in pixels and how many non-skin pixels it averaged. */
 export type WallPatchDiag = [number, number, number, number, number];
-/** Share of the frame's width and height each upper-corner patch of the room spans (roomFromFrame). */
-export declare const ROOM_CORNER_SHARE = 0.2;
-/** How far clear of the face box, as a share of the face's width, a room pixel must lie (roomFromFrame). */
-export declare const ROOM_FACE_CLEAR = 0.5;
-/**
- * roomFromFrame reads every ROOM_STRIDE-th pixel across and down. Measured (lane/wallroom, real frames with a 1% lamp,
- * dark, after VP9): the lamp's line against its noise was 95.6 reading every pixel, 77.6 at 2, 67.5 at 3, 62.6 at 4;
- * the room's noise is mostly shared between pixels, so a quarter of the pixels keeps 81% of it at a quarter of the
- * cost (an independent review measured the full read at about 1 to 3 ms a frame on a mid-range phone).
- */
-export declare const ROOM_STRIDE = 2;
-/**
- * The room: for each of the frame's two upper corners (each ROOM_CORNER_SHARE of the width and height), the mean RGB
- * (0..1, to 7 decimals) of its non-skin pixels, leaving out every pixel within ROOM_FACE_CLEAR face widths of the face
- * box, with how many pixels it averaged; a corner is null under 25 qualifying pixels or a tenth of those looked at, and
- * the whole is null when both are. Reads every ROOM_STRIDE-th pixel. The corners are kept apart because the face box
- * follows the mesh every frame: when a face reaches a corner, that corner's pixel set changes and its level can step,
- * while the other corner stays a constant set. Rule roomLight (off by default) reads it, combined (combineRoom).
- */
-export declare function roomFromFrame(frame: Frame, points: readonly {
-    x: number;
-    y: number;
-}[] | null | undefined): RoomCorners | null;
 /**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame
  * (the face fills it), otherwise "skin" (every patch looked like skin: an ear or neck, or a

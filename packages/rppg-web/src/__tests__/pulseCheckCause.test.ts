@@ -10,11 +10,9 @@ const s = (x: Partial<PulseCheckState>): PulseCheckState => ({ ...base, ...x });
 
 describe("pulseCheckCause", () => {
 	it("names causes in their fixed priority", () => {
-		expect(pulseCheckCause(s({ wallMatch: true, headMatch: true }), false)).toBe("noFace");
-		expect(pulseCheckCause(s({ roomMatch: true, headMatch: true, windowSnrDb: null }), true)).toBe("lightFlicker");
+		expect(pulseCheckCause(s({ wallMatch: true }), false)).toBe("noFace");
+		expect(pulseCheckCause(s({ wallMatch: true, windowSnrDb: null }), true)).toBe("lightFlicker");
 		expect(pulseCheckCause(s({ screenLight: true }), true)).toBe("lightFlicker");
-		expect(pulseCheckCause(s({ faceFlicker: true }), true)).toBe("lightFlicker");
-		expect(pulseCheckCause(s({ headMatch: true, windowSnrDb: null }), true)).toBe("headMotion");
 		expect(pulseCheckCause(s({ windowSnrDb: null, windowBpm: null }), true)).toBe("noRate");
 		expect(pulseCheckCause(s({ windowSnrDb: OWN_PULSE_MIN_SNR_DB - 0.1 }), true)).toBe("weakSignal");
 		expect(pulseCheckCause(s({ windowSnrDb: OWN_PULSE_MIN_SNR_DB }), true)).toBe("agreeing");

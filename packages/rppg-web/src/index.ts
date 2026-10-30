@@ -381,13 +381,6 @@ export {
 	headCentre,
 	type HeadPosition,
 	type HeadRow,
-	headAtRate,
-	type HeadAtRate,
-	type HeadBlind,
-	headJudge,
-	type HeadJudgement,
-	headCarries,
-	headMatches,
 } from "./pulseCheck";
 export {
 	PulseDisplay,

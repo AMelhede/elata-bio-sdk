@@ -28,7 +28,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, WallTracker, eyeBlink, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck";
+import { type PulseCheck, WallTracker, eyeBlink, headCentre, wallMissReason } from "./pulseCheck";
 import type { ChestMotion } from "./chestBreathing";
 import { RppgProcessor } from "./rppgProcessor";
 import {
@@ -600,7 +600,7 @@ export class DemoRunner {
 					// Recorded only, and only computed when a recording keeps it (lane/wallroom step 1):
 					// the room in the frame's upper corners, and where the wall patch sat this frame.
 					this.opts.pulseChecker.wantsDiagnostics
-						? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}), ...(this.opts.light ? { light: { face: this.faceLight, wanted: this.lightState.level, applied: this.lightApplied } } : {}) }
+						? { patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}), ...(this.opts.light ? { light: { face: this.faceLight, wanted: this.lightState.level, applied: this.lightApplied } } : {}) }
 						: undefined,
 				);
 			}
