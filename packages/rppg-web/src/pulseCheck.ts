@@ -66,6 +66,8 @@ export type PulseCheckState = {
 	windowSnrDb?: number | null;
 	/** True until a full window (OWN_PULSE_WINDOW_S) has come in since the check started or last reset. */
 	collecting?: boolean;
+	/** How full that first window is, 0 to 1 (pulseProgress reads it). */
+	windowFill?: number;
 	/** How that window's pulse was read: "pos", or "greenMinusWall" for damaged colour. */
 	windowMethod?: "pos" | "greenMinusWall" | null;
 	/** That window's colour-damage measure, and whether the wall was seen through the whole window. */
@@ -440,6 +442,20 @@ export function pulseCheckColourDamaged(state: PulseCheckState): boolean {
 export function streakNeeded(rules: ResolvedPulseCheckRules, relockOpen: boolean): number {
 	if (!rules.moreReadings) return OWN_PULSE_STREAK;
 	return relockOpen ? RELOCK_STREAK : buildingStreak(rules);
+}
+
+/**
+ * How close the check is to a number, 0 to 1, for a progress ring every app draws the same way: the first window filling
+ * (0 to 0.5), then the counting streak toward the windows the rules need (0.5 to 1); 0.95 when the count is complete but
+ * a rule still holds the number, 1 with a number shown. It follows the check both ways: held at its best it read as nearly
+ * there while the check had slipped (a tester saw it stuck short of full for about 10 s).
+ */
+export function pulseProgress(state: PulseCheckState, rules: ResolvedPulseCheckRules): number {
+	if (shownPulseBpm(state) != null) return 1;
+	if (state.collecting !== false) return Math.max(0, Math.min(1, state.windowFill ?? 0)) / 2;
+	const needed = Math.max(1, streakNeeded(rules, state.relockOpen === true));
+	const done = Math.min(needed, Math.max(0, state.countingStreak ?? state.streak));
+	return done >= needed ? 0.95 : 0.5 + done / needed / 2;
 }
 
 export function shownPulseBpm(state: { verdict: string; bpm: number | null; buildingBpm?: number | null }): number | null {
@@ -949,6 +965,7 @@ export class PulseCheck {
 					wallFrames,
 				};
 		this.state.collecting = !this.samples.length || timestampMs - this.samples[0][0] < OWN_PULSE_WINDOW_S * 1000;
+		this.state.windowFill = this.samples.length ? Math.min(1, (timestampMs - this.samples[0][0]) / (OWN_PULSE_WINDOW_S * 1000)) : 0;
 		this.state.followerBpm = this.followerBpm;
 		this.state.heldBpm = this.held;
 		// Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.

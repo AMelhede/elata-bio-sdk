@@ -138,6 +138,8 @@ Things to know while testing:
 Apple's 5 s block: on recorded webcam captures the block showed a number up to 10 s old and was right (within 5 bpm) 86.1% of
 the time against 92.3% for this median, which also jumped 3 bpm or more 1.6 times a minute against 2.6. Past 10 s a
 resting heart rate has moved by more than 5 bpm in 15% of cases, so the value is a past reading. It changes no reading.
+`pulseProgress(session.getPulseCheck(), rules)` gives how close the check is to a number, 0 to 1, for a progress ring
+(the first window filling to 0.5, then the counting streak; 1 with a number), back as well as forward.
 `new PulseDisplay({ showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS })` changes the number on screen at most every 5 s, as Apple
 Heart Rate does while it measures: on real-device recordings half the changes a minute at the same readings and error.
 

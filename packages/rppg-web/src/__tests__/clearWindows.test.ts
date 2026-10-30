@@ -106,3 +106,17 @@ describe("PulseDisplay showEveryMs", () => {
 		expect(plain.view(1000)).toEqual({ kind: "live", bpm: 72 });
 	});
 });
+
+import { pulseProgress } from "../pulseCheck";
+
+describe("pulseProgress", () => {
+	const rules = resolvePulseCheckRules({ moreReadings: true, shortStreak: true });
+	const base = { verdict: "not-measured" as const, bpm: null, snrDb: null, streak: 0, wallMatch: false };
+	it("fills with the first window, then with the counting streak, both ways; 1 with a number", () => {
+		expect(pulseProgress({ ...base, collecting: true, windowFill: 0.5 }, rules)).toBe(0.25);
+		expect(pulseProgress({ ...base, collecting: false, countingStreak: 0, streak: 4 }, rules)).toBe(0.5);
+		expect(pulseProgress({ ...base, collecting: false, countingStreak: 1 }, rules)).toBe(0.75);
+		expect(pulseProgress({ ...base, collecting: false, countingStreak: 2 }, rules)).toBe(0.95);
+		expect(pulseProgress({ ...base, collecting: false, buildingBpm: 70 }, rules)).toBe(1);
+	});
+});

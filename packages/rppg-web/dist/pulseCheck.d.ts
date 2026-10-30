@@ -43,6 +43,8 @@ export type PulseCheckState = {
     windowSnrDb?: number | null;
     /** True until a full window (OWN_PULSE_WINDOW_S) has come in since the check started or last reset. */
     collecting?: boolean;
+    /** How full that first window is, 0 to 1 (pulseProgress reads it). */
+    windowFill?: number;
     /** How that window's pulse was read: "pos", or "greenMinusWall" for damaged colour. */
     windowMethod?: "pos" | "greenMinusWall" | null;
     /** That window's colour-damage measure, and whether the wall was seen through the whole window. */
@@ -351,6 +353,13 @@ export declare function pulseCheckColourDamaged(state: PulseCheckState): boolean
  * progress toward a number counts toward this, never toward a fixed 8.
  */
 export declare function streakNeeded(rules: ResolvedPulseCheckRules, relockOpen: boolean): number;
+/**
+ * How close the check is to a number, 0 to 1, for a progress ring every app draws the same way: the first window filling
+ * (0 to 0.5), then the counting streak toward the windows the rules need (0.5 to 1); 0.95 when the count is complete but
+ * a rule still holds the number, 1 with a number shown. It follows the check both ways: held at its best it read as nearly
+ * there while the check had slipped (a tester saw it stuck short of full for about 10 s).
+ */
+export declare function pulseProgress(state: PulseCheckState, rules: ResolvedPulseCheckRules): number;
 export declare function shownPulseBpm(state: {
     verdict: string;
     bpm: number | null;
