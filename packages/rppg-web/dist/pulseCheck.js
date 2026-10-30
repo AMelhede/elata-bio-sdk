@@ -131,6 +131,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "foreheadPool",
     "coherentFusion",
     "clearWindows",
+    "shortStreak",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -188,8 +189,17 @@ export const POOL_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK + 1;
  * no-pulse copies and under a lamp flickering at a heart-like rate (lane fp52).
  */
 export const COHERENT_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK - 1;
+/**
+ * Rule shortStreak: the building number from 2 agreeing windows. On recorded lab webcam sessions (with
+ * coherentFusion, the forehead pool and clearWindows) about a tenth more seconds with a number at an error still inside
+ * the wearables' range at rest, and about a third more numbers on no-pulse copies; on real-device recordings more
+ * seconds with a number on every device with the error against a typed watch unchanged.
+ */
+export const SHORT_BUILDING_STREAK = 2;
 /** The building streak under the rules running. */
 export function buildingStreak(rules) {
+    if (rules.shortStreak)
+        return SHORT_BUILDING_STREAK;
     return rules.coherentFusion ? COHERENT_BUILDING_STREAK : rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
 }
 /**
@@ -321,6 +331,7 @@ export function resolvePulseCheckRules(rules) {
         foreheadPool: rules?.foreheadPool === true,
         coherentFusion: rules?.coherentFusion === true,
         clearWindows: rules?.clearWindows !== false,
+        shortStreak: rules?.shortStreak === true,
     };
 }
 /**

@@ -50,3 +50,15 @@ describe("PulseDisplay recentMs", () => {
 		expect(b.view(21_000).kind).toBe("last");
 	});
 });
+
+import { SHORT_BUILDING_STREAK, buildingStreak } from "../pulseCheck";
+
+describe("rule shortStreak", () => {
+	it("asks the building number for 2 windows, whatever else is on, and is off unless set", () => {
+		expect(SHORT_BUILDING_STREAK).toBe(2);
+		expect(buildingStreak(resolvePulseCheckRules({ coherentFusion: true, shortStreak: true }))).toBe(2);
+		expect(buildingStreak(resolvePulseCheckRules({ foreheadPool: true, shortStreak: true }))).toBe(2);
+		expect(buildingStreak(resolvePulseCheckRules({ coherentFusion: true }))).toBe(3);
+		expect(resolvePulseCheckRules().shortStreak).toBe(false);
+	});
+});

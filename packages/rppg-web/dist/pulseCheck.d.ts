@@ -259,9 +259,14 @@ export type PulseCheckRules = {
      * for neither. Proof and re-lock unchanged; without moreReadings nothing changes. Unless false.
      */
     clearWindows?: boolean;
+    /**
+     * OFF unless true, being measured on testers' devices: with rule moreReadings the building number needs
+     * SHORT_BUILDING_STREAK agreeing windows, fewer than any other rule asks. Proof and re-lock unchanged.
+     */
+    shortStreak?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -321,6 +326,13 @@ export declare const POOL_BUILDING_STREAK: number;
  * no-pulse copies and under a lamp flickering at a heart-like rate (lane fp52).
  */
 export declare const COHERENT_BUILDING_STREAK: number;
+/**
+ * Rule shortStreak: the building number from 2 agreeing windows. On recorded lab webcam sessions (with
+ * coherentFusion, the forehead pool and clearWindows) about a tenth more seconds with a number at an error still inside
+ * the wearables' range at rest, and about a third more numbers on no-pulse copies; on real-device recordings more
+ * seconds with a number on every device with the error against a typed watch unchanged.
+ */
+export declare const SHORT_BUILDING_STREAK = 2;
 /** The building streak under the rules running. */
 export declare function buildingStreak(rules: ResolvedPulseCheckRules): number;
 /**
