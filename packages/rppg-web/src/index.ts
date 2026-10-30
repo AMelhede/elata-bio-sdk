@@ -366,6 +366,8 @@ export {
 	type PulseCheckCause,
 	streakNeeded,
 	countingStreak,
+	steadyLightAllows,
+	STEADY_LIGHT_MAX_STEPS,
 	POOL_BUILDING_STREAK,
 	BUILDING_MIN_SNR_DB,
 	COHERENT_BUILDING_STREAK,

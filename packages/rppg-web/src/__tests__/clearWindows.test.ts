@@ -73,3 +73,17 @@ describe("countingStreak", () => {
 		expect(countingStreak({ streak: 3 }, { clearWindows: true })).toBe(3);
 	});
 });
+
+import { STEADY_LIGHT_MAX_STEPS, steadyLightAllows } from "../pulseCheck";
+
+describe("rule steadyLight", () => {
+	it("holds the building number while its window has 3 or more light steps, on unless false", () => {
+		expect(STEADY_LIGHT_MAX_STEPS).toBe(3);
+		const on = resolvePulseCheckRules();
+		expect(on.steadyLight).toBe(true);
+		expect(steadyLightAllows(2, on)).toBe(true);
+		expect(steadyLightAllows(3, on)).toBe(false);
+		expect(steadyLightAllows(null, on)).toBe(true);
+		expect(steadyLightAllows(8, resolvePulseCheckRules({ steadyLight: false }))).toBe(true);
+	});
+});

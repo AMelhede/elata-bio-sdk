@@ -69,6 +69,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			blinkGate: false,
 			clearWindows: true,
 			shortStreak: false,
+			steadyLight: true,
 		});
 		expect(resolvePulseCheckRules({ lightTaint: false }).lightTaint).toBe(false);
 		expect(new PulseCheck().rules.lightTaint).toBe(true);
