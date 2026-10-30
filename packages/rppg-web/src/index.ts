@@ -365,6 +365,7 @@ export {
 	eyeBlink,
 	type PulseCheckCause,
 	streakNeeded,
+	countingStreak,
 	POOL_BUILDING_STREAK,
 	BUILDING_MIN_SNR_DB,
 	COHERENT_BUILDING_STREAK,

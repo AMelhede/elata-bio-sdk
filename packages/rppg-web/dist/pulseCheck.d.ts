@@ -29,6 +29,11 @@ export type PulseCheckState = {
     snrDb: number | null;
     /** Consecutive windows agreeing on the current rate. */
     streak: number;
+    /**
+     * The run of windows the early number counts (countingStreak): under rule clearWindows only the clear ones, so a
+     * progress display driven by `streak` ran ahead of the number. Compare with streakNeeded.
+     */
+    countingStreak?: number;
     /** True while the wall beside the face carries the proven rate, so the rate is withheld. */
     wallMatch: boolean;
     /** Rule roomLight (off by default): true while the room (roomFromFrame) carries the proven rate, so it is withheld. */
@@ -334,6 +339,11 @@ export declare const COHERENT_BUILDING_STREAK: number;
  */
 export declare const SHORT_BUILDING_STREAK = 2;
 /** The building streak under the rules running. */
+/** The run of windows the early number counts: the clear windows under rule clearWindows, else every agreeing one. */
+export declare function countingStreak(v: {
+    streak: number;
+    clearStreak?: number;
+}, rules: Pick<ResolvedPulseCheckRules, "clearWindows">): number;
 export declare function buildingStreak(rules: ResolvedPulseCheckRules): number;
 /**
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds

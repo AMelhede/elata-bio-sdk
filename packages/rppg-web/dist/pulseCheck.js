@@ -197,6 +197,10 @@ export const COHERENT_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK - 1;
  */
 export const SHORT_BUILDING_STREAK = 2;
 /** The building streak under the rules running. */
+/** The run of windows the early number counts: the clear windows under rule clearWindows, else every agreeing one. */
+export function countingStreak(v, rules) {
+    return rules.clearWindows && v.clearStreak != null ? v.clearStreak : v.streak;
+}
 export function buildingStreak(rules) {
     if (rules.shortStreak)
         return SHORT_BUILDING_STREAK;
@@ -945,6 +949,7 @@ export class PulseCheck {
                 bpm: null,
                 snrDb: v.snrDb,
                 streak: v.streak,
+                countingStreak: countingStreak(v, this.rules),
                 wallMatch,
                 windowBpm: est?.bpm ?? null,
                 windowSnrDb: est?.snrDb ?? null,
@@ -966,6 +971,7 @@ export class PulseCheck {
                 via: this.held != null ? "check" : null,
                 snrDb: v.snrDb,
                 streak: v.streak,
+                countingStreak: countingStreak(v, this.rules),
                 wallMatch,
                 windowBpm: est?.bpm ?? null,
                 windowSnrDb: est?.snrDb ?? null,

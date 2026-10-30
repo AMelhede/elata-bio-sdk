@@ -62,3 +62,14 @@ describe("rule shortStreak", () => {
 		expect(resolvePulseCheckRules().shortStreak).toBe(false);
 	});
 });
+
+import { countingStreak } from "../pulseCheck";
+
+describe("countingStreak", () => {
+	it("is the clear windows' run under clearWindows, so progress cannot run ahead of the number", () => {
+		const v = { streak: 5, clearStreak: 1 };
+		expect(countingStreak(v, { clearWindows: true })).toBe(1);
+		expect(countingStreak(v, { clearWindows: false })).toBe(5);
+		expect(countingStreak({ streak: 3 }, { clearWindows: true })).toBe(3);
+	});
+});
