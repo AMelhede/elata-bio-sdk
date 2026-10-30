@@ -57,8 +57,9 @@ export type RppgFixSwitches = {
 	 */
 	noFramesNoReading?: boolean;
 	/**
-	 * Fix 7, speed. The face finder, most of a frame's cost, runs on every other frame; the frame between reuses its
-	 * landmarks (never when the last frame found no face, nor when they are over 100 ms old), and every frame's pixels
+	 * Fix 7, speed. The face finder, most of a frame's cost, runs on every third frame (every other until 2026-10-30;
+	 * LANDMARK_REUSE_FRAMES); the frames between reuse its landmarks (never when the last frame found no face, nor
+	 * when they are over LANDMARK_REUSE_MAX_MS old), and every frame's pixels
 	 * are still read. On testers' laptops and phones the camera gave 30 frames a second but only a median 16 and 12.5
 	 * were analysed, because each frame waited for the finder; replaying recorded captures at half the frames cost
 	 * about a fifth of the right numbers. Blink scores come only from frames the finder ran on. Off: the finder on every

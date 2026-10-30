@@ -26,8 +26,17 @@ export function analysisSize(videoWidth, videoHeight) {
         height: Math.max(1, Math.round(videoHeight * scale)),
     };
 }
-/** Fix landmarkEveryOther: landmarks older than this are never reused (three frames at 30 fps). */
-export const LANDMARK_REUSE_MAX_MS = 100;
+/**
+ * Fix landmarkEveryOther: how many frames in a row reuse the last landmarks (the finder runs on every third frame), and
+ * the oldest landmarks ever reused. Throttled 3x on a generated face (testbed bench/ka-cost.mjs, three runs each,
+ * 2026-10-30): every third frame analysed a mean 8.5 frames a second against 7.1 for every other and showed a number
+ * on 28 of 45 s in every run (6 to 20 for every other); every fourth was faster on average but collapsed in one run.
+ * On received sessions a head moves a median 0.2% of the face's width in 133 ms (95th percentile under 5%; evidence
+ * repo tools/headstep.mjs), inside the regions' own smoothing, so two reused frames keep the regions on the same skin.
+ * 150 ms is two frames at 15 a second, the slowest the testers' laptops ran.
+ */
+export const LANDMARK_REUSE_FRAMES = 2;
+export const LANDMARK_REUSE_MAX_MS = 150;
 export class MediaPipeFaceFrameSource {
     constructor(video, faceLandmarker, fps = 30, roiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE, fixes) {
         this.video = video;
@@ -40,9 +49,9 @@ export class MediaPipeFaceFrameSource {
         this.vfcHandle = null;
         this.smoothedFaceRoi = null;
         this.lastError = null;
-        /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and whether the last frame reused them. */
+        /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and how many frames in a row have reused them since. */
         this.lastFound = null;
-        this.lastWasReuse = false;
+        this.reuseRun = 0;
         this.fixes = resolveFixSwitches(fixes);
         this.canvas = document.createElement("canvas");
         const size = this.frameSize(video.videoWidth || video.width || 320, video.videoHeight || video.height || 240);
@@ -84,7 +93,7 @@ export class MediaPipeFaceFrameSource {
         this.running = false;
         this.smoothedFaceRoi = null;
         this.lastFound = null;
-        this.lastWasReuse = false;
+        this.reuseRun = 0;
         const cancel = this.video.cancelVideoFrameCallback;
         if (this.vfcHandle !== null && typeof cancel === "function") {
             cancel.call(this.video, this.vfcHandle);
@@ -124,18 +133,18 @@ export class MediaPipeFaceFrameSource {
         }
         let landmarks = null;
         let blendshapes;
-        // Fix landmarkEveryOther: the frame after a found face reuses its landmarks while they are fresh.
+        // Fix landmarkEveryOther: the LANDMARK_REUSE_FRAMES frames after a found face reuse its landmarks while fresh.
         const reuse = this.fixes.landmarkEveryOther &&
             this.lastFound != null &&
-            !this.lastWasReuse &&
+            this.reuseRun < LANDMARK_REUSE_FRAMES &&
             now - this.lastFound.atMs <= LANDMARK_REUSE_MAX_MS;
         if (reuse && this.lastFound) {
             landmarks = this.lastFound.landmarks;
-            this.lastWasReuse = true;
+            this.reuseRun += 1;
         }
         else
             try {
-                this.lastWasReuse = false;
+                this.reuseRun = 0;
                 const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
                 landmarks = result?.faceLandmarks?.[0] ?? null;
                 this.lastFound = landmarks ? { landmarks, atMs: now } : null;

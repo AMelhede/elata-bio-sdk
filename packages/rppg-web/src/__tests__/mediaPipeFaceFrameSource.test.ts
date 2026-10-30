@@ -374,7 +374,7 @@ describe('MediaPipeFaceFrameSource face finder', () => {
   });
 });
 
-// Fix landmarkEveryOther (speed): the face finder is most of a frame's cost, so it runs on every other frame and the
+// Fix landmarkEveryOther (speed): the face finder is most of a frame's cost, so it runs on every third frame and the
 // frames between reuse its landmarks; the pixels are still read on every frame, so the check gets every camera frame.
 describe('MediaPipeFaceFrameSource landmarkEveryOther', () => {
   const landmarks = [
@@ -396,26 +396,26 @@ describe('MediaPipeFaceFrameSource landmarkEveryOther', () => {
   };
   const ten = Array.from({ length: 10 }, (_, i) => i * 33.3);
 
-  test('finds the face on every other frame and emits every frame with its regions', () => {
+  test('finds the face on every third frame and emits every frame with its regions', () => {
     const { frames, calls } = run(undefined, [{ landmarks, blendshapes }], ten);
-    expect(calls).toBe(5);
+    expect(calls).toBe(4);
     expect(frames.length).toBe(10);
     for (const f of frames) {
       expect(f.landmarks).toBeDefined();
       expect(f.roi).toBeDefined();
     }
     // Blink scores only from frames the finder ran on, never copied.
-    expect(frames.filter((f) => f.blendshapes).length).toBe(5);
+    expect(frames.filter((f) => f.blendshapes).length).toBe(4);
   });
 
   test('off: the face finder runs on every frame, as published', () => {
     expect(run({ landmarkEveryOther: false }, [{ landmarks, blendshapes }], ten).calls).toBe(10);
   });
 
-  test('never reuses a frame without a face, nor landmarks older than 100 ms', () => {
+  test('never reuses a frame without a face, nor landmarks older than LANDMARK_REUSE_MAX_MS (150 ms)', () => {
     const noFace = run(undefined, [{}], ten);
     expect(noFace.calls).toBe(10);
-    const slow = run(undefined, [{ landmarks }], [0, 150, 300, 450]);
+    const slow = run(undefined, [{ landmarks }], [0, 160, 320, 480]);
     expect(slow.calls).toBe(4);
   });
 });

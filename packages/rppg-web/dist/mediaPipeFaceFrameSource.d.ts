@@ -25,8 +25,17 @@ export declare function analysisSize(videoWidth: number, videoHeight: number): {
     width: number;
     height: number;
 };
-/** Fix landmarkEveryOther: landmarks older than this are never reused (three frames at 30 fps). */
-export declare const LANDMARK_REUSE_MAX_MS = 100;
+/**
+ * Fix landmarkEveryOther: how many frames in a row reuse the last landmarks (the finder runs on every third frame), and
+ * the oldest landmarks ever reused. Throttled 3x on a generated face (testbed bench/ka-cost.mjs, three runs each,
+ * 2026-10-30): every third frame analysed a mean 8.5 frames a second against 7.1 for every other and showed a number
+ * on 28 of 45 s in every run (6 to 20 for every other); every fourth was faster on average but collapsed in one run.
+ * On received sessions a head moves a median 0.2% of the face's width in 133 ms (95th percentile under 5%; evidence
+ * repo tools/headstep.mjs), inside the regions' own smoothing, so two reused frames keep the regions on the same skin.
+ * 150 ms is two frames at 15 a second, the slowest the testers' laptops ran.
+ */
+export declare const LANDMARK_REUSE_FRAMES = 2;
+export declare const LANDMARK_REUSE_MAX_MS = 150;
 export declare class MediaPipeFaceFrameSource implements FrameSource {
     private video;
     private faceLandmarker;
@@ -40,9 +49,9 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     private vfcHandle;
     private smoothedFaceRoi;
     private lastError;
-    /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and whether the last frame reused them. */
+    /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and how many frames in a row have reused them since. */
     private lastFound;
-    private lastWasReuse;
+    private reuseRun;
     constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
     start(): Promise<void>;
     stop(): Promise<void>;
