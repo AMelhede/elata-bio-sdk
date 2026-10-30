@@ -1,56 +1,45 @@
-import { LIGHT_CLIP_MAX, LIGHT_DIM_LUMA, LIGHT_DIM_LUMA_CENTRE, LIGHT_LATCH_MS, LIGHT_START, LIGHT_WEAK_MS, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter } from "../lightLevel";
+import { LIGHT_CLIP_MAX, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter } from "../lightLevel";
 import { RecordingPulseCheck, parsePulseCheckRecording, replayPulseCheck, serializePulseCheckRecording } from "../pulseCheckRecording";
 import { shownPulseBpm } from "../pulseCheck";
 
 // Session switch light: how much light the screen should put on the face (lightLevel.ts).
 
-const dim = { luma: LIGHT_DIM_LUMA - 0.1, redClip: 0, source: "face" as const };
-const lit = { luma: LIGHT_DIM_LUMA + 0.1, redClip: 0, source: "face" as const };
+const dim = { luma: 0.3, redClip: 0, source: "face" as const };
+const lit = { luma: 0.6, redClip: 0, source: "face" as const };
 const burnt = { luma: 0.6, redClip: LIGHT_CLIP_MAX, source: "face" as const };
 
 describe("lightAfter", () => {
-	it("asks for full light once the face reads dim for 2 s, and not before", () => {
+	it("lights from the first frame of the measurement, dim face or not, and from the centre box before a face", () => {
+		expect(lightAfter(LIGHT_START, lit, 0, 0).level).toBe(1);
+		expect(lightAfter(LIGHT_START, dim, 0, 0).level).toBe(1);
+		expect(lightAfter(LIGHT_START, { luma: 0.6, redClip: 0, source: "centre" }, 0, 0).level).toBe(1);
+	});
+
+	it("full light never switches back off, however bright the face then reads (Peak 2026-09-24)", () => {
 		let s = lightAfter(LIGHT_START, dim, 0, 0);
-		expect(s.level).toBe(0);
-		s = lightAfter(s, dim, 0, LIGHT_LATCH_MS - 1);
-		expect(s.level).toBe(0);
-		s = lightAfter(s, dim, 0, LIGHT_LATCH_MS);
+		for (let t = 100; t <= 60_000; t += 100) s = lightAfter(s, lit, 1, t);
 		expect(s.level).toBe(1);
 	});
 
-	it("a camera settling dark for under 2 s does not light", () => {
-		let s = lightAfter(LIGHT_START, dim, 0, 0);
-		s = lightAfter(s, dim, 0, 1600);
-		s = lightAfter(s, lit, 0, 1700);
-		expect(s).toEqual(LIGHT_START);
-		expect(lightAfter(s, dim, 0, 1800).level).toBe(0);
-	});
-
-	it("full light that brightens the face never switches back off (Peak 2026-09-24)", () => {
-		const on = { level: 1 as const, darkSince: 0, clipSince: null };
-		expect(lightAfter(on, lit, 1, 10_000).level).toBe(1);
-	});
-
 	it("steps down to half once the rendered full light burns the face out for 2 s, and stays there", () => {
-		let s = { level: 1 as const, darkSince: 0, clipSince: null } as Parameters<typeof lightAfter>[0];
+		let s = lightAfter(LIGHT_START, lit, 0, 0);
 		s = lightAfter(s, burnt, 1, 5000);
 		s = lightAfter(s, burnt, 1, 5000 + LIGHT_LATCH_MS - 1);
 		expect(s.level).toBe(1);
 		s = lightAfter(s, burnt, 1, 5000 + LIGHT_LATCH_MS);
 		expect(s.level).toBe(0.5);
-		// Half light lowers the clipping, and a dim face again: neither sends it back up.
 		expect(lightAfter(s, lit, 0.5, 20_000).level).toBe(0.5);
 		expect(lightAfter(s, dim, 0.5, 40_000).level).toBe(0.5);
 	});
 
 	it("never asks an app that did not render full light to light less", () => {
-		let s = { level: 1 as const, darkSince: 0, clipSince: null } as Parameters<typeof lightAfter>[0];
+		let s = lightAfter(LIGHT_START, lit, 0, 0);
 		for (let t = 0; t <= 10_000; t += 100) s = lightAfter(s, burnt, 0, t);
 		expect(s.level).toBe(1);
 	});
 
 	it("a short burst of clipping does not step down", () => {
-		let s = { level: 1 as const, darkSince: 0, clipSince: null } as Parameters<typeof lightAfter>[0];
+		let s = lightAfter(LIGHT_START, lit, 0, 0);
 		s = lightAfter(s, burnt, 1, 0);
 		s = lightAfter(s, burnt, 1, 1600);
 		s = lightAfter(s, { luma: 0.5, redClip: 0.1, source: "face" }, 1, 1700);
@@ -58,39 +47,13 @@ describe("lightAfter", () => {
 		expect(lightAfter(s, burnt, 1, 1800 + LIGHT_LATCH_MS - 1).level).toBe(1);
 	});
 
-	it("no face, or a broken measurement, leaves the level as it is", () => {
-		const on = { level: 1 as const, darkSince: 0, clipSince: null };
-		expect(lightAfter(on, null, 1, 10_000)).toBe(on);
+	it("no frame yet, or a broken measurement, leaves the level as it is", () => {
+		expect(lightAfter(LIGHT_START, null, 0, 10_000)).toBe(LIGHT_START);
 		expect(lightAfter(LIGHT_START, { luma: Number.NaN, redClip: 0, source: "face" }, 0, 10_000)).toBe(LIGHT_START);
 	});
 });
 
-describe("a faint pulse lights a face that does not read dim", () => {
-	it("lights after LIGHT_WEAK_MS of a face with no number, and not before", () => {
-		let s = lightAfter(LIGHT_START, lit, 0, 0, true);
-		s = lightAfter(s, lit, 0, LIGHT_WEAK_MS - 1, true);
-		expect(s.level).toBe(0);
-		expect(lightAfter(s, lit, 0, LIGHT_WEAK_MS, true).level).toBe(1);
-	});
-	it("a number arriving restarts the wait", () => {
-		let s = lightAfter(LIGHT_START, lit, 0, 0, true);
-		s = lightAfter(s, lit, 0, LIGHT_WEAK_MS - 1, false);
-		expect(lightAfter(s, lit, 0, LIGHT_WEAK_MS, true).level).toBe(0);
-	});
-	it("a strong pulse on a lit face never lights", () => {
-		let s = LIGHT_START;
-		for (let t = 0; t <= 60_000; t += 500) s = lightAfter(s, lit, 0, t, false);
-		expect(s.level).toBe(0);
-	});
-});
-
-describe("with no face found, the centre of the picture stands in, on its own bar", () => {
-	it("a centre reading under 0.38 for 2 s lights; one between 0.38 and the face bar does not", () => {
-		const dark = { luma: LIGHT_DIM_LUMA_CENTRE - 0.05, redClip: 0, source: "centre" as const };
-		const mid = { luma: (LIGHT_DIM_LUMA_CENTRE + LIGHT_DIM_LUMA) / 2, redClip: 0, source: "centre" as const };
-		expect(lightAfter(lightAfter(LIGHT_START, dark, 0, 0), dark, 0, LIGHT_LATCH_MS).level).toBe(1);
-		expect(lightAfter(lightAfter(LIGHT_START, mid, 0, 0), mid, 0, LIGHT_LATCH_MS).level).toBe(0);
-	});
+describe("centreLightFromFrame", () => {
 	it("reads the plain luma and red clip of the centre box", () => {
 		const W = 20;
 		const H = 20;

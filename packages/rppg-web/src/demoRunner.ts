@@ -28,7 +28,7 @@ import {
 	MultiRoiRppgFuser,
 	type RoiRgbSample,
 } from "./multiRoiFusion";
-import { type PulseCheck, WallTracker, eyeBlink, headCentre, roomFromFrame, shownPulseBpm, wallMissReason } from "./pulseCheck";
+import { type PulseCheck, WallTracker, eyeBlink, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck";
 import type { ChestMotion } from "./chestBreathing";
 import { RppgProcessor } from "./rppgProcessor";
 import {
@@ -572,10 +572,7 @@ export class DemoRunner {
 				// Switch light: the face's light from the same boxes, before the pool swaps the forehead.
 				if (this.opts.light) {
 					this.faceLight = faceLightFromFrame(frame.data, frame.width, rects, boxes);
-					// A face with the check past its first window and no number: the pulse is too faint (lightLevel.ts LIGHT_WEAK_MS).
-					const st = this.opts.pulseChecker?.getState();
-					const weak = st != null && !st.collecting && shownPulseBpm(st) == null;
-					this.lightState = lightAfter(this.lightState, this.faceLight, this.lightApplied, frame.timestampMs, weak);
+					this.lightState = lightAfter(this.lightState, this.faceLight, this.lightApplied, frame.timestampMs);
 				}
 				// Switch foreheadPool: the forehead from the patch pool (the box until the pool has a value).
 				if (this.opts.foreheadPool && frame.landmarks) {

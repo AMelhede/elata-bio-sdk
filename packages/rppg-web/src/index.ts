@@ -441,8 +441,6 @@ export {
 	CENTRE_BOX,
 	type FaceLight,
 	LIGHT_CLIP_MAX,
-	LIGHT_DIM_LUMA,
-	LIGHT_DIM_LUMA_CENTRE,
 	LIGHT_LATCH_MS,
 	LIGHT_START,
 	type LightLevel,
