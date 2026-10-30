@@ -388,6 +388,7 @@ export {
 	PULSE_DISPLAY_MEDIAN_MS,
 	PULSE_DISPLAY_LIVE_MS,
 	PULSE_DISPLAY_RECENT_MS,
+	PULSE_DISPLAY_SHOW_EVERY_MS,
 } from "./pulseDisplay";
 export {
 	RecordingPulseCheck,

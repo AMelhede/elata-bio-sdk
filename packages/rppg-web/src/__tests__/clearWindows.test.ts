@@ -87,3 +87,22 @@ describe("rule steadyLight", () => {
 		expect(steadyLightAllows(8, resolvePulseCheckRules({ steadyLight: false }))).toBe(true);
 	});
 });
+
+import { PULSE_DISPLAY_SHOW_EVERY_MS } from "../pulseDisplay";
+
+describe("PulseDisplay showEveryMs", () => {
+	it("changes the number at most every 5 s, its age following the newest number; off by default", () => {
+		expect(PULSE_DISPLAY_SHOW_EVERY_MS).toBe(5000);
+		const d = new PulseDisplay({ showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS });
+		d.push(0, 70);
+		d.push(1000, 74);
+		expect(d.view(1000)).toEqual({ kind: "live", bpm: 70 });
+		d.push(5000, 75);
+		expect(d.view(5000)).toEqual({ kind: "live", bpm: 75 });
+		expect(d.view(12000)).toEqual({ kind: "recent", bpm: 75, agoS: 7 });
+		const plain = new PulseDisplay();
+		plain.push(0, 70);
+		plain.push(1000, 74);
+		expect(plain.view(1000)).toEqual({ kind: "live", bpm: 72 });
+	});
+});

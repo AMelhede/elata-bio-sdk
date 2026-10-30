@@ -25,6 +25,13 @@ export declare const PULSE_DISPLAY_LIVE_MS = 5000;
  * so past 10 s it is a past reading, not the current rate.
  */
 export declare const PULSE_DISPLAY_RECENT_MS = 10000;
+/**
+ * How often the number on screen may change, as Apple Heart Rate updates while it measures. Replayed on real-device
+ * recordings (the 30 s recent stage): changes of the number per minute on a laptop 8.2 to 4.1 and a phone 8.9 to 4.2,
+ * seconds with a number and error against typed watch readings unchanged; on recorded lab webcam sessions 6.79 to 6.88 bpm
+ * against a finger. Off (0) unless set: `new PulseDisplay({ showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS })`.
+ */
+export declare const PULSE_DISPLAY_SHOW_EVERY_MS = 5000;
 export type PulseDisplayView = {
     kind: "measuring";
 } | {
@@ -43,6 +50,8 @@ export declare class PulseDisplay {
     private numbers;
     private shown;
     private readonly recentMs;
+    private readonly showEveryMs;
+    private lastRefreshMs;
     /**
      * `recentMs`: how long a number stays on screen as recent after the newest, PULSE_DISPLAY_RECENT_MS by default. With
      * rule clearWindows the recent stage held 20 s on recorded lab webcam sessions at an error no higher than 10 s without
@@ -50,6 +59,7 @@ export declare class PulseDisplay {
      */
     constructor(options?: {
         recentMs?: number;
+        showEveryMs?: number;
     });
     /** One read of the check: the number it shows now (shownPulseBpm), or null when it shows none. */
     push(atMs: number, bpm: number | null): void;

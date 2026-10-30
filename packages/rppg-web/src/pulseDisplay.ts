@@ -29,6 +29,14 @@ export const PULSE_DISPLAY_LIVE_MS = 5000;
  */
 export const PULSE_DISPLAY_RECENT_MS = 10_000;
 
+/**
+ * How often the number on screen may change, as Apple Heart Rate updates while it measures. Replayed on real-device
+ * recordings (the 30 s recent stage): changes of the number per minute on a laptop 8.2 to 4.1 and a phone 8.9 to 4.2,
+ * seconds with a number and error against typed watch readings unchanged; on recorded lab webcam sessions 6.79 to 6.88 bpm
+ * against a finger. Off (0) unless set: `new PulseDisplay({ showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS })`.
+ */
+export const PULSE_DISPLAY_SHOW_EVERY_MS = 5000;
+
 export type PulseDisplayView =
 	| { kind: "measuring" }
 	| { kind: "live"; bpm: number }
@@ -39,13 +47,16 @@ export class PulseDisplay {
 	private numbers: { atMs: number; bpm: number }[] = [];
 	private shown: { atMs: number; bpm: number } | null = null;
 	private readonly recentMs: number;
+	private readonly showEveryMs: number;
+	private lastRefreshMs = Number.NEGATIVE_INFINITY;
 	/**
 	 * `recentMs`: how long a number stays on screen as recent after the newest, PULSE_DISPLAY_RECENT_MS by default. With
 	 * rule clearWindows the recent stage held 20 s on recorded lab webcam sessions at an error no higher than 10 s without
 	 * it, with more seconds on screen and fewer numbers on no-pulse copies.
 	 */
-	constructor(options: { recentMs?: number } = {}) {
+	constructor(options: { recentMs?: number; showEveryMs?: number } = {}) {
 		this.recentMs = options.recentMs ?? PULSE_DISPLAY_RECENT_MS;
+		this.showEveryMs = options.showEveryMs ?? 0;
 	}
 
 	/** One read of the check: the number it shows now (shownPulseBpm), or null when it shows none. */
@@ -56,7 +67,10 @@ export class PulseDisplay {
 		const sorted = this.numbers.map((n) => n.bpm).sort((a, b) => a - b);
 		const mid = sorted.length >> 1;
 		const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-		this.shown = { atMs, bpm: Math.round(median) };
+		// `showEveryMs`: the number on screen changes at most this often; its age still follows the newest number.
+		const keep = this.shown != null && atMs - this.lastRefreshMs < this.showEveryMs;
+		if (!keep) this.lastRefreshMs = atMs;
+		this.shown = { atMs, bpm: keep && this.shown ? this.shown.bpm : Math.round(median) };
 	}
 
 	view(nowMs: number): PulseDisplayView {
@@ -70,5 +84,6 @@ export class PulseDisplay {
 	reset(): void {
 		this.numbers = [];
 		this.shown = null;
+		this.lastRefreshMs = Number.NEGATIVE_INFINITY;
 	}
 }
