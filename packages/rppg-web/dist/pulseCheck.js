@@ -71,14 +71,15 @@ export const PULSE_CHECK_RULE_NAMES = [
 export const RELOCK_MS = 30000;
 /**
  * Rule followRecent: how recent the proven number must be, how close the window's rate, how strong the window. Chosen
- * on the received sessions, one score per typed reference (evidence repo tools/follow.mjs, 2026-10-30): 3 bpm and 30 s
- * at -5 dB added the most seconds of the arms that kept the error and the share over 10 bpm off where they were, on
- * phones and laptops both; 4 and 6 bpm added more and put a phone reference over 10 off. On the lab finger set and its
- * no-pulse copies, anchored on proven numbers only it kept the share over 10 off and the no-pulse numbers about where
- * they were, where anchoring on building numbers too did not. 30 s is RELOCK_MS, -5 dB is BUILDING_MIN_SNR_DB.
+ * on the received sessions, one score per typed reference (evidence repo tools/decide.mjs, 2026-10-30), anchored on
+ * proven numbers only: 3 bpm added seconds at the same error and share over 10 off; 6 bpm added more again (windows 3 to
+ * 6 bpm from a proven number within 30 s read 2 bpm from the reference, tools/notagree.mjs) at the same error, and on
+ * the lab finger set and its no-pulse copies moved the share over 10 off and the no-pulse numbers by a few tenths.
+ * Anchoring on building numbers too failed the lab. 30 s is RELOCK_MS, -5 dB is BUILDING_MIN_SNR_DB; 6 bpm is
+ * OWN_PULSE_AGREE_BPM, the re-lock's own agreement.
  */
 export const FOLLOW_MS = 30000;
-export const FOLLOW_BPM = 3;
+export const FOLLOW_BPM = 6;
 export const FOLLOW_MIN_SNR_DB = -5;
 /**
  * Rule followRecent: the window's rate when it is the same heart as the number shown last (within FOLLOW_BPM, that

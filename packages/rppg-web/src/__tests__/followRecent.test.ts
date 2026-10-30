@@ -7,8 +7,8 @@ describe("rule followRecent", () => {
 		expect(resolvePulseCheckRules({ followRecent: true }).followRecent).toBe(true);
 	});
 	it("follows a window within FOLLOW_BPM of a number shown within FOLLOW_MS, at FOLLOW_MIN_SNR_DB or more", () => {
-		expect([FOLLOW_BPM, FOLLOW_MS, FOLLOW_MIN_SNR_DB]).toEqual([3, 30_000, -5]);
-		expect(followRate({ bpm: 64, t: 0 }, FOLLOW_MS, 64 + FOLLOW_BPM, FOLLOW_MIN_SNR_DB, false)).toBe(67);
+		expect([FOLLOW_BPM, FOLLOW_MS, FOLLOW_MIN_SNR_DB]).toEqual([6, 30_000, -5]);
+		expect(followRate({ bpm: 64, t: 0 }, FOLLOW_MS, 64 + FOLLOW_BPM, FOLLOW_MIN_SNR_DB, false)).toBe(70);
 		expect(followRate({ bpm: 64, t: 0 }, 1000, 62, -1, false)).toBe(62);
 	});
 	it("not too far, not too late, not too weak, never with no number before, never when withheld", () => {
