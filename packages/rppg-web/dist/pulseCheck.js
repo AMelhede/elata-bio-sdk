@@ -60,6 +60,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "clearWindows",
     "shortStreak",
     "steadyLight",
+    "roomLight",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -222,7 +223,7 @@ export function pulseCheckCause(state, faceInView) {
         return "noFace";
     if (shownPulseBpm(state) != null)
         return "shown";
-    if (state.wallMatch || state.screenLight)
+    if (state.wallMatch || state.roomMatch || state.screenLight)
         return "lightFlicker";
     if (state.waitingForBlink)
         return "waitingForBlink";
@@ -282,6 +283,7 @@ export function resolvePulseCheckRules(rules) {
         clearWindows: rules?.clearWindows !== false,
         shortStreak: rules?.shortStreak === true,
         steadyLight: rules?.steadyLight !== false,
+        roomLight: rules?.roomLight !== false,
     };
 }
 /**
@@ -393,6 +395,10 @@ export function wallCarries(wall, atMs, bpm, rules = ALL_RULES_ON) {
  * Value chosen by measurement on recorded captures without a lamp, checked on captures with one.
  */
 export const ROOM_MIN_SNR_DB = 2.458;
+/** Whether the room's line carries the face's rate (rule roomLight): within OWN_PULSE_AGREE_BPM, at or over ROOM_MIN_SNR_DB. */
+export function roomCarries(line, bpm) {
+    return line != null && line.snrDb >= ROOM_MIN_SNR_DB && Math.abs(line.bpm - bpm) <= OWN_PULSE_AGREE_BPM;
+}
 /** wallCarries on a wall line already found (one evaluation reads the same line up to three times). */
 function lineCarries(line, bpm, rules) {
     const family = [1];
@@ -509,6 +515,8 @@ export class PulseCheck {
     constructor(opts = {}) {
         this.samples = [];
         this.wall = [];
+        /** The room (roomFromFrame) as handed over, for rule roomLight, kept as long as the wall. */
+        this.room = [];
         this.head = [];
         /** A head argument (a position or null) has reached push since the last reset: the movement is judged. */
         this.headHandedOver = false;
@@ -544,7 +552,7 @@ export class PulseCheck {
      * RecordingPulseCheck, which keeps them. Otherwise they are skipped, at no cost.
      */
     get wantsDiagnostics() {
-        return false;
+        return this.rules.roomLight;
     }
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
@@ -607,6 +615,11 @@ export class PulseCheck {
             this.wall.push([timestampMs, wall.r, wall.g, wall.b]);
         while (this.wall.length && this.wall[0][0] < timestampMs - WALL_KEEP_MS)
             this.wall.shift();
+        const room = this.rules.roomLight ? combineRoom(diag?.room) : null;
+        if (room)
+            this.room.push([timestampMs, room.r, room.g, room.b]);
+        while (this.room.length && this.room[0][0] < timestampMs - WALL_KEEP_MS)
+            this.room.shift();
         if (head !== undefined)
             this.headHandedOver = true;
         if (head?.blink != null && Number.isFinite(head.blink))
@@ -642,8 +655,17 @@ export class PulseCheck {
         // A window a stepping light on the face fills is not evidence either (screenLight): it only withholds.
         const windowScreenSteps = this.rules.screenLight ? screenSteps(this.samples, timestampMs) : null;
         const screenLit = est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
+        // Rule roomLight: the room's line, found and judged exactly as the wall's.
+        const roomLines = new Map();
+        const roomLineAt = (ms) => {
+            if (!this.rules.roomLight)
+                return null;
+            if (!roomLines.has(ms))
+                roomLines.set(ms, wallLine(this.room, ms, false));
+            return roomLines.get(ms) ?? null;
+        };
         const tainted = est?.bpm != null &&
-            screenLit;
+            (screenLit || (this.rules.roomLight && roomCarries(roomLineAt(timestampMs), est.bpm)));
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
@@ -660,8 +682,11 @@ export class PulseCheck {
         const held = this.held;
         const wallMatch = held != null &&
             Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => lineCarries(lineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
+        const roomMatch = this.rules.roomLight &&
+            held != null &&
+            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => roomCarries(roomLineAt(timestampMs - k * EVAL_EVERY_MS), held));
         this.followerBpm = null;
-        this.state = wallMatch
+        this.state = wallMatch || roomMatch
             ? {
                 verdict: "not-measured",
                 bpm: null,
@@ -669,6 +694,7 @@ export class PulseCheck {
                 streak: v.streak,
                 countingStreak: countingStreak(v, this.rules),
                 wallMatch,
+                ...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
                 windowBpm: est?.bpm ?? null,
                 windowSnrDb: est?.snrDb ?? null,
                 windowMethod: est?.method ?? null,
@@ -687,6 +713,7 @@ export class PulseCheck {
                 streak: v.streak,
                 countingStreak: countingStreak(v, this.rules),
                 wallMatch,
+                ...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
                 windowBpm: est?.bpm ?? null,
                 windowSnrDb: est?.snrDb ?? null,
                 windowMethod: est?.method ?? null,
@@ -703,7 +730,7 @@ export class PulseCheck {
         this.state.heldBpm = this.held;
         // Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
         this.state.buildingBpm = this.rules.moreReadings
-            ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch, buildingStreak(this.rules), this.rules.clearWindows)
+            ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch, buildingStreak(this.rules), this.rules.clearWindows)
             : null;
         if (this.state.buildingBpm != null && !steadyLightAllows(windowScreenSteps, this.rules))
             this.state.buildingBpm = null;
@@ -761,6 +788,7 @@ export class PulseCheck {
         return this.evaluationCount;
     }
     reset() {
+        this.room = [];
         this.samples = [];
         this.wall = [];
         this.head = [];
@@ -864,6 +892,93 @@ export class WallTracker {
         this.last = { r: rgb.r * this.gain.r, g: rgb.g * this.gain.g, b: rgb.b * this.gain.b };
         return this.last;
     }
+}
+/** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
+export function combineRoom(room) {
+    const parts = [room?.left, room?.right].filter((c) => c != null && c.n > 0);
+    if (!parts.length)
+        return null;
+    const n = parts.reduce((a, c) => a + c.n, 0);
+    return {
+        r: parts.reduce((a, c) => a + c.rgb.r * c.n, 0) / n,
+        g: parts.reduce((a, c) => a + c.rgb.g * c.n, 0) / n,
+        b: parts.reduce((a, c) => a + c.rgb.b * c.n, 0) / n,
+    };
+}
+/** Share of the frame's width and height each upper-corner patch of the room spans (roomFromFrame). */
+export const ROOM_CORNER_SHARE = 0.2;
+/** How far clear of the face box, as a share of the face's width, a room pixel must lie (roomFromFrame). */
+export const ROOM_FACE_CLEAR = 0.5;
+/**
+ * roomFromFrame reads every ROOM_STRIDE-th pixel across and down. Measured (lane/wallroom, real frames with a 1% lamp,
+ * dark, after VP9): the lamp's line against its noise was 95.6 reading every pixel, 77.6 at 2, 67.5 at 3, 62.6 at 4;
+ * the room's noise is mostly shared between pixels, so a quarter of the pixels keeps 81% of it at a quarter of the
+ * cost (an independent review measured the full read at about 1 to 3 ms a frame on a mid-range phone).
+ */
+export const ROOM_STRIDE = 2;
+/**
+ * The room: for each of the frame's two upper corners (each ROOM_CORNER_SHARE of the width and height), the mean RGB
+ * (0..1, to 7 decimals) of its non-skin pixels, leaving out every pixel within ROOM_FACE_CLEAR face widths of the face
+ * box, with how many pixels it averaged; a corner is null under 25 qualifying pixels or a tenth of those looked at, and
+ * the whole is null when both are. Reads every ROOM_STRIDE-th pixel. The corners are kept apart because the face box
+ * follows the mesh every frame: when a face reaches a corner, that corner's pixel set changes and its level can step,
+ * while the other corner stays a constant set. Rule roomLight (off by default) reads it, combined (combineRoom).
+ */
+export function roomFromFrame(frame, points) {
+    const { width, height, data } = frame;
+    if (width <= 0 || height <= 0)
+        return null;
+    // The face box from the points' extremes, in one pass with no allocation (percentiles are not needed: the box is
+    // widened by ROOM_FACE_CLEAR face widths anyway, and sorting 478 points twice a frame cost about 164 KB of garbage).
+    let fx0 = Number.POSITIVE_INFINITY, fy0 = Number.POSITIVE_INFINITY, fx1 = Number.NEGATIVE_INFINITY, fy1 = Number.NEGATIVE_INFINITY;
+    if (points?.length) {
+        let x0 = Number.POSITIVE_INFINITY, x1 = Number.NEGATIVE_INFINITY, y0 = Number.POSITIVE_INFINITY, y1 = Number.NEGATIVE_INFINITY;
+        for (const p of points) {
+            const x = Math.min(1, Math.max(0, p.x)) * width, y = Math.min(1, Math.max(0, p.y)) * height;
+            if (x < x0)
+                x0 = x;
+            if (x > x1)
+                x1 = x;
+            if (y < y0)
+                y0 = y;
+            if (y > y1)
+                y1 = y;
+        }
+        const clear = (x1 - x0) * ROOM_FACE_CLEAR;
+        fx0 = x0 - clear;
+        fx1 = x1 + clear;
+        fy0 = y0 - clear;
+        fy1 = y1 + clear;
+    }
+    const cw = Math.max(1, Math.floor(width * ROOM_CORNER_SHARE));
+    const ch = Math.max(1, Math.floor(height * ROOM_CORNER_SHARE));
+    // Each value to 7 decimals, so what a recording keeps is exactly what the check used (live and replay agree).
+    const r7 = (v) => Math.round(v * 1e7) / 1e7;
+    const corner = (xStart) => {
+        let sumR = 0, sumG = 0, sumB = 0, n = 0, count = 0;
+        for (let row = 0; row < ch; row += ROOM_STRIDE) {
+            for (let col = xStart; col < xStart + cw; col += ROOM_STRIDE) {
+                if (col >= fx0 && col <= fx1 && row >= fy0 && row <= fy1)
+                    continue;
+                count++;
+                const idx = (row * width + col) * 4;
+                const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+                const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+                const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+                if (cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173)
+                    continue;
+                sumR += r;
+                sumG += g;
+                sumB += b;
+                n++;
+            }
+        }
+        if (n < Math.max(25, count * 0.1))
+            return null;
+        return { rgb: { r: r7(sumR / n / 255), g: r7(sumG / n / 255), b: r7(sumB / n / 255) }, n };
+    };
+    const left = corner(0), right = corner(width - cw);
+    return left || right ? { left, right } : null;
 }
 /**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame

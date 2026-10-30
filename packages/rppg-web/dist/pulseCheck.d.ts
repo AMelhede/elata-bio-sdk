@@ -35,6 +35,13 @@ export type PulseCheckState = {
     countingStreak?: number;
     /** True while the wall beside the face carries the proven rate, so the rate is withheld. */
     wallMatch: boolean;
+    /** Rule roomLight: true while the room (roomFromFrame) carries the proven rate, so it is withheld. */
+    roomMatch?: boolean;
+    /** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
+    roomLine?: {
+        bpm: number;
+        snrDb: number;
+    } | null;
     /**
      * The latest one-second window as it is, proven or not: its rate and how far its line
      * stands above the noise. For diagnosis only; nothing decides on these two.
@@ -201,9 +208,17 @@ export type PulseCheckRules = {
      * and re-lock unchanged; without moreReadings or screenLight nothing changes. Unless false.
      */
     steadyLight?: boolean;
+    /**
+     * A rate the room carries is withheld: the room is read from the frame's two upper corners clear of the face
+     * (roomFromFrame) and judged exactly as the wall beside the face, on its own bar (ROOM_MIN_SNR_DB). On recorded lab
+     * sessions under a lamp flickering at a heart-like rate it is the one rule that keeps the lamp's rate off the screen:
+     * with it a real pulse under the lamps showed 0 wrong seconds and a no-pulse face 36 made-up seconds, without it 283
+     * and 414 (it was deleted for a day on 2026-10-30 and added back on this evidence). Unless false.
+     */
+    roomLight?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -450,6 +465,11 @@ export declare function wallCarries(wall: [number, number, number, number][], at
  * Value chosen by measurement on recorded captures without a lamp, checked on captures with one.
  */
 export declare const ROOM_MIN_SNR_DB = 2.458;
+/** Whether the room's line carries the face's rate (rule roomLight): within OWN_PULSE_AGREE_BPM, at or over ROOM_MIN_SNR_DB. */
+export declare function roomCarries(line: {
+    bpm: number;
+    snrDb: number;
+} | null, bpm: number): boolean;
 /** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
 export declare const SCREEN_STEPS_PER_WINDOW = 10;
 /**
@@ -476,6 +496,8 @@ export declare class PulseCheck {
     private get swapMinWall();
     private samples;
     private wall;
+    /** The room (roomFromFrame) as handed over, for rule roomLight, kept as long as the wall. */
+    private room;
     private head;
     /** A head argument (a position or null) has reached push since the last reset: the movement is judged. */
     private headHandedOver;
@@ -636,6 +658,31 @@ export type PulseCheckFrameDiag = {
 };
 /** The wall patch as read this frame, for the recording only: x, y, w, h in pixels and how many non-skin pixels it averaged. */
 export type WallPatchDiag = [number, number, number, number, number];
+/** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
+export declare function combineRoom(room: RoomCorners | null | undefined): Rgb | null;
+/** Share of the frame's width and height each upper-corner patch of the room spans (roomFromFrame). */
+export declare const ROOM_CORNER_SHARE = 0.2;
+/** How far clear of the face box, as a share of the face's width, a room pixel must lie (roomFromFrame). */
+export declare const ROOM_FACE_CLEAR = 0.5;
+/**
+ * roomFromFrame reads every ROOM_STRIDE-th pixel across and down. Measured (lane/wallroom, real frames with a 1% lamp,
+ * dark, after VP9): the lamp's line against its noise was 95.6 reading every pixel, 77.6 at 2, 67.5 at 3, 62.6 at 4;
+ * the room's noise is mostly shared between pixels, so a quarter of the pixels keeps 81% of it at a quarter of the
+ * cost (an independent review measured the full read at about 1 to 3 ms a frame on a mid-range phone).
+ */
+export declare const ROOM_STRIDE = 2;
+/**
+ * The room: for each of the frame's two upper corners (each ROOM_CORNER_SHARE of the width and height), the mean RGB
+ * (0..1, to 7 decimals) of its non-skin pixels, leaving out every pixel within ROOM_FACE_CLEAR face widths of the face
+ * box, with how many pixels it averaged; a corner is null under 25 qualifying pixels or a tenth of those looked at, and
+ * the whole is null when both are. Reads every ROOM_STRIDE-th pixel. The corners are kept apart because the face box
+ * follows the mesh every frame: when a face reaches a corner, that corner's pixel set changes and its level can step,
+ * while the other corner stays a constant set. Rule roomLight (off by default) reads it, combined (combineRoom).
+ */
+export declare function roomFromFrame(frame: Frame, points: readonly {
+    x: number;
+    y: number;
+}[] | null | undefined): RoomCorners | null;
 /**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame
  * (the face fills it), otherwise "skin" (every patch looked like skin: an ear or neck, or a

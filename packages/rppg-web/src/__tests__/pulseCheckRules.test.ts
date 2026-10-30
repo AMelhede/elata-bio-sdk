@@ -61,6 +61,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			clearWindows: true,
 			shortStreak: false,
 			steadyLight: true,
+			roomLight: true,
 		});
 		expect(resolvePulseCheckRules({ restBand: false }).restBand).toBe(false);
 		expect(new PulseCheck().rules.restBand).toBe(true);
