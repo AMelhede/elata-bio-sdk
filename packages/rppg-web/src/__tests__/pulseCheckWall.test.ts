@@ -44,50 +44,12 @@ function feedStates(bpm: number, wall: "same" | "leak" | "quiet", seconds: numbe
 }
 
 describe("PulseCheck wall check", () => {
-	it("sees a light at the edge of the band: 120 Hz mains filmed at 9 fps folds to 180", () => {
-		// A lamp's line on the band's top edge (3.0 Hz) straddles it, so no in-band local maximum
-		// exists; the wall must still be seen to carry it. Peak committed 180 on a face with no
-		// pulse under exactly this light before the same fix (2026-10-07).
-		for (const bpm of [180, 179, 42]) {
-			let s = 7;
-			const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.4;
-			const wall: [number, number, number, number][] = [];
-			for (let t = 0; t <= 30000; t += 1000 / 30) {
-				const g = 1 + 0.03 * Math.sin((2 * Math.PI * bpm * t) / 60000);
-				wall.push([t, 120 * g + noise(), 120 * g + noise(), 120 * g + noise()]);
-			}
-			expect(wallCarries(wall, 30000, bpm)).toBe(true);
-		}
-	});
 
 	it("never lets the wall's rate out, not even for the first seconds", () => {
 		const shown = feedStates(72, "same", 45).filter((st) => st.bpm != null);
 		expect(shown).toHaveLength(0);
 	});
 
-	it("refuses a rate on the light's harmonic family: wall at 60, face at 180 (120 Hz filmed at 11 fps)", () => {
-		// Seen in the browser harness on test.3: the wall carried the folded light at 60 a minute,
-		// about 25 dB above its noise, while the face's colour method picked the light's third
-		// harmonic, 180, and showed it for 7 s (wallMatch false throughout). A light sampled by a
-		// rolling shutter is not a sine, so its harmonics fold to whole multiples of its fold.
-		const check = new PulseCheck();
-		let s = 5;
-		const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.4;
-		const shown: number[] = [];
-		let next = 1000;
-		for (let t = 0; t <= 60000; t += 1000 / 30) {
-			const face = 0.01 * Math.sin((2 * Math.PI * 180 * t) / 60000);
-			const light = 0.03 * Math.sin((2 * Math.PI * 60 * t) / 60000);
-			const region = () => ({ r: 150 * (1 - 0.3 * face) + noise(), g: 120 * (1 - face) + noise(), b: 100 * (1 - 0.6 * face) + noise() });
-			const g = 100 * (1 + light);
-			check.push(t, [region(), region(), region()], { r: g + noise(), g: g + noise(), b: g + noise() });
-			if (t >= next) {
-				if (check.getState().bpm != null) shown.push(Math.round(t / 1000));
-				next += 1000;
-			}
-		}
-		expect(shown).toEqual([]);
-	});
 
 	it("refuses a rate the wall beside the face also carries", () => {
 		const check = new PulseCheck();

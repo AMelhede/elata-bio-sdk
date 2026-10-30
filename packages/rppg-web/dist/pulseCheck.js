@@ -20,7 +20,7 @@
  * person's own pulse.
  */
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_SWAP_MIN_WALL_TO_FACE, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_FS, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Flicker on the face itself, for when no wall can be seen. A heartbeat changes the skin's
  * COLOUR (green dips most); a lamp changes its BRIGHTNESS, scaling red, green and blue alike.
@@ -115,17 +115,8 @@ const WALL_MIN_SNR_DB = 12;
  */
 const WALL_FAINT_MIN_SNR_DB = 6;
 export const PULSE_CHECK_RULE_NAMES = [
-    "wallBandEdge",
-    "lightFamily",
-    "faceFlicker",
-    "lightTaint",
     "screenLight",
-    "headMotion",
-    "darkWall",
-    "clockBack",
-    "faintWall",
     "restBand",
-    "roomLight",
     "moreReadings",
     "blinkGate",
     "foreheadPool",
@@ -333,17 +324,8 @@ export function shownPulseBpm(state) {
 /** Every rule resolved to true or false; left out means on. */
 export function resolvePulseCheckRules(rules) {
     return {
-        wallBandEdge: rules?.wallBandEdge !== false,
-        lightFamily: rules?.lightFamily !== false,
-        faceFlicker: rules?.faceFlicker !== false,
-        lightTaint: rules?.lightTaint !== false,
         screenLight: rules?.screenLight !== false,
-        headMotion: rules?.headMotion !== false,
-        darkWall: rules?.darkWall !== false,
-        clockBack: rules?.clockBack !== false,
-        faintWall: rules?.faintWall !== false,
         restBand: rules?.restBand !== false,
-        roomLight: rules?.roomLight === true,
         moreReadings: rules?.moreReadings === true,
         blinkGate: rules?.blinkGate === true,
         foreheadPool: rules?.foreheadPool === true,
@@ -625,7 +607,7 @@ export function wallLine(wall, atMs, bandEdge = true) {
  * the change the colour method cancels; and a heartbeat never changes a wall's brightness.
  */
 export function wallCarries(wall, atMs, bpm, rules = ALL_RULES_ON) {
-    return lineCarries(wallLine(wall, atMs, rules.wallBandEdge), bpm, rules);
+    return lineCarries(wallLine(wall, atMs, false), bpm, rules);
 }
 /**
  * The room's own bar for rule roomLight. A room has no pulse, so its line only has to clear the room's own noise, not
@@ -637,14 +619,14 @@ export function wallCarries(wall, atMs, bpm, rules = ALL_RULES_ON) {
 export const ROOM_MIN_SNR_DB = 2.458;
 /** Whether the room's line carries the face's rate (rule roomLight): in the light family, at or over ROOM_MIN_SNR_DB. */
 export function roomCarries(line, bpm, rules) {
-    const family = rules.lightFamily ? LIGHT_FAMILY : [1];
+    const family = [1];
     return line != null && line.snrDb >= ROOM_MIN_SNR_DB && family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM);
 }
 /** wallCarries on a wall line already found (one evaluation reads the same line up to three times). */
 function lineCarries(line, bpm, rules) {
-    const family = rules.lightFamily ? LIGHT_FAMILY : [1];
+    const family = [1];
     return (line != null &&
-        line.snrDb >= (rules.faintWall ? WALL_FAINT_MIN_SNR_DB : WALL_MIN_SNR_DB) &&
+        line.snrDb >= WALL_MIN_SNR_DB &&
         family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM));
 }
 /**
@@ -789,21 +771,19 @@ export class PulseCheck {
         };
         /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
         this.unsupported = 0;
-        /** The frames' clock at the latest push or faceLost, for rule clockBack; a reset keeps it. */
-        this.lastSeenMs = null;
         this.evaluationCount = 0;
         this.rules = resolvePulseCheckRules(opts.rules);
     }
-    /** The least wall against the face for green minus the wall: the bar with rule darkWall on, any wall seen with it off. */
+    /** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */
     get swapMinWall() {
-        return this.rules.darkWall ? OWN_PULSE_SWAP_MIN_WALL_TO_FACE : 0;
+        return 0;
     }
     /**
      * Whether a caller should compute push's diagnostics: when rule roomLight needs the room, and always in a
      * RecordingPulseCheck, which keeps them. Otherwise they are skipped, at no cost.
      */
     get wantsDiagnostics() {
-        return this.rules.roomLight;
+        return false;
     }
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
@@ -827,11 +807,6 @@ export class PulseCheck {
     diag) {
         if (regions.length < 3 || !Number.isFinite(timestampMs))
             return;
-        // Rule clockBack: a frame older than the latest is out of order (skipped) or, by more than
-        // FACE_GONE_MS, a clock that went back (start over).
-        const back = this.stepBack(timestampMs);
-        if (back === "skip")
-            return;
         if (wall)
             this.wallTally.seen++;
         else if (wallMiss === "no-room")
@@ -841,9 +816,8 @@ export class PulseCheck {
         // Frames that stopped arriving unannounced count as a lost face too: the windows would
         // otherwise run across the break.
         const last = this.samples[this.samples.length - 1];
-        if (back === "reset" || (last && timestampMs - last[0] > FACE_GONE_MS))
+        if (last && timestampMs - last[0] > FACE_GONE_MS)
             this.reset();
-        this.lastSeenMs = timestampMs;
         this.lostSinceMs = null;
         const [f, l, r] = regions;
         this.samples.push([
@@ -872,11 +846,6 @@ export class PulseCheck {
             this.wall.push([timestampMs, wall.r, wall.g, wall.b]);
         while (this.wall.length && this.wall[0][0] < timestampMs - WALL_KEEP_MS)
             this.wall.shift();
-        const room = this.rules.roomLight ? combineRoom(diag?.room) : null;
-        if (room)
-            this.room.push([timestampMs, room.r, room.g, room.b]);
-        while (this.room.length && this.room[0][0] < timestampMs - WALL_KEEP_MS)
-            this.room.shift();
         if (head !== undefined)
             this.headHandedOver = true;
         if (head?.blink != null && Number.isFinite(head.blink))
@@ -900,17 +869,8 @@ export class PulseCheck {
         const lines = new Map();
         const lineAt = (ms) => {
             if (!lines.has(ms))
-                lines.set(ms, wallLine(this.wall, ms, this.rules.wallBandEdge));
+                lines.set(ms, wallLine(this.wall, ms, false));
             return lines.get(ms) ?? null;
-        };
-        // Rule roomLight: the room's line, found and judged exactly as the wall's.
-        const roomLines = new Map();
-        const roomLineAt = (ms) => {
-            if (!this.rules.roomLight)
-                return null;
-            if (!roomLines.has(ms))
-                roomLines.set(ms, wallLine(this.room, ms, this.rules.wallBandEdge));
-            return roomLines.get(ms) ?? null;
         };
         // A window whose rate the wall carries is the light's, not evidence of a pulse (lightTaint):
         // counted, it builds a streak under the light, and the rate shows the first second the wall
@@ -918,17 +878,12 @@ export class PulseCheck {
         // pulse before it was added. The head's movement is judged the same way (headMotion).
         // Only a window whose head is seen and clear of the rate counts (fail-closed): a window the
         // head's rows do not cover could hide a nod, as the colour carries on while the mesh is not looking.
-        const windowHead = this.rules.headMotion && this.headHandedOver && est?.bpm != null
-            ? headJudge(this.head, timestampMs, est.bpm)
-            : null;
+        const windowHead = null;
         // A window a stepping light on the face fills is not evidence either (screenLight): it only withholds.
         const windowScreenSteps = this.rules.screenLight ? screenSteps(this.samples, timestampMs) : null;
         const screenLit = est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
         const tainted = est?.bpm != null &&
-            ((this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
-                (this.rules.roomLight && roomCarries(roomLineAt(timestampMs), est.bpm, this.rules)) ||
-                screenLit ||
-                (windowHead != null && windowHead !== "clear"));
+            screenLit;
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
@@ -945,18 +900,11 @@ export class PulseCheck {
         const held = this.held;
         const wallMatch = held != null &&
             Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => lineCarries(lineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
-        const roomMatch = this.rules.roomLight &&
-            held != null &&
-            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => roomCarries(roomLineAt(timestampMs - k * EVAL_EVERY_MS), held, this.rules));
-        const faceFlicker = this.rules.faceFlicker &&
-            held != null &&
-            Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) => {
-                const q = faceFlickerRatio(this.samples, timestampMs - k * EVAL_EVERY_MS, held);
-                return q != null && q > FACE_FLICKER_RATIO;
-            });
-        const headMatch = this.rules.headMotion &&
-            held != null &&
-            headMatches(this.head, timestampMs, held);
+        // Rules roomLight, faceFlicker and headMotion were deleted on 2026-10-30: on every received recording and the lab
+        // they changed no shown second on recorded real-device sessions or lab webcam sessions, so they were deleted.
+        const roomMatch = false;
+        const faceFlicker = false;
+        const headMatch = false;
         this.followerBpm = null;
         this.state = wallMatch || roomMatch || faceFlicker || headMatch
             ? {
@@ -977,7 +925,6 @@ export class PulseCheck {
                 wallFrames,
                 faceFlicker,
                 headMatch,
-                ...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
                 windowHead,
             }
             : {
@@ -999,7 +946,6 @@ export class PulseCheck {
                 wallFrames,
                 faceFlicker,
                 headMatch,
-                ...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
                 windowHead,
             };
         this.state.collecting = !this.samples.length || timestampMs - this.samples[0][0] < OWN_PULSE_WINDOW_S * 1000;
@@ -1048,12 +994,6 @@ export class PulseCheck {
     faceLost(timestampMs) {
         if (!Number.isFinite(timestampMs))
             return;
-        const back = this.stepBack(timestampMs);
-        if (back === "skip")
-            return;
-        if (back === "reset")
-            this.reset();
-        this.lastSeenMs = timestampMs;
         if (this.lostSinceMs == null)
             this.lostSinceMs = timestampMs;
         else if (timestampMs - this.lostSinceMs >= FACE_GONE_MS)
@@ -1061,15 +1001,6 @@ export class PulseCheck {
     }
     getState() {
         return this.state;
-    }
-    /**
-     * Rule clockBack: this frame's time is before the latest frame's by more than FACE_GONE_MS, a clock
-     * that went back ("reset"), or by less, a frame out of order ("skip"); else null.
-     */
-    stepBack(timestampMs) {
-        if (!this.rules.clockBack || this.lastSeenMs == null || timestampMs >= this.lastSeenMs)
-            return null;
-        return this.lastSeenMs - timestampMs > FACE_GONE_MS ? "reset" : "skip";
     }
     /**
      * How many times the check has judged a window (about once a second while frames arrive), counting

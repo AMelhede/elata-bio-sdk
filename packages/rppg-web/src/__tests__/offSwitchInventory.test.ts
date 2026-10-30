@@ -5,7 +5,6 @@ import { PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules } from "../pulseCheck";
 // Every switch that is off by default is listed here with the date by which it is either turned on (and its switch
 // deleted) or its code removed. A new off switch, or one past its date, fails this test. The cap only goes down.
 const OFF_SWITCHES: Record<string, string> = {
-	roomLight: "2026-11-07", // CONFIRM tested it only paired with the removed foreheadPool (that pair failed on no-pulse shuffles); alone it needs new people
 	moreReadings: "2026-11-30", // testers' paired runs; shows more numbers on photos, needs liveness first
 	foreheadPool: "2026-11-30", // set by the session switch foreheadPool; held-out on new files that record patches
 	coherentFusion: "2026-11-30", // page ?fusion=1 for the owner's paired runs; more numbers, more on lamps and no-pulse copies
@@ -17,7 +16,8 @@ const OFF_SWITCHES: Record<string, string> = {
 // its switch deleted, or removed. Back to 5 then.
 // 7 while shortStreak is measured on testers' devices (the owner asked for the threshold to move toward the wearables,
 // 2026-10-30), decided by 2026-11-15: turned on and its switch deleted, or removed. Back to 6 then.
-const MAX_OFF = 7;
+// 6 since roomLight was deleted (2026-10-30, it changed no shown second on real-device or lab recordings).
+const MAX_OFF = 6;
 
 describe("off-by-default switch inventory", () => {
 	it("every rule off by default is listed with an expiry, and nothing listed is gone", () => {

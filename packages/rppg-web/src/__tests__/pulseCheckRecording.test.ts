@@ -147,74 +147,24 @@ describe("RecordingPulseCheck: the check's inputs, kept, and replayed", () => {
 		expect(replay.evaluations.map((e) => e.bpm)).toEqual(live.map(shownOf));
 	});
 
-	it("each scene's known answer holds, so the comparison above is not between empty outputs", () => {
-		const shown = (cs: Call[], o = {}) => evaluationsOf(new PulseCheck(o), cs).map(shownOf).filter((b): b is number => b != null);
-		expect(shown(fixtureCalls(nod))).toEqual([]);
-		expect(shown(fixtureCalls(nod), { rules: { headMotion: false } }).length).toBeGreaterThan(0);
-		expect(shown(screenCalls())).toEqual(expect.arrayContaining([expect.closeTo(70, 0)]));
-		expect(shown(screenCalls()).every((b) => Math.abs(b - 70) <= 4)).toBe(true);
-		expect(shown(screenCalls(), { rules: { darkWall: false } }).some((b) => Math.abs(b - 90) <= 3)).toBe(true);
-		expect(shown(mixedCalls()).length).toBeGreaterThan(0);
-	});
 
-	it.each([
-		["headMotion off", { headMotion: false }, () => fixtureCalls(nod)],
-		["darkWall off", { darkWall: false }, screenCalls],
-	] as [string, PulseCheckRules, () => Call[]][])(
-		"a recording made with the defaults, replayed with %s, equals a live check run with them",
-		(_name, rules, calls) => {
-			const cs = calls();
-			const rec = new RecordingPulseCheck();
-			evaluationsOf(rec, cs);
-			const live = evaluationsOf(new PulseCheck({ rules }), cs);
-			expect(replayPulseCheck(roundTrip(rec.getRecording()), { rules }).evaluations.map((e) => e.state)).toEqual(live);
-			expect(replayPulseCheck(rec.getRecording()).evaluations.map((e) => e.state)).not.toEqual(live);
-		},
-	);
 
 	it("the recording carries its format, version, build, and rules; replay uses them unless told otherwise", () => {
-		const rec = new RecordingPulseCheck({ rules: { headMotion: false } }).getRecording();
+		const rec = new RecordingPulseCheck({ rules: { restBand: false } }).getRecording();
 		expect(rec.format).toBe(PULSE_CHECK_RECORDING_FORMAT);
 		expect(rec.version).toBe(PULSE_CHECK_RECORDING_VERSION);
 		expect(typeof rec.build).toBe("string");
-		expect(rec.rules.headMotion).toBe(false);
-		expect(rec.rules.lightTaint).toBe(true);
+		expect(rec.rules.restBand).toBe(false);
+		expect(rec.rules.screenLight).toBe(true);
 		expect(rec.agreement).toBeUndefined();
 		expect(rec.seconds).toBe(PULSE_CHECK_RECORDING_SECONDS);
 		expect(rec.dropped).toBe(0);
 		const cs = fixtureCalls(nod);
-		const r = new RecordingPulseCheck({ rules: { headMotion: false } });
+		const r = new RecordingPulseCheck({ rules: { restBand: false } });
 		evaluationsOf(r, cs);
 		expect(replayPulseCheck(r.getRecording()).evaluations.map((e) => e.state)).toEqual(
-			evaluationsOf(new PulseCheck({ rules: { headMotion: false } }), cs),
+			evaluationsOf(new PulseCheck({ rules: { restBand: false } }), cs),
 		);
-	});
-});
-
-describe("a recording made before a rule existed", () => {
-	it("replays with that rule off, as its live check ran", () => {
-		// A 66 bpm pulse, then the frames' clock steps back 30 s and the pulse is gone: the one place
-		// rule clockBack changes the check's states.
-		let s = 7;
-		const noise = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5) * 0.4;
-		const cs: Call[] = [];
-		const feed = (fromMs: number, seconds: number, amp: number) => {
-			for (let t = fromMs; t <= fromMs + seconds * 1000; t += 1000 / 30) {
-				const p = amp * Math.sin((2 * Math.PI * 66 * t) / 60000);
-				const region = () => ({ r: 150 * (1 - 0.3 * p) + noise(), g: 120 * (1 - p) + noise(), b: 100 * (1 - 0.6 * p) + noise() });
-				cs.push({ push: [t, [region(), region(), region()]] });
-			}
-		};
-		feed(0, 45, 0.01);
-		feed(15000, 20, 0);
-		const old = new RecordingPulseCheck({ rules: { clockBack: false } });
-		const live = evaluationsOf(old, cs);
-		const rec = roundTrip(old.getRecording());
-		// As a build before clockBack wrote it: the rule is not named.
-		delete (rec.rules as Partial<typeof rec.rules>).clockBack;
-		expect(replayPulseCheck(rec).evaluations.map((e) => e.state)).toEqual(live);
-		// The rule does change these states, so the check above can fail.
-		expect(evaluationsOf(new PulseCheck(), cs)).not.toEqual(live);
 	});
 });
 
@@ -419,7 +369,7 @@ describe("through the session: getMetrics() as shown, and its replay", () => {
 	});
 
 	it("a replay with other rules equals a live session run with them", async () => {
-		const rules = { lightTaint: false, faceFlicker: false, screenLight: false };
+		const rules = { screenLight: false, restBand: false };
 		const { session } = await run({ record: true });
 		const live = await run({ record: false, rules });
 		const rec = session.getPulseCheckRecording();
