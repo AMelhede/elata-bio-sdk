@@ -9,7 +9,7 @@ const OFF_SWITCHES: Record<string, string> = {
 	foreheadPool: "2026-11-30", // set by the session switch foreheadPool; held-out on new files that record patches
 	coherentFusion: "2026-11-30", // page ?fusion=1 for the owner's paired runs; more numbers, more on lamps and no-pulse copies
 	blinkGate: "2026-11-30",
-	shortStreak: "2026-11-15", // testers' runs with references on the testbed page decide it (on by default there) // passed MCD CONFIRM; real photos and screens on testers' devices next
+	followRecent: "2026-11-30", // the owner's word to turn it on in the page; real recordings and lab passed (tools/decide.mjs)
 	experimentalVitals: "2026-12-31", // research box, never shown as a reading (a session option, not a rule)
 };
 // 6 while coherentFusion is measured on the owner's devices (page ?fusion=1), decided by 2026-11-30: turned on and
@@ -17,6 +17,7 @@ const OFF_SWITCHES: Record<string, string> = {
 // 7 while shortStreak is measured on testers' devices (the owner asked for the threshold to move toward the wearables,
 // 2026-10-30), decided by 2026-11-15: turned on and its switch deleted, or removed. Back to 6 then.
 // 6 since roomLight was deleted (2026-10-30, it changed no shown second on real-device or lab recordings).
+// Still 6 on 2026-10-30: shortStreak decided on received recordings and turned on (its off slot gone), followRecent in.
 const MAX_OFF = 6;
 
 describe("off-by-default switch inventory", () => {

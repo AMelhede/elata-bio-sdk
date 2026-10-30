@@ -86,6 +86,8 @@ export type PulseCheckState = {
      * OWN_PULSE_STRONG_STREAK windows long at a mean SNR of at least OWN_PULSE_MIN_SNR_DB; else null.
      */
     buildingBpm?: number | null;
+    /** Rule followRecent: a window rate close to a number shown moments ago, shown while nothing else is; else null. */
+    followBpm?: number | null;
     /** Rule blinkGate: true while a rate would show but no blink has been seen since the face appeared. */
     waitingForBlink?: boolean;
     /** Rule moreReadings: true while a rate proven in the last RELOCK_MS can be returned to (re-lock is open). */
@@ -197,8 +199,10 @@ export type PulseCheckRules = {
      */
     clearWindows?: boolean;
     /**
-     * OFF unless true, being measured on testers' devices: with rule moreReadings the building number needs
-     * SHORT_BUILDING_STREAK agreeing windows, fewer than any other rule asks. Proof and re-lock unchanged.
+     * With rule moreReadings the building number needs SHORT_BUILDING_STREAK agreeing windows, fewer than any other
+     * rule asks. Proof and re-lock unchanged. Unless false (on by default from 2026-10-30: on every received session
+     * with references, off cost phones a quarter of their referenced numbers and both devices seconds with a number,
+     * at the same error; evidence repo tools/decide.mjs).
      */
     shortStreak?: boolean;
     /**
@@ -209,6 +213,14 @@ export type PulseCheckRules = {
      */
     steadyLight?: boolean;
     /**
+     * OFF unless true, being measured (evidence repo tools/follow.mjs). A resting heart changes a few bpm over seconds,
+     * so when nothing shows, a window rate within FOLLOW_BPM of a number shown in the last FOLLOW_MS, at a window SNR
+     * of at least FOLLOW_MIN_SNR_DB, is shown as `followBpm`: the same heart, not a new proof. It follows only a number
+     * the check proved (never a building one, never one it followed), so it cannot walk away from the proof. Every
+     * taint, the blink gate and steadyLight still withhold it.
+     */
+    followRecent?: boolean;
+    /**
      * A rate the room carries is withheld: the room is read from the frame's two upper corners clear of the face
      * (roomFromFrame) and judged exactly as the wall beside the face, on its own bar (ROOM_MIN_SNR_DB). On recorded lab
      * sessions under a lamp flickering at a heart-like rate it is the one rule that keeps the lamp's rate off the screen:
@@ -218,13 +230,33 @@ export type PulseCheckRules = {
     roomLight?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
  * check's 16 s windows.
  */
 export declare const RELOCK_MS = 30000;
+/**
+ * Rule followRecent: how recent the proven number must be, how close the window's rate, how strong the window. Chosen
+ * on the received sessions, one score per typed reference (evidence repo tools/follow.mjs, 2026-10-30): 3 bpm and 30 s
+ * at -5 dB added the most seconds of the arms that kept the error and the share over 10 bpm off where they were, on
+ * phones and laptops both; 4 and 6 bpm added more and put a phone reference over 10 off. On the lab finger set and its
+ * no-pulse copies, anchored on proven numbers only it kept the share over 10 off and the no-pulse numbers about where
+ * they were, where anchoring on building numbers too did not. 30 s is RELOCK_MS, -5 dB is BUILDING_MIN_SNR_DB.
+ */
+export declare const FOLLOW_MS = 30000;
+export declare const FOLLOW_BPM = 3;
+export declare const FOLLOW_MIN_SNR_DB = -5;
+/**
+ * Rule followRecent: the window's rate when it is the same heart as the number shown last (within FOLLOW_BPM, that
+ * number at most FOLLOW_MS old, the window at FOLLOW_MIN_SNR_DB or more), else null. `blocked`: a taint, the blink
+ * gate or steadyLight withholds it.
+ */
+export declare function followRate(lastShown: {
+    bpm: number;
+    t: number;
+} | null, timestampMs: number, windowBpm: number | null | undefined, windowSnrDb: number | null | undefined, blocked: boolean): number | null;
 /**
  * Rule moreReadings (re-lock): the shortest streak that returns to a proven rate. Two is the fewest windows that can agree with each
  * other; one and two measured alike, three lost most of the shorter gaps on the side webcams (lane/sessionbar).
@@ -379,6 +411,7 @@ export declare function shownPulseBpm(state: {
     verdict: string;
     bpm: number | null;
     buildingBpm?: number | null;
+    followBpm?: number | null;
 }): number | null;
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
@@ -507,6 +540,8 @@ export declare class PulseCheck {
     private blinks;
     /** Rule moreReadings (re-lock): the latest proven rate and when it was proven, or null. */
     private lastProven;
+    /** Rule followRecent: the last number the check proved, with its time. */
+    private lastShown;
     /** The newest in-band follower value, or null (the state's followerBpm). */
     private followerBpm;
     private lastEvalMs;

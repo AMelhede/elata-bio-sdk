@@ -72,7 +72,7 @@ describe("streakNeeded", () => {
 	it("is the proof's 8 without moreReadings, 4 with it, and 2 while re-lock is open", () => {
 		expect(streakNeeded(resolvePulseCheckRules(), false)).toBe(OWN_PULSE_STREAK);
 		expect(streakNeeded(resolvePulseCheckRules(), true)).toBe(OWN_PULSE_STREAK);
-		expect(streakNeeded(resolvePulseCheckRules({ moreReadings: true }), false)).toBe(OWN_PULSE_STRONG_STREAK);
+		expect(streakNeeded(resolvePulseCheckRules({ moreReadings: true, shortStreak: false }), false)).toBe(OWN_PULSE_STRONG_STREAK);
 		expect(streakNeeded(resolvePulseCheckRules({ moreReadings: true }), true)).toBe(RELOCK_STREAK);
 	});
 	it("the state says when re-lock is open: a rate proven within RELOCK_MS, moreReadings on", () => {

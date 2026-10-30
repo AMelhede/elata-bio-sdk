@@ -90,8 +90,8 @@ describe("rule foreheadPool: the building number needs one more window while the
 		expect(buildingRate(v(POOL_BUILDING_STREAK), false, POOL_BUILDING_STREAK)).toBe(70);
 	});
 	it("tells an app's progress the same streak, and leaves re-lock as it was", () => {
-		const on = resolvePulseCheckRules({ moreReadings: true, foreheadPool: true });
-		const off = resolvePulseCheckRules({ moreReadings: true });
+		const on = resolvePulseCheckRules({ moreReadings: true, foreheadPool: true, shortStreak: false });
+		const off = resolvePulseCheckRules({ moreReadings: true, shortStreak: false });
 		expect(streakNeeded(on, false)).toBe(POOL_BUILDING_STREAK);
 		expect(streakNeeded(off, false)).toBe(OWN_PULSE_STRONG_STREAK);
 		expect(streakNeeded(on, true)).toBe(streakNeeded(off, true));
@@ -136,9 +136,9 @@ describe("a recording with the pool keeps the forehead box it replaced, so the f
 	});
 	it("the check itself shows its first building number one window later under the rule", () => {
 		const first = (rules: object) => feed(new RecordingPulseCheck({ rules }), false, 0.03).findIndex((e) => e.bpm != null);
-		const plain = first({ moreReadings: true });
+		const plain = first({ moreReadings: true, shortStreak: false });
 		expect(plain).toBeGreaterThan(0);
-		expect(first({ moreReadings: true, foreheadPool: true })).toBe(plain + 1);
+		expect(first({ moreReadings: true, foreheadPool: true, shortStreak: false })).toBe(plain + 1);
 	});
 	it("replays with its own rules, through a file, to every number the live check showed (the box is recorded only)", () => {
 		const check = new RecordingPulseCheck({ rules: { moreReadings: true, foreheadPool: true } });
@@ -181,8 +181,8 @@ describe("rule coherentFusion: the regions' pulses added in time", () => {
 	});
 	it("the building number needs one window fewer under the rule, whatever the forehead", () => {
 		expect(COHERENT_BUILDING_STREAK).toBe(3);
-		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true, foreheadPool: true }))).toBe(3);
-		expect(streakNeeded(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true }), false)).toBe(3);
-		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, foreheadPool: true }))).toBe(5);
+		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true, foreheadPool: true, shortStreak: false }))).toBe(3);
+		expect(streakNeeded(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true, shortStreak: false }), false)).toBe(3);
+		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, foreheadPool: true, shortStreak: false }))).toBe(5);
 	});
 });
