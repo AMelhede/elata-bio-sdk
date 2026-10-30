@@ -132,6 +132,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "coherentFusion",
     "clearWindows",
     "shortStreak",
+    "steadyLight",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -196,6 +197,19 @@ export const COHERENT_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK - 1;
  * seconds with a number on every device with the error against a typed watch unchanged.
  */
 export const SHORT_BUILDING_STREAK = 2;
+/**
+ * Rule steadyLight: the building number waits while its window holds this many light steps or more. On a recorded
+ * Android phone session a building number of 51 against a ring's 68 came from 2 windows holding 6 to 8 steps, right after the
+ * screen light switched on. Replayed on every received recording and on recorded lab sessions, 3 removed it and the
+ * phone's error against typed references fell from 6.6 to 4.0 bpm, at no cost in seconds with a number on the laptop,
+ * half a point on the phone and 0.2 on lab webcams, and slightly fewer numbers on no-pulse copies (2.3 to 2.1 per 100);
+ * 1 cut numbers on no-pulse copies further (1.7) but cost about 0.7 points of seconds everywhere.
+ */
+export const STEADY_LIGHT_MAX_STEPS = 3;
+/** Rule steadyLight: whether a building number may show with this many light steps in its window. */
+export function steadyLightAllows(windowScreenSteps, rules) {
+    return !rules.steadyLight || windowScreenSteps == null || windowScreenSteps < STEADY_LIGHT_MAX_STEPS;
+}
 /** The building streak under the rules running. */
 /** The run of windows the early number counts: the clear windows under rule clearWindows, else every agreeing one. */
 export function countingStreak(v, rules) {
@@ -336,6 +350,7 @@ export function resolvePulseCheckRules(rules) {
         coherentFusion: rules?.coherentFusion === true,
         clearWindows: rules?.clearWindows !== false,
         shortStreak: rules?.shortStreak === true,
+        steadyLight: rules?.steadyLight !== false,
     };
 }
 /**
@@ -994,6 +1009,8 @@ export class PulseCheck {
         this.state.buildingBpm = this.rules.moreReadings
             ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, buildingStreak(this.rules), this.rules.clearWindows)
             : null;
+        if (this.state.buildingBpm != null && !steadyLightAllows(windowScreenSteps, this.rules))
+            this.state.buildingBpm = null;
         // Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
         if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {
             this.state.verdict = "not-measured";

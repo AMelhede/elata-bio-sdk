@@ -269,9 +269,16 @@ export type PulseCheckRules = {
      * SHORT_BUILDING_STREAK agreeing windows, fewer than any other rule asks. Proof and re-lock unchanged.
      */
     shortStreak?: boolean;
+    /**
+     * With rule moreReadings, the building number waits while the light on the face stepped STEADY_LIGHT_MAX_STEPS or
+     * more times in its window (`windowScreenSteps`, rule screenLight's count): a screen light switching on, a lamp or
+     * an exposure change inside the window reads as a slow pulse, and two agreeing windows are too few to tell. Proof
+     * and re-lock unchanged; without moreReadings or screenLight nothing changes. Unless false.
+     */
+    steadyLight?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -338,6 +345,17 @@ export declare const COHERENT_BUILDING_STREAK: number;
  * seconds with a number on every device with the error against a typed watch unchanged.
  */
 export declare const SHORT_BUILDING_STREAK = 2;
+/**
+ * Rule steadyLight: the building number waits while its window holds this many light steps or more. On a recorded
+ * Android phone session a building number of 51 against a ring's 68 came from 2 windows holding 6 to 8 steps, right after the
+ * screen light switched on. Replayed on every received recording and on recorded lab sessions, 3 removed it and the
+ * phone's error against typed references fell from 6.6 to 4.0 bpm, at no cost in seconds with a number on the laptop,
+ * half a point on the phone and 0.2 on lab webcams, and slightly fewer numbers on no-pulse copies (2.3 to 2.1 per 100);
+ * 1 cut numbers on no-pulse copies further (1.7) but cost about 0.7 points of seconds everywhere.
+ */
+export declare const STEADY_LIGHT_MAX_STEPS = 3;
+/** Rule steadyLight: whether a building number may show with this many light steps in its window. */
+export declare function steadyLightAllows(windowScreenSteps: number | null | undefined, rules: Pick<ResolvedPulseCheckRules, "steadyLight">): boolean;
 /** The building streak under the rules running. */
 /** The run of windows the early number counts: the clear windows under rule clearWindows, else every agreeing one. */
 export declare function countingStreak(v: {
