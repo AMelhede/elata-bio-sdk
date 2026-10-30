@@ -26,9 +26,15 @@ export const PULSE_DISPLAY_LIVE_MS = 5000;
  */
 export const PULSE_DISPLAY_RECENT_MS = 10000;
 export class PulseDisplay {
-    constructor() {
+    /**
+     * `recentMs`: how long a number stays on screen as recent after the newest, PULSE_DISPLAY_RECENT_MS by default. With
+     * rule clearWindows the recent stage held 20 s on recorded lab webcam sessions at an error no higher than 10 s without
+     * it, with more seconds on screen and fewer numbers on no-pulse copies.
+     */
+    constructor(options = {}) {
         this.numbers = [];
         this.shown = null;
+        this.recentMs = options.recentMs ?? PULSE_DISPLAY_RECENT_MS;
     }
     /** One read of the check: the number it shows now (shownPulseBpm), or null when it shows none. */
     push(atMs, bpm) {
@@ -48,7 +54,7 @@ export class PulseDisplay {
         if (age <= PULSE_DISPLAY_LIVE_MS)
             return { kind: "live", bpm: this.shown.bpm };
         const agoS = Math.round(age / 1000);
-        return { kind: age <= PULSE_DISPLAY_RECENT_MS ? "recent" : "last", bpm: this.shown.bpm, agoS };
+        return { kind: age <= this.recentMs ? "recent" : "last", bpm: this.shown.bpm, agoS };
     }
     reset() {
         this.numbers = [];

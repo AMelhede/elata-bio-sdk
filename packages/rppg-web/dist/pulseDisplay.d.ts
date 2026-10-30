@@ -42,6 +42,15 @@ export type PulseDisplayView = {
 export declare class PulseDisplay {
     private numbers;
     private shown;
+    private readonly recentMs;
+    /**
+     * `recentMs`: how long a number stays on screen as recent after the newest, PULSE_DISPLAY_RECENT_MS by default. With
+     * rule clearWindows the recent stage held 20 s on recorded lab webcam sessions at an error no higher than 10 s without
+     * it, with more seconds on screen and fewer numbers on no-pulse copies.
+     */
+    constructor(options?: {
+        recentMs?: number;
+    });
     /** One read of the check: the number it shows now (shownPulseBpm), or null when it shows none. */
     push(atMs: number, bpm: number | null): void;
     view(nowMs: number): PulseDisplayView;

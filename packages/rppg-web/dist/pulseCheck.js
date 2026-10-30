@@ -130,6 +130,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "blinkGate",
     "foreheadPool",
     "coherentFusion",
+    "clearWindows",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -197,7 +198,11 @@ export function buildingStreak(rules) {
  * streak the check ever accepts; POOL_BUILDING_STREAK under rule foreheadPool) whose mean SNR reaches
  * BUILDING_MIN_SNR_DB (two dB under the proof's bar).
  */
-export function buildingRate(v, withheld, minStreak = OWN_PULSE_STRONG_STREAK) {
+export function buildingRate(v, withheld, minStreak = OWN_PULSE_STRONG_STREAK, 
+/** Rule clearWindows: count only the streak's clear windows (clearStreak, clearBpm, clearSnrDb). */
+clear = false) {
+    if (clear && v.clearStreak != null)
+        v = { ...v, streak: v.clearStreak, streakBpm: v.clearBpm, streakSnrDb: v.clearSnrDb };
     if (v.verdict === "measured" || withheld || v.streak < minStreak)
         return null;
     if (v.streakSnrDb == null || v.streakSnrDb < BUILDING_MIN_SNR_DB)
@@ -315,6 +320,7 @@ export function resolvePulseCheckRules(rules) {
         blinkGate: rules?.blinkGate === true,
         foreheadPool: rules?.foreheadPool === true,
         coherentFusion: rules?.coherentFusion === true,
+        clearWindows: rules?.clearWindows !== false,
     };
 }
 /**
@@ -969,7 +975,7 @@ export class PulseCheck {
         this.state.heldBpm = this.held;
         // Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
         this.state.buildingBpm = this.rules.moreReadings
-            ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, buildingStreak(this.rules))
+            ? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, buildingStreak(this.rules), this.rules.clearWindows)
             : null;
         // Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
         if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {

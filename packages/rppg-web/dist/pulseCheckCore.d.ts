@@ -69,6 +69,11 @@ export interface OwnPulseEstimate {
      * `bpm`, the bin. Optional so a hand-built estimate need not carry it.
      */
     bpmFine?: number | null;
+    /**
+     * How far the line stands above its runner-up, dB: the strongest local maximum of the same whitened spectrum in the
+     * band at least CLEAR_RUNNER_UP_BPM away on either side (Infinity with none, null with no line). Rule clearWindows.
+     */
+    lineMarginDb?: number | null;
     /** How the pulse was read from the colours this window (see OWN_PULSE_COLOUR_DAMAGE). */
     method?: "pos" | "greenMinusWall";
     /** The colour-damage measure this window (see OWN_PULSE_COLOUR_DAMAGE), or null. */
@@ -215,6 +220,18 @@ export declare const OWN_PULSE_SWAP_MIN_WALL_TO_FACE = 0.1;
 export declare const OWN_PULSE_SWAP_WALL_QUANTILE = 0.1;
 /** Green minus the share of it the wall's brightness explains (least squares), sign as POS. */
 export declare function greenMinusWall(G: number[], wall: number[]): number[];
+/**
+ * Rule clearWindows: the building number counts only windows whose line stands at least this far above its runner-up.
+ * On recorded lab webcam sessions (three cameras, finger reference) the building number read low at raised heart rates
+ * (above 90 bpm, 29% of its evaluations more than 10 bpm low against 3.4% of proven ones, at 55 to 70 bpm where no-pulse
+ * noise lands); 1 and 3 dB tried on one half of the people, 3 dB held out once on the other with the display's recent
+ * stage at 20 s: more seconds with a number, lower error, fewer numbers on no-pulse copies.
+ */
+export declare const CLEAR_MARGIN_DB = 3;
+/** Rule clearWindows: how far from the line a runner-up must sit to count as another rate (twice the agreement width, 15 bpm). */
+export declare const CLEAR_RUNNER_UP_BPM = 15;
+/** The line's margin over its runner-up in a spectrum, dB (lineMarginDb). */
+export declare function lineMargin(P: readonly [number, number][], bpm: number): number;
 /**
  * Estimate over the most recent `windowS` seconds of raw samples. Returns null
  * when the window is not yet full or the frame rate is too low to resolve the
@@ -367,5 +384,9 @@ lowBand?: number): {
     /** The current streak's mean fine rate and mean SNR, on every verdict (rule moreReadings). */
     streakBpm?: number | null;
     streakSnrDb?: number | null;
+    /** The same streak over only its newest windows at CLEAR_MARGIN_DB or more (rule clearWindows), with their mean rate and SNR. */
+    clearStreak?: number;
+    clearBpm?: number | null;
+    clearSnrDb?: number | null;
 };
 //# sourceMappingURL=pulseCheckCore.d.ts.map

@@ -338,6 +338,12 @@ export type PulseCheckRules = {
 	 * COHERENT_BUILDING_STREAK agreeing windows. Reads a light that steps the whole face more often too.
 	 */
 	coherentFusion?: boolean;
+	/**
+	 * With rule moreReadings, the building number counts only windows whose line stands CLEAR_MARGIN_DB above its
+	 * runner-up 15 bpm or more away (pulseCheckCore.ts lineMargin): a window that cannot tell two rates apart is evidence
+	 * for neither. Proof and re-lock unchanged; without moreReadings nothing changes. Unless false.
+	 */
+	clearWindows?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -358,6 +364,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"blinkGate",
 	"foreheadPool",
 	"coherentFusion",
+	"clearWindows",
 ] as const;
 
 /**
@@ -431,10 +438,13 @@ export function buildingStreak(rules: ResolvedPulseCheckRules): number {
  * BUILDING_MIN_SNR_DB (two dB under the proof's bar).
  */
 export function buildingRate(
-	v: { verdict: string; streak: number; streakBpm?: number | null; streakSnrDb?: number | null },
+	v: { verdict: string; streak: number; streakBpm?: number | null; streakSnrDb?: number | null; clearStreak?: number; clearBpm?: number | null; clearSnrDb?: number | null },
 	withheld: boolean,
 	minStreak: number = OWN_PULSE_STRONG_STREAK,
+	/** Rule clearWindows: count only the streak's clear windows (clearStreak, clearBpm, clearSnrDb). */
+	clear = false,
 ): number | null {
+	if (clear && v.clearStreak != null) v = { ...v, streak: v.clearStreak, streakBpm: v.clearBpm, streakSnrDb: v.clearSnrDb };
 	if (v.verdict === "measured" || withheld || v.streak < minStreak) return null;
 	if (v.streakSnrDb == null || v.streakSnrDb < BUILDING_MIN_SNR_DB) return null;
 	return v.streakBpm ?? null;
@@ -549,6 +559,7 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
 		blinkGate: rules?.blinkGate === true,
 		foreheadPool: rules?.foreheadPool === true,
 		coherentFusion: rules?.coherentFusion === true,
+		clearWindows: rules?.clearWindows !== false,
 	};
 }
 
@@ -1295,7 +1306,7 @@ export class PulseCheck {
 		this.state.heldBpm = this.held;
 		// Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
 		this.state.buildingBpm = this.rules.moreReadings
-			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, buildingStreak(this.rules))
+			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch || faceFlicker || headMatch, buildingStreak(this.rules), this.rules.clearWindows)
 			: null;
 		// Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
 		if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {

@@ -381,6 +381,33 @@ export function greenMinusWall(G, wall) {
     return g.map((v, i) => -(v - beta * w[i]));
 }
 /**
+ * Rule clearWindows: the building number counts only windows whose line stands at least this far above its runner-up.
+ * On recorded lab webcam sessions (three cameras, finger reference) the building number read low at raised heart rates
+ * (above 90 bpm, 29% of its evaluations more than 10 bpm low against 3.4% of proven ones, at 55 to 70 bpm where no-pulse
+ * noise lands); 1 and 3 dB tried on one half of the people, 3 dB held out once on the other with the display's recent
+ * stage at 20 s: more seconds with a number, lower error, fewer numbers on no-pulse copies.
+ */
+export const CLEAR_MARGIN_DB = 3;
+/** Rule clearWindows: how far from the line a runner-up must sit to count as another rate (twice the agreement width, 15 bpm). */
+export const CLEAR_RUNNER_UP_BPM = 15;
+/** The line's margin over its runner-up in a spectrum, dB (lineMarginDb). */
+export function lineMargin(P, bpm) {
+    const [lo, hi] = OWN_PULSE_BAND_HZ;
+    const f0 = bpm / 60;
+    let top = 0;
+    let run = 0;
+    for (let i = 1; i < P.length - 1; i++) {
+        const [f, p] = P[i];
+        if (f < lo || f > hi)
+            continue;
+        if (Math.abs(f - f0) <= 0.5 / 60)
+            top = Math.max(top, p);
+        if (Math.abs(f - f0) * 60 >= CLEAR_RUNNER_UP_BPM && p > P[i - 1][1] && p >= P[i + 1][1])
+            run = Math.max(run, p);
+    }
+    return run > 0 && top > 0 ? 10 * Math.log10(top / run) : Number.POSITIVE_INFINITY;
+}
+/**
  * Estimate over the most recent `windowS` seconds of raw samples. Returns null
  * when the window is not yet full or the frame rate is too low to resolve the
  * band (below 2x the band edge, i.e. 6 fps).
@@ -454,6 +481,7 @@ coherent = false) {
     const line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
     const combined = coherent && Number.isFinite(line.snrDb) ? { ...line, snrDb: line.snrDb - COHERENT_SNR_OFFSET_DB } : line;
     const found = Number.isFinite(combined.bpm);
+    const lineMarginDb = found ? lineMargin(comb, combined.bpm) : null;
     const agreeing = found
         ? regions
             .filter((r) => Math.abs(r.bpm - combined.bpm) <= OWN_PULSE_AGREE_BPM)
@@ -468,6 +496,8 @@ coherent = false) {
         bpm: found ? Math.round(combined.bpm * 10) / 10 : null,
         snrDb: found ? Math.round(combined.snrDb * 10) / 10 : null,
         bpmFine: found ? Math.round(fineBpm(comb, combined.bpm) * 10) / 10 : null,
+        // Unrounded: the 3 dB bar was measured on the exact margin, and a rounding would move windows across it.
+        lineMarginDb,
         method,
         colourDamage,
         wallSeen,
@@ -657,9 +687,22 @@ lowBand = OWN_PULSE_LOW_BAND_BPM) {
     }
     const avg = (xs) => xs.reduce((s, v) => s + v, 0) / xs.length;
     // The current streak, carried on every verdict (rule moreReadings falls back to it when no proven rate is shown).
+    // Rule clearWindows: the same streak over only its newest windows whose line clears its runner-up by CLEAR_MARGIN_DB.
+    const clearFines = [];
+    const clearSnrs = [];
+    for (let k = 0; k < streak; k++) {
+        const e = history[history.length - 1 - k];
+        if (!(e && e.lineMarginDb != null && e.lineMarginDb >= CLEAR_MARGIN_DB))
+            break;
+        clearFines.push(e.bpmFine ?? e.bpm);
+        clearSnrs.push(e.snrDb);
+    }
     const streakStats = {
         streakBpm: fines.length ? Math.round(avg(fines) * 10) / 10 : null,
         streakSnrDb: snrs.length ? avg(snrs) : null,
+        clearStreak: clearFines.length,
+        clearBpm: clearFines.length ? Math.round(avg(clearFines) * 10) / 10 : null,
+        clearSnrDb: clearSnrs.length ? avg(clearSnrs) : null,
     };
     const excess = snrs.reduce((sum, v) => sum + (v - OWN_PULSE_MIN_SNR_DB), 0);
     if ((streak >= OWN_PULSE_STREAK && avg(snrs) >= OWN_PULSE_MIN_SNR_DB) ||

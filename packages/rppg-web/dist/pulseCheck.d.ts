@@ -253,9 +253,15 @@ export type PulseCheckRules = {
      * COHERENT_BUILDING_STREAK agreeing windows. Reads a light that steps the whole face more often too.
      */
     coherentFusion?: boolean;
+    /**
+     * With rule moreReadings, the building number counts only windows whose line stands CLEAR_MARGIN_DB above its
+     * runner-up 15 bpm or more away (pulseCheckCore.ts lineMargin): a window that cannot tell two rates apart is evidence
+     * for neither. Proof and re-lock unchanged; without moreReadings nothing changes. Unless false.
+     */
+    clearWindows?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["wallBandEdge", "lightFamily", "faceFlicker", "lightTaint", "screenLight", "headMotion", "darkWall", "clockBack", "faintWall", "restBand", "roomLight", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -328,7 +334,12 @@ export declare function buildingRate(v: {
     streak: number;
     streakBpm?: number | null;
     streakSnrDb?: number | null;
-}, withheld: boolean, minStreak?: number): number | null;
+    clearStreak?: number;
+    clearBpm?: number | null;
+    clearSnrDb?: number | null;
+}, withheld: boolean, minStreak?: number, 
+/** Rule clearWindows: count only the streak's clear windows (clearStreak, clearBpm, clearSnrDb). */
+clear?: boolean): number | null;
 /** The rate a check's state shows: the proven rate when one is shown, else (rule moreReadings) the building streak's
  * rate, else null. A proven rate whose newest windows no longer back it falls back to the building rate, so a proof
  * (or a re-lock) never shows less than the streak behind it would. */
