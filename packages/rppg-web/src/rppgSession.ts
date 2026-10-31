@@ -9,6 +9,7 @@ import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
 import {
 	PulseCheck,
+	type PulseCheckResume,
 	type PulseCheckRules,
 	type PulseCheckState,
 	type ResolvedPulseCheckRules,
@@ -151,6 +152,12 @@ export type CreateRppgSessionOptions = Omit<
 	 * pulseCheck.ts). For testing one rule at a time; leave out in an app.
 	 */
 	pulseCheckRules?: PulseCheckRules;
+	/**
+	 * With `pulseCheck` and its rule followRecent: the rate the previous session proved (its getPulseCheckResume),
+	 * when this session replaces it after a camera restart. The same heart then shows again about 6 s in instead of 16,
+	 * if it is within FOLLOW_BPM of that rate and that rate is at most FOLLOW_RESUME_MS old. Leave out otherwise.
+	 */
+	pulseCheckResume?: PulseCheckResume | null;
 	/**
 	 * With `pulseCheck`, read the forehead region from 49 small skin patches weighted toward the cleanest
 	 * (foreheadPool.ts) instead of one box; the cheeks stay boxes. Off unless true. Costs a pixel pass over the
@@ -401,6 +408,11 @@ export class RppgSession {
 	/** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
 	reportLight(applied: LightLevel): void {
 		if (this.internals.light === true) this.runner.setAppliedLight(applied);
+	}
+
+	/** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
+	getPulseCheckResume(): PulseCheckResume | null {
+		return this.internals.pulseCheck?.resumePoint() ?? null;
 	}
 
 	/** State of the real-pulse check; null when `pulseCheck` is off. */
@@ -823,11 +835,11 @@ export async function createRppgSession(
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
 export function sessionPulseCheck(
-	options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs" | "foreheadPool">,
+	options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs" | "foreheadPool" | "pulseCheckResume">,
 ): PulseCheck | null {
 	if (options.pulseCheck === false) return null;
 	// Switch foreheadPool sets the check's rule of the same name, so the check always knows what it is fed.
-	const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules };
+	const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules, resumeFrom: options.pulseCheckResume ?? null };
 	const rec = options.recordPulseCheckInputs;
 	if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
 		return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds, facePatches: rec === true ? false : rec.facePatches === true });

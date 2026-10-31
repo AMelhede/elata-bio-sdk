@@ -351,6 +351,7 @@ export type {
 export {
 	PulseCheck,
 	type PulseCheckState,
+	type PulseCheckResume,
 	type PulseCheckRules,
 	type ResolvedPulseCheckRules,
 	PULSE_CHECK_RULE_NAMES,

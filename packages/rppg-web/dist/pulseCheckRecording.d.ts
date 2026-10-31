@@ -1,4 +1,4 @@
-import { type HeadPosition, type PulseCheckFrameDiag, PulseCheck, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules, type WallMiss } from "./pulseCheck.js";
+import { type HeadPosition, type PulseCheckFrameDiag, PulseCheck, type PulseCheckResume, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules, type WallMiss } from "./pulseCheck.js";
 type Rgb = {
     r: number;
     g: number;
@@ -78,6 +78,11 @@ export type PulseCheckRecording = {
     seconds: number;
     /** Only in a recording made with facePatches: the patch layout of event field [11] (FACE_PATCH_LAYOUT_ID). */
     facePatchLayout?: string;
+    /** Only after a camera restart with pulseCheckResume: the rate handed over, on this recording's frame clock. */
+    resume?: {
+        bpm: number;
+        t: number;
+    };
     /** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
     dropped: number;
     events: PulseCheckInputEvent[];
@@ -104,6 +109,8 @@ export declare class RecordingPulseCheck extends PulseCheck {
         rules?: PulseCheckRules;
         seconds?: number;
         facePatches?: boolean;
+        resumeFrom?: PulseCheckResume | null;
+        now?: () => number;
     });
     push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss, head?: HeadPosition | null, wallRaw?: Rgb, diag?: PulseCheckFrameDiag): void;
     /** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */

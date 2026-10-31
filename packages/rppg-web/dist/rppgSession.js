@@ -115,6 +115,10 @@ export class RppgSession {
         if (this.internals.light === true)
             this.runner.setAppliedLight(applied);
     }
+    /** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
+    getPulseCheckResume() {
+        return this.internals.pulseCheck?.resumePoint() ?? null;
+    }
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck() {
         return this.internals.pulseCheck?.getState() ?? null;
@@ -470,7 +474,7 @@ export function sessionPulseCheck(options) {
     if (options.pulseCheck === false)
         return null;
     // Switch foreheadPool sets the check's rule of the same name, so the check always knows what it is fed.
-    const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules };
+    const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules, resumeFrom: options.pulseCheckResume ?? null };
     const rec = options.recordPulseCheckInputs;
     if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
         return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds, facePatches: rec === true ? false : rec.facePatches === true });

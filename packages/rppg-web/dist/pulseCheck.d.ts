@@ -534,10 +534,43 @@ export declare function levelHolds(samples: readonly (readonly number[])[], k: n
 export declare function equalLightStep(a: readonly number[], b: readonly number[]): boolean;
 /** Equal light steps in the OWN_PULSE_WINDOW_S window ending at `atMs`. */
 export declare function screenSteps(samples: readonly (readonly number[])[], atMs: number): number;
+/**
+ * A proven rate handed from one check to the next across a camera restart (the camera ended while the page was hidden,
+ * a lower resolution, a switch to another camera): the rate and the wall-clock time (Date.now) it was last proven. The
+ * new camera's frames run on a new clock, so the time is on the wall clock. Read with resumePoint, given back with
+ * createRppgSession's pulseCheckResume; the new check uses it as followRecent uses a break that kept the camera.
+ */
+export type PulseCheckResume = {
+    bpm: number;
+    atEpochMs: number;
+};
 export declare class PulseCheck {
     constructor(opts?: {
         rules?: PulseCheckRules;
+        /** The rate proven by the check before a camera restart (resumePoint of that check). */
+        resumeFrom?: PulseCheckResume | null;
+        /** The wall clock, Date.now unless a test sets it. */
+        now?: () => number;
+        /** For replay only: a hand-over already placed on the recording's frame clock (PulseCheckRecording.resume). */
+        resumeAt?: {
+            bpm: number;
+            t: number;
+        } | null;
     });
+    private readonly now;
+    /** A hand-over not yet placed on this check's frame clock (placed at the first frame). */
+    private resumeFrom;
+    /** The wall-clock time of followKept, for resumePoint. */
+    private keptEpochMs;
+    /** The hand-over as placed on this check's frame clock, kept for the recording; null when none was given. */
+    resumeSeed: {
+        bpm: number;
+        t: number;
+    } | null;
+    /** A hand-over was given and no frame has placed it yet. */
+    get resumePending(): boolean;
+    /** The rate to hand to the check after a camera restart: the last proven rate and when, or null before one. */
+    resumePoint(): PulseCheckResume | null;
     /** Which light rules this check runs (see PulseCheckRules). */
     readonly rules: ResolvedPulseCheckRules;
     /** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */

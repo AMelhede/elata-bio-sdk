@@ -531,6 +531,12 @@ const HISTORY_MAX = 120;
 const FACE_GONE_MS = EVAL_EVERY_MS;
 export class PulseCheck {
     constructor(opts = {}) {
+        /** A hand-over not yet placed on this check's frame clock (placed at the first frame). */
+        this.resumeFrom = null;
+        /** The wall-clock time of followKept, for resumePoint. */
+        this.keptEpochMs = null;
+        /** The hand-over as placed on this check's frame clock, kept for the recording; null when none was given. */
+        this.resumeSeed = null;
         this.samples = [];
         this.wall = [];
         /** The room (roomFromFrame) as handed over, for rule roomLight, kept as long as the wall. */
@@ -564,6 +570,25 @@ export class PulseCheck {
         this.unsupported = 0;
         this.evaluationCount = 0;
         this.rules = resolvePulseCheckRules(opts.rules);
+        this.now = opts.now ?? Date.now;
+        const r = opts.resumeFrom;
+        if (r != null) {
+            if (!(r.bpm > 0) || !Number.isFinite(r.bpm) || !Number.isFinite(r.atEpochMs))
+                throw new RangeError(`pulseCheckResume needs a finite bpm above 0 and a finite atEpochMs, not ${JSON.stringify(r)}`);
+            this.resumeFrom = { bpm: r.bpm, atEpochMs: r.atEpochMs };
+        }
+        if (opts.resumeAt != null) {
+            this.followKept = { bpm: opts.resumeAt.bpm, t: opts.resumeAt.t };
+            this.resumeSeed = { ...this.followKept };
+        }
+    }
+    /** A hand-over was given and no frame has placed it yet. */
+    get resumePending() {
+        return this.resumeFrom != null;
+    }
+    /** The rate to hand to the check after a camera restart: the last proven rate and when, or null before one. */
+    resumePoint() {
+        return this.followKept != null && this.keptEpochMs != null ? { bpm: this.followKept.bpm, atEpochMs: this.keptEpochMs } : null;
     }
     /** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */
     get swapMinWall() {
@@ -609,6 +634,16 @@ export class PulseCheck {
     diag) {
         if (regions.length < 3 || !Number.isFinite(timestampMs))
             return;
+        if (this.resumeFrom != null) {
+            // The first frame after a camera restart: the rate proven before it, as old as the wall clock says.
+            const r = this.resumeFrom;
+            this.resumeFrom = null;
+            if (this.followKept == null) {
+                this.followKept = { bpm: r.bpm, t: timestampMs - (this.now() - r.atEpochMs) };
+                this.keptEpochMs = r.atEpochMs;
+                this.resumeSeed = { ...this.followKept };
+            }
+        }
         if (wall)
             this.wallTally.seen++;
         else if (wallMiss === "no-room")
@@ -781,6 +816,7 @@ export class PulseCheck {
         if (own != null) {
             this.lastShown = { bpm: own, t: timestampMs };
             this.followKept = this.lastShown;
+            this.keptEpochMs = this.now();
         }
         else if (this.rules.followRecent) {
             const blocked = this.state.waitingForBlink === true || wallMatch || roomMatch || !steadyLightAllows(windowScreenSteps, this.rules);

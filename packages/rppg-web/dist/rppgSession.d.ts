@@ -1,7 +1,7 @@
 import type { LightLevel } from "./lightLevel.js";
 import type { FrameSource } from "./frameSource.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
-import { PulseCheck, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
+import { PulseCheck, type PulseCheckResume, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
 import { type PulseCheckRecording } from "./pulseCheckRecording.js";
 import { ChestMotion, type ChestSample } from "./chestBreathing.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
@@ -82,6 +82,12 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * pulseCheck.ts). For testing one rule at a time; leave out in an app.
      */
     pulseCheckRules?: PulseCheckRules;
+    /**
+     * With `pulseCheck` and its rule followRecent: the rate the previous session proved (its getPulseCheckResume),
+     * when this session replaces it after a camera restart. The same heart then shows again about 6 s in instead of 16,
+     * if it is within FOLLOW_BPM of that rate and that rate is at most FOLLOW_RESUME_MS old. Leave out otherwise.
+     */
+    pulseCheckResume?: PulseCheckResume | null;
     /**
      * With `pulseCheck`, read the forehead region from 49 small skin patches weighted toward the cleanest
      * (foreheadPool.ts) instead of one box; the cheeks stay boxes. Off unless true. Costs a pixel pass over the
@@ -257,6 +263,8 @@ export declare class RppgSession {
     };
     /** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
     reportLight(applied: LightLevel): void;
+    /** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
+    getPulseCheckResume(): PulseCheckResume | null;
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
     /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */
@@ -316,6 +324,6 @@ export declare function createRppgSession(options: CreateRppgSessionOptions): Pr
  * records its inputs with `recordPulseCheckInputs` (RecordingPulseCheck); else a plain PulseCheck,
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
-export declare function sessionPulseCheck(options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs" | "foreheadPool">): PulseCheck | null;
+export declare function sessionPulseCheck(options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs" | "foreheadPool" | "pulseCheckResume">): PulseCheck | null;
 export {};
 //# sourceMappingURL=rppgSession.d.ts.map

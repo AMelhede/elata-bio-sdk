@@ -40,6 +40,7 @@ import {
 	type RoomCorners,
 	PULSE_CHECK_RULE_NAMES,
 	PulseCheck,
+	type PulseCheckResume,
 	type PulseCheckRules,
 	type PulseCheckState,
 	type ResolvedPulseCheckRules,
@@ -134,6 +135,8 @@ export type PulseCheckRecording = {
 	seconds: number;
 	/** Only in a recording made with facePatches: the patch layout of event field [11] (FACE_PATCH_LAYOUT_ID). */
 	facePatchLayout?: string;
+	/** Only after a camera restart with pulseCheckResume: the rate handed over, on this recording's frame clock. */
+	resume?: { bpm: number; t: number };
 	/** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
 	dropped: number;
 	events: PulseCheckInputEvent[];
@@ -174,8 +177,8 @@ export class RecordingPulseCheck extends PulseCheck {
 
 	private readonly recPatches: boolean;
 
-	constructor(opts: { rules?: PulseCheckRules; seconds?: number; facePatches?: boolean } = {}) {
-		super({ rules: opts.rules });
+	constructor(opts: { rules?: PulseCheckRules; seconds?: number; facePatches?: boolean; resumeFrom?: PulseCheckResume | null; now?: () => number } = {}) {
+		super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now });
 		this.recPatches = opts.facePatches === true;
 		const seconds = opts.seconds ?? PULSE_CHECK_RECORDING_SECONDS;
 		if (!(seconds > 0) || !Number.isFinite(seconds))
@@ -263,6 +266,7 @@ export class RecordingPulseCheck extends PulseCheck {
 			rules: { ...this.rules },
 			seconds: this.recSeconds,
 			...(this.recPatches ? { facePatchLayout: FACE_PATCH_LAYOUT_ID } : {}),
+			...(this.resumeSeed ? { resume: { ...this.resumeSeed } } : {}),
 			dropped: this.recDropped,
 			events,
 		};
@@ -348,7 +352,7 @@ export function replayPulseCheck(
 	const own: PulseCheckRules = Object.fromEntries(
 		PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true || (name === "moreReadings" && legacyMoreReadings(recording.rules))]),
 	);
-	const check = new PulseCheck({ rules: options.rules ?? own });
+	const check = new PulseCheck({ rules: options.rules ?? own, resumeAt: recording.resume ?? null });
 	const reads: PulseCheckReplayRead[] = [];
 	const evaluations: PulseCheckReplayEvaluation[] = [];
 	for (const e of recording.events) {
