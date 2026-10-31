@@ -91,6 +91,8 @@ export type PulseCheckState = {
     followBpm?: number | null;
     /** Rule blinkGate: true while a rate would show but no blink has been seen since the face appeared. */
     waitingForBlink?: boolean;
+    /** Rule coherentStart: true while a new number is withheld because the recent window rates do not agree with it. */
+    startGated?: boolean;
     /** Rule moreReadings: true while a rate proven in the last RELOCK_MS can be returned to (re-lock is open). */
     relockOpen?: boolean;
     /**
@@ -229,9 +231,16 @@ export type PulseCheckRules = {
      * and 414 (it was deleted for a day on 2026-10-30 and added back on this evidence). Unless false.
      */
     roomLight?: boolean;
+    /**
+     * On unless false (passed on received recordings and on a held-out lab set, 2026-10-31). A new number (none shown in the last COHERENT_START_MS) shows only when at least
+     * COHERENT_START_SHARE of the window rates of that span lie within COHERENT_START_BPM of it: a pulse stays put while
+     * noise wanders (a dark phone run, 2026-10-31: windows 72, 45, 49, 94, 53, then a wrong 52 proven against a watch's
+     * 72). Numbers already running are not judged. An output gate only (startGated): the check's own state is untouched.
+     */
+    coherentStart?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -261,6 +270,15 @@ export declare const FOLLOW_MIN_SNR_DB = -5;
  * median 1.2 bpm (max 6.5) from the full check's next number; lab unchanged (no breaks).
  */
 export declare const FOLLOW_RESUME_MS = 45000;
+/**
+ * Rule coherentStart: the span (30 s), the agreement (6 bpm, FOLLOW_BPM) and the share (0.5) a new number needs from
+ * the window rates of that span. Chosen on a public lab set's tuning half (finger reference): shown 37.5% to 34.7%, over
+ * 10 bpm off 6.2% to 4.4%, numbers on no-pulse videos 2.24 to 1.02 per 100 s; then scored once on its held-out half:
+ * shown 47.1% to 45.0%, within 5 bpm or 10% 96.5% to 97.3%, over 10 off 2.2% to 1.5%, no-pulse 2.56 to 1.12.
+ */
+export declare const COHERENT_START_MS = 30000;
+export declare const COHERENT_START_BPM = 6;
+export declare const COHERENT_START_SHARE = 0.5;
 export declare const FOLLOW_RESUME_MIN_S = 6;
 export declare const FOLLOW_RESUME_REGIONS = 2;
 /**
@@ -427,6 +445,7 @@ export declare function shownPulseBpm(state: {
     bpm: number | null;
     buildingBpm?: number | null;
     followBpm?: number | null;
+    startGated?: boolean;
 }): number | null;
 /** Every rule resolved to true or false; left out means on. */
 export declare function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules;
@@ -640,6 +659,11 @@ export declare class PulseCheck {
     wallRaw?: Rgb, 
     /** Recorded (RecordingPulseCheck); the check reads only `room`, and only under rule roomLight. */
     diag?: PulseCheckFrameDiag): void;
+    /** Rule coherentStart: the window rates of the last COHERENT_START_MS, and when a number last went out. Kept through a reset. */
+    private startHist;
+    private lastOutMs;
+    /** Rule coherentStart (see the rule): marks startGated on a new number the recent window rates do not back. */
+    private gateStart;
     /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
     private unsupported;
     /**

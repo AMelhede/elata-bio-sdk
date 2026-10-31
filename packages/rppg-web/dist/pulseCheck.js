@@ -41,6 +41,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "steadyLight",
     "roomLight",
     "followRecent",
+    "coherentStart",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -71,6 +72,15 @@ export const FOLLOW_MIN_SNR_DB = -5;
  * median 1.2 bpm (max 6.5) from the full check's next number; lab unchanged (no breaks).
  */
 export const FOLLOW_RESUME_MS = 45000;
+/**
+ * Rule coherentStart: the span (30 s), the agreement (6 bpm, FOLLOW_BPM) and the share (0.5) a new number needs from
+ * the window rates of that span. Chosen on a public lab set's tuning half (finger reference): shown 37.5% to 34.7%, over
+ * 10 bpm off 6.2% to 4.4%, numbers on no-pulse videos 2.24 to 1.02 per 100 s; then scored once on its held-out half:
+ * shown 47.1% to 45.0%, within 5 bpm or 10% 96.5% to 97.3%, over 10 off 2.2% to 1.5%, no-pulse 2.56 to 1.12.
+ */
+export const COHERENT_START_MS = 30000;
+export const COHERENT_START_BPM = 6;
+export const COHERENT_START_SHARE = 0.5;
 export const FOLLOW_RESUME_MIN_S = 6;
 export const FOLLOW_RESUME_REGIONS = 2;
 /**
@@ -286,6 +296,8 @@ export function pulseProgress(state, rules) {
     return done >= needed ? 0.95 : 0.5 + done / needed / 2;
 }
 export function shownPulseBpm(state) {
+    if (state.startGated)
+        return null;
     return state.verdict === "measured" && state.bpm != null ? state.bpm : (state.buildingBpm ?? state.followBpm ?? null);
 }
 /** Every rule resolved to true or false; left out means on. */
@@ -302,6 +314,7 @@ export function resolvePulseCheckRules(rules) {
         steadyLight: rules?.steadyLight !== false,
         roomLight: rules?.roomLight !== false,
         followRecent: rules?.followRecent === true,
+        coherentStart: rules?.coherentStart !== false,
     };
 }
 /**
@@ -568,6 +581,9 @@ export class PulseCheck {
             streak: 0,
             wallMatch: false,
         };
+        /** Rule coherentStart: the window rates of the last COHERENT_START_MS, and when a number last went out. Kept through a reset. */
+        this.startHist = [];
+        this.lastOutMs = null;
         /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
         this.unsupported = 0;
         this.evaluationCount = 0;
@@ -843,7 +859,33 @@ export class PulseCheck {
         this.state.relockOpen = this.rules.moreReadings && this.lastProven != null && timestampMs - this.lastProven.t <= RELOCK_MS;
         this.state.windowScreenSteps = windowScreenSteps;
         this.state.screenLight = screenLit;
+        this.gateStart(timestampMs);
         this.evaluationCount += 1;
+    }
+    /** Rule coherentStart (see the rule): marks startGated on a new number the recent window rates do not back. */
+    gateStart(t) {
+        const w = this.state.windowBpm;
+        if (w != null)
+            this.startHist.push([t, w]);
+        while (this.startHist.length && this.startHist[0][0] < t - COHERENT_START_MS)
+            this.startHist.shift();
+        this.state.startGated = false;
+        const v = shownPulseBpm(this.state);
+        if (v == null || !this.rules.coherentStart) {
+            if (v != null)
+                this.lastOutMs = t;
+            return;
+        }
+        if (this.lastOutMs != null && t - this.lastOutMs <= COHERENT_START_MS) {
+            this.lastOutMs = t;
+            return;
+        }
+        const n = this.startHist.length;
+        const share = n ? this.startHist.filter(([, b]) => Math.abs(b - v) <= COHERENT_START_BPM).length / n : 1;
+        if (share >= COHERENT_START_SHARE)
+            this.lastOutMs = t;
+        else
+            this.state.startGated = true;
     }
     /**
      * The rate to show once one is proven: the line in the newest OWN_PULSE_SUPPORT_S seconds when it sits
