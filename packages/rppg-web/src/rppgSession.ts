@@ -6,6 +6,7 @@ import type {
 } from "./frameSource";
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
+import { defaultLastRateStore, type LastRateStore, type LastReading, lastReadingResume, readLastReading, writeLastReading } from "./lastRate";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
 import {
 	PulseCheck,
@@ -159,6 +160,12 @@ export type CreateRppgSessionOptions = Omit<
 	 */
 	pulseCheckResume?: PulseCheckResume | null;
 	/**
+	 * With `pulseCheck`: keep the last proven rate on the device and start the next session from it (lastRate.ts), so
+	 * the first number comes sooner when the heart is near it, and `getLastReading()` gives it for the display. On
+	 * unless false; an object passes the app's own store (null keeps nothing). A `pulseCheckResume` given takes priority.
+	 */
+	rememberRate?: boolean | { store: LastRateStore | null };
+	/**
 	 * With `pulseCheck`, read the forehead region from 49 small skin patches weighted toward the cleanest
 	 * (foreheadPool.ts) instead of one box; the cheeks stay boxes. Off unless true. Costs a pixel pass over the
 	 * forehead patches per frame and one small spectrum per patch per second.
@@ -274,6 +281,9 @@ type SessionInternals = {
 	beforeStart?: () => Promise<void>;
 	waveformController?: WaveformReconstructionController;
 	pulseCheck?: PulseCheck | null;
+	/** Where the last proven rate is kept (rememberRate), and the reading kept when the session started. */
+	rateStore?: LastRateStore | null;
+	lastReading?: LastReading | null;
 	chestMotion?: ChestMotion | null;
 	experimentalVitals?: boolean;
 	foreheadPool?: boolean;
@@ -362,6 +372,7 @@ export class RppgSession {
 			return this.noteRead(clearedMetrics(metrics, "no_face"), "no_face");
 		const check = this.internals.pulseCheck;
 		if (!check) return metrics;
+		this.keepLastRate(check);
 		// With the check on, `bpm` is the heart rate the check proved, or none. The engine's own
 		// estimates (the other *_bpm fields) and its confidence pass through as diagnostics.
 		// Breathing rate and HRV are withheld always: neither yet passes a known answer, even with
@@ -408,6 +419,22 @@ export class RppgSession {
 	/** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
 	reportLight(applied: LightLevel): void {
 		if (this.internals.light === true) this.runner.setAppliedLight(applied);
+	}
+
+	/** The person's last reading kept on the device when this session started (rememberRate), for the display; or null. */
+	getLastReading(): LastReading | null {
+		return this.internals.lastReading ?? null;
+	}
+
+	private keptAt: number | null = null;
+	/** A rate proven on this face (not itself a hand-over) is kept for the next session. */
+	private keepLastRate(check: PulseCheck): void {
+		const store = this.internals.rateStore;
+		if (!store) return;
+		const r = check.resumePoint();
+		if (!r || r.maxAgeMs !== undefined || r.atEpochMs === this.keptAt) return;
+		this.keptAt = r.atEpochMs;
+		writeLastReading(store, { bpm: r.bpm, atEpochMs: r.atEpochMs });
 	}
 
 	/** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
@@ -684,7 +711,10 @@ export async function createRppgSession(
 	const pendingErrors: RppgSessionError[] = [];
 	// Built first: a bad recordPulseCheckInputs length throws here, before a face finder or an
 	// engine exists, so a refused call leaves nothing running that the caller has no session to dispose.
-	const pulseCheck = sessionPulseCheck(options);
+	const rateStore: LastRateStore | null =
+		options.rememberRate === false ? null : typeof options.rememberRate === "object" ? options.rememberRate.store : defaultLastRateStore();
+	const lastReading = options.pulseCheck === false ? null : readLastReading(rateStore, Date.now());
+	const pulseCheck = sessionPulseCheck({ ...options, pulseCheckResume: options.pulseCheckResume ?? lastReadingResume(lastReading) });
 
 	const faceMeshResult = await resolveFaceMesh(options.faceMesh);
 	if (faceMeshResult.error) pendingErrors.push(faceMeshResult.error);
@@ -799,6 +829,8 @@ export async function createRppgSession(
 			onDiagnostics: options.onDiagnostics,
 			onError: options.onError,
 			pulseCheck,
+			rateStore,
+			lastReading,
 			chestMotion,
 			experimentalVitals: options.experimentalVitals === true,
 			foreheadPool: options.foreheadPool === true,

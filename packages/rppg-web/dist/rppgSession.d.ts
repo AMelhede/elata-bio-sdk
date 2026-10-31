@@ -1,5 +1,6 @@
 import type { LightLevel } from "./lightLevel.js";
 import type { FrameSource } from "./frameSource.js";
+import { type LastRateStore, type LastReading } from "./lastRate.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { PulseCheck, type PulseCheckResume, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
 import { type PulseCheckRecording } from "./pulseCheckRecording.js";
@@ -88,6 +89,14 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * if it is within FOLLOW_BPM of that rate and that rate is at most FOLLOW_RESUME_MS old. Leave out otherwise.
      */
     pulseCheckResume?: PulseCheckResume | null;
+    /**
+     * With `pulseCheck`: keep the last proven rate on the device and start the next session from it (lastRate.ts), so
+     * the first number comes sooner when the heart is near it, and `getLastReading()` gives it for the display. On
+     * unless false; an object passes the app's own store (null keeps nothing). A `pulseCheckResume` given takes priority.
+     */
+    rememberRate?: boolean | {
+        store: LastRateStore | null;
+    };
     /**
      * With `pulseCheck`, read the forehead region from 49 small skin patches weighted toward the cleanest
      * (foreheadPool.ts) instead of one box; the cheeks stay boxes. Off unless true. Costs a pixel pass over the
@@ -204,6 +213,9 @@ type SessionInternals = {
     beforeStart?: () => Promise<void>;
     waveformController?: WaveformReconstructionController;
     pulseCheck?: PulseCheck | null;
+    /** Where the last proven rate is kept (rememberRate), and the reading kept when the session started. */
+    rateStore?: LastRateStore | null;
+    lastReading?: LastReading | null;
     chestMotion?: ChestMotion | null;
     experimentalVitals?: boolean;
     foreheadPool?: boolean;
@@ -263,6 +275,11 @@ export declare class RppgSession {
     };
     /** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
     reportLight(applied: LightLevel): void;
+    /** The person's last reading kept on the device when this session started (rememberRate), for the display; or null. */
+    getLastReading(): LastReading | null;
+    private keptAt;
+    /** A rate proven on this face (not itself a hand-over) is kept for the next session. */
+    private keepLastRate;
     /** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
     getPulseCheckResume(): PulseCheckResume | null;
     /** State of the real-pulse check; null when `pulseCheck` is off. */

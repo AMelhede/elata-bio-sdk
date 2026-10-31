@@ -51,6 +51,7 @@ export class PulseDisplay {
         this.numbers = [];
         this.shown = null;
         this.lastRefreshMs = Number.NEGATIVE_INFINITY;
+        this.last = null;
         this.recentMs = options.recentMs ?? PULSE_DISPLAY_RECENT_MS;
         this.showEveryMs = options.showEveryMs ?? 0;
         const f = options.follow ?? 1;
@@ -75,9 +76,20 @@ export class PulseDisplay {
         const next = from == null ? median : from + this.follow * (median - from);
         this.shown = { atMs, bpm: keep && this.shown ? this.shown.bpm : Math.round(next) };
     }
+    /**
+     * The person's last reading from before this session (RppgSession.getLastReading), on the same clock as push and
+     * view. Until this session shows a number of its own, the view is that reading with its age, as Apple's Heart Rate
+     * app shows the latest reading and when it was taken while it measures. Null clears it.
+     */
+    setLast(last) {
+        this.last = last != null && Number.isFinite(last.bpm) && last.bpm > 0 && Number.isFinite(last.atMs) ? { bpm: Math.round(last.bpm), atMs: last.atMs } : null;
+    }
     view(nowMs) {
-        if (!this.shown)
+        if (!this.shown) {
+            if (this.last && nowMs >= this.last.atMs)
+                return { kind: "last", bpm: this.last.bpm, agoS: Math.round((nowMs - this.last.atMs) / 1000) };
             return { kind: "measuring" };
+        }
         const age = nowMs - this.shown.atMs;
         if (age <= PULSE_DISPLAY_LIVE_MS)
             return { kind: "live", bpm: this.shown.bpm };

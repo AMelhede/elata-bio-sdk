@@ -52,6 +52,7 @@ export class PulseDisplay {
 	private readonly showEveryMs: number;
 	private lastRefreshMs = Number.NEGATIVE_INFINITY;
 	private readonly follow: number;
+	private last: { bpm: number; atMs: number } | null = null;
 	/**
 	 * `recentMs`: how long a number stays on screen as recent after the newest, PULSE_DISPLAY_RECENT_MS by default. With
 	 * rule clearWindows the recent stage held 20 s on recorded lab webcam sessions at an error no higher than 10 s without
@@ -88,8 +89,20 @@ export class PulseDisplay {
 		this.shown = { atMs, bpm: keep && this.shown ? this.shown.bpm : Math.round(next) };
 	}
 
+	/**
+	 * The person's last reading from before this session (RppgSession.getLastReading), on the same clock as push and
+	 * view. Until this session shows a number of its own, the view is that reading with its age, as Apple's Heart Rate
+	 * app shows the latest reading and when it was taken while it measures. Null clears it.
+	 */
+	setLast(last: { bpm: number; atMs: number } | null): void {
+		this.last = last != null && Number.isFinite(last.bpm) && last.bpm > 0 && Number.isFinite(last.atMs) ? { bpm: Math.round(last.bpm), atMs: last.atMs } : null;
+	}
+
 	view(nowMs: number): PulseDisplayView {
-		if (!this.shown) return { kind: "measuring" };
+		if (!this.shown) {
+			if (this.last && nowMs >= this.last.atMs) return { kind: "last", bpm: this.last.bpm, agoS: Math.round((nowMs - this.last.atMs) / 1000) };
+			return { kind: "measuring" };
+		}
 		const age = nowMs - this.shown.atMs;
 		if (age <= PULSE_DISPLAY_LIVE_MS) return { kind: "live", bpm: this.shown.bpm };
 		const agoS = Math.round(age / 1000);

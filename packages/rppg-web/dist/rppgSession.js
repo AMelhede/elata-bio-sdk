@@ -1,5 +1,6 @@
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
+import { defaultLastRateStore, lastReadingResume, readLastReading, writeLastReading } from "./lastRate.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
 import { PulseCheck, shownPulseBpm, } from "./pulseCheck.js";
 import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
@@ -45,6 +46,7 @@ export class RppgSession {
         this.lastErrorValue = null;
         /** The engine read behind the latest getMetrics(), before any withholding (for getExperimentalVitals). */
         this.lastEngineMetrics = null;
+        this.keptAt = null;
     }
     get lastError() {
         return this.lastErrorValue;
@@ -73,6 +75,7 @@ export class RppgSession {
         const check = this.internals.pulseCheck;
         if (!check)
             return metrics;
+        this.keepLastRate(check);
         // With the check on, `bpm` is the heart rate the check proved, or none. The engine's own
         // estimates (the other *_bpm fields) and its confidence pass through as diagnostics.
         // Breathing rate and HRV are withheld always: neither yet passes a known answer, even with
@@ -114,6 +117,21 @@ export class RppgSession {
     reportLight(applied) {
         if (this.internals.light === true)
             this.runner.setAppliedLight(applied);
+    }
+    /** The person's last reading kept on the device when this session started (rememberRate), for the display; or null. */
+    getLastReading() {
+        return this.internals.lastReading ?? null;
+    }
+    /** A rate proven on this face (not itself a hand-over) is kept for the next session. */
+    keepLastRate(check) {
+        const store = this.internals.rateStore;
+        if (!store)
+            return;
+        const r = check.resumePoint();
+        if (!r || r.maxAgeMs !== undefined || r.atEpochMs === this.keptAt)
+            return;
+        this.keptAt = r.atEpochMs;
+        writeLastReading(store, { bpm: r.bpm, atEpochMs: r.atEpochMs });
     }
     /** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
     getPulseCheckResume() {
@@ -351,7 +369,9 @@ export async function createRppgSession(options) {
     const pendingErrors = [];
     // Built first: a bad recordPulseCheckInputs length throws here, before a face finder or an
     // engine exists, so a refused call leaves nothing running that the caller has no session to dispose.
-    const pulseCheck = sessionPulseCheck(options);
+    const rateStore = options.rememberRate === false ? null : typeof options.rememberRate === "object" ? options.rememberRate.store : defaultLastRateStore();
+    const lastReading = options.pulseCheck === false ? null : readLastReading(rateStore, Date.now());
+    const pulseCheck = sessionPulseCheck({ ...options, pulseCheckResume: options.pulseCheckResume ?? lastReadingResume(lastReading) });
     const faceMeshResult = await resolveFaceMesh(options.faceMesh);
     if (faceMeshResult.error)
         pendingErrors.push(faceMeshResult.error);
@@ -440,6 +460,8 @@ export async function createRppgSession(options) {
         onDiagnostics: options.onDiagnostics,
         onError: options.onError,
         pulseCheck,
+        rateStore,
+        lastReading,
         chestMotion,
         experimentalVitals: options.experimentalVitals === true,
         foreheadPool: options.foreheadPool === true,

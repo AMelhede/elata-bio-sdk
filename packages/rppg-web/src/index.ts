@@ -447,3 +447,11 @@ export {
 	lightAfter,
 	lumaOfRgb,
 } from "./lightLevel";
+export {
+	LAST_RATE_KEY,
+	LAST_RATE_MAX_AGE_MS,
+	type LastRateStore,
+	type LastReading,
+	readLastReading,
+	writeLastReading,
+} from "./lastRate";

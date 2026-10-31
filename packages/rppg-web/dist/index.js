@@ -51,3 +51,4 @@ export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
 export { ForeheadPool, FOREHEAD_TAU_SKIN, FOREHEAD_TAU_SWING, FOREHEAD_PRUNE } from "./foreheadPool.js";
 export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches.js";
 export { CENTRE_BOX, LIGHT_CLIP_MAX, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter, lumaOfRgb, } from "./lightLevel.js";
+export { LAST_RATE_KEY, LAST_RATE_MAX_AGE_MS, readLastReading, writeLastReading, } from "./lastRate.js";
