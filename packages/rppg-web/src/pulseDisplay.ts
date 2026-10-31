@@ -21,6 +21,8 @@ export const PULSE_DISPLAY_MEDIAN_MS = 5000;
  * 5 s, 44.6% and 90.1%; 10 s, 51.1% and 86.8%. 5 s is the longest that keeps 90 of 100 numbers within 5 bpm.
  */
 export const PULSE_DISPLAY_LIVE_MS = 5000;
+/** With `follow`, how recent the number on screen must be to be followed from: 15 s, three refreshes of 5 s. */
+export const PULSE_DISPLAY_FOLLOW_FRESH_MS = 15000;
 
 /**
  * Up to this long after the last number the value is shown greyed as recent; after it, as the last reading with its age.
@@ -49,14 +51,25 @@ export class PulseDisplay {
 	private readonly recentMs: number;
 	private readonly showEveryMs: number;
 	private lastRefreshMs = Number.NEGATIVE_INFINITY;
+	private readonly follow: number;
 	/**
 	 * `recentMs`: how long a number stays on screen as recent after the newest, PULSE_DISPLAY_RECENT_MS by default. With
 	 * rule clearWindows the recent stage held 20 s on recorded lab webcam sessions at an error no higher than 10 s without
 	 * it, with more seconds on screen and fewer numbers on no-pulse copies.
 	 */
-	constructor(options: { recentMs?: number; showEveryMs?: number } = {}) {
+	/**
+	 * `follow`: at each refresh the shown number moves this share of the way from the number on screen to the new median
+	 * (1, the default, goes straight there). A smoothed number, as wearables show: with 0.6 on received recordings and a
+	 * public lab set with a finger sensor (2026-10-31) updates over 5 bpm fell from 23% to 10% on a Mac, 6% to 2% on laptops, 7% to 0% on
+	 * phones and 10.8% to 6.0% in the lab, every watch reference staying within the bar and lab within-bar 80.8% to 80.4%.
+	 * A number older than PULSE_DISPLAY_FOLLOW_FRESH_MS is not followed from: the median shows as it is.
+	 */
+	constructor(options: { recentMs?: number; showEveryMs?: number; follow?: number } = {}) {
 		this.recentMs = options.recentMs ?? PULSE_DISPLAY_RECENT_MS;
 		this.showEveryMs = options.showEveryMs ?? 0;
+		const f = options.follow ?? 1;
+		if (!(f > 0 && f <= 1)) throw new RangeError(`PulseDisplay follow must be in (0, 1], not ${f}`);
+		this.follow = f;
 	}
 
 	/** One read of the check: the number it shows now (shownPulseBpm), or null when it shows none. */
@@ -70,7 +83,9 @@ export class PulseDisplay {
 		// `showEveryMs`: the number on screen changes at most this often; its age still follows the newest number.
 		const keep = this.shown != null && atMs - this.lastRefreshMs < this.showEveryMs;
 		if (!keep) this.lastRefreshMs = atMs;
-		this.shown = { atMs, bpm: keep && this.shown ? this.shown.bpm : Math.round(median) };
+		const from = this.follow < 1 && this.shown != null && atMs - this.shown.atMs <= PULSE_DISPLAY_FOLLOW_FRESH_MS ? this.shown.bpm : null;
+		const next = from == null ? median : from + this.follow * (median - from);
+		this.shown = { atMs, bpm: keep && this.shown ? this.shown.bpm : Math.round(next) };
 	}
 
 	view(nowMs: number): PulseDisplayView {

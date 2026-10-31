@@ -52,3 +52,36 @@ describe("PulseDisplay", () => {
 		expect(d.view(1000)).toEqual({ kind: "measuring" });
 	});
 });
+
+describe('PulseDisplay follow: the shown number moves part of the way to each new median', () => {
+	// Received recordings and a public lab set (2026-10-31): follow 0.6 cut updates over 5 bpm from 23% to 10% on
+	// a Mac, 6% to 2% on laptops, 7% to 0% on phones and 10.8% to 6.0% in the lab, keeping every watch reference within
+	// the bar (laptop 32/33, phone 15/15) and lab within-bar 80.8% to 80.4%.
+	test('a jump from 60 to 70 shows 66 first, then closes in', () => {
+		const d = new PulseDisplay({ showEveryMs: 5000, follow: 0.6 });
+		for (let t = 0; t <= 4000; t += 1000) d.push(t, 60);
+		expect(d.view(4000)).toEqual({ kind: 'live', bpm: 60 });
+		for (let t = 5000; t <= 10000; t += 1000) d.push(t, 70);
+		expect(d.view(10000)).toEqual({ kind: 'live', bpm: 66 });
+		for (let t = 11000; t <= 15000; t += 1000) d.push(t, 70);
+		expect(d.view(15000)).toEqual({ kind: 'live', bpm: 68 });
+	});
+	test('without follow (or follow 1) the number goes straight to the median, as before', () => {
+		for (const opts of [{ showEveryMs: 5000 }, { showEveryMs: 5000, follow: 1 }]) {
+			const d = new PulseDisplay(opts);
+			for (let t = 0; t <= 4000; t += 1000) d.push(t, 60);
+			for (let t = 5000; t <= 10000; t += 1000) d.push(t, 70);
+			expect(d.view(10000)).toEqual({ kind: 'live', bpm: 70 });
+		}
+	});
+	test('after a break of over 15 s the first number is the median itself, not a step from an old one', () => {
+		const d = new PulseDisplay({ showEveryMs: 5000, follow: 0.6 });
+		for (let t = 0; t <= 4000; t += 1000) d.push(t, 60);
+		for (let t = 25000; t <= 29000; t += 1000) d.push(t, 80);
+		expect(d.view(29000)).toEqual({ kind: 'live', bpm: 80 });
+	});
+	test('a follow outside (0, 1] is refused', () => {
+		expect(() => new PulseDisplay({ follow: 0 })).toThrow(RangeError);
+		expect(() => new PulseDisplay({ follow: 1.5 })).toThrow(RangeError);
+	});
+});
