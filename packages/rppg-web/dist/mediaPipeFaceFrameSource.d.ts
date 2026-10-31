@@ -36,6 +36,19 @@ export declare function analysisSize(videoWidth: number, videoHeight: number): {
  */
 export declare const LANDMARK_REUSE_FRAMES = 2;
 export declare const LANDMARK_REUSE_MAX_MS = 150;
+/**
+ * A still face is reused for longer: once two finder runs in a row put the face within LANDMARK_STILL_SHIFT of its width
+ * when projected over LANDMARK_STILL_REUSE_MAX_MS, up to LANDMARK_STILL_REUSE_FRAMES frames reuse it, none older than
+ * that. The finder is about 71% of the page's CPU at every third frame (Chromium profile, 4x slowed, 2026-10-31), so
+ * this hands frames back where most reading time is spent. A moving face keeps the limits above. Measured 2026-10-31:
+ * on received sessions a face moves a median 0.5% of its width in 300 ms (90th percentile 3 to 6%, when people move, the
+ * case this excludes); a moving face with a planted 72 bpm pulse, CPU slowed 2x: 8.4 frames analysed a second against 13.1
+ * and 14.9 with the finder on every sixth frame, the same seconds with a rate (40/41 against 39/41) and error (0.4 against
+ * 0.5 bpm); the generated no-pulse face made up no number in 4 runs each, with the blink gate on or off.
+ */
+export declare const LANDMARK_STILL_REUSE_FRAMES = 5;
+export declare const LANDMARK_STILL_REUSE_MAX_MS = 300;
+export declare const LANDMARK_STILL_SHIFT = 0.02;
 export declare class MediaPipeFaceFrameSource implements FrameSource {
     private video;
     private faceLandmarker;
@@ -52,6 +65,16 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and how many frames in a row have reused them since. */
     private lastFound;
     private reuseRun;
+    /** The two finder runs in a row put the face still (LANDMARK_STILL_SHIFT), so its landmarks may be reused for longer. */
+    private faceStill;
+    /**
+     * Whether the check's blink gate is satisfied (PulseCheck.blinkGateOpen, wired by DemoRunner): the longer reuse
+     * waits for it, so the finder samples the eyes at least every LANDMARK_REUSE_MAX_MS until the gate has its blink (a
+     * blink lasts about 100 to 400 ms; sampling every 200 ms held the gate for 11 and 15 s in 2 of 4 runs, and a private
+     * blink detector in this source disagreed with the check's and held it for 27 s, 2026-10-31). A photo never blinks,
+     * so it never gets the longer reuse. Without a check, never.
+     */
+    blinkGateOpen: () => boolean;
     constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
     start(): Promise<void>;
     stop(): Promise<void>;

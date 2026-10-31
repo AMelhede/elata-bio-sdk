@@ -37,6 +37,32 @@ export function analysisSize(videoWidth, videoHeight) {
  */
 export const LANDMARK_REUSE_FRAMES = 2;
 export const LANDMARK_REUSE_MAX_MS = 150;
+/**
+ * A still face is reused for longer: once two finder runs in a row put the face within LANDMARK_STILL_SHIFT of its width
+ * when projected over LANDMARK_STILL_REUSE_MAX_MS, up to LANDMARK_STILL_REUSE_FRAMES frames reuse it, none older than
+ * that. The finder is about 71% of the page's CPU at every third frame (Chromium profile, 4x slowed, 2026-10-31), so
+ * this hands frames back where most reading time is spent. A moving face keeps the limits above. Measured 2026-10-31:
+ * on received sessions a face moves a median 0.5% of its width in 300 ms (90th percentile 3 to 6%, when people move, the
+ * case this excludes); a moving face with a planted 72 bpm pulse, CPU slowed 2x: 8.4 frames analysed a second against 13.1
+ * and 14.9 with the finder on every sixth frame, the same seconds with a rate (40/41 against 39/41) and error (0.4 against
+ * 0.5 bpm); the generated no-pulse face made up no number in 4 runs each, with the blink gate on or off.
+ */
+export const LANDMARK_STILL_REUSE_FRAMES = 5;
+export const LANDMARK_STILL_REUSE_MAX_MS = 300;
+export const LANDMARK_STILL_SHIFT = 0.02;
+/** Centre and width of a set of landmarks, in the landmarks' own (normalised) units. */
+function faceSpan(lm) {
+    let sx = 0, sy = 0, lo = Infinity, hi = -Infinity;
+    for (const p of lm) {
+        sx += p.x;
+        sy += p.y;
+        if (p.x < lo)
+            lo = p.x;
+        if (p.x > hi)
+            hi = p.x;
+    }
+    return { x: sx / lm.length, y: sy / lm.length, w: Math.max(1e-6, hi - lo) };
+}
 export class MediaPipeFaceFrameSource {
     constructor(video, faceLandmarker, fps = 30, roiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE, fixes) {
         this.video = video;
@@ -52,6 +78,16 @@ export class MediaPipeFaceFrameSource {
         /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and how many frames in a row have reused them since. */
         this.lastFound = null;
         this.reuseRun = 0;
+        /** The two finder runs in a row put the face still (LANDMARK_STILL_SHIFT), so its landmarks may be reused for longer. */
+        this.faceStill = false;
+        /**
+         * Whether the check's blink gate is satisfied (PulseCheck.blinkGateOpen, wired by DemoRunner): the longer reuse
+         * waits for it, so the finder samples the eyes at least every LANDMARK_REUSE_MAX_MS until the gate has its blink (a
+         * blink lasts about 100 to 400 ms; sampling every 200 ms held the gate for 11 and 15 s in 2 of 4 runs, and a private
+         * blink detector in this source disagreed with the check's and held it for 27 s, 2026-10-31). A photo never blinks,
+         * so it never gets the longer reuse. Without a check, never.
+         */
+        this.blinkGateOpen = () => false;
         this.fixes = resolveFixSwitches(fixes);
         this.canvas = document.createElement("canvas");
         const size = this.frameSize(video.videoWidth || video.width || 320, video.videoHeight || video.height || 240);
@@ -94,6 +130,7 @@ export class MediaPipeFaceFrameSource {
         this.smoothedFaceRoi = null;
         this.lastFound = null;
         this.reuseRun = 0;
+        this.faceStill = false;
         const cancel = this.video.cancelVideoFrameCallback;
         if (this.vfcHandle !== null && typeof cancel === "function") {
             cancel.call(this.video, this.vfcHandle);
@@ -134,10 +171,13 @@ export class MediaPipeFaceFrameSource {
         let landmarks = null;
         let blendshapes;
         // Fix landmarkEveryOther: the LANDMARK_REUSE_FRAMES frames after a found face reuse its landmarks while fresh.
+        const longer = this.faceStill && this.blinkGateOpen();
+        const maxFrames = longer ? LANDMARK_STILL_REUSE_FRAMES : LANDMARK_REUSE_FRAMES;
+        const maxMs = longer ? LANDMARK_STILL_REUSE_MAX_MS : LANDMARK_REUSE_MAX_MS;
         const reuse = this.fixes.landmarkEveryOther &&
             this.lastFound != null &&
-            this.reuseRun < LANDMARK_REUSE_FRAMES &&
-            now - this.lastFound.atMs <= LANDMARK_REUSE_MAX_MS;
+            this.reuseRun < maxFrames &&
+            now - this.lastFound.atMs <= maxMs;
         if (reuse && this.lastFound) {
             landmarks = this.lastFound.landmarks;
             this.reuseRun += 1;
@@ -147,6 +187,14 @@ export class MediaPipeFaceFrameSource {
                 this.reuseRun = 0;
                 const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
                 landmarks = result?.faceLandmarks?.[0] ?? null;
+                const prev = this.lastFound;
+                if (landmarks && landmarks.length && prev && now > prev.atMs) {
+                    const a = faceSpan(prev.landmarks), b = faceSpan(landmarks);
+                    const perMs = Math.hypot(b.x - a.x, b.y - a.y) / b.w / (now - prev.atMs);
+                    this.faceStill = perMs * LANDMARK_STILL_REUSE_MAX_MS < LANDMARK_STILL_SHIFT;
+                }
+                else
+                    this.faceStill = false;
                 this.lastFound = landmarks ? { landmarks, atMs: now } : null;
                 const categories = result?.faceBlendshapes?.[0]?.categories;
                 if (categories && categories.length) {

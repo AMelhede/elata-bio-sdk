@@ -383,21 +383,26 @@ describe('MediaPipeFaceFrameSource landmarkEveryOther', () => {
     { x: 0.5, y: 0.5 },
   ];
   const blendshapes = [{ categoryName: 'eyeBlinkLeft', score: 0.1 }];
-  const run = (fixes: any, results: any[], times: number[]) => {
+  const run = (fixes: any, results: any[], times: number[], gateOpenAt = 0) => {
     const restore = setupCanvasMock(200, 100);
     const video = new FakeVideo(200, 100) as unknown as HTMLVideoElement;
     const lm = fakeLandmarker(results);
     const src = new MediaPipeFaceFrameSource(video, lm, 30, undefined, fixes);
+    let clock = 0;
+    src.blinkGateOpen = () => clock >= gateOpenAt;
     const frames: Frame[] = [];
     src.onFrame = (f) => frames.push(f);
-    for (const t of times) (src as any).detectAndEmit(t, null);
+    for (const t of times) { clock = t; (src as any).detectAndEmit(t, null); }
     restore();
     return { frames, calls: lm.detectForVideo.mock.calls.length };
   };
   const ten = Array.from({ length: 10 }, (_, i) => i * 33.3);
 
-  test('finds the face on every third frame and emits every frame with its regions', () => {
-    const { frames, calls } = run(undefined, [{ landmarks, blendshapes }], ten);
+  // A face that moves 5% of its width between finder runs: never "still", so the finder keeps to every third frame.
+  const moving = Array.from({ length: 12 }, (_, i) => ({ landmarks: landmarks.map((p) => ({ x: p.x + 0.005 * i, y: p.y })), blendshapes }));
+
+  test('finds a moving face on every third frame and emits every frame with its regions', () => {
+    const { frames, calls } = run(undefined, moving, ten);
     expect(calls).toBe(4);
     expect(frames.length).toBe(10);
     for (const f of frames) {
@@ -415,8 +420,18 @@ describe('MediaPipeFaceFrameSource landmarkEveryOther', () => {
   test('never reuses a frame without a face, nor landmarks older than LANDMARK_REUSE_MAX_MS (150 ms)', () => {
     const noFace = run(undefined, [{}], ten);
     expect(noFace.calls).toBe(10);
-    const slow = run(undefined, [{ landmarks }], [0, 160, 320, 480]);
+    const slow = run(undefined, moving, [0, 160, 320, 480]);
     expect(slow.calls).toBe(4);
+  });
+
+  test('a still face is reused for longer only once the check says its blink gate is open', () => {
+    // 75 frames at 30 a second (2.5 s), a still face. Gate never open: every third frame, as for a moving face.
+    const frames75 = Array.from({ length: 75 }, (_, i) => i * 33.3);
+    expect(run(undefined, [{ landmarks }], frames75, Infinity).calls).toBe(25);
+    // Gate open from 1.2 s: 13 finder calls to 1.2 s, then one on every sixth frame.
+    expect(run(undefined, [{ landmarks }], frames75, 1200).calls).toBe(19);
+    // Gate open from the start: found at 0 and 3 (still from then), then every sixth frame.
+    expect(run(undefined, [{ landmarks, blendshapes }], ten, 0).calls).toBe(3);
   });
 });
 

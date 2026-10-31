@@ -555,6 +555,11 @@ export declare class PulseCheck {
      * RecordingPulseCheck, which keeps them. Otherwise they are skipped, at no cost.
      */
     get wantsDiagnostics(): boolean;
+    /**
+     * Rule blinkGate is satisfied: a blink has been seen since the face appeared, or the rule is off. The face frame
+     * source reuses a still face's landmarks for longer only then, so the gate is never starved of blink samples.
+     */
+    get blinkGateOpen(): boolean;
     /** Whether a caller should compute the 115 face patches for push's diagnostics: only a recording built to keep them. */
     get wantsFacePatches(): boolean;
     /**

@@ -306,6 +306,12 @@ export class DemoRunner {
 		private opts: DemoRunnerOptions = {},
 	) {
 		this.source.onFrame = this.onFrame.bind(this);
+		// The face frame source reuses a still face's landmarks for longer only once the check's blink gate is open.
+		const src = this.source as FrameSource & { blinkGateOpen?: () => boolean };
+		if (typeof src.blinkGateOpen === "function" && opts.pulseChecker) {
+			const check = opts.pulseChecker;
+			src.blinkGateOpen = () => check.blinkGateOpen;
+		}
 		this.diagnostics.roiGeometryProfileId =
 			opts.roiGeometryProfile?.id ?? ELATA_FACE_YCBCR_V1_PROFILE.id;
 		this.diagnostics.roiPixelSamplerId =
