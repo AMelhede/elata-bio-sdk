@@ -6,6 +6,7 @@ export const FIX_SWITCH_NAMES = [
     "analysisWidth",
     "noFramesNoReading",
     "landmarkEveryOther",
+    "finderWorker",
 ];
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */
 export function resolveFixSwitches(option) {

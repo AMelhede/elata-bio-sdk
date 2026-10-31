@@ -1,3 +1,4 @@
+import { type FaceFinderWorker } from "./faceFinderWorker.js";
 import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitches.js";
 import { Frame, FrameSource, type FrameSourceError } from "./frameSource.js";
 import type { FaceLandmarkerLike } from "./mediapipeLoader.js";
@@ -41,6 +42,8 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     private faceLandmarker;
     private fps;
     private roiGeometryProfile;
+    /** Fix finderWorker: the face finder in a worker (startFaceFinderWorker); null finds it on this thread. */
+    private finderWorker;
     onFrame: ((frame: Frame) => void) | null;
     onError: ((error: FrameSourceError) => void) | null;
     private running;
@@ -52,7 +55,9 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and how many frames in a row have reused them since. */
     private lastFound;
     private reuseRun;
-    constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
+    constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption, 
+    /** Fix finderWorker: the face finder in a worker (startFaceFinderWorker); null finds it on this thread. */
+    finderWorker?: FaceFinderWorker | null);
     start(): Promise<void>;
     stop(): Promise<void>;
     getLastError(): FrameSourceError | null;

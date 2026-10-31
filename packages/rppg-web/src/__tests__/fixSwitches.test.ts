@@ -60,7 +60,7 @@ function mockProcessor() {
 }
 
 describe("resolveFixSwitches", () => {
-	const names = ["noFaceNoReading", "colourProjectionFix", "posFusion", "noRateDoubling", "analysisWidth", "noFramesNoReading", "landmarkEveryOther"];
+	const names = ["noFaceNoReading", "colourProjectionFix", "posFusion", "noRateDoubling", "analysisWidth", "noFramesNoReading", "landmarkEveryOther", "finderWorker"];
 	test("every fix is on by default", () => {
 		for (const v of [undefined, null, true, {}]) {
 			const r = resolveFixSwitches(v as never);

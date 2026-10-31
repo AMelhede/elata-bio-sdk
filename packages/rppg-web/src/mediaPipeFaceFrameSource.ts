@@ -1,3 +1,4 @@
+import { type FaceFinderWorker, WORKER_LANDMARK_MAX_MS } from "./faceFinderWorker";
 import {
 	type ResolvedRppgFixSwitches,
 	type RppgFixesOption,
@@ -80,6 +81,8 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		private fps = 30,
 		private roiGeometryProfile: RoiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE,
 		fixes?: RppgFixesOption,
+		/** Fix finderWorker: the face finder in a worker (startFaceFinderWorker); null finds it on this thread. */
+		private finderWorker: FaceFinderWorker | null = null,
 	) {
 		this.fixes = resolveFixSwitches(fixes);
 		this.canvas = document.createElement("canvas") as HTMLCanvasElement;
@@ -180,6 +183,19 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 
 		let landmarks: FaceLandmarkPoint[] | null = null;
 		let blendshapes: FrameBlendshape[] | undefined;
+		// Fix finderWorker: once the worker is ready the finder runs there, never on this thread; every frame takes the
+		// newest landmarks it has (at most WORKER_LANDMARK_MAX_MS old) and sends the worker a frame whenever it is free.
+		const wk = this.finderWorker;
+		if (wk && wk.ready) {
+			if (!wk.busy && typeof createImageBitmap === "function") {
+				const at = now;
+				createImageBitmap(this.canvas).then((b) => wk.submit(b, at)).catch(() => undefined);
+			}
+			const got = wk.latest;
+			if (got && got.landmarks && now - got.atMs <= WORKER_LANDMARK_MAX_MS) landmarks = got.landmarks;
+			const fresh = wk.takeBlendshapes();
+			if (fresh && fresh.length) blendshapes = fresh;
+		} else {
 		// Fix landmarkEveryOther: the LANDMARK_REUSE_FRAMES frames after a found face reuse its landmarks while fresh.
 		const reuse =
 			this.fixes.landmarkEveryOther &&
@@ -206,6 +222,7 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 			}
 		} catch (error) {
 			this.reportError("face_mesh_failed", "face_mesh", error);
+		}
 		}
 
 		try {
