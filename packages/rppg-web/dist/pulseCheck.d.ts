@@ -251,6 +251,19 @@ export declare const FOLLOW_MS = 30000;
 export declare const FOLLOW_BPM = 6;
 export declare const FOLLOW_MIN_SNR_DB = -5;
 /**
+ * Rule followRecent across a break: the page left (the watch app read on the same phone) resets the check, and the first
+ * window then refills for 16 s with nothing shown (106 of about 190 open seconds of one recorded phone run, 2026-10-31,
+ * five trips of 26 to 28 s). While it refills, once FOLLOW_RESUME_MIN_S of new data are in, the estimate over the data
+ * so far is the same heart when it lands within FOLLOW_BPM of the number proven before the break, that number at most
+ * FOLLOW_RESUME_MS old (a 26 to 28 s trip plus the data), at FOLLOW_MIN_SNR_DB with at least FOLLOW_RESUME_REGIONS
+ * regions agreeing, and the blink gate open again. Recorded sessions: that phone run 62 to 105 seconds with a number,
+ * laptop 48.5 to 49.5 and phone 46.4 to 48.0 per 100 over all files, every reference unchanged; each added second sat a
+ * median 1.2 bpm (max 6.5) from the full check's next number; lab unchanged (no breaks).
+ */
+export declare const FOLLOW_RESUME_MS = 45000;
+export declare const FOLLOW_RESUME_MIN_S = 6;
+export declare const FOLLOW_RESUME_REGIONS = 2;
+/**
  * Rule followRecent: the window's rate when it is the same heart as the number shown last (within FOLLOW_BPM, that
  * number at most FOLLOW_MS old, the window at FOLLOW_MIN_SNR_DB or more), else null. `blocked`: a taint, the blink
  * gate or steadyLight withholds it.
@@ -542,6 +555,8 @@ export declare class PulseCheck {
     private blinks;
     /** Rule moreReadings (re-lock): the latest proven rate and when it was proven, or null. */
     private lastProven;
+    /** Rule followRecent across a break: the last proven number, kept through a reset (FOLLOW_RESUME_MS). */
+    private followKept;
     /** Rule followRecent: the last number the check proved, with its time. */
     private lastShown;
     /** The newest in-band follower value, or null (the state's followerBpm). */

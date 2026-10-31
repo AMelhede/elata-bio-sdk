@@ -61,6 +61,19 @@ export const FOLLOW_MS = 30000;
 export const FOLLOW_BPM = 6;
 export const FOLLOW_MIN_SNR_DB = -5;
 /**
+ * Rule followRecent across a break: the page left (the watch app read on the same phone) resets the check, and the first
+ * window then refills for 16 s with nothing shown (106 of about 190 open seconds of one recorded phone run, 2026-10-31,
+ * five trips of 26 to 28 s). While it refills, once FOLLOW_RESUME_MIN_S of new data are in, the estimate over the data
+ * so far is the same heart when it lands within FOLLOW_BPM of the number proven before the break, that number at most
+ * FOLLOW_RESUME_MS old (a 26 to 28 s trip plus the data), at FOLLOW_MIN_SNR_DB with at least FOLLOW_RESUME_REGIONS
+ * regions agreeing, and the blink gate open again. Recorded sessions: that phone run 62 to 105 seconds with a number,
+ * laptop 48.5 to 49.5 and phone 46.4 to 48.0 per 100 over all files, every reference unchanged; each added second sat a
+ * median 1.2 bpm (max 6.5) from the full check's next number; lab unchanged (no breaks).
+ */
+export const FOLLOW_RESUME_MS = 45000;
+export const FOLLOW_RESUME_MIN_S = 6;
+export const FOLLOW_RESUME_REGIONS = 2;
+/**
  * Rule followRecent: the window's rate when it is the same heart as the number shown last (within FOLLOW_BPM, that
  * number at most FOLLOW_MS old, the window at FOLLOW_MIN_SNR_DB or more), else null. `blocked`: a taint, the blink
  * gate or steadyLight withholds it.
@@ -531,6 +544,8 @@ export class PulseCheck {
         this.blinks = new BlinkDetector();
         /** Rule moreReadings (re-lock): the latest proven rate and when it was proven, or null. */
         this.lastProven = null;
+        /** Rule followRecent across a break: the last proven number, kept through a reset (FOLLOW_RESUME_MS). */
+        this.followKept = null;
         /** Rule followRecent: the last number the check proved, with its time. */
         this.lastShown = null;
         /** The newest in-band follower value, or null (the state's followerBpm). */
@@ -763,10 +778,23 @@ export class PulseCheck {
         this.state.followBpm = null;
         // Anchored on a proven number only: following a building number carried wrong lab rates on (tools/follow.mjs).
         const own = this.state.verdict === "measured" && this.state.bpm != null ? this.state.bpm : null;
-        if (own != null)
+        if (own != null) {
             this.lastShown = { bpm: own, t: timestampMs };
-        else if (this.rules.followRecent)
-            this.state.followBpm = followRate(this.lastShown, timestampMs, est?.bpm, est?.snrDb, this.state.waitingForBlink === true || wallMatch || roomMatch || !steadyLightAllows(windowScreenSteps, this.rules));
+            this.followKept = this.lastShown;
+        }
+        else if (this.rules.followRecent) {
+            const blocked = this.state.waitingForBlink === true || wallMatch || roomMatch || !steadyLightAllows(windowScreenSteps, this.rules);
+            this.state.followBpm = followRate(this.lastShown, timestampMs, est?.bpm, est?.snrDb, blocked);
+            // Across a break: while the first window refills, the data so far against the number proven before it.
+            const kept = this.followKept;
+            const span = this.samples.length ? (timestampMs - this.samples[0][0]) / 1000 : 0;
+            if (this.state.followBpm == null && this.state.collecting && !blocked && !screenLit && this.blinkGateOpen && kept != null &&
+                timestampMs - kept.t <= FOLLOW_RESUME_MS && span >= FOLLOW_RESUME_MIN_S) {
+                const e = estimateOwnPulse(this.samples, span, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
+                if (e && e.bpm != null && e.snrDb != null && e.snrDb >= FOLLOW_MIN_SNR_DB && e.agreeing.length >= FOLLOW_RESUME_REGIONS && Math.abs(e.bpm - kept.bpm) <= FOLLOW_BPM)
+                    this.state.followBpm = e.bpm;
+            }
+        }
         this.state.relockOpen = this.rules.moreReadings && this.lastProven != null && timestampMs - this.lastProven.t <= RELOCK_MS;
         this.state.windowScreenSteps = windowScreenSteps;
         this.state.screenLight = screenLit;

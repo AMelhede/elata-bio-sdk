@@ -47,3 +47,43 @@ describe("rule followRecent on a check", () => {
 		expect(on.shown).toBeGreaterThan(off.shown);
 	});
 });
+
+describe("rule followRecent across a break (the page left for the watch app)", () => {
+	// A clean 66 bpm pulse for 40 s, a 26 s break with no frames (the check resets), then the same pulse again. Without
+	// the refill branch nothing shows until a full window is in (16 s); with it, a number near 66 shows from about 6 s,
+	// only while the number before the break is at most FOLLOW_RESUME_MS old, and never without that number.
+	const run = (opts: { followRecent: boolean; breakS?: number; resumeBpm?: number; blinkGate?: boolean; blink?: boolean }) => {
+		return import("../pulseCheck").then(({ PulseCheck }) => {
+			const c = new PulseCheck({ rules: { moreReadings: true, followRecent: opts.followRecent, blinkGate: opts.blinkGate ?? false } });
+			let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
+			const breakS = opts.breakS ?? 26, after: (number | null)[] = [];
+			const push = (s: number, bpm: number, blink: number | null) => {
+				const p = Math.sin(2 * Math.PI * bpm / 60 * s) * 0.004 + rnd() * 0.004;
+				const px = { r: 0.6 - p * 0.3, g: 0.4 + p, b: 0.35 - p * 0.2 };
+				c.push(s * 1000, [px, px, px], undefined, undefined, blink == null ? undefined : { x: 100, y: 100, faceWidth: 100, blink });
+			};
+			for (let i = 0; i < 30 * 40; i++) push(i / 30, 66, opts.blinkGate ? (i % 90 < 4 ? 0.8 : 0.1) : null);
+			const back = 40 + breakS;
+			for (let i = 0; i < 30 * 15; i++) { const s = back + i / 30; push(s, opts.resumeBpm ?? 66, opts.blinkGate ? (opts.blink && i % 90 < 4 && i > 30 ? 0.8 : 0.1) : null); if (i % 30 === 0) after.push(shownPulseBpm(c.getState())); }
+			return after; // one per second of the first 15 s back
+		});
+	};
+	it("shows the same heart again within about 6 s of coming back", async () => {
+		const off = await run({ followRecent: false }), on = await run({ followRecent: true });
+		expect(off.slice(0, 14).every((b) => b == null)).toBe(true);
+		const firstOn = on.findIndex((b) => b != null);
+		expect(firstOn).toBeGreaterThanOrEqual(5);
+		expect(firstOn).toBeLessThanOrEqual(9);
+		expect(Math.abs((on[firstOn] as number) - 66)).toBeLessThanOrEqual(6); // FOLLOW_BPM: a 6 s window resolves about 10 bpm
+	});
+	it("not after a break longer than FOLLOW_RESUME_MS, and not for a different rate", async () => {
+		const { FOLLOW_RESUME_MS } = await import("../pulseCheck");
+		expect(FOLLOW_RESUME_MS).toBe(45_000);
+		expect((await run({ followRecent: true, breakS: 60 })).slice(0, 14).every((b) => b == null)).toBe(true);
+		expect((await run({ followRecent: true, resumeBpm: 80 })).slice(0, 14).every((b) => b == null)).toBe(true);
+	});
+	it("with the blink gate on, only after a blink since coming back", async () => {
+		expect((await run({ followRecent: true, blinkGate: true, blink: false })).slice(0, 14).every((b) => b == null)).toBe(true);
+		expect((await run({ followRecent: true, blinkGate: true, blink: true })).slice(0, 14).some((b) => b != null)).toBe(true);
+	});
+});
