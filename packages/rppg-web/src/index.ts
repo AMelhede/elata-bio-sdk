@@ -455,3 +455,16 @@ export {
 	readLastReading,
 	writeLastReading,
 } from "./lastRate";
+export {
+	ADVICE_HOLD_MS,
+	ADVICE_TEXT,
+	type Advice,
+	adviceFor,
+	type CoachInput,
+	cameraStarved,
+	type GuideCause,
+	needsYou,
+	PulseGuide,
+	shownAfter,
+} from "./pulseGuide";
+

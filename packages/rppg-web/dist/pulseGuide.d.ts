@@ -1,0 +1,100 @@
+import type { PulseCheckCause } from "./pulseCheck.js";
+/** Rec.709 luma of an RGB pixel, 0..1 (channel inputs 0..255). */
+export declare function lumaOf(r: number, g: number, b: number): number;
+/** Face brightness a camera aims for (a face is darker than the frame mean); under it, more screen light helps. */
+export declare const LUMA_TARGET = 0.38;
+/** The lowest face brightness at which a pulse was seen to track in a graded light sweep; under it, light first. */
+export declare const LUMA_FLOOR = 0.23;
+/** How much brighter the room must read than the face before "turn to face the light" is the advice. */
+export declare const BACKLIT_MIN_GAP = 0.05;
+/** Centre weighting for metering a frame with no face box. */
+export declare function centerWeight(u: number, v: number): number;
+/** Where a centred face sits in the picture: the middle 30% of the width and 50% of the height. */
+export declare const FACE_BOX: {
+    readonly x0: 0.35;
+    readonly x1: 0.65;
+    readonly y0: 0.25;
+    readonly y1: 0.75;
+};
+/** Face, centre-weighted and whole-frame brightness of a small square frame (RGBA bytes), or null without pixels. */
+export declare function meter(data: ArrayLike<number>, size: number): {
+    face: number;
+    centre: number;
+    room: number;
+} | null;
+/** One instruction per state. */
+export type Advice = "no_camera" | "no_face" | "backlit" | "night_light" | "more_light" | "brighter_screen" | "flicker" | "moving" | "still" | "almost" | "stalled";
+/** The words for each instruction: what to do, in a few plain words. */
+export declare const ADVICE_TEXT: Record<Advice, string>;
+/** True when the instruction asks the person to do something; only these are shown (progress is carried by the display). */
+export declare function needsYou(a: Advice): boolean;
+/** True when the advice asks the person to change something before a pulse can be read. */
+export declare function isBlocking(a: Advice): boolean;
+/** What one moment of guidance is decided from. */
+export interface CoachInput {
+    readonly light: {
+        face: number;
+        centre: number;
+        room: number;
+    } | null;
+    readonly faceFound: boolean;
+    readonly lampOn: boolean;
+    readonly hasNumber: boolean;
+    readonly searchingMs?: number;
+    readonly movement?: number | null;
+    readonly warmth?: number | null;
+    readonly blueWarmth?: number | null;
+    readonly cause?: GuideCause | null;
+    readonly colourDamaged?: boolean;
+    readonly starved?: boolean;
+    readonly exposureKnown?: boolean;
+}
+/** A camera starved of light: its exposure (Chrome exposureTime, 100 microsecond units) is a frame long at 30 fps or more. */
+export declare const EXPOSURE_STARVED = 333;
+export declare const cameraStarved: (exposureTime: number | null | undefined) => boolean;
+/** The check's own first blocking cause (pulseCheckCause), or headMotion from an app's own movement check. */
+export type GuideCause = PulseCheckCause | "headMotion";
+/** Below this green over red on the face, the light on it is too orange to read a pulse (a warm screen filter or lamp). */
+export declare const WARM_MAX = 0.33;
+/** Green over red of the check's own face regions over the last WARMTH_WINDOW_MS. */
+export declare function warmthOf(events: readonly (readonly unknown[])[]): number | null;
+/** Blue over red of the face regions: a warm filter cuts blue more than green, a dark picture does not. */
+export declare function blueWarmthOf(events: readonly (readonly unknown[])[]): number | null;
+/** Head movement is judged over the last 8 s, as the pulse check asks its newest 8 s to carry the rate. */
+export declare const MOVE_WINDOW_MS = 8000;
+/** Head movement (median frame-to-frame centre shift over face width) above which "hold still" is the fix. */
+export declare const MOVE_MAX = 0.07;
+/** Head movement over MOVE_WINDOW_MS from head rows, or null when there are too few to judge. */
+export declare function movementOf(rows: readonly {
+    t_ms: number;
+    x: number;
+    y: number;
+    w: number;
+}[], endMs: number): number | null;
+/** How long a face may be in view with no number before the stall line replaces silence. */
+export declare const STALL_MS = 42000;
+/** The one instruction for this moment, in the order a person must fix things: a picture, a face, then light. */
+export declare function adviceFor(s: CoachInput): Advice;
+/** A new instruction shows once it has held this long; a number on screen shows "hold still" at once. */
+export declare const ADVICE_HOLD_MS = 4000;
+export interface Shown {
+    readonly advice: Advice;
+    readonly pending: Advice | null;
+    readonly since: number;
+}
+/** The instruction shown after the hold, given the raw one and whether a number is on screen. */
+export declare function shownAfter(prev: Shown, raw: Advice, now: number, numberOnScreen: boolean): Shown;
+/**
+ * The instruction an app shows, one call per read: the advice for this moment, held by shownAfter, and its text only
+ * when the person must do something and no number is on screen. As PulseDisplay decides the number, this decides the line.
+ */
+export declare class PulseGuide {
+    private shown;
+    next(nowMs: number, input: Omit<CoachInput, "hasNumber">, numberOnScreen: boolean): {
+        raw: Advice;
+        advice: Advice;
+        text: string | null;
+    };
+    reset(): void;
+}
+//# sourceMappingURL=pulseGuide.d.ts.map
