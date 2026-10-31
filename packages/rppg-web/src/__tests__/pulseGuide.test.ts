@@ -247,3 +247,13 @@ describe("PulseGuide: the line an app shows", () => {
 		expect(adviceFor({ ...base, searchingMs: STALL_MS })).toBe("still");
 	});
 });
+
+describe("hold still while the first window fills", () => {
+	it("a moving head while the window fills is told to hold still; a still one is told nothing", async () => {
+		const { adviceFor, MOVE_MAX } = await import("../pulseGuide");
+		const base = { light: { face: 0.5, centre: 0.5, room: 0.5 }, faceFound: true, lampOn: false, hasNumber: false, cause: "collecting" as const };
+		expect(adviceFor({ ...base, movement: MOVE_MAX + 0.05 })).toBe("moving");
+		expect(adviceFor({ ...base, movement: MOVE_MAX - 0.01 })).toBe("still");
+		expect(adviceFor({ ...base, movement: null })).toBe("still");
+	});
+});

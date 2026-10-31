@@ -278,8 +278,9 @@ function adviceForCause(
 	colourDamaged: boolean,
 ): Advice {
 	switch (cause) {
+		// The window fills after a start or a return; a head moving then spoils it, so "hold still" is the fix there too.
 		case "collecting":
-			return "still";
+			return movement != null && movement > MOVE_MAX ? "moving" : "still";
 		case "shown":
 			return "almost";
 		case "noFace":
