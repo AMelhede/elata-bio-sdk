@@ -1,24 +1,3 @@
-/**
- * Real-pulse check (`createRppgSession({ pulseCheck })`, ON by default in this test build;
- * `pulseCheck: false` turns it off).
- *
- * Why: the heart rate is the strongest rhythm in the colour signal, and there is always a
- * strongest rhythm, including when no pulse is visible (noise, light, motion). Nothing in
- * the pipeline asks whether the rhythm is a pulse, so a number is reported either way.
- *
- * What this does: it keeps the mean skin colour of the three face regions the SDK already
- * samples (forehead, left cheek, right cheek) and, once a second, runs the checker in
- * pulseCheckCore.ts. A pulse counts as proven only when the regions agree on the same rate
- * across 8 consecutive windows with the line clearly above the noise. Noise does not agree
- * across separate patches of skin for that long; a heartbeat does. While proven, the
- * session reports the rate the check measured; otherwise it reports no rate.
- *
- * Wall check (used when the frames carry face landmarks): a heartbeat is only in skin, a light
- * that pulses changes the wall as well. If the wall's brightness pulses at the proven rate, far
- * above its noise, in each of the last 4 one-second windows, the rate is withheld. Only wall
- * pixels that do not look like skin are used: a face edge or an ear in the patch carries the
- * person's own pulse.
- */
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
 import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
@@ -581,6 +560,10 @@ export class PulseCheck {
      */
     get wantsDiagnostics() {
         return this.rules.roomLight;
+    }
+    /** Whether a caller should compute the 115 face patches for push's diagnostics: only a recording built to keep them. */
+    get wantsFacePatches() {
+        return false;
     }
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,

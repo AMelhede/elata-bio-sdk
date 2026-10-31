@@ -169,9 +169,11 @@ export type CreateRppgSessionOptions = Omit<
 	 * and every `getMetrics()` read, so the check
 	 * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
 	 * Off by default. `true` keeps the newest PULSE_CHECK_RECORDING_SECONDS (5 minutes); `{ seconds }`
-	 * sets that. Recording changes no output; see pulseCheckRecording.ts for the format and the memory bound.
+	 * sets that. `{ facePatches: true }` also keeps the 115 skin patches of every frame (facePatches.ts), so a finer
+	 * or steadier face region can be scored offline on the same seconds; it costs a little time per frame and about
+	 * 3 kB per frame in the file. Recording changes no output; see pulseCheckRecording.ts for the format and the memory bound.
 	 */
-	recordPulseCheckInputs?: boolean | { seconds?: number };
+	recordPulseCheckInputs?: boolean | { seconds?: number; facePatches?: boolean };
 	/**
 	 * Experimental, off by default. Hands over HRV and breathing in their own box,
 	 * `getExperimentalVitals()`, labelled experimental, for research and testing, not for showing a
@@ -828,7 +830,7 @@ export function sessionPulseCheck(
 	const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules };
 	const rec = options.recordPulseCheckInputs;
 	if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
-		return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds });
+		return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds, facePatches: rec === true ? false : rec.facePatches === true });
 	return new PulseCheck(opts);
 }
 

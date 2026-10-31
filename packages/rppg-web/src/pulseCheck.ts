@@ -19,6 +19,7 @@
  * pixels that do not look like skin are used: a face edge or an ear in the patch carries the
  * person's own pulse.
  */
+import type { FacePatches } from "./facePatches";
 import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
 	OWN_PULSE_AGREE_BPM,
@@ -885,6 +886,11 @@ export class PulseCheck {
 		return this.rules.roomLight;
 	}
 
+	/** Whether a caller should compute the 115 face patches for push's diagnostics: only a recording built to keep them. */
+	get wantsFacePatches(): boolean {
+		return false;
+	}
+
 	/**
 	 * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
 	 * and optionally the mean RGB of a patch of wall beside the face (see the wall check), on one
@@ -1274,6 +1280,11 @@ export type PulseCheckFrameDiag = {
 	 * rendered, recorded only. Absent without the switch.
 	 */
 	light?: { face: { luma: number; redClip: number } | null; wanted: number; applied: number } | null;
+	/**
+	 * The 115 skin patches (facePatches.ts) this frame, only when the check keeps them (`wantsFacePatches`), recorded
+	 * only; null when the frame had no mesh.
+	 */
+	facePatches?: FacePatches | null;
 };
 
 

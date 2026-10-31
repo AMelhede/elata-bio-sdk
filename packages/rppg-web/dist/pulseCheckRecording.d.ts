@@ -61,7 +61,8 @@ export type PulseCheckInputEvent = [
         number | null,
         number,
         number
-    ]?
+    ]?,
+    (number[] | null)?
 ] | ["l", number] | ["o", number | null, number | null] | ["r", number | null, number | null, PulseCheckReadReason];
 /** A recording: what one session's pulse check was fed, with what it needs to be replayed. */
 export type PulseCheckRecording = {
@@ -75,6 +76,8 @@ export type PulseCheckRecording = {
     agreement?: boolean;
     /** The most seconds this recording keeps. */
     seconds: number;
+    /** Only in a recording made with facePatches: the patch layout of event field [11] (FACE_PATCH_LAYOUT_ID). */
+    facePatchLayout?: string;
     /** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
     dropped: number;
     events: PulseCheckInputEvent[];
@@ -96,13 +99,17 @@ export declare class RecordingPulseCheck extends PulseCheck {
     private recDropped;
     /** The newest finite frame time seen, the clock that events without their own time are filed under. */
     private recLastT;
+    private readonly recPatches;
     constructor(opts?: {
         rules?: PulseCheckRules;
         seconds?: number;
+        facePatches?: boolean;
     });
     push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss, head?: HeadPosition | null, wallRaw?: Rgb, diag?: PulseCheckFrameDiag): void;
     /** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */
     get wantsDiagnostics(): boolean;
+    /** True only when built with facePatches: the frame source then computes the 115 patches for the record. */
+    get wantsFacePatches(): boolean;
     faceLost(timestampMs: number): void;
     /** A session read: the rate it showed, and its own reason for showing none (RppgSession.getMetrics calls this). */
     noteRead(bpm: number | null, reason: PulseCheckReadReason): void;

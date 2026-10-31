@@ -473,7 +473,7 @@ export function sessionPulseCheck(options) {
     const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules };
     const rec = options.recordPulseCheckInputs;
     if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
-        return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds });
+        return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds, facePatches: rec === true ? false : rec.facePatches === true });
     return new PulseCheck(opts);
 }
 async function resolveFaceMesh(faceMeshOption) {

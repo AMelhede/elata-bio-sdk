@@ -31,6 +31,7 @@
  * go replays as a check that began at its first kept event; its first numbers can then differ from
  * what was shown, until the check's memory of the earlier frames would have run out.
  */
+import { FACE_PATCH_LAYOUT_ID } from "./facePatches";
 import { RPPG_WEB_BUILD_VERSION } from "./buildInfo";
 import {
 	type HeadPosition,
@@ -110,6 +111,10 @@ export type PulseCheckInputEvent =
 			// From test.53, only with the session switch light: [face luma, face red clip, level asked for, level the app
 			// rendered], the face values null when unmeasured; [9] is then written null when the pool is off. Recorded only.
 			[number | null, number | null, number, number]?,
+			// Only in a recording made with facePatches: the 115 skin patches (facePatches.ts, layout facePatchLayout):
+			// the percentile box [x, y, w, h] in pixels to 1 decimal, then per patch [sumR, sumG, sumB, skin, pixels];
+			// null when the frame had no mesh. [9] and [10] are then written null when their switches are off.
+			(number[] | null)?,
 	  ]
 	| ["l", number]
 	| ["o", number | null, number | null]
@@ -127,6 +132,8 @@ export type PulseCheckRecording = {
 	agreement?: boolean;
 	/** The most seconds this recording keeps. */
 	seconds: number;
+	/** Only in a recording made with facePatches: the patch layout of event field [11] (FACE_PATCH_LAYOUT_ID). */
+	facePatchLayout?: string;
 	/** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
 	dropped: number;
 	events: PulseCheckInputEvent[];
@@ -165,8 +172,11 @@ export class RecordingPulseCheck extends PulseCheck {
 	/** The newest finite frame time seen, the clock that events without their own time are filed under. */
 	private recLastT: number | null = null;
 
-	constructor(opts: { rules?: PulseCheckRules; seconds?: number } = {}) {
+	private readonly recPatches: boolean;
+
+	constructor(opts: { rules?: PulseCheckRules; seconds?: number; facePatches?: boolean } = {}) {
 		super({ rules: opts.rules });
+		this.recPatches = opts.facePatches === true;
 		const seconds = opts.seconds ?? PULSE_CHECK_RECORDING_SECONDS;
 		if (!(seconds > 0) || !Number.isFinite(seconds))
 			throw new RangeError(`recordPulseCheckInputs seconds must be a positive number, not ${seconds}`);
@@ -209,10 +219,14 @@ export class RecordingPulseCheck extends PulseCheck {
 				diag?.room ? [quad(diag.room.left), quad(diag.room.right)] : null,
 				diag?.patch ?? null,
 			];
-		if (diag?.foreheadBox || diag?.light) event.push(diag?.foreheadBox ? rgb3(diag.foreheadBox) : null);
+		if (diag?.foreheadBox || diag?.light || this.recPatches) event.push(diag?.foreheadBox ? rgb3(diag.foreheadBox) : null);
 		if (diag?.light) {
 			const f = diag.light.face;
 			event.push([f ? round6(f.luma) : null, f ? round6(f.redClip) : null, diag.light.wanted, diag.light.applied]);
+		} else if (this.recPatches) event.push(null);
+		if (this.recPatches) {
+			const p = diag?.facePatches;
+			event.push(p ? [...p.box.map((v) => Math.round(v * 10) / 10), ...p.values] : null);
 		}
 		this.keep(event, timestampMs);
 		super.push(timestampMs, regions, wall, wallMiss, head, wallRaw, diag);
@@ -221,6 +235,11 @@ export class RecordingPulseCheck extends PulseCheck {
 	/** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */
 	override get wantsDiagnostics(): boolean {
 		return true;
+	}
+
+	/** True only when built with facePatches: the frame source then computes the 115 patches for the record. */
+	override get wantsFacePatches(): boolean {
+		return this.recPatches;
 	}
 
 	override faceLost(timestampMs: number): void {
@@ -243,6 +262,7 @@ export class RecordingPulseCheck extends PulseCheck {
 			build: RPPG_WEB_BUILD_VERSION,
 			rules: { ...this.rules },
 			seconds: this.recSeconds,
+			...(this.recPatches ? { facePatchLayout: FACE_PATCH_LAYOUT_ID } : {}),
 			dropped: this.recDropped,
 			events,
 		};

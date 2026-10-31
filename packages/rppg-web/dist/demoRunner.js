@@ -1,4 +1,4 @@
-import { FOREHEAD_POOL_SIZE, foreheadPoolFromFrame } from "./facePatches.js";
+import { FOREHEAD_POOL_SIZE, facePatchesFromFrame, foreheadPoolFromFrame } from "./facePatches.js";
 import { ForeheadPool } from "./foreheadPool.js";
 import { LIGHT_START, centreLightFromFrame, faceLightFromFrame, lightAfter } from "./lightLevel.js";
 import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSource.js";
@@ -357,7 +357,7 @@ export class DemoRunner {
                 // Recorded only, and only computed when a recording keeps it (lane/wallroom step 1):
                 // the room in the frame's upper corners, and where the wall patch sat this frame.
                 this.opts.pulseChecker.wantsDiagnostics
-                    ? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}), ...(this.opts.light ? { light: { face: this.faceLight, wanted: this.lightState.level, applied: this.lightApplied } } : {}) }
+                    ? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}), ...(this.opts.light ? { light: { face: this.faceLight, wanted: this.lightState.level, applied: this.lightApplied } } : {}), ...(this.opts.pulseChecker.wantsFacePatches ? { facePatches: facePatchesFromFrame(frame, frame.landmarks) } : {}) }
                     : undefined);
             }
             if (frame.roi) {

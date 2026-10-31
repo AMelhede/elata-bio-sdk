@@ -19,6 +19,7 @@
  * pixels that do not look like skin are used: a face edge or an ear in the patch carries the
  * person's own pulse.
  */
+import type { FacePatches } from "./facePatches.js";
 import { type Frame } from "./frameSource.js";
 export type PulseCheckState = {
     /** "measured" while a pulse is proven; otherwise "not-measured" or "unknown". */
@@ -554,6 +555,8 @@ export declare class PulseCheck {
      * RecordingPulseCheck, which keeps them. Otherwise they are skipped, at no cost.
      */
     get wantsDiagnostics(): boolean;
+    /** Whether a caller should compute the 115 face patches for push's diagnostics: only a recording built to keep them. */
+    get wantsFacePatches(): boolean;
     /**
      * One frame: mean RGB of forehead, left cheek and right cheek, at the frame's timestamp,
      * and optionally the mean RGB of a patch of wall beside the face (see the wall check), on one
@@ -691,6 +694,11 @@ export type PulseCheckFrameDiag = {
         wanted: number;
         applied: number;
     } | null;
+    /**
+     * The 115 skin patches (facePatches.ts) this frame, only when the check keeps them (`wantsFacePatches`), recorded
+     * only; null when the frame had no mesh.
+     */
+    facePatches?: FacePatches | null;
 };
 /** The wall patch as read this frame, for the recording only: x, y, w, h in pixels and how many non-skin pixels it averaged. */
 export type WallPatchDiag = [number, number, number, number, number];
