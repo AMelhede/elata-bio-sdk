@@ -53,3 +53,4 @@ export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches.js";
 export { CENTRE_BOX, LIGHT_CLIP_MAX, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter, lumaOfRgb, } from "./lightLevel.js";
 export { LAST_RATE_KEY, LAST_RATE_MAX_AGE_MS, readLastReading, writeLastReading, } from "./lastRate.js";
 export { ADVICE_HOLD_MS, ADVICE_TEXT, adviceFor, cameraStarved, needsYou, PulseGuide, shownAfter, } from "./pulseGuide.js";
+export * from "./camera.js";

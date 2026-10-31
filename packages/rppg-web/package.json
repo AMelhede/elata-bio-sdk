@@ -26,7 +26,8 @@
 	"types": "./dist/index.d.ts",
 	"typesVersions": {
 		"*": {
-			"guide": ["./dist/pulseGuide.d.ts"]
+			"guide": ["./dist/pulseGuide.d.ts"],
+			"camera": ["./dist/camera.d.ts"]
 		}
 	},
 	"exports": {
@@ -37,6 +38,10 @@
 		"./guide": {
 			"types": "./dist/pulseGuide.d.ts",
 			"import": "./dist/pulseGuide.js"
+		},
+		"./camera": {
+			"types": "./dist/camera.d.ts",
+			"import": "./dist/camera.js"
 		},
 		"./pkg/*": "./pkg/*"
 	},

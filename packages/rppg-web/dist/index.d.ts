@@ -86,4 +86,5 @@ export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches.js";
 export { CENTRE_BOX, type FaceLight, LIGHT_CLIP_MAX, LIGHT_LATCH_MS, LIGHT_START, type LightLevel, type LightState, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter, lumaOfRgb, } from "./lightLevel.js";
 export { LAST_RATE_KEY, LAST_RATE_MAX_AGE_MS, type LastRateStore, type LastReading, readLastReading, writeLastReading, } from "./lastRate.js";
 export { ADVICE_HOLD_MS, ADVICE_TEXT, type Advice, adviceFor, type CoachInput, cameraStarved, type GuideCause, needsYou, PulseGuide, shownAfter, } from "./pulseGuide.js";
+export * from "./camera.js";
 //# sourceMappingURL=index.d.ts.map
