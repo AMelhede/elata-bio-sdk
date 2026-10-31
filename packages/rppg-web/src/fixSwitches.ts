@@ -66,13 +66,6 @@ export type RppgFixSwitches = {
 	 * frame, as published.
 	 */
 	landmarkEveryOther?: boolean;
-	/**
-	 * Fix 8, speed. With FINDER_WORKER_MIN_CORES or more cores and the session loading the face finder itself
-	 * (`faceMesh: "auto"`), the finder also starts in a Web Worker (faceFinderWorker.ts); once it is ready frames take
-	 * its newest landmarks (at most WORKER_LANDMARK_MAX_MS old) and the main thread never waits for it. Until then, and
-	 * if it fails, the finder runs on the main thread as before. Off: the main thread only.
-	 */
-	finderWorker?: boolean;
 };
 
 /**
@@ -90,7 +83,6 @@ export const FIX_SWITCH_NAMES = [
 	"analysisWidth",
 	"noFramesNoReading",
 	"landmarkEveryOther",
-	"finderWorker",
 ] as const satisfies readonly (keyof RppgFixSwitches)[];
 
 /** Every switch resolved to true or false (see {@link RppgFixesOption}). */

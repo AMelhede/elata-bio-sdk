@@ -1,4 +1,3 @@
-import { FINDER_WORKER_MIN_CORES, WORKER_LANDMARK_MAX_MS, startFaceFinderWorker } from '../faceFinderWorker';
 import { MediaPipeFaceFrameSource } from '../mediaPipeFaceFrameSource';
 import { Frame } from '../frameSource';
 import { computeFusionSubRois } from '../faceRoiOverlay';
@@ -418,63 +417,5 @@ describe('MediaPipeFaceFrameSource landmarkEveryOther', () => {
     expect(noFace.calls).toBe(10);
     const slow = run(undefined, [{ landmarks }], [0, 160, 320, 480]);
     expect(slow.calls).toBe(4);
-  });
-});
-
-// Fix finderWorker (speed): with a ready worker the main thread never runs the finder; frames take the worker's newest
-// landmarks while they are at most WORKER_LANDMARK_MAX_MS old; a worker not yet ready leaves the main-thread finder.
-describe('MediaPipeFaceFrameSource finderWorker', () => {
-  const landmarks = [
-    { x: 0.45, y: 0.4 },
-    { x: 0.55, y: 0.4 },
-    { x: 0.5, y: 0.5 },
-  ];
-  const fakeWorker = (ready: boolean, atMs: number) => {
-    const sent: number[] = [];
-    return { sent, w: { ready, busy: false, latest: { landmarks, atMs }, submit: (_b: unknown, t: number) => { sent.push(t); }, takeBlendshapes: () => [{ categoryName: 'eyeBlinkLeft', score: 0.2 }], close: () => {} } };
-  };
-  const run = (worker: any, times: number[]) => {
-    const restore = setupCanvasMock(200, 100);
-    const video = new FakeVideo(200, 100) as unknown as HTMLVideoElement;
-    const lm = fakeLandmarker([{ landmarks }]);
-    (globalThis as any).createImageBitmap = () => Promise.resolve({ close() {} });
-    const src = new MediaPipeFaceFrameSource(video, lm, 30, undefined, undefined, worker);
-    const frames: Frame[] = [];
-    src.onFrame = (f) => frames.push(f);
-    for (const t of times) (src as any).detectAndEmit(t, null);
-    restore();
-    return { frames, calls: lm.detectForVideo.mock.calls.length };
-  };
-  test('a ready worker: the main thread never finds the face, every frame has its regions', () => {
-    const { w } = fakeWorker(true, 100);
-    const { frames, calls } = run(w, [100, 133, 166, 200]);
-    expect(calls).toBe(0);
-    expect(frames.length).toBe(4);
-    for (const f of frames) expect(f.roi).toBeDefined();
-  });
-  test('landmarks older than WORKER_LANDMARK_MAX_MS are not used', () => {
-    const { w } = fakeWorker(true, 0);
-    const { frames, calls } = run(w, [WORKER_LANDMARK_MAX_MS + 50]);
-    expect(calls).toBe(0);
-    expect(frames[0].roi).toBeUndefined();
-  });
-  test('a worker not ready yet: the main-thread finder as before', () => {
-    const { w } = fakeWorker(false, 100);
-    expect(run(w, [0, 33, 66]).calls).toBeGreaterThan(0);
-  });
-});
-
-describe('startFaceFinderWorker', () => {
-  test('starts nothing below FINDER_WORKER_MIN_CORES cores or without Worker', () => {
-    expect(FINDER_WORKER_MIN_CORES).toBe(4);
-    const env = (cores: number, Worker: unknown) => ({ navigator: { hardwareConcurrency: cores }, Worker, createImageBitmap: () => null, Blob: class {}, URL: Object.assign(class { href: string; constructor(u: string) { this.href = u; } }, { createObjectURL: () => 'blob:x' }), location: { href: 'http://h/' } });
-    expect(startFaceFinderWorker({}, env(2, class { postMessage() {} terminate() {} onmessage = null; onerror = null }) as never)).toBeNull();
-    expect(startFaceFinderWorker({}, env(8, undefined) as never)).toBeNull();
-    const posted: any[] = [];
-    const W = class { onmessage: any = null; onerror: any = null; postMessage(m: any) { posted.push(m); } terminate() {} };
-    const w = startFaceFinderWorker({ visionCdnBase: 'http://cdn/v' }, env(8, W) as never);
-    expect(w).not.toBeNull();
-    expect(w!.ready).toBe(false);
-    expect(posted[0]).toMatchObject({ type: 'init', bundle: 'http://cdn/v/vision_bundle.cjs' });
   });
 });

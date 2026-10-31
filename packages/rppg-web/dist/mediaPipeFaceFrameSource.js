@@ -1,4 +1,3 @@
-import { WORKER_LANDMARK_MAX_MS } from "./faceFinderWorker.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, FUSION_ROI_NAMES, } from "./roiProfile.js";
 /**
@@ -39,14 +38,11 @@ export function analysisSize(videoWidth, videoHeight) {
 export const LANDMARK_REUSE_FRAMES = 2;
 export const LANDMARK_REUSE_MAX_MS = 150;
 export class MediaPipeFaceFrameSource {
-    constructor(video, faceLandmarker, fps = 30, roiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE, fixes, 
-    /** Fix finderWorker: the face finder in a worker (startFaceFinderWorker); null finds it on this thread. */
-    finderWorker = null) {
+    constructor(video, faceLandmarker, fps = 30, roiGeometryProfile = ELATA_FACE_YCBCR_V1_PROFILE, fixes) {
         this.video = video;
         this.faceLandmarker = faceLandmarker;
         this.fps = fps;
         this.roiGeometryProfile = roiGeometryProfile;
-        this.finderWorker = finderWorker;
         this.onFrame = null;
         this.onError = null;
         this.running = false;
@@ -137,49 +133,32 @@ export class MediaPipeFaceFrameSource {
         }
         let landmarks = null;
         let blendshapes;
-        // Fix finderWorker: once the worker is ready the finder runs there, never on this thread; every frame takes the
-        // newest landmarks it has (at most WORKER_LANDMARK_MAX_MS old) and sends the worker a frame whenever it is free.
-        const wk = this.finderWorker;
-        if (wk && wk.ready) {
-            if (!wk.busy && typeof createImageBitmap === "function") {
-                const at = now;
-                createImageBitmap(this.canvas).then((b) => wk.submit(b, at)).catch(() => undefined);
-            }
-            const got = wk.latest;
-            if (got && got.landmarks && now - got.atMs <= WORKER_LANDMARK_MAX_MS)
-                landmarks = got.landmarks;
-            const fresh = wk.takeBlendshapes();
-            if (fresh && fresh.length)
-                blendshapes = fresh;
+        // Fix landmarkEveryOther: the LANDMARK_REUSE_FRAMES frames after a found face reuse its landmarks while fresh.
+        const reuse = this.fixes.landmarkEveryOther &&
+            this.lastFound != null &&
+            this.reuseRun < LANDMARK_REUSE_FRAMES &&
+            now - this.lastFound.atMs <= LANDMARK_REUSE_MAX_MS;
+        if (reuse && this.lastFound) {
+            landmarks = this.lastFound.landmarks;
+            this.reuseRun += 1;
         }
-        else {
-            // Fix landmarkEveryOther: the LANDMARK_REUSE_FRAMES frames after a found face reuse its landmarks while fresh.
-            const reuse = this.fixes.landmarkEveryOther &&
-                this.lastFound != null &&
-                this.reuseRun < LANDMARK_REUSE_FRAMES &&
-                now - this.lastFound.atMs <= LANDMARK_REUSE_MAX_MS;
-            if (reuse && this.lastFound) {
-                landmarks = this.lastFound.landmarks;
-                this.reuseRun += 1;
+        else
+            try {
+                this.reuseRun = 0;
+                const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
+                landmarks = result?.faceLandmarks?.[0] ?? null;
+                this.lastFound = landmarks ? { landmarks, atMs: now } : null;
+                const categories = result?.faceBlendshapes?.[0]?.categories;
+                if (categories && categories.length) {
+                    blendshapes = categories.map((c) => ({
+                        categoryName: c.categoryName,
+                        score: c.score,
+                    }));
+                }
             }
-            else
-                try {
-                    this.reuseRun = 0;
-                    const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
-                    landmarks = result?.faceLandmarks?.[0] ?? null;
-                    this.lastFound = landmarks ? { landmarks, atMs: now } : null;
-                    const categories = result?.faceBlendshapes?.[0]?.categories;
-                    if (categories && categories.length) {
-                        blendshapes = categories.map((c) => ({
-                            categoryName: c.categoryName,
-                            score: c.score,
-                        }));
-                    }
-                }
-                catch (error) {
-                    this.reportError("face_mesh_failed", "face_mesh", error);
-                }
-        }
+            catch (error) {
+                this.reportError("face_mesh_failed", "face_mesh", error);
+            }
         try {
             const img = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
             const ts = typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0

@@ -1,4 +1,3 @@
-import { startFaceFinderWorker } from "./faceFinderWorker.js";
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
@@ -321,7 +320,6 @@ export class RppgSession {
     async dispose() {
         await this.stop();
         await this.internals.waveformController?.dispose();
-        this.internals.finderWorker?.close();
         this.processor.dispose();
     }
     recordError(error) {
@@ -356,12 +354,8 @@ export async function createRppgSession(options) {
     const faceTrackingMode = faceMeshResult.faceMesh
         ? "face_mesh"
         : "video_frame";
-    // Fix finderWorker: only when the session loads the finder itself, so the worker loads the same one.
-    const finderWorker = faceMeshResult.faceMesh && (options.faceMesh ?? "auto") === "auto" && resolveFixSwitches(options.fixes).finderWorker
-        ? startFaceFinderWorker()
-        : null;
     const source = faceMeshResult.faceMesh
-        ? new MediaPipeFaceFrameSource(options.video, faceMeshResult.faceMesh, sampleRate, options.roiGeometryProfile, options.fixes, finderWorker)
+        ? new MediaPipeFaceFrameSource(options.video, faceMeshResult.faceMesh, sampleRate, options.roiGeometryProfile, options.fixes)
         : new MediaPipeFrameSource(options.video, { fps: sampleRate });
     const backendResult = await resolveBackend(backendPreference, {
         wasmJsUrl: options.wasmJsUrl,
@@ -445,7 +439,6 @@ export async function createRppgSession(options) {
         chestMotion,
         experimentalVitals: options.experimentalVitals === true,
         foreheadPool: options.foreheadPool === true,
-        finderWorker,
         light: options.light === true && pulseCheck != null,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,

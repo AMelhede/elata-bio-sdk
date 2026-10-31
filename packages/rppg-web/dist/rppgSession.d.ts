@@ -1,4 +1,3 @@
-import { type FaceFinderWorker } from "./faceFinderWorker.js";
 import type { LightLevel } from "./lightLevel.js";
 import type { FrameSource } from "./frameSource.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
@@ -199,8 +198,6 @@ type SessionInternals = {
     chestMotion?: ChestMotion | null;
     experimentalVitals?: boolean;
     foreheadPool?: boolean;
-    /** Fix finderWorker: the worker the frame source finds the face in, closed with the session. */
-    finderWorker?: FaceFinderWorker | null;
     light?: boolean;
 };
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
