@@ -82,6 +82,7 @@ export type PulseCheckRecording = {
     resume?: {
         bpm: number;
         t: number;
+        maxAgeMs?: number;
     };
     /** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
     dropped: number;

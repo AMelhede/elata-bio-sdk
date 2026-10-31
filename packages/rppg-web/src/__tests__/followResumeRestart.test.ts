@@ -105,3 +105,30 @@ describe("followRecent across a camera restart (pulseCheckResume)", () => {
 		expect(sessionPulseCheck({ pulseCheckRules: RULES })?.resumePending).toBe(false);
 	});
 });
+
+describe("the person's last reading as the starting point (pulseCheckResume maxAgeMs)", () => {
+	it("an hours-old rate opens the confirmation only with maxAgeMs; the shown number is the face's own", () => {
+		let wall = 1_000_000;
+		const r = proven(() => wall).resumePoint();
+		wall += 3 * 3_600_000; // three hours later, a new reading
+		const plain = after(new PulseCheck({ rules: RULES, now: () => wall, resumeFrom: r }));
+		expect(plain.slice(0, 14).every((b) => b == null)).toBe(true);
+		const withPrior = after(new PulseCheck({ rules: RULES, now: () => wall, resumeFrom: r && { ...r, maxAgeMs: 24 * 3_600_000 } }));
+		const first = withPrior.findIndex((b) => b != null);
+		expect(first).toBeGreaterThanOrEqual(5);
+		expect(first).toBeLessThanOrEqual(9);
+		// a different heart today: no early number
+		expect(after(new PulseCheck({ rules: RULES, now: () => wall, resumeFrom: r && { ...r, maxAgeMs: 24 * 3_600_000 } }), 80).slice(0, 14).every((b) => b == null)).toBe(true);
+	});
+	it("refuses a maxAgeMs that is not a positive finite number", () => {
+		expect(() => new PulseCheck({ rules: RULES, resumeFrom: { bpm: 66, atEpochMs: 0, maxAgeMs: -1 } })).toThrow(RangeError);
+		expect(() => new PulseCheck({ rules: RULES, resumeFrom: { bpm: 66, atEpochMs: 0, maxAgeMs: Number.NaN } })).toThrow(RangeError);
+	});
+	it("a proof on this face replaces the prior and its long age limit", () => {
+		let wall = 1_000_000;
+		const c = new PulseCheck({ rules: RULES, now: () => wall, resumeFrom: { bpm: 66, atEpochMs: wall - 3_600_000, maxAgeMs: 24 * 3_600_000 } });
+		seed = 11;
+		feed(c, 0, 40, 66);
+		expect(c.resumePoint()?.maxAgeMs).toBeUndefined();
+	});
+});

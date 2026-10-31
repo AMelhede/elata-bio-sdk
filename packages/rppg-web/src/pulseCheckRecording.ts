@@ -136,7 +136,7 @@ export type PulseCheckRecording = {
 	/** Only in a recording made with facePatches: the patch layout of event field [11] (FACE_PATCH_LAYOUT_ID). */
 	facePatchLayout?: string;
 	/** Only after a camera restart with pulseCheckResume: the rate handed over, on this recording's frame clock. */
-	resume?: { bpm: number; t: number };
+	resume?: { bpm: number; t: number; maxAgeMs?: number };
 	/** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
 	dropped: number;
 	events: PulseCheckInputEvent[];

@@ -535,6 +535,8 @@ export class PulseCheck {
         this.resumeFrom = null;
         /** The wall-clock time of followKept, for resumePoint. */
         this.keptEpochMs = null;
+        /** How old followKept may be for the break rule: FOLLOW_RESUME_MS, or a hand-over's own maxAgeMs until a proof here. */
+        this.keptMaxAgeMs = FOLLOW_RESUME_MS;
         /** The hand-over as placed on this check's frame clock, kept for the recording; null when none was given. */
         this.resumeSeed = null;
         this.samples = [];
@@ -575,11 +577,14 @@ export class PulseCheck {
         if (r != null) {
             if (!(r.bpm > 0) || !Number.isFinite(r.bpm) || !Number.isFinite(r.atEpochMs))
                 throw new RangeError(`pulseCheckResume needs a finite bpm above 0 and a finite atEpochMs, not ${JSON.stringify(r)}`);
-            this.resumeFrom = { bpm: r.bpm, atEpochMs: r.atEpochMs };
+            if (r.maxAgeMs !== undefined && !(r.maxAgeMs > 0 && Number.isFinite(r.maxAgeMs)))
+                throw new RangeError(`pulseCheckResume maxAgeMs must be a positive number of ms, not ${r.maxAgeMs}`);
+            this.resumeFrom = { bpm: r.bpm, atEpochMs: r.atEpochMs, ...(r.maxAgeMs !== undefined ? { maxAgeMs: r.maxAgeMs } : {}) };
         }
         if (opts.resumeAt != null) {
             this.followKept = { bpm: opts.resumeAt.bpm, t: opts.resumeAt.t };
-            this.resumeSeed = { ...this.followKept };
+            this.keptMaxAgeMs = opts.resumeAt.maxAgeMs ?? FOLLOW_RESUME_MS;
+            this.resumeSeed = { ...opts.resumeAt };
         }
     }
     /** A hand-over was given and no frame has placed it yet. */
@@ -588,7 +593,9 @@ export class PulseCheck {
     }
     /** The rate to hand to the check after a camera restart: the last proven rate and when, or null before one. */
     resumePoint() {
-        return this.followKept != null && this.keptEpochMs != null ? { bpm: this.followKept.bpm, atEpochMs: this.keptEpochMs } : null;
+        if (this.followKept == null || this.keptEpochMs == null)
+            return null;
+        return { bpm: this.followKept.bpm, atEpochMs: this.keptEpochMs, ...(this.keptMaxAgeMs !== FOLLOW_RESUME_MS ? { maxAgeMs: this.keptMaxAgeMs } : {}) };
     }
     /** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */
     get swapMinWall() {
@@ -641,7 +648,8 @@ export class PulseCheck {
             if (this.followKept == null) {
                 this.followKept = { bpm: r.bpm, t: timestampMs - (this.now() - r.atEpochMs) };
                 this.keptEpochMs = r.atEpochMs;
-                this.resumeSeed = { ...this.followKept };
+                this.keptMaxAgeMs = r.maxAgeMs ?? FOLLOW_RESUME_MS;
+                this.resumeSeed = { ...this.followKept, ...(r.maxAgeMs !== undefined ? { maxAgeMs: r.maxAgeMs } : {}) };
             }
         }
         if (wall)
@@ -817,6 +825,7 @@ export class PulseCheck {
             this.lastShown = { bpm: own, t: timestampMs };
             this.followKept = this.lastShown;
             this.keptEpochMs = this.now();
+            this.keptMaxAgeMs = FOLLOW_RESUME_MS;
         }
         else if (this.rules.followRecent) {
             const blocked = this.state.waitingForBlink === true || wallMatch || roomMatch || !steadyLightAllows(windowScreenSteps, this.rules);
@@ -825,7 +834,7 @@ export class PulseCheck {
             const kept = this.followKept;
             const span = this.samples.length ? (timestampMs - this.samples[0][0]) / 1000 : 0;
             if (this.state.followBpm == null && this.state.collecting && !blocked && !screenLit && this.blinkGateOpen && kept != null &&
-                timestampMs - kept.t <= FOLLOW_RESUME_MS && span >= FOLLOW_RESUME_MIN_S) {
+                timestampMs - kept.t <= this.keptMaxAgeMs && span >= FOLLOW_RESUME_MIN_S) {
                 const e = estimateOwnPulse(this.samples, span, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
                 if (e && e.bpm != null && e.snrDb != null && e.snrDb >= FOLLOW_MIN_SNR_DB && e.agreeing.length >= FOLLOW_RESUME_REGIONS && Math.abs(e.bpm - kept.bpm) <= FOLLOW_BPM)
                     this.state.followBpm = e.bpm;

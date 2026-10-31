@@ -543,6 +543,12 @@ export declare function screenSteps(samples: readonly (readonly number[])[], atM
 export type PulseCheckResume = {
     bpm: number;
     atEpochMs: number;
+    /**
+     * How old the rate may be and still open the confirmation, FOLLOW_RESUME_MS unless set. An app may hand over the
+     * person's last reading from earlier the same day with a longer limit: the rate only gates (the number shown is the
+     * face's own window, within FOLLOW_BPM of it), so a rate that no longer fits simply opens nothing.
+     */
+    maxAgeMs?: number;
 };
 export declare class PulseCheck {
     constructor(opts?: {
@@ -555,6 +561,7 @@ export declare class PulseCheck {
         resumeAt?: {
             bpm: number;
             t: number;
+            maxAgeMs?: number;
         } | null;
     });
     private readonly now;
@@ -562,10 +569,13 @@ export declare class PulseCheck {
     private resumeFrom;
     /** The wall-clock time of followKept, for resumePoint. */
     private keptEpochMs;
+    /** How old followKept may be for the break rule: FOLLOW_RESUME_MS, or a hand-over's own maxAgeMs until a proof here. */
+    private keptMaxAgeMs;
     /** The hand-over as placed on this check's frame clock, kept for the recording; null when none was given. */
     resumeSeed: {
         bpm: number;
         t: number;
+        maxAgeMs?: number;
     } | null;
     /** A hand-over was given and no frame has placed it yet. */
     get resumePending(): boolean;
