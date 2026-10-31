@@ -295,7 +295,8 @@ export declare class RppgSession {
      */
     getGuideInput(nowMs?: number): Omit<CoachInput, "hasNumber">;
     private meterVideo;
-    private exposureTime;
+    /** The camera's exposure time now (Chrome's exposureTime, 100 microsecond units), or null where it is not reported. */
+    exposureTime(): number | null;
     /** The person's last reading kept on the device when this session started (rememberRate), for the display; or null. */
     getLastReading(): LastReading | null;
     private keptAt;

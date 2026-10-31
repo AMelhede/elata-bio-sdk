@@ -194,6 +194,7 @@ export class RppgSession {
         }
         return this.meterValue;
     }
+    /** The camera's exposure time now (Chrome's exposureTime, 100 microsecond units), or null where it is not reported. */
     exposureTime() {
         try {
             const stream = this.internals.video?.srcObject;

@@ -542,7 +542,8 @@ export class RppgSession {
 		return this.meterValue;
 	}
 
-	private exposureTime(): number | null {
+	/** The camera's exposure time now (Chrome's exposureTime, 100 microsecond units), or null where it is not reported. */
+	exposureTime(): number | null {
 		try {
 			const stream = this.internals.video?.srcObject as
 				| MediaStream
