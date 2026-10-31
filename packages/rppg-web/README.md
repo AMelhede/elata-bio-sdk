@@ -132,6 +132,41 @@ Things to know while testing:
 - Every result worth keeping should be logged with `RPPG_WEB_BUILD_VERSION` and
   `session.getBuildSwitches()`.
 
+## Guidance, camera helpers and the last reading
+
+What every camera heart-rate app needs around the number, in the library so every app behaves the same:
+
+```ts
+import { createRppgSession, PulseDisplay, PULSE_DISPLAY_RECOMMENDED, PulseGuide, keepScreenOn, watchCameraReturn } from "@elata-biosciences/rppg-web";
+
+const session = await createRppgSession({ video, pulseCheckResume: previous?.getPulseCheckResume() });
+const display = new PulseDisplay(PULSE_DISPLAY_RECOMMENDED); // a 5 s step, recent for 30 s, 60% follow
+const last = session.getLastReading(); // the person's last reading on this device (rememberRate, on unless false)
+if (last) display.setLast({ bpm: last.bpm, atMs: last.atEpochMs }); // shown with its age until a new number
+const guide = new PulseGuide();
+const release = keepScreenOn(navigator, document, () => {});
+const stop = watchCameraReturn(() => stream.getVideoTracks()[0], restartCamera);
+
+setInterval(() => {
+  const now = Date.now();
+  display.push(now, session.getMetrics().bpm ?? null);
+  const view = display.view(now);
+  const { text } = guide.next(now, session.getGuideInput(now), view.kind === "live");
+  render(view, text); // text is null unless the person must do something: add light, center the face, hold still
+}, 250);
+```
+
+- `PulseGuide` gives one instruction, held for `ADVICE_HOLD_MS` before it changes, shown only when the person must act
+  and never over a live number. `session.getGuideInput()` gathers what it needs: the picture's light, the face, the
+  light the app reported with `reportLight`, head movement and face colour from the check's frames, the check's cause,
+  and the camera's exposure where the browser reports it. Also importable alone from `@elata-biosciences/rppg-web/guide`.
+- `keepScreenOn`, the grey-camera switch (`isGreyFrame`, `otherCamera`), `hdFallback` and `watchCameraReturn`: keep a
+  phone awake while reading, move off an infrared camera, drop from HD when the device cannot keep up, and restart a
+  camera the browser stopped while the page was hidden. Also from `@elata-biosciences/rppg-web/camera`.
+- `rememberRate` keeps the last proven rate on the device (the app's own storage, never sent) and starts the next
+  session from it; `pulseCheckResume` hands a rate across a camera restart. Both only gate: the number shown is always
+  the face's own reading.
+
 ## What to put on screen
 
 `PulseDisplay` turns the check's shown numbers into what the screen shows, so every app shows the same thing. Push
