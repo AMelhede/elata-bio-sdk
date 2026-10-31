@@ -89,7 +89,7 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		);
 		this.canvas.width = size.width;
 		this.canvas.height = size.height;
-		const ctx = this.canvas.getContext("2d");
+		const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
 		if (!ctx) throw new Error("2D context unavailable");
 		this.ctx = ctx;
 	}

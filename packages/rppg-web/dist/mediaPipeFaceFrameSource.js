@@ -57,7 +57,7 @@ export class MediaPipeFaceFrameSource {
         const size = this.frameSize(video.videoWidth || video.width || 320, video.videoHeight || video.height || 240);
         this.canvas.width = size.width;
         this.canvas.height = size.height;
-        const ctx = this.canvas.getContext("2d");
+        const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
         if (!ctx)
             throw new Error("2D context unavailable");
         this.ctx = ctx;

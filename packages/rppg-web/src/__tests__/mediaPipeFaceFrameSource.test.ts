@@ -419,3 +419,24 @@ describe('MediaPipeFaceFrameSource landmarkEveryOther', () => {
     expect(slow.calls).toBe(4);
   });
 });
+
+describe('the frame canvas is made for reading back', () => {
+  // Every frame is drawn and then read with getImageData. On a GPU-backed canvas (phones, laptops with a GPU) each read
+  // is a GPU-to-CPU copy; willReadFrequently keeps the canvas in memory the CPU reads (Chromium with a GPU-backed canvas,
+  // 2026-10-31: 10.5/12.2/8.7 frames a second against 9.6/9.9/7.5 without). mediaPipeFrameSource already asks for it.
+  test('the 2D context is asked for with willReadFrequently: true', () => {
+    const asked: unknown[] = [];
+    const origCreate = document.createElement.bind(document);
+    document.createElement = ((tag: string) => {
+      if (tag !== 'canvas') return origCreate(tag);
+      const c = new FakeCanvas(64, 48);
+      const get = c.getContext.bind(c);
+      (c as unknown as { getContext: (n: string, o?: unknown) => unknown }).getContext = (n: string, o?: unknown) => { asked.push(o); return get(n); };
+      return c as unknown as HTMLCanvasElement;
+    }) as typeof document.createElement;
+    try {
+      new MediaPipeFaceFrameSource(new FakeVideo(64, 48) as unknown as HTMLVideoElement, fakeLandmarker([{}]));
+    } finally { document.createElement = origCreate; }
+    expect(asked).toEqual([{ willReadFrequently: true }]);
+  });
+});
