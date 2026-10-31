@@ -157,11 +157,11 @@ export type PulseCheckRules = {
      */
     restBand?: boolean;
     /**
- * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
- * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
- * beside the face (same window, same line test, same bar), as a taint on the window and over the last
- * windows. Only withholds. Needs the room handed to push (a recording's frame source computes it).
- */
+     * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
+     * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
+     * beside the face (same window, same line test, same bar), as a taint on the window and over the last
+     * windows. Only withholds. Needs the room handed to push (a recording's frame source computes it).
+     */
     /**
      * More readings. OFF unless true, being measured (lane/confidence, lane/sessionbar). Two halves, always together
      * (merged from showBuilding and relock, 0.15.0-test.51: the page turned them on together and they were measured
@@ -598,6 +598,16 @@ export declare class PulseCheck {
     } | null;
     /** A hand-over was given and no frame has placed it yet. */
     get resumePending(): boolean;
+    /**
+     * Green over red and blue over red of the three face regions over the last `windowMs` of frames, for telling a warm
+     * screen filter from a dark picture (PulseGuide); null without frames.
+     */
+    faceColour(windowMs?: number): {
+        greenOverRed: number;
+        blueOverRed: number;
+    } | null;
+    /** The head rows of the last `windowMs` (time, x, y, face width), for the guide's movement measure. */
+    headRows(windowMs: number): readonly HeadRow[];
     /** The rate to hand to the check after a camera restart: the last proven rate and when, or null before one. */
     resumePoint(): PulseCheckResume | null;
     /** Which light rules this check runs (see PulseCheckRules). */

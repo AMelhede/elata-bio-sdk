@@ -34,6 +34,18 @@ export declare const PULSE_DISPLAY_RECENT_MS = 10000;
  * against a finger. Off (0) unless set: `new PulseDisplay({ showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS })`.
  */
 export declare const PULSE_DISPLAY_SHOW_EVERY_MS = 5000;
+/**
+ * The display settings the received phone, laptop and Mac recordings chose (2026-10-30 and 31): a number on screen
+ * changes at most every 5 s (as Apple Heart Rate updates while it measures), stays greyed as recent for 30 s after the
+ * newest (more seconds with a number at an unchanged error against watch readings), and moves 60% of the way to each
+ * new median (fewer jumps over 5 bpm on every device, every watch reading still within the bar). An app passes it as
+ * is: `new PulseDisplay(PULSE_DISPLAY_RECOMMENDED)`. The constructor's own defaults stay the plain behaviour.
+ */
+export declare const PULSE_DISPLAY_RECOMMENDED: Readonly<{
+    recentMs: 30000;
+    showEveryMs: 5000;
+    follow: 0.6;
+}>;
 export type PulseDisplayView = {
     kind: "measuring";
 } | {

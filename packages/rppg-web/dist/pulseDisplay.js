@@ -34,6 +34,18 @@ export const PULSE_DISPLAY_RECENT_MS = 10000;
  * against a finger. Off (0) unless set: `new PulseDisplay({ showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS })`.
  */
 export const PULSE_DISPLAY_SHOW_EVERY_MS = 5000;
+/**
+ * The display settings the received phone, laptop and Mac recordings chose (2026-10-30 and 31): a number on screen
+ * changes at most every 5 s (as Apple Heart Rate updates while it measures), stays greyed as recent for 30 s after the
+ * newest (more seconds with a number at an unchanged error against watch readings), and moves 60% of the way to each
+ * new median (fewer jumps over 5 bpm on every device, every watch reading still within the bar). An app passes it as
+ * is: `new PulseDisplay(PULSE_DISPLAY_RECOMMENDED)`. The constructor's own defaults stay the plain behaviour.
+ */
+export const PULSE_DISPLAY_RECOMMENDED = Object.freeze({
+    recentMs: 30000,
+    showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS,
+    follow: 0.6,
+});
 export class PulseDisplay {
     /**
      * `recentMs`: how long a number stays on screen as recent after the newest, PULSE_DISPLAY_RECENT_MS by default. With
@@ -72,9 +84,16 @@ export class PulseDisplay {
         const keep = this.shown != null && atMs - this.lastRefreshMs < this.showEveryMs;
         if (!keep)
             this.lastRefreshMs = atMs;
-        const from = this.follow < 1 && this.shown != null && atMs - this.shown.atMs <= PULSE_DISPLAY_FOLLOW_FRESH_MS ? this.shown.bpm : null;
+        const from = this.follow < 1 &&
+            this.shown != null &&
+            atMs - this.shown.atMs <= PULSE_DISPLAY_FOLLOW_FRESH_MS
+            ? this.shown.bpm
+            : null;
         const next = from == null ? median : from + this.follow * (median - from);
-        this.shown = { atMs, bpm: keep && this.shown ? this.shown.bpm : Math.round(next) };
+        this.shown = {
+            atMs,
+            bpm: keep && this.shown ? this.shown.bpm : Math.round(next),
+        };
     }
     /**
      * The person's last reading from before this session (RppgSession.getLastReading), on the same clock as push and
@@ -82,19 +101,33 @@ export class PulseDisplay {
      * app shows the latest reading and when it was taken while it measures. Null clears it.
      */
     setLast(last) {
-        this.last = last != null && Number.isFinite(last.bpm) && last.bpm > 0 && Number.isFinite(last.atMs) ? { bpm: Math.round(last.bpm), atMs: last.atMs } : null;
+        this.last =
+            last != null &&
+                Number.isFinite(last.bpm) &&
+                last.bpm > 0 &&
+                Number.isFinite(last.atMs)
+                ? { bpm: Math.round(last.bpm), atMs: last.atMs }
+                : null;
     }
     view(nowMs) {
         if (!this.shown) {
             if (this.last && nowMs >= this.last.atMs)
-                return { kind: "last", bpm: this.last.bpm, agoS: Math.round((nowMs - this.last.atMs) / 1000) };
+                return {
+                    kind: "last",
+                    bpm: this.last.bpm,
+                    agoS: Math.round((nowMs - this.last.atMs) / 1000),
+                };
             return { kind: "measuring" };
         }
         const age = nowMs - this.shown.atMs;
         if (age <= PULSE_DISPLAY_LIVE_MS)
             return { kind: "live", bpm: this.shown.bpm };
         const agoS = Math.round(age / 1000);
-        return { kind: age <= this.recentMs ? "recent" : "last", bpm: this.shown.bpm, agoS };
+        return {
+            kind: age <= this.recentMs ? "recent" : "last",
+            bpm: this.shown.bpm,
+            agoS,
+        };
     }
     reset() {
         this.numbers = [];

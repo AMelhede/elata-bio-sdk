@@ -39,6 +39,19 @@ export const PULSE_DISPLAY_RECENT_MS = 10_000;
  */
 export const PULSE_DISPLAY_SHOW_EVERY_MS = 5000;
 
+/**
+ * The display settings the received phone, laptop and Mac recordings chose (2026-10-30 and 31): a number on screen
+ * changes at most every 5 s (as Apple Heart Rate updates while it measures), stays greyed as recent for 30 s after the
+ * newest (more seconds with a number at an unchanged error against watch readings), and moves 60% of the way to each
+ * new median (fewer jumps over 5 bpm on every device, every watch reading still within the bar). An app passes it as
+ * is: `new PulseDisplay(PULSE_DISPLAY_RECOMMENDED)`. The constructor's own defaults stay the plain behaviour.
+ */
+export const PULSE_DISPLAY_RECOMMENDED = Object.freeze({
+	recentMs: 30_000,
+	showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS,
+	follow: 0.6,
+});
+
 export type PulseDisplayView =
 	| { kind: "measuring" }
 	| { kind: "live"; bpm: number }
@@ -65,11 +78,14 @@ export class PulseDisplay {
 	 * phones and 10.8% to 6.0% in the lab, every watch reference staying within the bar and lab within-bar 80.8% to 80.4%.
 	 * A number older than PULSE_DISPLAY_FOLLOW_FRESH_MS is not followed from: the median shows as it is.
 	 */
-	constructor(options: { recentMs?: number; showEveryMs?: number; follow?: number } = {}) {
+	constructor(
+		options: { recentMs?: number; showEveryMs?: number; follow?: number } = {},
+	) {
 		this.recentMs = options.recentMs ?? PULSE_DISPLAY_RECENT_MS;
 		this.showEveryMs = options.showEveryMs ?? 0;
 		const f = options.follow ?? 1;
-		if (!(f > 0 && f <= 1)) throw new RangeError(`PulseDisplay follow must be in (0, 1], not ${f}`);
+		if (!(f > 0 && f <= 1))
+			throw new RangeError(`PulseDisplay follow must be in (0, 1], not ${f}`);
 		this.follow = f;
 	}
 
@@ -77,16 +93,28 @@ export class PulseDisplay {
 	push(atMs: number, bpm: number | null): void {
 		if (bpm == null || !Number.isFinite(bpm)) return;
 		this.numbers.push({ atMs, bpm });
-		this.numbers = this.numbers.filter((n) => n.atMs > atMs - PULSE_DISPLAY_MEDIAN_MS);
+		this.numbers = this.numbers.filter(
+			(n) => n.atMs > atMs - PULSE_DISPLAY_MEDIAN_MS,
+		);
 		const sorted = this.numbers.map((n) => n.bpm).sort((a, b) => a - b);
 		const mid = sorted.length >> 1;
-		const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+		const median =
+			sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 		// `showEveryMs`: the number on screen changes at most this often; its age still follows the newest number.
-		const keep = this.shown != null && atMs - this.lastRefreshMs < this.showEveryMs;
+		const keep =
+			this.shown != null && atMs - this.lastRefreshMs < this.showEveryMs;
 		if (!keep) this.lastRefreshMs = atMs;
-		const from = this.follow < 1 && this.shown != null && atMs - this.shown.atMs <= PULSE_DISPLAY_FOLLOW_FRESH_MS ? this.shown.bpm : null;
+		const from =
+			this.follow < 1 &&
+			this.shown != null &&
+			atMs - this.shown.atMs <= PULSE_DISPLAY_FOLLOW_FRESH_MS
+				? this.shown.bpm
+				: null;
 		const next = from == null ? median : from + this.follow * (median - from);
-		this.shown = { atMs, bpm: keep && this.shown ? this.shown.bpm : Math.round(next) };
+		this.shown = {
+			atMs,
+			bpm: keep && this.shown ? this.shown.bpm : Math.round(next),
+		};
 	}
 
 	/**
@@ -95,18 +123,34 @@ export class PulseDisplay {
 	 * app shows the latest reading and when it was taken while it measures. Null clears it.
 	 */
 	setLast(last: { bpm: number; atMs: number } | null): void {
-		this.last = last != null && Number.isFinite(last.bpm) && last.bpm > 0 && Number.isFinite(last.atMs) ? { bpm: Math.round(last.bpm), atMs: last.atMs } : null;
+		this.last =
+			last != null &&
+			Number.isFinite(last.bpm) &&
+			last.bpm > 0 &&
+			Number.isFinite(last.atMs)
+				? { bpm: Math.round(last.bpm), atMs: last.atMs }
+				: null;
 	}
 
 	view(nowMs: number): PulseDisplayView {
 		if (!this.shown) {
-			if (this.last && nowMs >= this.last.atMs) return { kind: "last", bpm: this.last.bpm, agoS: Math.round((nowMs - this.last.atMs) / 1000) };
+			if (this.last && nowMs >= this.last.atMs)
+				return {
+					kind: "last",
+					bpm: this.last.bpm,
+					agoS: Math.round((nowMs - this.last.atMs) / 1000),
+				};
 			return { kind: "measuring" };
 		}
 		const age = nowMs - this.shown.atMs;
-		if (age <= PULSE_DISPLAY_LIVE_MS) return { kind: "live", bpm: this.shown.bpm };
+		if (age <= PULSE_DISPLAY_LIVE_MS)
+			return { kind: "live", bpm: this.shown.bpm };
 		const agoS = Math.round(age / 1000);
-		return { kind: age <= this.recentMs ? "recent" : "last", bpm: this.shown.bpm, agoS };
+		return {
+			kind: age <= this.recentMs ? "recent" : "last",
+			bpm: this.shown.bpm,
+			agoS,
+		};
 	}
 
 	reset(): void {

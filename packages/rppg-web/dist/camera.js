@@ -6,3 +6,4 @@
 export * from "./wakeLock.js";
 export * from "./greyCamera.js";
 export * from "./hdWatch.js";
+export * from "./cameraReturn.js";

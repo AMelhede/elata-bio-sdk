@@ -85,3 +85,11 @@ describe('PulseDisplay follow: the shown number moves part of the way to each ne
 		expect(() => new PulseDisplay({ follow: 1.5 })).toThrow(RangeError);
 	});
 });
+
+describe("PULSE_DISPLAY_RECOMMENDED: the settings the received recordings chose", () => {
+	it("holds a 5 s step, a 30 s recent stage and 60% follow, and is frozen", async () => {
+		const { PULSE_DISPLAY_RECOMMENDED, PULSE_DISPLAY_SHOW_EVERY_MS } = await import("../pulseDisplay");
+		expect(PULSE_DISPLAY_RECOMMENDED).toEqual({ recentMs: 30_000, showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS, follow: 0.6 });
+		expect(Object.isFrozen(PULSE_DISPLAY_RECOMMENDED)).toBe(true);
+	});
+});

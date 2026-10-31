@@ -121,7 +121,6 @@ export type PulseCheckState = {
 	screenLight?: boolean;
 };
 
-
 /**
  * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
  * moves the proven rate trails it. Once proven, the shown rate is the line in the newest 12 s
@@ -143,8 +142,6 @@ export const OWN_PULSE_SUPPORT_S = 8;
 export const OWN_PULSE_SUPPORT_MISS = 3;
 export const OWN_PULSE_TRACK_BPM = 4;
 
-
-
 /** Why no wall was found beside the face this frame (see wallBesideFace). */
 export type WallMiss = "no-room" | "skin";
 
@@ -160,7 +157,6 @@ const WALL_MIN_SAMPLES = 60;
  * Value chosen by measurement on recorded captures against a reference pulse.
  */
 const WALL_MIN_SNR_DB = 12;
-
 
 /**
  * The pulse check's light rules, each behind its own switch so each can be tested alone (on unless
@@ -184,7 +180,7 @@ export type PulseCheckRules = {
 	 * longer, every second within 5 bpm of a reference. Off: the 58 edge, as in 0.15.0-test.31.
 	 */
 	restBand?: boolean;
-		/**
+	/**
 	 * OFF unless true, being measured (lane/wallroom): a rate the room carries is withheld, judged on the room
 	 * (roomFromFrame: the frame's upper corners clear of the face) exactly as the wall check judges the wall
 	 * beside the face (same window, same line test, same bar), as a taint on the window and over the last
@@ -339,8 +335,10 @@ export function followRate(
 	windowSnrDb: number | null | undefined,
 	blocked: boolean,
 ): number | null {
-	if (blocked || lastShown == null || windowBpm == null || windowSnrDb == null) return null;
-	if (timestampMs - lastShown.t > FOLLOW_MS || windowSnrDb < FOLLOW_MIN_SNR_DB) return null;
+	if (blocked || lastShown == null || windowBpm == null || windowSnrDb == null)
+		return null;
+	if (timestampMs - lastShown.t > FOLLOW_MS || windowSnrDb < FOLLOW_MIN_SNR_DB)
+		return null;
 	return Math.abs(windowBpm - lastShown.bpm) <= FOLLOW_BPM ? windowBpm : null;
 }
 /**
@@ -371,12 +369,37 @@ export const BUILDING_MIN_SNR_DB = -5;
 
 /** Rule moreReadings (re-lock): a not-measured verdict whose streak agrees with a rate proven in the last RELOCK_MS becomes that rate. */
 export function relockVerdict<
-	V extends { verdict: string; bpm: number | null; snrDb: number | null; streak: number; path: unknown; streakBpm?: number | null; streakSnrDb?: number | null },
+	V extends {
+		verdict: string;
+		bpm: number | null;
+		snrDb: number | null;
+		streak: number;
+		path: unknown;
+		streakBpm?: number | null;
+		streakSnrDb?: number | null;
+	},
 >(v: V, lastProven: { bpm: number; t: number } | null, timestampMs: number): V {
-	if (v.verdict === "measured" || lastProven == null || timestampMs - lastProven.t > RELOCK_MS) return v;
-	if (v.streak < RELOCK_STREAK || v.streakBpm == null || v.streakSnrDb == null || v.streakSnrDb < RELOCK_MIN_SNR_DB) return v;
+	if (
+		v.verdict === "measured" ||
+		lastProven == null ||
+		timestampMs - lastProven.t > RELOCK_MS
+	)
+		return v;
+	if (
+		v.streak < RELOCK_STREAK ||
+		v.streakBpm == null ||
+		v.streakSnrDb == null ||
+		v.streakSnrDb < RELOCK_MIN_SNR_DB
+	)
+		return v;
 	if (Math.abs(v.streakBpm - lastProven.bpm) > OWN_PULSE_AGREE_BPM) return v;
-	return { ...v, verdict: "measured", bpm: v.streakBpm, snrDb: Math.round(v.streakSnrDb * 10) / 10, path: "relock" };
+	return {
+		...v,
+		verdict: "measured",
+		bpm: v.streakBpm,
+		snrDb: Math.round(v.streakSnrDb * 10) / 10,
+		path: "relock",
+	};
 }
 
 /**
@@ -413,19 +436,33 @@ export const SHORT_BUILDING_STREAK = 2;
  */
 export const STEADY_LIGHT_MAX_STEPS = 3;
 /** Rule steadyLight: whether a building number may show with this many light steps in its window. */
-export function steadyLightAllows(windowScreenSteps: number | null | undefined, rules: Pick<ResolvedPulseCheckRules, "steadyLight">): boolean {
-	return !rules.steadyLight || windowScreenSteps == null || windowScreenSteps < STEADY_LIGHT_MAX_STEPS;
+export function steadyLightAllows(
+	windowScreenSteps: number | null | undefined,
+	rules: Pick<ResolvedPulseCheckRules, "steadyLight">,
+): boolean {
+	return (
+		!rules.steadyLight ||
+		windowScreenSteps == null ||
+		windowScreenSteps < STEADY_LIGHT_MAX_STEPS
+	);
 }
 
 /** The building streak under the rules running. */
 /** The run of windows the early number counts: the clear windows under rule clearWindows, else every agreeing one. */
-export function countingStreak(v: { streak: number; clearStreak?: number }, rules: Pick<ResolvedPulseCheckRules, "clearWindows">): number {
+export function countingStreak(
+	v: { streak: number; clearStreak?: number },
+	rules: Pick<ResolvedPulseCheckRules, "clearWindows">,
+): number {
 	return rules.clearWindows && v.clearStreak != null ? v.clearStreak : v.streak;
 }
 
 export function buildingStreak(rules: ResolvedPulseCheckRules): number {
 	if (rules.shortStreak) return SHORT_BUILDING_STREAK;
-	return rules.coherentFusion ? COHERENT_BUILDING_STREAK : rules.foreheadPool ? POOL_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
+	return rules.coherentFusion
+		? COHERENT_BUILDING_STREAK
+		: rules.foreheadPool
+			? POOL_BUILDING_STREAK
+			: OWN_PULSE_STRONG_STREAK;
 }
 
 /**
@@ -435,13 +472,27 @@ export function buildingStreak(rules: ResolvedPulseCheckRules): number {
  * BUILDING_MIN_SNR_DB (two dB under the proof's bar).
  */
 export function buildingRate(
-	v: { verdict: string; streak: number; streakBpm?: number | null; streakSnrDb?: number | null; clearStreak?: number; clearBpm?: number | null; clearSnrDb?: number | null },
+	v: {
+		verdict: string;
+		streak: number;
+		streakBpm?: number | null;
+		streakSnrDb?: number | null;
+		clearStreak?: number;
+		clearBpm?: number | null;
+		clearSnrDb?: number | null;
+	},
 	withheld: boolean,
 	minStreak: number = OWN_PULSE_STRONG_STREAK,
 	/** Rule clearWindows: count only the streak's clear windows (clearStreak, clearBpm, clearSnrDb). */
 	clear = false,
 ): number | null {
-	if (clear && v.clearStreak != null) v = { ...v, streak: v.clearStreak, streakBpm: v.clearBpm, streakSnrDb: v.clearSnrDb };
+	if (clear && v.clearStreak != null)
+		v = {
+			...v,
+			streak: v.clearStreak,
+			streakBpm: v.clearBpm,
+			streakSnrDb: v.clearSnrDb,
+		};
 	if (v.verdict === "measured" || withheld || v.streak < minStreak) return null;
 	if (v.streakSnrDb == null || v.streakSnrDb < BUILDING_MIN_SNR_DB) return null;
 	return v.streakBpm ?? null;
@@ -473,15 +524,20 @@ export class BlinkDetector {
 	private start: { t: number; base: number } | null = null;
 	seen = false;
 	push(t: number, score: number): void {
-		const prev = this.scores.filter(([u]) => u >= t - BLINK_BASE_MS && u < t).map(([, v]) => v);
+		const prev = this.scores
+			.filter(([u]) => u >= t - BLINK_BASE_MS && u < t)
+			.map(([, v]) => v);
 		this.scores.push([t, score]);
-		while (this.scores.length && this.scores[0][0] < t - BLINK_BASE_MS) this.scores.shift();
-		const covered = prev.length >= 2 && t - this.scores[0][0] >= BLINK_BASE_MS / 2;
+		while (this.scores.length && this.scores[0][0] < t - BLINK_BASE_MS)
+			this.scores.shift();
+		const covered =
+			prev.length >= 2 && t - this.scores[0][0] >= BLINK_BASE_MS / 2;
 		if (this.start == null) {
 			if (!covered) return;
 			const sorted = [...prev].sort((a, b) => a - b);
 			const n = sorted.length;
-			const base = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+			const base =
+				n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
 			if (score >= base + BLINK_RISE) this.start = { t, base };
 		} else if (score < this.start.base + BLINK_RISE) {
 			if (t - this.start.t <= BLINK_MAX_MS) this.seen = true;
@@ -502,11 +558,23 @@ export class BlinkDetector {
  * the wall too dim for the backup method), a window under the SNR bar, a signal over the bar whose regions do not yet
  * agree, the blink gate waiting, or shown. `faceInView`: the app's own face tracking this second.
  */
-export type PulseCheckCause = "noFace" | "lightFlicker" | "collecting" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
-export function pulseCheckCause(state: PulseCheckState, faceInView: boolean): PulseCheckCause {
+export type PulseCheckCause =
+	| "noFace"
+	| "lightFlicker"
+	| "collecting"
+	| "noRate"
+	| "weakSignal"
+	| "agreeing"
+	| "waitingForBlink"
+	| "shown";
+export function pulseCheckCause(
+	state: PulseCheckState,
+	faceInView: boolean,
+): PulseCheckCause {
 	if (!faceInView) return "noFace";
 	if (shownPulseBpm(state) != null) return "shown";
-	if (state.wallMatch || state.roomMatch || state.screenLight) return "lightFlicker";
+	if (state.wallMatch || state.roomMatch || state.screenLight)
+		return "lightFlicker";
 	if (state.waitingForBlink) return "waitingForBlink";
 	if (state.collecting) return "collecting";
 	if (state.windowSnrDb == null) return "noRate";
@@ -520,7 +588,10 @@ export function pulseCheckCause(state: PulseCheckState, faceInView: boolean): Pu
  * a night-light filter) as the fix for a weak signal only then, or when the face is measurably dark.
  */
 export function pulseCheckColourDamaged(state: PulseCheckState): boolean {
-	return state.windowMethod === "greenMinusWall" || (state.windowColourDamage ?? 0) >= OWN_PULSE_COLOUR_SWITCH;
+	return (
+		state.windowMethod === "greenMinusWall" ||
+		(state.windowColourDamage ?? 0) >= OWN_PULSE_COLOUR_SWITCH
+	);
 }
 
 /**
@@ -528,7 +599,10 @@ export function pulseCheckColourDamaged(state: PulseCheckState): boolean {
  * building bar OWN_PULSE_STRONG_STREAK, and RELOCK_STREAK while re-lock is open (`state.relockOpen`). An app's
  * progress toward a number counts toward this, never toward a fixed 8.
  */
-export function streakNeeded(rules: ResolvedPulseCheckRules, relockOpen: boolean): number {
+export function streakNeeded(
+	rules: ResolvedPulseCheckRules,
+	relockOpen: boolean,
+): number {
 	if (!rules.moreReadings) return OWN_PULSE_STREAK;
 	return relockOpen ? RELOCK_STREAK : buildingStreak(rules);
 }
@@ -539,21 +613,38 @@ export function streakNeeded(rules: ResolvedPulseCheckRules, relockOpen: boolean
  * a rule still holds the number, 1 with a number shown. It follows the check both ways: held at its best it read as nearly
  * there while the check had slipped (a tester saw it stuck short of full for about 10 s).
  */
-export function pulseProgress(state: PulseCheckState, rules: ResolvedPulseCheckRules): number {
+export function pulseProgress(
+	state: PulseCheckState,
+	rules: ResolvedPulseCheckRules,
+): number {
 	if (shownPulseBpm(state) != null) return 1;
-	if (state.collecting !== false) return Math.max(0, Math.min(1, state.windowFill ?? 0)) / 2;
+	if (state.collecting !== false)
+		return Math.max(0, Math.min(1, state.windowFill ?? 0)) / 2;
 	const needed = Math.max(1, streakNeeded(rules, state.relockOpen === true));
-	const done = Math.min(needed, Math.max(0, state.countingStreak ?? state.streak));
+	const done = Math.min(
+		needed,
+		Math.max(0, state.countingStreak ?? state.streak),
+	);
 	return done >= needed ? 0.95 : 0.5 + done / needed / 2;
 }
 
-export function shownPulseBpm(state: { verdict: string; bpm: number | null; buildingBpm?: number | null; followBpm?: number | null; startGated?: boolean }): number | null {
+export function shownPulseBpm(state: {
+	verdict: string;
+	bpm: number | null;
+	buildingBpm?: number | null;
+	followBpm?: number | null;
+	startGated?: boolean;
+}): number | null {
 	if (state.startGated) return null;
-	return state.verdict === "measured" && state.bpm != null ? state.bpm : (state.buildingBpm ?? state.followBpm ?? null);
+	return state.verdict === "measured" && state.bpm != null
+		? state.bpm
+		: (state.buildingBpm ?? state.followBpm ?? null);
 }
 
 /** Every rule resolved to true or false; left out means on. */
-export function resolvePulseCheckRules(rules?: PulseCheckRules | null): ResolvedPulseCheckRules {
+export function resolvePulseCheckRules(
+	rules?: PulseCheckRules | null,
+): ResolvedPulseCheckRules {
 	return {
 		screenLight: rules?.screenLight !== false,
 		restBand: rules?.restBand !== false,
@@ -574,7 +665,9 @@ export function resolvePulseCheckRules(rules?: PulseCheckRules | null): Resolved
  * Face-mesh landmarks on bone, not on skin that moves with expression: nose bridge and tip, forehead,
  * chin, outer eye corners, cheekbones (MediaPipe face mesh indices).
  */
-export const HEAD_LANDMARKS: readonly number[] = [168, 6, 4, 10, 152, 33, 263, 234, 454];
+export const HEAD_LANDMARKS: readonly number[] = [
+	168, 6, 4, 10, 152, 33, 263, 234, 454,
+];
 
 /** The cheekbones (MediaPipe face mesh 234 and 454): their distance is the face's width. */
 const CHEEKBONES = [234, 454] as const;
@@ -610,11 +703,18 @@ export type HeadPosition = {
 };
 
 /** The mean of the eyeBlinkLeft and eyeBlinkRight scores, or null when either is missing (HeadPosition.blink). */
-export function eyeBlink(blendshapes: readonly { categoryName: string; score: number }[] | null | undefined): number | null {
+export function eyeBlink(
+	blendshapes:
+		| readonly { categoryName: string; score: number }[]
+		| null
+		| undefined,
+): number | null {
 	if (!blendshapes) return null;
 	const l = blendshapes.find((b) => b.categoryName === "eyeBlinkLeft")?.score;
 	const r = blendshapes.find((b) => b.categoryName === "eyeBlinkRight")?.score;
-	return l != null && r != null && Number.isFinite(l) && Number.isFinite(r) ? (l + r) / 2 : null;
+	return l != null && r != null && Number.isFinite(l) && Number.isFinite(r)
+		? (l + r) / 2
+		: null;
 }
 
 /** Inner lips, upper and lower (MediaPipe face mesh 13 and 14). */
@@ -636,8 +736,16 @@ export function headAngles(
 	const [f, c] = FOREHEAD_CHIN.map((i) => points[i]);
 	if (![l, r, f, c].every((p) => p && Number.isFinite(p.z))) return null;
 	const deg = 180 / Math.PI;
-	const yawDeg = Math.atan2(((r.z as number) - (l.z as number)) * width, (r.x - l.x) * width) * deg;
-	const pitchDeg = Math.atan2(((c.z as number) - (f.z as number)) * width, (c.y - f.y) * height) * deg;
+	const yawDeg =
+		Math.atan2(
+			((r.z as number) - (l.z as number)) * width,
+			(r.x - l.x) * width,
+		) * deg;
+	const pitchDeg =
+		Math.atan2(
+			((c.z as number) - (f.z as number)) * width,
+			(c.y - f.y) * height,
+		) * deg;
 	const rollDeg = Math.atan2((r.y - l.y) * height, (r.x - l.x) * width) * deg;
 	return { yawDeg, pitchDeg, rollDeg };
 }
@@ -651,7 +759,8 @@ export function headCentre(
 	width: number,
 	height: number,
 ): HeadPosition | null {
-	if (points.length <= Math.max(...HEAD_LANDMARKS) || width <= 0 || height <= 0) return null;
+	if (points.length <= Math.max(...HEAD_LANDMARKS) || width <= 0 || height <= 0)
+		return null;
 	let x = 0;
 	let y = 0;
 	for (const i of HEAD_LANDMARKS) {
@@ -666,17 +775,15 @@ export function headCentre(
 		x: x / HEAD_LANDMARKS.length,
 		y: y / HEAD_LANDMARKS.length,
 		faceWidth,
-		...(faceWidth > 0 && Number.isFinite(gap) ? { mouthOpen: gap / faceWidth } : {}),
+		...(faceWidth > 0 && Number.isFinite(gap)
+			? { mouthOpen: gap / faceWidth }
+			: {}),
 		...(headAngles(points, width, height) ?? {}),
 	};
 }
 
 /** One frame of the head as the check keeps it: [time ms, x, y, face width], pixels (headCentre). */
 export type HeadRow = [number, number, number, number];
-
-
-
-
 
 const ALL_RULES_ON = resolvePulseCheckRules();
 
@@ -698,7 +805,9 @@ export function wallLine(
 	);
 	if (!bandEdge) {
 		// Switched off: the in-band local maximum this check used before (blind at the band's edge).
-		const pk = peakOfSpectrum(spectrum(detrend(brightness, OWN_PULSE_DETREND_S)));
+		const pk = peakOfSpectrum(
+			spectrum(detrend(brightness, OWN_PULSE_DETREND_S)),
+		);
 		return Number.isFinite(pk.bpm) ? { bpm: pk.bpm, snrDb: pk.snrDb } : null;
 	}
 	// The wall's strongest line is searched from the band's floor to the top of the computed
@@ -716,8 +825,9 @@ export function wallLine(
 		Math.abs(f - f0) <= 0.1 || Math.abs(f - 2 * f0) <= 0.1;
 	let sig = 0;
 	let rest = 0;
-	for (const [f, p] of range) if (inLine(f)) sig += p;
-	else rest += p;
+	for (const [f, p] of range)
+		if (inLine(f)) sig += p;
+		else rest += p;
 	return { bpm: f0 * 60, snrDb: 10 * Math.log10(sig / Math.max(rest, 1e-12)) };
 }
 
@@ -747,10 +857,16 @@ export function wallCarries(
 export const ROOM_MIN_SNR_DB = 2.458;
 
 /** Whether the room's line carries the face's rate (rule roomLight): within OWN_PULSE_AGREE_BPM, at or over ROOM_MIN_SNR_DB. */
-export function roomCarries(line: { bpm: number; snrDb: number } | null, bpm: number): boolean {
-	return line != null && line.snrDb >= ROOM_MIN_SNR_DB && Math.abs(line.bpm - bpm) <= OWN_PULSE_AGREE_BPM;
+export function roomCarries(
+	line: { bpm: number; snrDb: number } | null,
+	bpm: number,
+): boolean {
+	return (
+		line != null &&
+		line.snrDb >= ROOM_MIN_SNR_DB &&
+		Math.abs(line.bpm - bpm) <= OWN_PULSE_AGREE_BPM
+	);
 }
-
 
 /** wallCarries on a wall line already found (one evaluation reads the same line up to three times). */
 function lineCarries(
@@ -765,7 +881,6 @@ function lineCarries(
 		family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM)
 	);
 }
-
 
 const EVAL_EVERY_MS = 1000;
 
@@ -791,7 +906,8 @@ const SCREEN_STEP_MAX_GAP_MS = 250;
  * fixed 30 would discard every frame of a 0 to 1 caller; the scale is read from the values themselves.
  */
 const SCREEN_STEP_MIN_BRIGHTNESS_SHARE = 30 / 765;
-const brightnessFloor = (x: number) => (x <= 3 ? 3 : 765) * SCREEN_STEP_MIN_BRIGHTNESS_SHARE;
+const brightnessFloor = (x: number) =>
+	(x <= 3 ? 3 : 765) * SCREEN_STEP_MIN_BRIGHTNESS_SHARE;
 /** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
 export const SCREEN_STEPS_PER_WINDOW = 10;
 
@@ -804,20 +920,35 @@ export const SCREEN_STEPS_PER_WINDOW = 10;
  */
 export const SCREEN_LEVEL_HOLD_MS = 100;
 export const SCREEN_LEVEL_REVERSAL = 0.5;
-export function levelHolds(samples: readonly (readonly number[])[], k: number): boolean {
-	const bright = (s: readonly number[], r: number) => s[1 + 3 * r] + s[2 + 3 * r] + s[3 + 3 * r];
+export function levelHolds(
+	samples: readonly (readonly number[])[],
+	k: number,
+): boolean {
+	const bright = (s: readonly number[], r: number) =>
+		s[1 + 3 * r] + s[2 + 3 * r] + s[3 + 3 * r];
 	const a = samples[k - 1];
 	const b = samples[k];
-	for (let j = k + 1; j < samples.length && samples[j][0] - b[0] <= SCREEN_LEVEL_HOLD_MS; j++)
+	for (
+		let j = k + 1;
+		j < samples.length && samples[j][0] - b[0] <= SCREEN_LEVEL_HOLD_MS;
+		j++
+	)
 		for (let r = 0; r < 3; r++) {
 			const step = bright(b, r) - bright(a, r);
-			if ((bright(samples[j], r) - bright(a, r)) / step < 1 - SCREEN_LEVEL_REVERSAL) return false;
+			if (
+				(bright(samples[j], r) - bright(a, r)) / step <
+				1 - SCREEN_LEVEL_REVERSAL
+			)
+				return false;
 		}
 	return true;
 }
 
 /** Whether the change from sample `a` to sample `b` is one light stepping on all three regions alike. */
-export function equalLightStep(a: readonly number[], b: readonly number[]): boolean {
+export function equalLightStep(
+	a: readonly number[],
+	b: readonly number[],
+): boolean {
 	const dt = b[0] - a[0];
 	if (!(dt > 0) || dt > SCREEN_STEP_MAX_GAP_MS) return false;
 	const d: number[] = [];
@@ -827,7 +958,11 @@ export function equalLightStep(a: readonly number[], b: readonly number[]): bool
 		if (!(x >= brightnessFloor(x)) || !(y >= brightnessFloor(y))) return false;
 		d.push((y - x) / x);
 	}
-	if (Math.sign(d[0]) !== Math.sign(d[1]) || Math.sign(d[1]) !== Math.sign(d[2])) return false;
+	if (
+		Math.sign(d[0]) !== Math.sign(d[1]) ||
+		Math.sign(d[1]) !== Math.sign(d[2])
+	)
+		return false;
 	const size = d.map(Math.abs);
 	const least = Math.min(...size);
 	return (
@@ -837,7 +972,10 @@ export function equalLightStep(a: readonly number[], b: readonly number[]): bool
 }
 
 /** Equal light steps in the OWN_PULSE_WINDOW_S window ending at `atMs`. */
-export function screenSteps(samples: readonly (readonly number[])[], atMs: number): number {
+export function screenSteps(
+	samples: readonly (readonly number[])[],
+	atMs: number,
+): number {
 	// One light change counts once: consecutive frames stepping the same way (auto exposure or white balance
 	// easing over several frames) are one event; a screen cut lands in one frame.
 	const from = atMs - OWN_PULSE_WINDOW_S * 1000;
@@ -848,7 +986,8 @@ export function screenSteps(samples: readonly (readonly number[])[], atMs: numbe
 	for (let k = 1; k < samples.length; k++) {
 		const t = samples[k][0];
 		if (t <= from || t > atMs) continue;
-		if (!equalLightStep(samples[k - 1], samples[k]) || !levelHolds(samples, k)) continue;
+		if (!equalLightStep(samples[k - 1], samples[k]) || !levelHolds(samples, k))
+			continue;
 		const sign = Math.sign(bright(samples[k]) - bright(samples[k - 1]));
 		if (!(lastK === k - 1 && sign === lastSign)) n++;
 		lastK = k;
@@ -890,24 +1029,41 @@ export type PulseCheckResume = {
 };
 
 export class PulseCheck {
-	constructor(opts: {
-		rules?: PulseCheckRules;
-		/** The rate proven by the check before a camera restart (resumePoint of that check). */
-		resumeFrom?: PulseCheckResume | null;
-		/** The wall clock, Date.now unless a test sets it. */
-		now?: () => number;
-		/** For replay only: a hand-over already placed on the recording's frame clock (PulseCheckRecording.resume). */
-		resumeAt?: { bpm: number; t: number; maxAgeMs?: number } | null;
-	} = {}) {
+	constructor(
+		opts: {
+			rules?: PulseCheckRules;
+			/** The rate proven by the check before a camera restart (resumePoint of that check). */
+			resumeFrom?: PulseCheckResume | null;
+			/** The wall clock, Date.now unless a test sets it. */
+			now?: () => number;
+			/** For replay only: a hand-over already placed on the recording's frame clock (PulseCheckRecording.resume). */
+			resumeAt?: { bpm: number; t: number; maxAgeMs?: number } | null;
+		} = {},
+	) {
 		this.rules = resolvePulseCheckRules(opts.rules);
 		this.now = opts.now ?? Date.now;
 		const r = opts.resumeFrom;
 		if (r != null) {
-			if (!(r.bpm > 0) || !Number.isFinite(r.bpm) || !Number.isFinite(r.atEpochMs))
-				throw new RangeError(`pulseCheckResume needs a finite bpm above 0 and a finite atEpochMs, not ${JSON.stringify(r)}`);
-			if (r.maxAgeMs !== undefined && !(r.maxAgeMs > 0 && Number.isFinite(r.maxAgeMs)))
-				throw new RangeError(`pulseCheckResume maxAgeMs must be a positive number of ms, not ${r.maxAgeMs}`);
-			this.resumeFrom = { bpm: r.bpm, atEpochMs: r.atEpochMs, ...(r.maxAgeMs !== undefined ? { maxAgeMs: r.maxAgeMs } : {}) };
+			if (
+				!(r.bpm > 0) ||
+				!Number.isFinite(r.bpm) ||
+				!Number.isFinite(r.atEpochMs)
+			)
+				throw new RangeError(
+					`pulseCheckResume needs a finite bpm above 0 and a finite atEpochMs, not ${JSON.stringify(r)}`,
+				);
+			if (
+				r.maxAgeMs !== undefined &&
+				!(r.maxAgeMs > 0 && Number.isFinite(r.maxAgeMs))
+			)
+				throw new RangeError(
+					`pulseCheckResume maxAgeMs must be a positive number of ms, not ${r.maxAgeMs}`,
+				);
+			this.resumeFrom = {
+				bpm: r.bpm,
+				atEpochMs: r.atEpochMs,
+				...(r.maxAgeMs !== undefined ? { maxAgeMs: r.maxAgeMs } : {}),
+			};
 		}
 		if (opts.resumeAt != null) {
 			this.followKept = { bpm: opts.resumeAt.bpm, t: opts.resumeAt.t };
@@ -931,10 +1087,48 @@ export class PulseCheck {
 		return this.resumeFrom != null;
 	}
 
+	/**
+	 * Green over red and blue over red of the three face regions over the last `windowMs` of frames, for telling a warm
+	 * screen filter from a dark picture (PulseGuide); null without frames.
+	 */
+	faceColour(
+		windowMs = 2000,
+	): { greenOverRed: number; blueOverRed: number } | null {
+		const n = this.samples.length;
+		if (!n) return null;
+		const end = this.samples[n - 1][0];
+		let r = 0;
+		let g = 0;
+		let b = 0;
+		for (let i = n - 1; i >= 0 && this.samples[i][0] >= end - windowMs; i--) {
+			const s = this.samples[i];
+			r += s[1] + s[4] + s[7];
+			g += s[2] + s[5] + s[8];
+			b += s[3] + s[6] + s[9];
+		}
+		return r > 0 ? { greenOverRed: g / r, blueOverRed: b / r } : null;
+	}
+
+	/** The head rows of the last `windowMs` (time, x, y, face width), for the guide's movement measure. */
+	headRows(windowMs: number): readonly HeadRow[] {
+		const n = this.head.length;
+		if (!n) return [];
+		const end = this.head[n - 1][0];
+		let i = n - 1;
+		while (i > 0 && this.head[i - 1][0] >= end - windowMs) i--;
+		return this.head.slice(i);
+	}
+
 	/** The rate to hand to the check after a camera restart: the last proven rate and when, or null before one. */
 	resumePoint(): PulseCheckResume | null {
 		if (this.followKept == null || this.keptEpochMs == null) return null;
-		return { bpm: this.followKept.bpm, atEpochMs: this.keptEpochMs, ...(this.keptMaxAgeMs !== FOLLOW_RESUME_MS ? { maxAgeMs: this.keptMaxAgeMs } : {}) };
+		return {
+			bpm: this.followKept.bpm,
+			atEpochMs: this.keptEpochMs,
+			...(this.keptMaxAgeMs !== FOLLOW_RESUME_MS
+				? { maxAgeMs: this.keptMaxAgeMs }
+				: {}),
+		};
 	}
 
 	/** Which light rules this check runs (see PulseCheckRules). */
@@ -1027,10 +1221,16 @@ export class PulseCheck {
 			const r = this.resumeFrom;
 			this.resumeFrom = null;
 			if (this.followKept == null) {
-				this.followKept = { bpm: r.bpm, t: timestampMs - (this.now() - r.atEpochMs) };
+				this.followKept = {
+					bpm: r.bpm,
+					t: timestampMs - (this.now() - r.atEpochMs),
+				};
 				this.keptEpochMs = r.atEpochMs;
 				this.keptMaxAgeMs = r.maxAgeMs ?? FOLLOW_RESUME_MS;
-				this.resumeSeed = { ...this.followKept, ...(r.maxAgeMs !== undefined ? { maxAgeMs: r.maxAgeMs } : {}) };
+				this.resumeSeed = {
+					...this.followKept,
+					...(r.maxAgeMs !== undefined ? { maxAgeMs: r.maxAgeMs } : {}),
+				};
 			}
 		}
 		if (wall) this.wallTally.seen++;
@@ -1072,8 +1272,15 @@ export class PulseCheck {
 		while (this.room.length && this.room[0][0] < timestampMs - WALL_KEEP_MS)
 			this.room.shift();
 		if (head !== undefined) this.headHandedOver = true;
-		if (head?.blink != null && Number.isFinite(head.blink)) this.blinks.push(timestampMs, head.blink);
-		if (head && Number.isFinite(head.x) && Number.isFinite(head.y) && Number.isFinite(head.faceWidth) && head.faceWidth > 0)
+		if (head?.blink != null && Number.isFinite(head.blink))
+			this.blinks.push(timestampMs, head.blink);
+		if (
+			head &&
+			Number.isFinite(head.x) &&
+			Number.isFinite(head.y) &&
+			Number.isFinite(head.faceWidth) &&
+			head.faceWidth > 0
+		)
 			this.head.push([timestampMs, head.x, head.y, head.faceWidth]);
 		while (this.head.length && this.head[0][0] < timestampMs - WALL_KEEP_MS)
 			this.head.shift();
@@ -1082,7 +1289,14 @@ export class PulseCheck {
 		this.lastEvalMs = timestampMs;
 		const wallFrames = this.wallTally;
 		this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
-		const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
+		const est = estimateOwnPulse(
+			this.samples,
+			OWN_PULSE_WINDOW_S,
+			timestampMs,
+			OWN_PULSE_COLOUR_SWITCH,
+			this.swapMinWall,
+			this.rules.coherentFusion,
+		);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// The wall's line for a window end, found once per evaluation: the taint, the wall check and
 		// the state read the newest one, and the wall rows do not change while this runs.
@@ -1098,8 +1312,13 @@ export class PulseCheck {
 		// Only a window whose head is seen and clear of the rate counts (fail-closed): a window the
 		// head's rows do not cover could hide a nod, as the colour carries on while the mesh is not looking.
 		// A window a stepping light on the face fills is not evidence either (screenLight): it only withholds.
-		const windowScreenSteps = this.rules.screenLight ? screenSteps(this.samples, timestampMs) : null;
-		const screenLit = est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
+		const windowScreenSteps = this.rules.screenLight
+			? screenSteps(this.samples, timestampMs)
+			: null;
+		const screenLit =
+			est?.bpm != null &&
+			windowScreenSteps != null &&
+			windowScreenSteps >= SCREEN_STEPS_PER_WINDOW;
 		// Rule roomLight: the room's line, found and judged exactly as the wall's.
 		const roomLines = new Map<number, ReturnType<typeof wallLine>>();
 		const roomLineAt = (ms: number) => {
@@ -1109,14 +1328,22 @@ export class PulseCheck {
 		};
 		const tainted =
 			est?.bpm != null &&
-			(screenLit || (this.rules.roomLight && roomCarries(roomLineAt(timestampMs), est.bpm)));
+			(screenLit ||
+				(this.rules.roomLight &&
+					roomCarries(roomLineAt(timestampMs), est.bpm)));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
-		let v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
+		let v = ownPulseVerdict(
+			this.history,
+			this.held,
+			this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM,
+		);
 		// Rule moreReadings (re-lock): a streak that agrees with a rate proven moments ago is that rate again (relockVerdict).
-		if (this.rules.moreReadings) v = relockVerdict(v, this.lastProven, timestampMs);
+		if (this.rules.moreReadings)
+			v = relockVerdict(v, this.lastProven, timestampMs);
 		this.held = v.verdict === "measured" ? v.bpm : null;
-		if (v.verdict === "measured" && v.bpm != null) this.lastProven = { bpm: v.bpm, t: timestampMs };
+		if (v.verdict === "measured" && v.bpm != null)
+			this.lastProven = { bpm: v.bpm, t: timestampMs };
 		// The wall check only withholds; it never changes what the check itself has proven.
 		// Judged over the last 4 one-second windows at once, not counted forward from the
 		// moment of proof, so a lamp's rate is withheld from its first second.
@@ -1133,55 +1360,80 @@ export class PulseCheck {
 				roomCarries(roomLineAt(timestampMs - k * EVAL_EVERY_MS), held),
 			);
 		this.followerBpm = null;
-		this.state = wallMatch || roomMatch
-			? {
-					verdict: "not-measured",
-					bpm: null,
-					snrDb: v.snrDb,
-					streak: v.streak,
-					countingStreak: countingStreak(v, this.rules),
-					wallMatch,
-					...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
-					windowBpm: est?.bpm ?? null,
-					windowSnrDb: est?.snrDb ?? null,
-					windowMethod: est?.method ?? null,
-					windowColourDamage: est?.colourDamage ?? null,
-					windowWallSeen: est?.wallSeen ?? false,
-					windowWallLevel: est?.wallLevel ?? null,
-					windowWallToFace: est?.wallToFace ?? null,
-					wallLine: lineAt(timestampMs),
-					wallFrames,
-				}
-			: {
-					verdict: v.verdict,
-					bpm: this.shownRate(timestampMs),
-					via: this.held != null ? "check" : null,
-					snrDb: v.snrDb,
-					streak: v.streak,
-					countingStreak: countingStreak(v, this.rules),
-					wallMatch,
-					...(this.rules.roomLight ? { roomMatch, roomLine: roomLineAt(timestampMs) } : {}),
-					windowBpm: est?.bpm ?? null,
-					windowSnrDb: est?.snrDb ?? null,
-					windowMethod: est?.method ?? null,
-					windowColourDamage: est?.colourDamage ?? null,
-					windowWallSeen: est?.wallSeen ?? false,
-					windowWallLevel: est?.wallLevel ?? null,
-					windowWallToFace: est?.wallToFace ?? null,
-					wallLine: lineAt(timestampMs),
-					wallFrames,
-				};
-		this.state.collecting = !this.samples.length || timestampMs - this.samples[0][0] < OWN_PULSE_WINDOW_S * 1000;
-		this.state.windowFill = this.samples.length ? Math.min(1, (timestampMs - this.samples[0][0]) / (OWN_PULSE_WINDOW_S * 1000)) : 0;
+		this.state =
+			wallMatch || roomMatch
+				? {
+						verdict: "not-measured",
+						bpm: null,
+						snrDb: v.snrDb,
+						streak: v.streak,
+						countingStreak: countingStreak(v, this.rules),
+						wallMatch,
+						...(this.rules.roomLight
+							? { roomMatch, roomLine: roomLineAt(timestampMs) }
+							: {}),
+						windowBpm: est?.bpm ?? null,
+						windowSnrDb: est?.snrDb ?? null,
+						windowMethod: est?.method ?? null,
+						windowColourDamage: est?.colourDamage ?? null,
+						windowWallSeen: est?.wallSeen ?? false,
+						windowWallLevel: est?.wallLevel ?? null,
+						windowWallToFace: est?.wallToFace ?? null,
+						wallLine: lineAt(timestampMs),
+						wallFrames,
+					}
+				: {
+						verdict: v.verdict,
+						bpm: this.shownRate(timestampMs),
+						via: this.held != null ? "check" : null,
+						snrDb: v.snrDb,
+						streak: v.streak,
+						countingStreak: countingStreak(v, this.rules),
+						wallMatch,
+						...(this.rules.roomLight
+							? { roomMatch, roomLine: roomLineAt(timestampMs) }
+							: {}),
+						windowBpm: est?.bpm ?? null,
+						windowSnrDb: est?.snrDb ?? null,
+						windowMethod: est?.method ?? null,
+						windowColourDamage: est?.colourDamage ?? null,
+						windowWallSeen: est?.wallSeen ?? false,
+						windowWallLevel: est?.wallLevel ?? null,
+						windowWallToFace: est?.wallToFace ?? null,
+						wallLine: lineAt(timestampMs),
+						wallFrames,
+					};
+		this.state.collecting =
+			!this.samples.length ||
+			timestampMs - this.samples[0][0] < OWN_PULSE_WINDOW_S * 1000;
+		this.state.windowFill = this.samples.length
+			? Math.min(
+					1,
+					(timestampMs - this.samples[0][0]) / (OWN_PULSE_WINDOW_S * 1000),
+				)
+			: 0;
 		this.state.followerBpm = this.followerBpm;
 		this.state.heldBpm = this.held;
 		// Rule moreReadings: a streak long and strong enough to be the check's shortest accepted one, not yet proven.
 		this.state.buildingBpm = this.rules.moreReadings
-			? buildingRate({ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" }, wallMatch || roomMatch, buildingStreak(this.rules), this.rules.clearWindows)
+			? buildingRate(
+					{ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" },
+					wallMatch || roomMatch,
+					buildingStreak(this.rules),
+					this.rules.clearWindows,
+				)
 			: null;
-		if (this.state.buildingBpm != null && !steadyLightAllows(windowScreenSteps, this.rules)) this.state.buildingBpm = null;
+		if (
+			this.state.buildingBpm != null &&
+			!steadyLightAllows(windowScreenSteps, this.rules)
+		)
+			this.state.buildingBpm = null;
 		// Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink).
-		if (this.rules.blinkGate && !this.blinks.seen && (this.state.bpm != null || this.state.buildingBpm != null)) {
+		if (
+			this.rules.blinkGate &&
+			!this.blinks.seen &&
+			(this.state.bpm != null || this.state.buildingBpm != null)
+		) {
 			this.state.verdict = "not-measured";
 			this.state.bpm = null;
 			this.state.buildingBpm = null;
@@ -1190,26 +1442,66 @@ export class PulseCheck {
 		// Rule followRecent: nothing shows, the window is the same heart as a number shown moments ago.
 		this.state.followBpm = null;
 		// Anchored on a proven number only: following a building number carried wrong lab rates on (tools/follow.mjs).
-		const own = this.state.verdict === "measured" && this.state.bpm != null ? this.state.bpm : null;
+		const own =
+			this.state.verdict === "measured" && this.state.bpm != null
+				? this.state.bpm
+				: null;
 		if (own != null) {
 			this.lastShown = { bpm: own, t: timestampMs };
 			this.followKept = this.lastShown;
 			this.keptEpochMs = this.now();
 			this.keptMaxAgeMs = FOLLOW_RESUME_MS;
 		} else if (this.rules.followRecent) {
-			const blocked = this.state.waitingForBlink === true || wallMatch || roomMatch || !steadyLightAllows(windowScreenSteps, this.rules);
-			this.state.followBpm = followRate(this.lastShown, timestampMs, est?.bpm, est?.snrDb, blocked);
+			const blocked =
+				this.state.waitingForBlink === true ||
+				wallMatch ||
+				roomMatch ||
+				!steadyLightAllows(windowScreenSteps, this.rules);
+			this.state.followBpm = followRate(
+				this.lastShown,
+				timestampMs,
+				est?.bpm,
+				est?.snrDb,
+				blocked,
+			);
 			// Across a break: while the first window refills, the data so far against the number proven before it.
 			const kept = this.followKept;
-			const span = this.samples.length ? (timestampMs - this.samples[0][0]) / 1000 : 0;
-			if (this.state.followBpm == null && this.state.collecting && !blocked && !screenLit && this.blinkGateOpen && kept != null &&
-				timestampMs - kept.t <= this.keptMaxAgeMs && span >= FOLLOW_RESUME_MIN_S) {
-				const e = estimateOwnPulse(this.samples, span, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
-				if (e && e.bpm != null && e.snrDb != null && e.snrDb >= FOLLOW_MIN_SNR_DB && e.agreeing.length >= FOLLOW_RESUME_REGIONS && Math.abs(e.bpm - kept.bpm) <= FOLLOW_BPM)
+			const span = this.samples.length
+				? (timestampMs - this.samples[0][0]) / 1000
+				: 0;
+			if (
+				this.state.followBpm == null &&
+				this.state.collecting &&
+				!blocked &&
+				!screenLit &&
+				this.blinkGateOpen &&
+				kept != null &&
+				timestampMs - kept.t <= this.keptMaxAgeMs &&
+				span >= FOLLOW_RESUME_MIN_S
+			) {
+				const e = estimateOwnPulse(
+					this.samples,
+					span,
+					timestampMs,
+					OWN_PULSE_COLOUR_SWITCH,
+					this.swapMinWall,
+					this.rules.coherentFusion,
+				);
+				if (
+					e &&
+					e.bpm != null &&
+					e.snrDb != null &&
+					e.snrDb >= FOLLOW_MIN_SNR_DB &&
+					e.agreeing.length >= FOLLOW_RESUME_REGIONS &&
+					Math.abs(e.bpm - kept.bpm) <= FOLLOW_BPM
+				)
 					this.state.followBpm = e.bpm;
 			}
 		}
-		this.state.relockOpen = this.rules.moreReadings && this.lastProven != null && timestampMs - this.lastProven.t <= RELOCK_MS;
+		this.state.relockOpen =
+			this.rules.moreReadings &&
+			this.lastProven != null &&
+			timestampMs - this.lastProven.t <= RELOCK_MS;
 		this.state.windowScreenSteps = windowScreenSteps;
 		this.state.screenLight = screenLit;
 		this.gateStart(timestampMs);
@@ -1224,13 +1516,26 @@ export class PulseCheck {
 	private gateStart(t: number): void {
 		const w = this.state.windowBpm;
 		if (w != null) this.startHist.push([t, w]);
-		while (this.startHist.length && this.startHist[0][0] < t - COHERENT_START_MS) this.startHist.shift();
+		while (
+			this.startHist.length &&
+			this.startHist[0][0] < t - COHERENT_START_MS
+		)
+			this.startHist.shift();
 		this.state.startGated = false;
 		const v = shownPulseBpm(this.state);
-		if (v == null || !this.rules.coherentStart) { if (v != null) this.lastOutMs = t; return; }
-		if (this.lastOutMs != null && t - this.lastOutMs <= COHERENT_START_MS) { this.lastOutMs = t; return; }
+		if (v == null || !this.rules.coherentStart) {
+			if (v != null) this.lastOutMs = t;
+			return;
+		}
+		if (this.lastOutMs != null && t - this.lastOutMs <= COHERENT_START_MS) {
+			this.lastOutMs = t;
+			return;
+		}
 		const n = this.startHist.length;
-		const share = n ? this.startHist.filter(([, b]) => Math.abs(b - v) <= COHERENT_START_BPM).length / n : 1;
+		const share = n
+			? this.startHist.filter(([, b]) => Math.abs(b - v) <= COHERENT_START_BPM)
+					.length / n
+			: 1;
 		if (share >= COHERENT_START_SHARE) this.lastOutMs = t;
 		else this.state.startGated = true;
 	}
@@ -1334,18 +1639,31 @@ export function wallBesideFace(
 	frame: Frame,
 	preferIndex: number,
 ): { rgb: Rgb; gapIndex: number; patch: WallPatchDiag } | null {
-	const order = [preferIndex, ...WALL_GAPS.map((_, i) => i).filter((i) => i !== preferIndex)];
+	const order = [
+		preferIndex,
+		...WALL_GAPS.map((_, i) => i).filter((i) => i !== preferIndex),
+	];
 	for (const i of order) {
 		const gap = WALL_GAPS[i];
 		if (gap == null) continue;
-		const patch = wallPatchFromLandmarks(points, frame.width, frame.height, gap);
+		const patch = wallPatchFromLandmarks(
+			points,
+			frame.width,
+			frame.height,
+			gap,
+		);
 		if (!patch) continue;
 		const x = Math.max(0, Math.min(frame.width - 1, patch.x));
 		const y = Math.max(0, Math.min(frame.height - 1, patch.y));
 		const w = Math.max(1, Math.min(frame.width - x, patch.w));
 		const h = Math.max(1, Math.min(frame.height - y, patch.h));
 		const m = averageRgbInROINonSkinCounted(frame, x, y, w, h);
-		if (m) return { rgb: { r: m.r, g: m.g, b: m.b }, gapIndex: i, patch: [x, y, w, h, m.n] };
+		if (m)
+			return {
+				rgb: { r: m.r, g: m.g, b: m.b },
+				gapIndex: i,
+				patch: [x, y, w, h, m.n],
+			};
 	}
 	return null;
 }
@@ -1399,7 +1717,11 @@ export class WallTracker {
 			};
 			this.current = gapIndex;
 		}
-		this.last = { r: rgb.r * this.gain.r, g: rgb.g * this.gain.g, b: rgb.b * this.gain.b };
+		this.last = {
+			r: rgb.r * this.gain.r,
+			g: rgb.g * this.gain.g,
+			b: rgb.b * this.gain.b,
+		};
 		return this.last;
 	}
 }
@@ -1424,7 +1746,11 @@ export type PulseCheckFrameDiag = {
 	 * Session switch light: the face's light (lightLevel.ts) this frame, the level asked for and the level the app said it
 	 * rendered, recorded only. Absent without the switch.
 	 */
-	light?: { face: { luma: number; redClip: number } | null; wanted: number; applied: number } | null;
+	light?: {
+		face: { luma: number; redClip: number } | null;
+		wanted: number;
+		applied: number;
+	} | null;
 	/**
 	 * The 115 skin patches (facePatches.ts) this frame, only when the check keeps them (`wantsFacePatches`), recorded
 	 * only; null when the frame had no mesh.
@@ -1432,13 +1758,14 @@ export type PulseCheckFrameDiag = {
 	facePatches?: FacePatches | null;
 };
 
-
 /** The wall patch as read this frame, for the recording only: x, y, w, h in pixels and how many non-skin pixels it averaged. */
 export type WallPatchDiag = [number, number, number, number, number];
 
 /** The room as one signal: the corners' pixel-weighted mean, or the one corner there is, or null. */
 export function combineRoom(room: RoomCorners | null | undefined): Rgb | null {
-	const parts = [room?.left, room?.right].filter((c): c is RoomCorner => c != null && c.n > 0);
+	const parts = [room?.left, room?.right].filter(
+		(c): c is RoomCorner => c != null && c.n > 0,
+	);
 	if (!parts.length) return null;
 	const n = parts.reduce((a, c) => a + c.n, 0);
 	return {
@@ -1476,41 +1803,70 @@ export function roomFromFrame(
 	if (width <= 0 || height <= 0) return null;
 	// The face box from the points' extremes, in one pass with no allocation (percentiles are not needed: the box is
 	// widened by ROOM_FACE_CLEAR face widths anyway, and sorting 478 points twice a frame cost about 164 KB of garbage).
-	let fx0 = Number.POSITIVE_INFINITY, fy0 = Number.POSITIVE_INFINITY, fx1 = Number.NEGATIVE_INFINITY, fy1 = Number.NEGATIVE_INFINITY;
+	let fx0 = Number.POSITIVE_INFINITY,
+		fy0 = Number.POSITIVE_INFINITY,
+		fx1 = Number.NEGATIVE_INFINITY,
+		fy1 = Number.NEGATIVE_INFINITY;
 	if (points?.length) {
-		let x0 = Number.POSITIVE_INFINITY, x1 = Number.NEGATIVE_INFINITY, y0 = Number.POSITIVE_INFINITY, y1 = Number.NEGATIVE_INFINITY;
+		let x0 = Number.POSITIVE_INFINITY,
+			x1 = Number.NEGATIVE_INFINITY,
+			y0 = Number.POSITIVE_INFINITY,
+			y1 = Number.NEGATIVE_INFINITY;
 		for (const p of points) {
-			const x = Math.min(1, Math.max(0, p.x)) * width, y = Math.min(1, Math.max(0, p.y)) * height;
-			if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+			const x = Math.min(1, Math.max(0, p.x)) * width,
+				y = Math.min(1, Math.max(0, p.y)) * height;
+			if (x < x0) x0 = x;
+			if (x > x1) x1 = x;
+			if (y < y0) y0 = y;
+			if (y > y1) y1 = y;
 		}
 		const clear = (x1 - x0) * ROOM_FACE_CLEAR;
-		fx0 = x0 - clear; fx1 = x1 + clear; fy0 = y0 - clear; fy1 = y1 + clear;
+		fx0 = x0 - clear;
+		fx1 = x1 + clear;
+		fy0 = y0 - clear;
+		fy1 = y1 + clear;
 	}
 	const cw = Math.max(1, Math.floor(width * ROOM_CORNER_SHARE));
 	const ch = Math.max(1, Math.floor(height * ROOM_CORNER_SHARE));
 	// Each value to 7 decimals, so what a recording keeps is exactly what the check used (live and replay agree).
 	const r7 = (v: number) => Math.round(v * 1e7) / 1e7;
 	const corner = (xStart: number): RoomCorner | null => {
-		let sumR = 0, sumG = 0, sumB = 0, n = 0, count = 0;
+		let sumR = 0,
+			sumG = 0,
+			sumB = 0,
+			n = 0,
+			count = 0;
 		for (let row = 0; row < ch; row += ROOM_STRIDE) {
 			for (let col = xStart; col < xStart + cw; col += ROOM_STRIDE) {
 				if (col >= fx0 && col <= fx1 && row >= fy0 && row <= fy1) continue;
 				count++;
 				const idx = (row * width + col) * 4;
-				const r = (data as any)[idx], g = (data as any)[idx + 1], b = (data as any)[idx + 2];
+				const r = (data as any)[idx],
+					g = (data as any)[idx + 1],
+					b = (data as any)[idx + 2];
 				const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
 				const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 				if (cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) continue;
-				sumR += r; sumG += g; sumB += b; n++;
+				sumR += r;
+				sumG += g;
+				sumB += b;
+				n++;
 			}
 		}
 		if (n < Math.max(25, count * 0.1)) return null;
-		return { rgb: { r: r7(sumR / n / 255), g: r7(sumG / n / 255), b: r7(sumB / n / 255) }, n };
+		return {
+			rgb: {
+				r: r7(sumR / n / 255),
+				g: r7(sumG / n / 255),
+				b: r7(sumB / n / 255),
+			},
+			n,
+		};
 	};
-	const left = corner(0), right = corner(width - cw);
+	const left = corner(0),
+		right = corner(width - cw);
 	return left || right ? { left, right } : null;
 }
-
 
 /**
  * Why wallBesideFace found nothing: "no-room" when no distance leaves a patch inside the frame

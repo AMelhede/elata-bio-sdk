@@ -6,7 +6,14 @@ import type {
 } from "./frameSource";
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource";
-import { defaultLastRateStore, type LastRateStore, type LastReading, lastReadingResume, readLastReading, writeLastReading } from "./lastRate";
+import {
+	defaultLastRateStore,
+	type LastRateStore,
+	type LastReading,
+	lastReadingResume,
+	readLastReading,
+	writeLastReading,
+} from "./lastRate";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
 import {
 	PulseCheck,
@@ -14,6 +21,8 @@ import {
 	type PulseCheckRules,
 	type PulseCheckState,
 	type ResolvedPulseCheckRules,
+	pulseCheckCause,
+	pulseCheckColourDamaged,
 	shownPulseBpm,
 } from "./pulseCheck";
 import {
@@ -27,6 +36,13 @@ import {
 	resolveFixSwitches,
 } from "./fixSwitches";
 import { ensureVideoPlaying } from "./videoPlayback";
+import {
+	type CoachInput,
+	cameraStarved,
+	MOVE_WINDOW_MS,
+	meter,
+	movementOf,
+} from "./pulseGuide";
 import {
 	RppgProcessor,
 	type Metrics,
@@ -187,7 +203,9 @@ export type CreateRppgSessionOptions = Omit<
 	 * or steadier face region can be scored offline on the same seconds; it costs a little time per frame and about
 	 * 3 kB per frame in the file. Recording changes no output; see pulseCheckRecording.ts for the format and the memory bound.
 	 */
-	recordPulseCheckInputs?: boolean | { seconds?: number; facePatches?: boolean };
+	recordPulseCheckInputs?:
+		| boolean
+		| { seconds?: number; facePatches?: boolean };
 	/**
 	 * Experimental, off by default. Hands over HRV and breathing in their own box,
 	 * `getExperimentalVitals()`, labelled experimental, for research and testing, not for showing a
@@ -281,6 +299,8 @@ type SessionInternals = {
 	beforeStart?: () => Promise<void>;
 	waveformController?: WaveformReconstructionController;
 	pulseCheck?: PulseCheck | null;
+	/** The video the session reads, for the guide's light meter and the camera's exposure. */
+	video?: HTMLVideoElement;
 	/** Where the last proven rate is kept (rememberRate), and the reading kept when the session started. */
 	rateStore?: LastRateStore | null;
 	lastReading?: LastReading | null;
@@ -306,7 +326,9 @@ export type ExperimentalVitals = {
 };
 
 /** Whether a session reads chest motion: only for `experimentalVitals`' breathing. */
-export function wantsChestMotion(options: { experimentalVitals?: boolean }): boolean {
+export function wantsChestMotion(options: {
+	experimentalVitals?: boolean;
+}): boolean {
 	return options.experimentalVitals === true;
 }
 
@@ -331,6 +353,10 @@ function clearedMetrics(metrics: Metrics, reason: string): Metrics {
 			metrics.reason_codes?.includes("backend_failed"));
 	return already ? { ...cleared, reason_codes: metrics.reason_codes } : cleared;
 }
+
+/** How often getGuideInput meters the picture (ms), and the side of the square it meters (the test page's measured 16). */
+export const GUIDE_METER_MS = 500;
+export const GUIDE_METER_SIZE = 16;
 
 export class RppgSession {
 	private lastErrorValue: RppgSessionError | null = null;
@@ -362,10 +388,15 @@ export class RppgSession {
 		this.lastEngineMetrics = metrics;
 		// The engine failed: the runner has stopped, so no frame reaches the engine or the pulse
 		// check again and both keep their last state. Their last numbers are not a reading.
-		if (this.failed()) return this.noteRead(clearedMetrics(metrics, "processor_failed"), "processor_failed");
+		if (this.failed())
+			return this.noteRead(
+				clearedMetrics(metrics, "processor_failed"),
+				"processor_failed",
+			);
 		// No frame for over a second (fix noFramesNoReading): the engine and the check have seen nothing
 		// since, so their last numbers describe the past, however long the frames stay away.
-		if (stopped) return this.noteRead(clearedMetrics(metrics, "no_frames"), "no_frames");
+		if (stopped)
+			return this.noteRead(clearedMetrics(metrics, "no_frames"), "no_frames");
 		// No face for a second (face tracking on): nothing to report, not the last number.
 		// One second rides out a brief face-finder miss without dropping a real reading.
 		if ((this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS)
@@ -394,7 +425,8 @@ export class RppgSession {
 	/** With `recordPulseCheckInputs`, files this read with the check's inputs; returns the metrics unchanged. */
 	private noteRead(metrics: Metrics, reason: PulseCheckReadReason): Metrics {
 		const check = this.internals.pulseCheck;
-		if (check instanceof RecordingPulseCheck) check.noteRead(metrics.bpm ?? null, reason);
+		if (check instanceof RecordingPulseCheck)
+			check.noteRead(metrics.bpm ?? null, reason);
 		return metrics;
 	}
 
@@ -412,13 +444,119 @@ export class RppgSession {
 	 * Switch `light`: the level the screen should light the face at (0, 1 or 0.5, linear light) and the face light it
 	 * was decided from; level 0 and nulls when the switch is off.
 	 */
-	light(): { level: LightLevel; faceLuma: number | null; faceRedClip: number | null } {
-		return this.internals.light === true ? this.runner.getLight() : { level: 0, faceLuma: null, faceRedClip: null };
+	light(): {
+		level: LightLevel;
+		faceLuma: number | null;
+		faceRedClip: number | null;
+	} {
+		return this.internals.light === true
+			? this.runner.getLight()
+			: { level: 0, faceLuma: null, faceRedClip: null };
 	}
 
 	/** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
 	reportLight(applied: LightLevel): void {
+		this.appliedLight = applied;
 		if (this.internals.light === true) this.runner.setAppliedLight(applied);
+	}
+
+	private appliedLight: LightLevel = 0;
+	private meterCtx: CanvasRenderingContext2D | null = null;
+	private meterAt = Number.NEGATIVE_INFINITY;
+	private meterValue: { face: number; centre: number; room: number } | null =
+		null;
+	private searchSince: number | null = null;
+
+	/**
+	 * Everything PulseGuide decides from, gathered by the session itself: the picture's light (face, centre, room, metered
+	 * every GUIDE_METER_MS on a GUIDE_METER_SIZE square), whether a face is found, the light the app reported rendering,
+	 * head movement and the face's colour from the check's own frames, the check's cause and colour damage, the camera's
+	 * exposure (where the browser reports it) and how long a face has waited with no number. An app calls
+	 * `guide.next(now, session.getGuideInput(), numberOnScreen)` once per read.
+	 */
+	getGuideInput(nowMs: number = Date.now()): Omit<CoachInput, "hasNumber"> {
+		const d = this.runner.getDiagnostics() as {
+			lastDropReason?: string | null;
+			lastRoiSource?: string | null;
+		};
+		const faceGone = (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
+		const faceFound =
+			!faceGone &&
+			d.lastDropReason !== "no_face" &&
+			(d.lastRoiSource === "multi_roi" || d.lastRoiSource === "face_roi");
+		const check = this.internals.pulseCheck ?? null;
+		const state = check ? check.getState() : null;
+		if (faceGone || (state && shownPulseBpm(state) != null))
+			this.searchSince = null;
+		else if (faceFound) this.searchSince ??= nowMs;
+		const colour = faceFound && check ? check.faceColour() : null;
+		const rows = check ? check.headRows(MOVE_WINDOW_MS) : [];
+		const movement =
+			faceFound && rows.length
+				? movementOf(
+						rows.map(([t, x, y, w]) => ({ t_ms: t, x, y, w })),
+						rows[rows.length - 1][0],
+					)
+				: null;
+		const exposure = this.exposureTime();
+		return {
+			light: this.meterVideo(nowMs),
+			faceFound,
+			lampOn: this.appliedLight > 0,
+			movement,
+			warmth: colour?.greenOverRed ?? null,
+			blueWarmth: colour?.blueOverRed ?? null,
+			cause: state ? pulseCheckCause(state, faceFound) : null,
+			colourDamaged: state ? pulseCheckColourDamaged(state) : false,
+			starved: cameraStarved(exposure),
+			exposureKnown: exposure != null,
+			searchingMs: this.searchSince == null ? 0 : nowMs - this.searchSince,
+		};
+	}
+
+	private meterVideo(
+		nowMs: number,
+	): { face: number; centre: number; room: number } | null {
+		if (nowMs - this.meterAt < GUIDE_METER_MS) return this.meterValue;
+		this.meterAt = nowMs;
+		const video = this.internals.video;
+		try {
+			if (!video || !video.videoWidth || typeof document === "undefined")
+				return this.meterValue;
+			if (!this.meterCtx) {
+				const c = document.createElement("canvas");
+				c.width = GUIDE_METER_SIZE;
+				c.height = GUIDE_METER_SIZE;
+				this.meterCtx = c.getContext("2d", { willReadFrequently: true });
+			}
+			if (!this.meterCtx) return this.meterValue;
+			this.meterCtx.drawImage(video, 0, 0, GUIDE_METER_SIZE, GUIDE_METER_SIZE);
+			this.meterValue = meter(
+				this.meterCtx.getImageData(0, 0, GUIDE_METER_SIZE, GUIDE_METER_SIZE)
+					.data,
+				GUIDE_METER_SIZE,
+			);
+		} catch {
+			/* a frame that cannot be read keeps the last meter */
+		}
+		return this.meterValue;
+	}
+
+	private exposureTime(): number | null {
+		try {
+			const stream = this.internals.video?.srcObject as
+				| MediaStream
+				| null
+				| undefined;
+			const e = (
+				stream?.getVideoTracks?.()[0]?.getSettings?.() as
+					| { exposureTime?: number }
+					| undefined
+			)?.exposureTime;
+			return typeof e === "number" && Number.isFinite(e) ? e : null;
+		} catch {
+			return null;
+		}
 	}
 
 	/** The person's last reading kept on the device when this session started (rememberRate), for the display; or null. */
@@ -470,14 +608,13 @@ export class RppgSession {
 			this.framesStopped() ||
 			(this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
 		const state = this.internals.pulseCheck?.getState();
-		const proven = !state || (state.verdict === "measured" && state.bpm != null);
+		const proven =
+			!state || (state.verdict === "measured" && state.bpm != null);
 		const hrv = this.lastEngineMetrics?.hrv_rmssd;
 		return {
 			experimental: true,
 			hrvRmssd:
-				!faceGone && proven && Number.isFinite(hrv)
-					? (hrv as number)
-					: null,
+				!faceGone && proven && Number.isFinite(hrv) ? (hrv as number) : null,
 			breathing: this.internals.chestMotion?.rate() ?? null,
 		};
 	}
@@ -509,7 +646,9 @@ export class RppgSession {
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
 			experimentalVitals: this.internals.experimentalVitals === true,
-			foreheadPool: this.internals.foreheadPool === true && this.internals.pulseCheck != null,
+			foreheadPool:
+				this.internals.foreheadPool === true &&
+				this.internals.pulseCheck != null,
 			light: this.internals.light === true,
 		};
 	}
@@ -651,7 +790,8 @@ export class RppgSession {
 			lastSampleTimestampMs: debugSnapshot.lastSampleTimestampMs,
 			// On the runner's wall clock: the processor's own subtracts the frames' clock (page time,
 			// or the video's) from `nowMs` (Date.now() by default), about 55 years on most browsers.
-			lastSampleAgeMs: this.runner.sampleAgeMs?.() ?? debugSnapshot.lastSampleAgeMs,
+			lastSampleAgeMs:
+				this.runner.sampleAgeMs?.() ?? debugSnapshot.lastSampleAgeMs,
 			lastSample: debugSnapshot.lastSample,
 			processorIssues: debugSnapshot.issues,
 			issues: Array.from(issues),
@@ -712,9 +852,20 @@ export async function createRppgSession(
 	// Built first: a bad recordPulseCheckInputs length throws here, before a face finder or an
 	// engine exists, so a refused call leaves nothing running that the caller has no session to dispose.
 	const rateStore: LastRateStore | null =
-		options.rememberRate === false ? null : typeof options.rememberRate === "object" ? options.rememberRate.store : defaultLastRateStore();
-	const lastReading = options.pulseCheck === false ? null : readLastReading(rateStore, Date.now());
-	const pulseCheck = sessionPulseCheck({ ...options, pulseCheckResume: options.pulseCheckResume ?? lastReadingResume(lastReading) });
+		options.rememberRate === false
+			? null
+			: typeof options.rememberRate === "object"
+				? options.rememberRate.store
+				: defaultLastRateStore();
+	const lastReading =
+		options.pulseCheck === false
+			? null
+			: readLastReading(rateStore, Date.now());
+	const pulseCheck = sessionPulseCheck({
+		...options,
+		pulseCheckResume:
+			options.pulseCheckResume ?? lastReadingResume(lastReading),
+	});
 
 	const faceMeshResult = await resolveFaceMesh(options.faceMesh);
 	if (faceMeshResult.error) pendingErrors.push(faceMeshResult.error);
@@ -740,18 +891,18 @@ export async function createRppgSession(
 	if ("error" in backendResult && backendResult.error)
 		pendingErrors.push(backendResult.error);
 	const processor: RppgProcessor = new RppgProcessor(
-			(backendResult as { backend: Backend }).backend,
-			sampleRate,
-			windowSec,
-			{
-				bpmTrackerConfig: options.bpmTrackerConfig,
-				bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
-				fixes: options.fixes,
-				// With the pulse check on every read withholds the engine's breathing, and experimentalVitals reads
-				// breathing from the chest, so the engine does not compute it.
-				respiration: pulseCheck == null,
-			},
-		);
+		(backendResult as { backend: Backend }).backend,
+		sampleRate,
+		windowSec,
+		{
+			bpmTrackerConfig: options.bpmTrackerConfig,
+			bpmEvidenceQualityProvider: options.bpmEvidenceQualityProvider,
+			fixes: options.fixes,
+			// With the pulse check on every read withholds the engine's breathing, and experimentalVitals reads
+			// breathing from the chest, so the engine does not compute it.
+			respiration: pulseCheck == null,
+		},
+	);
 	applyTrackerConfiguration(processor, enableTracker);
 	let session: RppgSession | null = null;
 	const waveformBuilder = options.experimental
@@ -829,6 +980,7 @@ export async function createRppgSession(
 			onDiagnostics: options.onDiagnostics,
 			onError: options.onError,
 			pulseCheck,
+			video: options.video,
 			rateStore,
 			lastReading,
 			chestMotion,
@@ -867,14 +1019,31 @@ export async function createRppgSession(
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
 export function sessionPulseCheck(
-	options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs" | "foreheadPool" | "pulseCheckResume">,
+	options: Pick<
+		CreateRppgSessionOptions,
+		| "pulseCheck"
+		| "pulseCheckRules"
+		| "recordPulseCheckInputs"
+		| "foreheadPool"
+		| "pulseCheckResume"
+	>,
 ): PulseCheck | null {
 	if (options.pulseCheck === false) return null;
 	// Switch foreheadPool sets the check's rule of the same name, so the check always knows what it is fed.
-	const opts = { rules: options.foreheadPool === true ? { ...options.pulseCheckRules, foreheadPool: true } : options.pulseCheckRules, resumeFrom: options.pulseCheckResume ?? null };
+	const opts = {
+		rules:
+			options.foreheadPool === true
+				? { ...options.pulseCheckRules, foreheadPool: true }
+				: options.pulseCheckRules,
+		resumeFrom: options.pulseCheckResume ?? null,
+	};
 	const rec = options.recordPulseCheckInputs;
 	if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
-		return new RecordingPulseCheck({ ...opts, seconds: rec === true ? undefined : rec.seconds, facePatches: rec === true ? false : rec.facePatches === true });
+		return new RecordingPulseCheck({
+			...opts,
+			seconds: rec === true ? undefined : rec.seconds,
+			facePatches: rec === true ? false : rec.facePatches === true,
+		});
 	return new PulseCheck(opts);
 }
 

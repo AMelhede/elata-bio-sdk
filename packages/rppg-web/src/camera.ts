@@ -6,3 +6,4 @@
 export * from "./wakeLock";
 export * from "./greyCamera";
 export * from "./hdWatch";
+export * from "./cameraReturn";

@@ -6,6 +6,7 @@ import { PulseCheck, type PulseCheckResume, type PulseCheckRules, type PulseChec
 import { type PulseCheckRecording } from "./pulseCheckRecording.js";
 import { ChestMotion, type ChestSample } from "./chestBreathing.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
+import { type CoachInput } from "./pulseGuide.js";
 import { RppgProcessor, type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
 import { type WasmImporter } from "./wasmBackend.js";
 import { DemoRunner, type DemoRunnerDiagnostics, type DemoRunnerOptions } from "./demoRunner.js";
@@ -213,6 +214,8 @@ type SessionInternals = {
     beforeStart?: () => Promise<void>;
     waveformController?: WaveformReconstructionController;
     pulseCheck?: PulseCheck | null;
+    /** The video the session reads, for the guide's light meter and the camera's exposure. */
+    video?: HTMLVideoElement;
     /** Where the last proven rate is kept (rememberRate), and the reading kept when the session started. */
     rateStore?: LastRateStore | null;
     lastReading?: LastReading | null;
@@ -242,6 +245,9 @@ export type ExperimentalVitals = {
 export declare function wantsChestMotion(options: {
     experimentalVitals?: boolean;
 }): boolean;
+/** How often getGuideInput meters the picture (ms), and the side of the square it meters (the test page's measured 16). */
+export declare const GUIDE_METER_MS = 500;
+export declare const GUIDE_METER_SIZE = 16;
 export declare class RppgSession {
     readonly source: FrameSource;
     readonly processor: RppgProcessor;
@@ -275,6 +281,21 @@ export declare class RppgSession {
     };
     /** Switch `light`: the level the app actually rendered. Report every change; an app that cannot light never calls it. */
     reportLight(applied: LightLevel): void;
+    private appliedLight;
+    private meterCtx;
+    private meterAt;
+    private meterValue;
+    private searchSince;
+    /**
+     * Everything PulseGuide decides from, gathered by the session itself: the picture's light (face, centre, room, metered
+     * every GUIDE_METER_MS on a GUIDE_METER_SIZE square), whether a face is found, the light the app reported rendering,
+     * head movement and the face's colour from the check's own frames, the check's cause and colour damage, the camera's
+     * exposure (where the browser reports it) and how long a face has waited with no number. An app calls
+     * `guide.next(now, session.getGuideInput(), numberOnScreen)` once per read.
+     */
+    getGuideInput(nowMs?: number): Omit<CoachInput, "hasNumber">;
+    private meterVideo;
+    private exposureTime;
     /** The person's last reading kept on the device when this session started (rememberRate), for the display; or null. */
     getLastReading(): LastReading | null;
     private keptAt;

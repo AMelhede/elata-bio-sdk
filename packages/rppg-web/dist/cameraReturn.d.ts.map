@@ -1,0 +1,1 @@
+{"version":3,"file":"cameraReturn.d.ts","sourceRoot":"","sources":["../src/cameraReturn.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AACH,KAAK,aAAa,GAAG,IAAI,CACxB,QAAQ,EACR,kBAAkB,GAAG,qBAAqB,GAAG,iBAAiB,CAC9D,CAAC;AAEF,wBAAgB,iBAAiB,CAChC,KAAK,EAAE,MAAM,IAAI,CAAC,gBAAgB,EAAE,YAAY,CAAC,GAAG,IAAI,GAAG,SAAS,EACpE,OAAO,EAAE,MAAM,IAAI,EACnB,GAAG,GAAE,aAAwB,GAC3B,MAAM,IAAI,CAQZ"}

@@ -6,4 +6,5 @@
 export * from "./wakeLock.js";
 export * from "./greyCamera.js";
 export * from "./hdWatch.js";
+export * from "./cameraReturn.js";
 //# sourceMappingURL=camera.d.ts.map
