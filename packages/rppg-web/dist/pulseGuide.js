@@ -160,8 +160,14 @@ export function movementOf(rows, endMs, windowMs = MOVE_WINDOW_MS) {
         spread(win.map((r) => r.w))) /
         w);
 }
-/** How long a face may be in view with no number before the stall line replaces silence. */
-export const STALL_MS = 42000;
+/**
+ * How long a face may be in view with no number before the stall line replaces silence: 30 s. On every received
+ * test-page recording replayed on test.57, a first number came within 26 s on 9 in 10 phone readings, while 35% of
+ * computer readings ran past 30 s, 16 of those 19 with a fixable cause (head movement, a dim room, a warm filter), so the
+ * fix belongs at 30 s, not at the 42 s an earlier lab-webcam count gave (test.44). An app's "taking longer than usual"
+ * line uses the same moment, so the line and its fix appear together.
+ */
+export const STALL_MS = 30000;
 /** The one instruction for this moment, in the order a person must fix things: a picture, a face, then light. */
 export function adviceFor(s) {
     if (s.hasNumber)

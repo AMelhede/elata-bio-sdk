@@ -77,9 +77,10 @@ test('an instruction changes only after the new one has held ADVICE_HOLD_MS; a n
   assert.equal(shownAfter(s, 'more_light', 99999, true).advice, 'still');
 });
 
-test('after 42 s with a face and no number, good light becomes a nudge', () => {
-  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: false, hasNumber: false, searchingMs: 41_999 }), 'still');
-  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: false, hasNumber: false, searchingMs: 42_000 }), 'stalled');
+test('after 30 s with a face and no number, good light becomes a nudge', () => {
+  assert.equal(STALL_MS, 30_000);
+  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: false, hasNumber: false, searchingMs: 29_999 }), 'still');
+  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: false, hasNumber: false, searchingMs: 30_000 }), 'stalled');
 });
 
 // ---- "Hold still": the 2026-10-20 Mac tester. Readings came when he was still (97% of seconds in his best run) and
