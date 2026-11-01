@@ -283,3 +283,21 @@ test('"hold still" only while the head is still moving now, and it clears at onc
   assert.ok(movementOf(pts, 239 * 33)! > MOVE_MAX);
   assert.ok(movementOf(pts, 239 * 33, MOVE_NOW_WINDOW_MS)! < MOVE_STILL_MAX);
 });
+
+describe("a burnt-out face never gets a light instruction", () => {
+	const base = {
+		light: { face: 0.69, centre: 0.69, room: 0.5 },
+		faceFound: true,
+		lampOn: true,
+		hasNumber: false,
+		cause: "weakSignal" as const,
+		starved: true,
+	};
+	it("starved and weak asks for light on a face that is not burnt", () => {
+		expect(adviceFor({ ...base, burnt: false })).toBe("more_light");
+	});
+	it("burnt: still, or hold still while the head moves", () => {
+		expect(adviceFor({ ...base, burnt: true })).toBe("still");
+		expect(adviceFor({ ...base, burnt: true, movement: 0.2, movementNow: 0.1 })).toBe("moving");
+	});
+});

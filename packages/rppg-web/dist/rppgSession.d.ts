@@ -1,4 +1,4 @@
-import type { LightLevel } from "./lightLevel.js";
+import { type LightLevel } from "./lightLevel.js";
 import type { FrameSource } from "./frameSource.js";
 import { type LastRateStore, type LastReading } from "./lastRate.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";

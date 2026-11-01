@@ -1,4 +1,4 @@
-import type { LightLevel } from "./lightLevel";
+import { LIGHT_CLIP_MAX, type LightLevel } from "./lightLevel";
 import type {
 	FrameSource,
 	FrameSourceError,
@@ -520,6 +520,7 @@ export class RppgSession {
 			colourDamaged: state ? pulseCheckColourDamaged(state) : false,
 			starved: cameraStarved(exposure),
 			exposureKnown: exposure != null,
+			burnt: (this.light().faceRedClip ?? 0) >= LIGHT_CLIP_MAX,
 			searchingMs: this.searchSince == null ? 0 : nowMs - this.searchSince,
 		};
 	}

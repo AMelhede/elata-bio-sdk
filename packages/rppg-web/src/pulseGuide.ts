@@ -133,6 +133,8 @@ export interface CoachInput {
 	readonly colourDamaged?: boolean;
 	readonly starved?: boolean;
 	readonly exposureKnown?: boolean;
+	/** Red clipped on LIGHT_CLIP_MAX or more of the face (lightLevel.ts faceRedClip): more light can only make it worse. */
+	readonly burnt?: boolean;
 }
 
 /** A camera starved of light: its exposure (Chrome exposureTime, 100 microsecond units) is a frame long at 30 fps or more. */
@@ -247,8 +249,24 @@ export function movementOf(
  */
 export const STALL_MS = 30_000;
 
-/** The one instruction for this moment, in the order a person must fix things: a picture, a face, then light. */
+/**
+ * The one instruction for this moment, in the order a person must fix things: a picture, a face, then light. Never a
+ * light instruction on a burnt-out face: a laptop webcam on 2026-11-01 (camera brightness and exposure boost raised
+ * outside the page) had red clipped on 71 to 84% of the face in 7 of 8 sessions, and "Add some light in front of you"
+ * showed for 91 of 128 s in one of them, in place of "Hold still" while the head moved 24% of the time.
+ */
 export function adviceFor(s: CoachInput): Advice {
+	const a = adviceUnburnt(s);
+	if (s.burnt === true && (a === "more_light" || a === "brighter_screen"))
+		return s.movement != null &&
+			s.movement > MOVE_MAX &&
+			!(s.movementNow != null && s.movementNow <= MOVE_STILL_MAX)
+			? "moving"
+			: "still";
+	return a;
+}
+
+function adviceUnburnt(s: CoachInput): Advice {
 	if (s.hasNumber) return "still";
 	if (!s.light) return "no_camera";
 	const { face, centre, room } = s.light;
