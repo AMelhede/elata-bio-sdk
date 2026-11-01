@@ -7,7 +7,7 @@ import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
 import { ChestMotion } from "./chestBreathing.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
-import { cameraStarved, MOVE_WINDOW_MS, meter, movementOf, } from "./pulseGuide.js";
+import { cameraStarved, MOVE_WINDOW_MS, meter, movementOf, MOVE_NOW_WINDOW_MS, } from "./pulseGuide.js";
 import { RppgProcessor, withoutReading, } from "./rppgProcessor.js";
 import { loadWasmBackend, createUnavailableBackend, } from "./wasmBackend.js";
 import { DemoRunner, FACE_GONE_RESET_MS, FRAME_GAP_MS, } from "./demoRunner.js";
@@ -154,12 +154,16 @@ export class RppgSession {
         const movement = faceFound && rows.length
             ? movementOf(rows.map(([t, x, y, w]) => ({ t_ms: t, x, y, w })), rows[rows.length - 1][0])
             : null;
+        const movementNow = faceFound && rows.length
+            ? movementOf(rows.map(([t, x, y, w]) => ({ t_ms: t, x, y, w })), rows[rows.length - 1][0], MOVE_NOW_WINDOW_MS)
+            : null;
         const exposure = this.exposureTime();
         return {
             light: this.meterVideo(nowMs),
             faceFound,
             lampOn: this.appliedLight > 0,
             movement,
+            movementNow,
             warmth: colour?.greenOverRed ?? null,
             blueWarmth: colour?.blueOverRed ?? null,
             cause: state ? pulseCheckCause(state, faceFound) : null,

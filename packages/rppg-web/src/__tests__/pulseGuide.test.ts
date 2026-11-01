@@ -257,3 +257,28 @@ describe("hold still while the first window fills", () => {
 		expect(adviceFor({ ...base, movement: null })).toBe("still");
 	});
 });
+
+// "Hold still" follows what the head does now (owner, 2026-11-01: it stayed up while he was still). The 8 s spread says
+// whether the window is spoiled; the last 2 s say whether the head is still moving; the line clears the moment it is not.
+test('"hold still" only while the head is still moving now, and it clears at once', async () => {
+  const { MOVE_STILL_MAX, MOVE_NOW_WINDOW_MS } = await import('../pulseGuide');
+  assert.deepEqual([MOVE_STILL_MAX, MOVE_NOW_WINDOW_MS], [0.02, 2000]);
+  const lit = { face: 0.5, centre: 0.5, room: 0.5 };
+  const base = { light: lit, faceFound: true, lampOn: false, hasNumber: false } as const;
+  for (const cause of [undefined, 'collecting', 'weakSignal', 'agreeing', 'headMotion'] as const) {
+    assert.equal(adviceFor({ ...base, cause, movement: 0.2, movementNow: 0.05 }), 'moving', `${cause} moving now`);
+    assert.notEqual(adviceFor({ ...base, cause, movement: 0.2, movementNow: 0.01 }), 'moving', `${cause} still now`);
+  }
+  // No 2 s judgement (too few rows): the 8 s spread decides, as before.
+  assert.equal(adviceFor({ ...base, movement: 0.2, movementNow: null }), 'moving');
+  // "Hold still" shows and clears at once; other lines keep their hold.
+  assert.equal(shownAfter({ advice: 'still', pending: null, since: 0 }, 'moving', 100, false).advice, 'moving');
+  const shown = { advice: 'moving' as const, pending: null, since: 0 };
+  assert.equal(shownAfter(shown, 'still', 100, false).advice, 'still');
+  const light = { advice: 'more_light' as const, pending: null, since: 0 };
+  assert.equal(shownAfter(light, 'still', 100, false).advice, 'more_light');
+  // The 2 s window: a head that moved and then stopped reads still over 2 s while the 8 s spread still holds the move.
+  const pts = Array.from({ length: 240 }, (_, i) => ({ t_ms: i * 33, x: i < 120 ? 300 + (i % 2) * 40 : 300, y: 240, w: 240 }));
+  assert.ok(movementOf(pts, 239 * 33)! > MOVE_MAX);
+  assert.ok(movementOf(pts, 239 * 33, MOVE_NOW_WINDOW_MS)! < MOVE_STILL_MAX);
+});

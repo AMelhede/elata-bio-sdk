@@ -134,14 +134,24 @@ export const MOVE_WINDOW_MS = 8000;
 /** Head movement (median frame-to-frame centre shift over face width) above which "hold still" is the fix. */
 export const MOVE_MAX = 0.07;
 const MOVE_MIN_ROWS = 60;
+/**
+ * Whether the head is still moving now: the last 2 s (movementOf with MOVE_NOW_WINDOW_MS). "Hold still" shows only while
+ * this is over MOVE_STILL_MAX and clears the moment it is not: the 8 s spread keeps a stopped move for up to 8 s, and the
+ * line stayed up while the person held still (a phone recording, 2026-11-01). 0.02 is where still heads end: over 2 s,
+ * 99 in 100 seconds of heads still over 8 s (8 s spread under 0.02) read under 0.021 on laptops, phones and a Mac
+ * alike (test-page recordings, 4,448 seconds).
+ */
+export const MOVE_NOW_WINDOW_MS = 2000;
+export const MOVE_STILL_MAX = 0.02;
+const MOVE_NOW_MIN_ROWS = 6;
 const spread = (xs) => {
     const m = xs.reduce((a, b) => a + b, 0) / xs.length;
     return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
 };
-/** Head movement over MOVE_WINDOW_MS from head rows, or null when there are too few to judge. */
-export function movementOf(rows, endMs) {
-    const win = rows.filter((r) => r.t_ms > endMs - MOVE_WINDOW_MS && r.t_ms <= endMs && r.w > 0);
-    if (win.length < MOVE_MIN_ROWS)
+/** Head movement over `windowMs` (MOVE_WINDOW_MS unless given) from head rows, or null when there are too few to judge. */
+export function movementOf(rows, endMs, windowMs = MOVE_WINDOW_MS) {
+    const win = rows.filter((r) => r.t_ms > endMs - windowMs && r.t_ms <= endMs && r.w > 0);
+    if (win.length < (windowMs >= MOVE_WINDOW_MS ? MOVE_MIN_ROWS : MOVE_NOW_MIN_ROWS))
         return null;
     const ws = win.map((r) => r.w).sort((a, b) => a - b);
     const w = ws[ws.length >> 1];
@@ -171,8 +181,12 @@ export function adviceFor(s) {
         s.light.face >= LUMA_FLOOR &&
         !(s.blueWarmth != null && s.blueWarmth >= s.warmth))
         return "night_light";
+    // Moving: the window's 8 s spread over MOVE_MAX, unless the last 2 s show the head already still.
+    const moving = s.movement != null &&
+        s.movement > MOVE_MAX &&
+        !(s.movementNow != null && s.movementNow <= MOVE_STILL_MAX);
     if (s.cause) {
-        const a = adviceForCause(s.cause, face, s.lampOn, s.movement ?? null, s.colourDamaged === true || s.starved === true);
+        const a = adviceForCause(s.cause, face, s.lampOn, moving, s.movementNow != null && s.movementNow <= MOVE_STILL_MAX, s.colourDamaged === true || s.starved === true);
         if (a === "still" &&
             s.exposureKnown === false &&
             (s.cause === "weakSignal" || s.cause === "noRate") &&
@@ -182,17 +196,17 @@ export function adviceFor(s) {
     }
     if (face < LUMA_FLOOR)
         return s.lampOn ? "more_light" : "brighter_screen";
-    if (s.movement != null && s.movement > MOVE_MAX)
+    if (moving)
         return "moving";
     if (s.lampOn && face < LUMA_TARGET)
         return "brighter_screen";
     return (s.searchingMs ?? 0) >= STALL_MS ? "stalled" : "still";
 }
-function adviceForCause(cause, face, lampOn, movement, colourDamaged) {
+function adviceForCause(cause, face, lampOn, moving, stillNow, colourDamaged) {
     switch (cause) {
         // The window fills after a start or a return; a head moving then spoils it, so "hold still" is the fix there too.
         case "collecting":
-            return movement != null && movement > MOVE_MAX ? "moving" : "still";
+            return moving ? "moving" : "still";
         case "shown":
             return "almost";
         case "noFace":
@@ -200,7 +214,7 @@ function adviceForCause(cause, face, lampOn, movement, colourDamaged) {
         case "lightFlicker":
             return "flicker";
         case "headMotion":
-            return "moving";
+            return stillNow ? "almost" : "moving";
         case "noRate":
         case "weakSignal":
             if (face < LUMA_FLOOR)
@@ -209,18 +223,28 @@ function adviceForCause(cause, face, lampOn, movement, colourDamaged) {
                 return "brighter_screen";
             if (colourDamaged)
                 return "more_light";
-            return movement != null && movement > MOVE_MAX ? "moving" : "still";
+            return moving ? "moving" : "still";
         case "agreeing":
         case "waitingForBlink":
-            return movement != null && movement > MOVE_MAX ? "moving" : "almost";
+            return moving ? "moving" : "almost";
     }
 }
-/** A new instruction shows once it has held this long; a number on screen shows "hold still" at once. */
+/** A new instruction shows once it has held this long, but "hold still", which follows the head at once; a number on screen clears it. */
 export const ADVICE_HOLD_MS = 4000;
 /** The instruction shown after the hold, given the raw one and whether a number is on screen. */
 export function shownAfter(prev, raw, now, numberOnScreen) {
     if (numberOnScreen)
         return { advice: "still", pending: null, since: now };
+    // "Hold still" follows the head with no hold either way: it needs the 8 s spread and the last 2 s both over their
+    // bars, so it is already judged, and the line is about what the person is doing now. On the received recordings it
+    // cut the seconds it showed to a still head to none (a phone 185, a laptop 231, a Mac 37), and the seconds a
+    // moving head with no number went without it from 192 to 3 on the phone and 308 to 27 on the laptop;
+    // clearing at once but keeping the hold to show left more moving seconds without it (238 on the phone), and a 2 s
+    // hold to clear showed it to a still head again (92). evsave tools/holdstill.mjs.
+    if (raw === "moving" && prev.advice !== "moving")
+        return { advice: raw, pending: null, since: now };
+    if (prev.advice === "moving" && raw !== "moving")
+        return { advice: raw, pending: null, since: now };
     if (raw === prev.advice)
         return { advice: prev.advice, pending: null, since: now };
     if (raw !== prev.pending)

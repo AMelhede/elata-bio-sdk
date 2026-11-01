@@ -42,6 +42,8 @@ export interface CoachInput {
     readonly hasNumber: boolean;
     readonly searchingMs?: number;
     readonly movement?: number | null;
+    /** Head movement over the last MOVE_NOW_WINDOW_MS (movementOf with that window), or null when too few rows. */
+    readonly movementNow?: number | null;
     readonly warmth?: number | null;
     readonly blueWarmth?: number | null;
     readonly cause?: GuideCause | null;
@@ -64,18 +66,27 @@ export declare function blueWarmthOf(events: readonly (readonly unknown[])[]): n
 export declare const MOVE_WINDOW_MS = 8000;
 /** Head movement (median frame-to-frame centre shift over face width) above which "hold still" is the fix. */
 export declare const MOVE_MAX = 0.07;
-/** Head movement over MOVE_WINDOW_MS from head rows, or null when there are too few to judge. */
+/**
+ * Whether the head is still moving now: the last 2 s (movementOf with MOVE_NOW_WINDOW_MS). "Hold still" shows only while
+ * this is over MOVE_STILL_MAX and clears the moment it is not: the 8 s spread keeps a stopped move for up to 8 s, and the
+ * line stayed up while the person held still (a phone recording, 2026-11-01). 0.02 is where still heads end: over 2 s,
+ * 99 in 100 seconds of heads still over 8 s (8 s spread under 0.02) read under 0.021 on laptops, phones and a Mac
+ * alike (test-page recordings, 4,448 seconds).
+ */
+export declare const MOVE_NOW_WINDOW_MS = 2000;
+export declare const MOVE_STILL_MAX = 0.02;
+/** Head movement over `windowMs` (MOVE_WINDOW_MS unless given) from head rows, or null when there are too few to judge. */
 export declare function movementOf(rows: readonly {
     t_ms: number;
     x: number;
     y: number;
     w: number;
-}[], endMs: number): number | null;
+}[], endMs: number, windowMs?: number): number | null;
 /** How long a face may be in view with no number before the stall line replaces silence. */
 export declare const STALL_MS = 42000;
 /** The one instruction for this moment, in the order a person must fix things: a picture, a face, then light. */
 export declare function adviceFor(s: CoachInput): Advice;
-/** A new instruction shows once it has held this long; a number on screen shows "hold still" at once. */
+/** A new instruction shows once it has held this long, but "hold still", which follows the head at once; a number on screen clears it. */
 export declare const ADVICE_HOLD_MS = 4000;
 export interface Shown {
     readonly advice: Advice;
