@@ -338,15 +338,13 @@ export declare const OWN_PULSE_DARK_HOLD_SNR_DB = -5.5;
  */
 export declare const OWN_PULSE_MIN_AGREEING = 2;
 /**
- * Rule oneRegion (on unless false): one region carrying the line is enough. A real pulse that the other two regions
+ * Rule oneRegion (on unless false): one region carrying the line is enough. A pulse that the other two regions
  * miss (a shadow, hair, a moving cheek) counts, at the same SNR bar and streak. The pulse is under the whole face, so
  * the measure of a wrong number is the share far from a reference, not agreement between regions. Public lab set,
  * finger reference: tuning half shown 34.7% to 40.1%, MAE 2.95 to 3.24, over 10 off 4.4% to 5.1%; held-out half
  * (scored once) 44.9% to 52.7%, MAE 2.15 to 2.32, over 10 off 1.5% to 2.0%, numbers on shuffled no-pulse copies 1.12
  * to 2.19 per 100. Requiring a strong line from the lone region (-2, 0, +2 dB) removed the whole gain: the added
- * readings are the weak one-region windows. Received test-page recordings: seconds with a number laptop 48.5 to 51.0,
- * phone 46.3 to 47.5, Mac 36.6 to 40.7 per 100; typed references within 5 bpm or 10% on the shown number laptop 93 to
- * 95 of 100, phone 90 to 90.
+ * readings are the weak one-region windows.
  */
 export declare const OWN_PULSE_ONE_REGION_MIN_AGREEING = 1;
 /**
