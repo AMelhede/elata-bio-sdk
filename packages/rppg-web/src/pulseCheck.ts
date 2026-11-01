@@ -302,10 +302,12 @@ export const RELOCK_MS = 30_000;
  * proven numbers only: 3 bpm added seconds at the same error and share over 10 off; 6 bpm added more again (windows 3 to
  * 6 bpm from a proven number within 30 s read 2 bpm from the reference, tools/notagree.mjs) at the same error, and on
  * the lab finger set and its no-pulse copies moved the share over 10 off and the no-pulse numbers by a few tenths.
- * Anchoring on building numbers too failed the lab. 30 s is RELOCK_MS, -5 dB is BUILDING_MIN_SNR_DB; 6 bpm is
- * OWN_PULSE_AGREE_BPM, the re-lock's own agreement.
+ * Anchoring on building numbers too failed the lab. -5 dB is BUILDING_MIN_SNR_DB; 6 bpm is OWN_PULSE_AGREE_BPM, the
+ * re-lock's own agreement. 60 s, not RELOCK_MS's 30 (test.57): a resting heart stays within the 6 bpm for a minute,
+ * and the window must still land there; on the public lab set's held-out half unchanged (shown 52.7%, MAE 2.32), more
+ * seconds with a number where a number lapses for longer.
  */
-export const FOLLOW_MS = 30_000;
+export const FOLLOW_MS = 60_000;
 export const FOLLOW_BPM = 6;
 export const FOLLOW_MIN_SNR_DB = -5;
 /**
