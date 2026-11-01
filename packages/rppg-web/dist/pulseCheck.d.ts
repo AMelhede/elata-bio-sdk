@@ -38,6 +38,8 @@ export type PulseCheckState = {
     wallMatch: boolean;
     /** Rule roomLight: true while the room (roomFromFrame) carries the proven rate, so it is withheld. */
     roomMatch?: boolean;
+    /** Rule headMotion: the head kept time with the held rate (or half of it) in each of the last 4 windows. */
+    headMatch?: boolean;
     /** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
     roomLine?: {
         bpm: number;
@@ -244,9 +246,16 @@ export type PulseCheckRules = {
      * regions, as in 0.15.0-test.56.
      */
     oneRegion?: boolean;
+    /**
+     * On unless false: a rate the head's own movement keeps time with, at the rate or at half of it (a walk's stride
+     * sway), is not a pulse (headMotion.ts): such a window does not count, a held number the head kept time with for
+     * 4 windows is withheld, and nothing follows it. Needs the head handed to push (the session's face mesh does).
+     * Off: as in 0.15.0-test.56, where a walking person's step rate showed as a heart rate.
+     */
+    headMotion?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -427,7 +436,7 @@ export declare class BlinkDetector {
  * the wall too dim for the backup method), a window under the SNR bar, a signal over the bar whose regions do not yet
  * agree, the blink gate waiting, or shown. `faceInView`: the app's own face tracking this second.
  */
-export type PulseCheckCause = "noFace" | "lightFlicker" | "collecting" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "shown";
+export type PulseCheckCause = "noFace" | "lightFlicker" | "collecting" | "noRate" | "weakSignal" | "agreeing" | "waitingForBlink" | "headMotion" | "shown";
 export declare function pulseCheckCause(state: PulseCheckState, faceInView: boolean): PulseCheckCause;
 /**
  * Whether the check's latest window found the camera's colour damaged, by its own measure: read by the
@@ -519,7 +528,8 @@ export declare function headCentre(points: readonly {
     z?: number;
 }[], width: number, height: number): HeadPosition | null;
 /** One frame of the head as the check keeps it: [time ms, x, y, face width], pixels (headCentre). */
-export type HeadRow = [number, number, number, number];
+export type { HeadRow } from "./headMotion.js";
+import type { HeadRow } from "./headMotion.js";
 export declare function wallLine(wall: [number, number, number, number][], atMs: number, bandEdge?: boolean): {
     bpm: number;
     snrDb: number;
@@ -857,5 +867,4 @@ export declare function wallPatchFromLandmarks(points: readonly {
     w: number;
     h: number;
 } | null;
-export {};
 //# sourceMappingURL=pulseCheck.d.ts.map

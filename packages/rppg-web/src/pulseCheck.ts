@@ -20,6 +20,7 @@
  * person's own pulse.
  */
 import type { FacePatches } from "./facePatches";
+import { headKeepsTime, headKeepsTimeAll } from "./headMotion";
 import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
 	OWN_PULSE_AGREE_BPM,
@@ -63,6 +64,8 @@ export type PulseCheckState = {
 	wallMatch: boolean;
 	/** Rule roomLight: true while the room (roomFromFrame) carries the proven rate, so it is withheld. */
 	roomMatch?: boolean;
+	/** Rule headMotion: the head kept time with the held rate (or half of it) in each of the last 4 windows. */
+	headMatch?: boolean;
 	/** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
 	roomLine?: { bpm: number; snrDb: number } | null;
 	/**
@@ -270,6 +273,13 @@ export type PulseCheckRules = {
 	 * regions, as in 0.15.0-test.56.
 	 */
 	oneRegion?: boolean;
+	/**
+	 * On unless false: a rate the head's own movement keeps time with, at the rate or at half of it (a walk's stride
+	 * sway), is not a pulse (headMotion.ts): such a window does not count, a held number the head kept time with for
+	 * 4 windows is withheld, and nothing follows it. Needs the head handed to push (the session's face mesh does).
+	 * Off: as in 0.15.0-test.56, where a walking person's step rate showed as a heart rate.
+	 */
+	headMotion?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -288,6 +298,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"followRecent",
 	"coherentStart",
 	"oneRegion",
+	"headMotion",
 ] as const;
 
 /**
@@ -577,6 +588,7 @@ export type PulseCheckCause =
 	| "weakSignal"
 	| "agreeing"
 	| "waitingForBlink"
+	| "headMotion"
 	| "shown";
 export function pulseCheckCause(
 	state: PulseCheckState,
@@ -586,6 +598,7 @@ export function pulseCheckCause(
 	if (shownPulseBpm(state) != null) return "shown";
 	if (state.wallMatch || state.roomMatch || state.screenLight)
 		return "lightFlicker";
+	if (state.headMatch) return "headMotion";
 	if (state.waitingForBlink) return "waitingForBlink";
 	if (state.collecting) return "collecting";
 	if (state.windowSnrDb == null) return "noRate";
@@ -670,6 +683,7 @@ export function resolvePulseCheckRules(
 		followRecent: rules?.followRecent === true,
 		coherentStart: rules?.coherentStart !== false,
 		oneRegion: rules?.oneRegion !== false,
+		headMotion: rules?.headMotion !== false,
 	};
 }
 
@@ -795,7 +809,8 @@ export function headCentre(
 }
 
 /** One frame of the head as the check keeps it: [time ms, x, y, face width], pixels (headCentre). */
-export type HeadRow = [number, number, number, number];
+export type { HeadRow } from "./headMotion";
+import type { HeadRow } from "./headMotion";
 
 const ALL_RULES_ON = resolvePulseCheckRules();
 
@@ -1338,11 +1353,15 @@ export class PulseCheck {
 			if (!roomLines.has(ms)) roomLines.set(ms, wallLine(this.room, ms, false));
 			return roomLines.get(ms) ?? null;
 		};
+		// Rule headMotion: a window whose rate the head keeps time with is the head's, not evidence of a pulse.
+		const headTimed = (bpm: number) =>
+			this.rules.headMotion && headKeepsTime(this.head, timestampMs, bpm);
 		const tainted =
 			est?.bpm != null &&
 			(screenLit ||
 				(this.rules.roomLight &&
-					roomCarries(roomLineAt(timestampMs), est.bpm)));
+					roomCarries(roomLineAt(timestampMs), est.bpm)) ||
+				headTimed(est.bpm));
 		this.history.push(tainted ? null : est);
 		if (this.history.length > HISTORY_MAX) this.history.shift();
 		let v = ownPulseVerdict(
@@ -1374,9 +1393,13 @@ export class PulseCheck {
 			Array.from({ length: OWN_PULSE_STRONG_STREAK }, (_, k) => k).every((k) =>
 				roomCarries(roomLineAt(timestampMs - k * EVAL_EVERY_MS), held),
 			);
+		const headMatch =
+			this.rules.headMotion &&
+			held != null &&
+			headKeepsTimeAll(this.head, timestampMs, held);
 		this.followerBpm = null;
 		this.state =
-			wallMatch || roomMatch
+			wallMatch || roomMatch || headMatch
 				? {
 						verdict: "not-measured",
 						bpm: null,
@@ -1384,6 +1407,7 @@ export class PulseCheck {
 						streak: v.streak,
 						countingStreak: countingStreak(v, this.rules),
 						wallMatch,
+						...(headMatch ? { headMatch } : {}),
 						...(this.rules.roomLight
 							? { roomMatch, roomLine: roomLineAt(timestampMs) }
 							: {}),
@@ -1433,7 +1457,7 @@ export class PulseCheck {
 		this.state.buildingBpm = this.rules.moreReadings
 			? buildingRate(
 					{ ...v, verdict: this.state.bpm != null ? "measured" : "not-shown" },
-					wallMatch || roomMatch,
+					wallMatch || roomMatch || headMatch,
 					buildingStreak(this.rules),
 					this.rules.clearWindows,
 				)
@@ -1471,6 +1495,8 @@ export class PulseCheck {
 				this.state.waitingForBlink === true ||
 				wallMatch ||
 				roomMatch ||
+				headMatch ||
+				(est?.bpm != null && headTimed(est.bpm)) ||
 				!steadyLightAllows(windowScreenSteps, this.rules);
 			this.state.followBpm = followRate(
 				this.lastShown,
@@ -1508,7 +1534,8 @@ export class PulseCheck {
 					e.snrDb != null &&
 					e.snrDb >= FOLLOW_MIN_SNR_DB &&
 					e.agreeing.length >= FOLLOW_RESUME_REGIONS &&
-					Math.abs(e.bpm - kept.bpm) <= FOLLOW_BPM
+					Math.abs(e.bpm - kept.bpm) <= FOLLOW_BPM &&
+					!headTimed(e.bpm)
 				)
 					this.state.followBpm = e.bpm;
 			}
