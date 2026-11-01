@@ -29,6 +29,8 @@ import {
 	OWN_PULSE_COLOUR_SWITCH,
 	OWN_PULSE_EDGE_BPM,
 	OWN_PULSE_LOW_BAND_BPM,
+	OWN_PULSE_MIN_AGREEING,
+	OWN_PULSE_ONE_REGION_MIN_AGREEING,
 	OWN_PULSE_STRONG_STREAK,
 	OWN_PULSE_MIN_SNR_DB,
 	OWN_PULSE_STREAK,
@@ -262,6 +264,12 @@ export type PulseCheckRules = {
 	 * 72). Numbers already running are not judged. An output gate only (startGated): the check's own state is untouched.
 	 */
 	coherentStart?: boolean;
+	/**
+	 * On unless false: one region carrying a window's line counts toward the proof instead of two
+	 * (OWN_PULSE_ONE_REGION_MIN_AGREEING, where the measurements are). More readings at a wearable's accuracy; off: two
+	 * regions, as in 0.15.0-test.56.
+	 */
+	oneRegion?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -279,6 +287,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"roomLight",
 	"followRecent",
 	"coherentStart",
+	"oneRegion",
 ] as const;
 
 /**
@@ -658,6 +667,7 @@ export function resolvePulseCheckRules(
 		roomLight: rules?.roomLight !== false,
 		followRecent: rules?.followRecent === true,
 		coherentStart: rules?.coherentStart !== false,
+		oneRegion: rules?.oneRegion !== false,
 	};
 }
 
@@ -1337,6 +1347,9 @@ export class PulseCheck {
 			this.history,
 			this.held,
 			this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM,
+			this.rules.oneRegion
+				? OWN_PULSE_ONE_REGION_MIN_AGREEING
+				: OWN_PULSE_MIN_AGREEING,
 		);
 		// Rule moreReadings (re-lock): a streak that agrees with a rate proven moments ago is that rate again (relockVerdict).
 		if (this.rules.moreReadings)
