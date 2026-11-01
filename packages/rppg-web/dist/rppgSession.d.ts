@@ -6,6 +6,7 @@ import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { PulseCheck, type PulseCheckResume, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
 import { type PulseCheckRecording } from "./pulseCheckRecording.js";
 import { ChestMotion, type ChestSample } from "./chestBreathing.js";
+import { type PassiveOptions, type PassiveReader, type PassiveReading } from "./passiveReader.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
 import { type CoachInput } from "./pulseGuide.js";
 import { RppgProcessor, type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
@@ -120,6 +121,15 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      */
     steadyLandmarks?: boolean | SteadyLandmarksOptions;
     /**
+     * With `pulseCheck`, also read a heart rate for a person who is not waiting for one (passiveReader.ts): every
+     * 5 s, the newest 48 s of what the check is fed, kept only when its two halves and its newest 16 s agree on the
+     * rate. `session.passiveReading()` gives the newest with its age, and `onPassiveReading` hears each one. Off
+     * unless set; `true` uses the defaults, an object sets them. Changes no other output.
+     */
+    passive?: boolean | PassiveOptions;
+    /** With `passive`, called with each passive reading as it is made. */
+    onPassiveReading?: (reading: PassiveReading) => void;
+    /**
      * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
      * and every `getMetrics()` read, so the check
      * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
@@ -231,6 +241,8 @@ type SessionInternals = {
     beforeStart?: () => Promise<void>;
     waveformController?: WaveformReconstructionController;
     pulseCheck?: PulseCheck | null;
+    /** With `passive`, the passive reader fed from the pulse check. */
+    passive?: PassiveReader | null;
     /** The video the session reads, for the guide's light meter and the camera's exposure. */
     video?: HTMLVideoElement;
     /** Where the last proven rate is kept (rememberRate), and the reading kept when the session started. */
@@ -336,6 +348,8 @@ export declare class RppgSession {
     private keepLastRate;
     /** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
     getPulseCheckResume(): PulseCheckResume | null;
+    /** With `passive`, the newest passive reading and its age; null before the first, or with the option off. */
+    passiveReading(): PassiveReading | null;
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
     /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */

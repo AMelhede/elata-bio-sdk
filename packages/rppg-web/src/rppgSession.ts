@@ -33,6 +33,12 @@ import {
 } from "./pulseCheckRecording";
 import { ChestMotion, type ChestSample } from "./chestBreathing";
 import {
+	type PassiveOptions,
+	type PassiveReader,
+	type PassiveReading,
+	passiveReaderFor,
+} from "./passiveReader";
+import {
 	type ResolvedRppgFixSwitches,
 	resolveFixSwitches,
 } from "./fixSwitches";
@@ -204,6 +210,15 @@ export type CreateRppgSessionOptions = Omit<
 	 */
 	steadyLandmarks?: boolean | SteadyLandmarksOptions;
 	/**
+	 * With `pulseCheck`, also read a heart rate for a person who is not waiting for one (passiveReader.ts): every
+	 * 5 s, the newest 48 s of what the check is fed, kept only when its two halves and its newest 16 s agree on the
+	 * rate. `session.passiveReading()` gives the newest with its age, and `onPassiveReading` hears each one. Off
+	 * unless set; `true` uses the defaults, an object sets them. Changes no other output.
+	 */
+	passive?: boolean | PassiveOptions;
+	/** With `passive`, called with each passive reading as it is made. */
+	onPassiveReading?: (reading: PassiveReading) => void;
+	/**
 	 * With `pulseCheck`, keep what the check is fed (the face regions, the wall, the head, a lost face)
 	 * and every `getMetrics()` read, so the check
 	 * can be replayed offline with any rules (`replayPulseCheck`): `session.getPulseCheckRecording()`.
@@ -317,6 +332,8 @@ type SessionInternals = {
 	beforeStart?: () => Promise<void>;
 	waveformController?: WaveformReconstructionController;
 	pulseCheck?: PulseCheck | null;
+	/** With `passive`, the passive reader fed from the pulse check. */
+	passive?: PassiveReader | null;
 	/** The video the session reads, for the guide's light meter and the camera's exposure. */
 	video?: HTMLVideoElement;
 	/** Where the last proven rate is kept (rememberRate), and the reading kept when the session started. */
@@ -631,6 +648,11 @@ export class RppgSession {
 		return this.internals.pulseCheck?.resumePoint() ?? null;
 	}
 
+	/** With `passive`, the newest passive reading and its age; null before the first, or with the option off. */
+	passiveReading(): PassiveReading | null {
+		return this.internals.passive?.reading() ?? null;
+	}
+
 	/** State of the real-pulse check; null when `pulseCheck` is off. */
 	getPulseCheck(): PulseCheckState | null {
 		return this.internals.pulseCheck?.getState() ?? null;
@@ -933,6 +955,7 @@ export async function createRppgSession(
 		pulseCheckResume:
 			options.pulseCheckResume ?? lastReadingResume(lastReading),
 	});
+	const passive = passiveReaderFor(options, pulseCheck);
 
 	const faceMeshResult = await resolveFaceMesh(options.faceMesh);
 	if (faceMeshResult.error) pendingErrors.push(faceMeshResult.error);
@@ -1051,6 +1074,7 @@ export async function createRppgSession(
 			onDiagnostics: options.onDiagnostics,
 			onError: options.onError,
 			pulseCheck,
+			passive,
 			video: options.video,
 			rateStore,
 			lastReading,

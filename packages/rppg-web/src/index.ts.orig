@@ -1,0 +1,484 @@
+/**
+ * Elata rPPG for the browser: camera-based pulse estimation, WASM backend, and
+ * session helpers. Prefer {@link createRppgSession} for new apps; see `llms.txt`
+ * in the package root for constraints (secure context, Vite WASM patterns).
+ */
+export {
+	RppgProcessor,
+	MuseCalibrationModel,
+	MuseFusionCalibrator,
+	museStyleFilter,
+} from "./rppgProcessor";
+export type {
+	Backend,
+	Metrics,
+	BpmEvidence,
+	BpmEvidenceSource,
+	BpmResolutionResult,
+	FusionSource,
+	RppgDebugIssueCode,
+	RppgDebugSnapshot,
+	RppgProcessorBackendFailure,
+	RppgTracePoint,
+	RppgTraceSnapshot,
+} from "./rppgProcessor";
+export {
+	BpmBayesTracker,
+	DEFAULT_BPM_TRACKER_CONFIG_V1,
+	parseBpmTrackerConfigV1,
+} from "./bpmBayesTracker";
+export type {
+	BpmTrackerConfigV1,
+	BpmEvidenceQuality,
+	BpmEvidenceQualityProvider,
+	BpmBayesSnapshot,
+	EstimatorMeasurement,
+	TrackerReferenceOrigin,
+	TrackerReferenceState,
+	TrackerEstimate,
+	TrackerContext,
+	TrackerSource,
+	HarmonicMode,
+} from "./bpmBayesTracker";
+export { DemoRunner } from "./demoRunner";
+export type {
+	DemoRunnerOptions,
+	DemoRunnerDiagnostics,
+	DemoRunnerDropReason,
+} from "./demoRunner";
+export { MediaPipeFrameSource } from "./mediaPipeFrameSource";
+export { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
+export { SteadyLandmarks, STEADY_MIN_CUTOFF_HZ, STEADY_BETA, type SteadyLandmarksOptions } from "./steadyLandmarks";
+export { loadFaceLandmarker } from "./mediapipeLoader";
+export type {
+	FaceLandmarkerLike,
+	FaceLandmarkerResult,
+	LoadFaceLandmarkerOptions,
+} from "./mediapipeLoader";
+export { averageGreenInROI } from "./frameSource";
+export type {
+	FrameSource,
+	Frame,
+	ROI,
+	FrameBlendshape,
+	FaceLandmarkPoint,
+} from "./frameSource";
+export { AffectTracker } from "./affectTracker";
+export type { AffectBaseline, AffectTrackerOptions } from "./affectTracker";
+export {
+	BaselineCalibrator,
+	DEFAULT_BASELINE_CALIBRATOR_CONFIG,
+} from "./baselineCalibrator";
+export type {
+	BaselineCalibratorConfig,
+	BaselineCalibrationResult,
+	CalibrationCaptureGate,
+	CalibrationStall,
+} from "./baselineCalibrator";
+export {
+	CAPTURE_MOTION_RELIABILITY,
+	CaptureConfidenceScorer,
+	DEFAULT_CAPTURE_CONFIDENCE_CONFIG,
+	scoreCaptureFeatures,
+} from "./captureConfidence";
+export type {
+	CaptureConfidenceConfig,
+	CaptureConfidenceResult,
+	CaptureFeatureInputs,
+	CaptureFrameSample,
+	CaptureLimiting,
+} from "./captureConfidence";
+export { loadWasmBackend } from "./wasmBackend";
+export { createUnavailableBackend } from "./wasmBackend";
+export type { LoadWasmBackendOptions, WasmImporter } from "./wasmBackend";
+export {
+	createRppgSession,
+	RppgSession,
+} from "./rppgSession";
+export type {
+	CreateRppgSessionOptions,
+	ExperimentalHrvWindow,
+	ExperimentalVitals,
+	RppgSessionBackendMode,
+	RppgSessionBackendPreference,
+	RppgSessionDiagnostics,
+	RppgSessionError,
+	RppgSessionErrorCode,
+	RppgSessionFaceTrackingMode,
+	RppgSessionIssueCode,
+	RppgSessionState,
+	RppgSessionStatePhase,
+	RppgSessionStateReason,
+	RppgSessionStateStatus,
+} from "./rppgSession";
+export {
+	createManagedRppgSession,
+	ManagedRppgSession,
+} from "./managedRppgSession";
+export type {
+	CreateManagedRppgSessionOptions,
+	ManagedRppgSessionState,
+	ManagedRppgSessionStatus,
+} from "./managedRppgSession";
+export { computeWaveformPeriodicityProfile } from "./rppgDiagnostics";
+export { computeTraceWaveformDebug } from "./rppgDiagnostics";
+export type {
+	WaveformPeriodicityProfile,
+	RppgTraceWaveformDebug,
+	ComputeTraceWaveformDebugOptions,
+} from "./rppgDiagnostics";
+export {
+	dejitterFrameTimes,
+	frameGaps,
+	HRV_GAP_MS,
+	HRV_MIN_SNR_DB,
+	HRV_TRACK_HALF_HZ,
+	HrvRegionBuffer,
+	hrvFromBeats,
+	hrvFromRegions,
+} from "./hrvTracking";
+export type { HrvRegionFrame, HrvWindowOptions, HrvWindowResult } from "./hrvTracking";
+export {
+	analyzePulseWindow,
+	calculateBpmViaAutocorrelation,
+	cleanNnIntervalsMs,
+	computeRmssdMs,
+	detectBeatsViaHilbertPhase,
+	detectPeaks,
+	estimateDominantBpm,
+	refinePeakByInterpolation,
+	rmssdFromPeaks,
+	temporalNormalize,
+} from "./pulseAnalysis";
+export type {
+	HarmonicRelation,
+	HilbertBeatOptions,
+	HilbertBeatResult,
+	PulseAcfResult,
+	PulseEstimatorResult,
+	PulsePeak,
+	PulseWindowAnalysis,
+	PulseWindowSample,
+} from "./pulseAnalysis";
+export {
+	amplitudeEnvelope,
+	dominantInBand,
+	estimateRespiration,
+	resampleTachogram,
+} from "./respirationAnalysis";
+export type {
+	RespCueEstimate,
+	RespirationEstimate,
+	RespirationInput,
+	RespSource,
+} from "./respirationAnalysis";
+export {
+	Bandpass,
+	ChannelGainController,
+	ChromPulseModel,
+	computeSignalSnrDb,
+	PosPulseModel,
+	spectralSnr,
+	zeroPhaseBandpass,
+} from "./rppgSignalModel";
+export { FUSION_ROIS, MultiRoiRppgFuser } from "./multiRoiFusion";
+export type {
+	FusionProjection,
+	FusionRoiName,
+	MultiRoiFusionResult,
+	RoiRgbSample,
+} from "./multiRoiFusion";
+export {
+	applyNoReferenceDisplayGuard,
+	shouldAllowDisplayJumpReset,
+} from "./displayGuard";
+export type { NoReferenceDisplayGuardDecision } from "./displayGuard";
+export {
+	affectStress,
+	blendshapeValenceArousal,
+	classifyAffectLabel,
+	fuseAffect,
+	physiologyArousal,
+} from "./affect";
+export type {
+	AffectLabel,
+	AffectState,
+	FaceBlendshapeCategory,
+	ValenceArousal,
+} from "./affect";
+export { DisplayBpmTracker } from "./displayBpm";
+export type {
+	DisplayBpmOptions,
+	DisplayBpmStatus,
+	DisplayBpmUpdate,
+	DisplayBpmUpdateContext,
+} from "./displayBpm";
+export {
+	computeFaceRoiRects,
+	computeFusionSubRois,
+	drawFaceOverlay,
+	FACE_ROI_FRACTIONS,
+	FUSION_ROI_NAMES,
+} from "./faceRoiOverlay";
+export type {
+	DrawFaceOverlayOptions,
+	FaceRoiName,
+	LandmarkLike,
+	MeshConnection,
+} from "./faceRoiOverlay";
+export {
+	ELATA_FACE_YCBCR_V1_FRACTIONS,
+	ELATA_FACE_YCBCR_V1_PROFILE,
+	MCD_PROXY_INPUT_V1_FRACTIONS,
+	MCD_PROXY_INPUT_V1_PROFILE,
+	TRADELOCK_LIVE_FOREHEAD_V1_PROFILE,
+	computeFractionalFaceRoiRects,
+} from "./roiProfile";
+export type {
+	FaceRoiFraction,
+	FaceRoiFractions,
+	RoiGeometryProfile,
+} from "./roiProfile";
+export {
+	ELATA_YCBCR_V1_PIXEL_SAMPLER,
+	TRADELOCK_RGB_WEIGHTED_V1_PIXEL_SAMPLER,
+	isTradeLockSkinPixel,
+	isYcbcrSkinPixel,
+	sampleRppgRoi,
+	tradeLockSpatialWeight,
+} from "./roiPixelSampler";
+export type {
+	RoiPixelSampler,
+	RppgRoiSampleV1,
+	RppgRoiStatistics,
+} from "./roiPixelSampler";
+export {
+	MCD_WAVEFORM_CHANNELS,
+	MCD_WAVEFORM_ROIS,
+	WaveformFeatureWindowBuilder,
+} from "./waveformFeatureWindow";
+export type {
+	RppgModelDiagnosticsV1,
+	RppgModelFallbackReason,
+	WaveformFeatureWindowV1,
+	WaveformModelManifestV1,
+	WaveformModelStatus,
+	WaveformReconstructionV1,
+	WaveformReconstructor,
+} from "./waveformModel";
+export { WaveformModelError } from "./waveformModel";
+export type { WaveformWindowFailureReason } from "./waveformFeatureWindow";
+export { WaveformReconstructionController } from "./waveformReconstructionController";
+export {
+	createWaveformMorphologyBaseline,
+	extractWaveformMorphology,
+} from "./waveformMorphology";
+export type {
+	WaveformMorphologyBaselineV1,
+	WaveformMorphologySource,
+	WaveformMorphologyV1,
+} from "./waveformMorphology";
+export {
+	createPhysiologyInterpreter,
+	DEFAULT_PHYSIOLOGY_INTERPRETER_CONFIG_V1,
+	normalizePhysiologyFeatures,
+} from "./physiologyFeatures";
+export type {
+	PhysiologyBaselineV1,
+	PhysiologyFeaturesV1,
+	PhysiologyInterpretationV1,
+	PhysiologyInterpreter,
+	PhysiologyInterpreterConfigV1,
+	PhysiologyState,
+} from "./physiologyFeatures";
+export {
+	DEFAULT_FRAMING_THRESHOLDS,
+	PUBLISHED_FRAMING_THRESHOLDS,
+	FRAMING_MESSAGES,
+	faceBoxFromLandmarks,
+	faceFramingFromBox,
+	padFaceBoxToHead,
+} from "./faceFraming";
+export type {
+	FaceBox,
+	FramingCode,
+	FramingGuidance,
+	FramingThresholds,
+} from "./faceFraming";
+export { normalizeRppgError } from "./rppgErrors";
+export type {
+	RppgNormalizedError,
+	RppgNormalizedErrorCode,
+} from "./rppgErrors";
+export {
+	createRppgAppAdapter,
+	createRppgAppMonitor,
+	RppgAppAdapter,
+	RppgAppMonitor,
+} from "./rppgAppAdapter";
+export type {
+	CreateRppgAppAdapterOptions,
+	CreateRppgAppMonitorOptions,
+	RppgAppAdapterSource,
+	RppgAppGuidance,
+	RppgAppGuidanceCode,
+	RppgAppSnapshot,
+	RppgAppSnapshotListener,
+	RppgAppStatus,
+} from "./rppgAppAdapter";
+export { ensureVideoPlaying } from "./videoPlayback";
+export type { EnsureVideoPlayingOptions } from "./videoPlayback";
+export { RppgGatingController } from "./rppgGating";
+export type {
+	RppgGatingInputs,
+	RppgGatingOptions,
+	RppgGatingOutput,
+	RppgGatingState,
+	RppgGuidanceCode,
+} from "./rppgGating";
+export { replayBayesSession } from "./rppgReplay";
+export type {
+	ReplayEstimatorSample,
+	ReplaySyncSample,
+	ReplayPairEvent,
+	ReplayDebugSession,
+	ReplayPoint,
+	ReplayWindowSummary,
+	ReplayBayesSessionResult,
+} from "./rppgReplay";
+export { RppgSessionRecorder } from "./rppgSessionRecorder";
+export type {
+	RppgRecorderOptions,
+	RecordMetricsContext,
+} from "./rppgSessionRecorder";
+export {
+	aggregateComparisons,
+	maeOf,
+	summarizeReplaySession,
+} from "./replayBenchmark";
+export type {
+	AbsErrorAccumulator,
+	CorpusComparison,
+	SessionComparison,
+} from "./replayBenchmark";
+export {
+	PulseCheck,
+	type PulseCheckState,
+	type PulseCheckResume,
+	type PulseCheckRules,
+	type ResolvedPulseCheckRules,
+	PULSE_CHECK_RULE_NAMES,
+	resolvePulseCheckRules,
+	shownPulseBpm,
+	pulseCheckCause,
+	pulseCheckColourDamaged,
+	BlinkDetector,
+	BLINK_RISE,
+	BLINK_BASE_MS,
+	BLINK_MAX_MS,
+	eyeBlink,
+	type PulseCheckCause,
+	streakNeeded,
+	countingStreak,
+	pulseProgress,
+	steadyLightAllows,
+	STEADY_LIGHT_MAX_STEPS,
+	POOL_BUILDING_STREAK,
+	BUILDING_MIN_SNR_DB,
+	COHERENT_BUILDING_STREAK,
+	SHORT_BUILDING_STREAK,
+	buildingStreak,
+	relockVerdict,
+	RELOCK_MS,
+	RELOCK_STREAK,
+	RELOCK_MIN_SNR_DB,
+	HEAD_LANDMARKS,
+	headCentre,
+	type HeadPosition,
+	type HeadRow,
+} from "./pulseCheck";
+export {
+	PulseDisplay,
+	type PulseDisplayView,
+	PULSE_DISPLAY_MEDIAN_MS,
+	PULSE_DISPLAY_LIVE_MS,
+	PULSE_DISPLAY_RECENT_MS,
+	PULSE_DISPLAY_RECOMMENDED,
+	PULSE_DISPLAY_SHOW_EVERY_MS,
+} from "./pulseDisplay";
+export {
+	RecordingPulseCheck,
+	replayPulseCheck,
+	serializePulseCheckRecording,
+	parsePulseCheckRecording,
+	PULSE_CHECK_RECORDING_FORMAT,
+	PULSE_CHECK_RECORDING_VERSION,
+	PULSE_CHECK_RECORDING_SECONDS,
+	PULSE_CHECK_RECORDING_EVENTS_PER_SECOND,
+	type PulseCheckRecording,
+	type PulseCheckInputEvent,
+	type PulseCheckRgb,
+	type PulseCheckReadReason,
+	type PulseCheckReplay,
+	type PulseCheckReplayRead,
+	type PulseCheckReplayEvaluation,
+} from "./pulseCheckRecording";
+export {
+	breathingFromMotion,
+	ChestMotion,
+	type ChestSample,
+	chestBox,
+	CHEST_BOX_BOTTOM,
+	CHEST_BOX_TOP,
+	CHEST_BOX_WIDTH,
+	CHEST_BREATH_BAND_HZ,
+	CHEST_BREATH_WINDOW_S,
+	verticalShift,
+} from "./chestBreathing";
+export {
+	FIX_SWITCH_NAMES,
+	type ResolvedRppgFixSwitches,
+	type RppgFixesOption,
+	type RppgFixSwitches,
+	resolveFixSwitches,
+} from "./fixSwitches";
+export { RPPG_WEB_BUILD_VERSION } from "./buildInfo";
+
+export { ForeheadPool, FOREHEAD_TAU_SKIN, FOREHEAD_TAU_SWING, FOREHEAD_PRUNE } from "./foreheadPool";
+export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches";
+
+export {
+	CENTRE_BOX,
+	type FaceLight,
+	LIGHT_CLIP_MAX,
+	LIGHT_LATCH_MS,
+	LIGHT_START,
+	type LightLevel,
+	type LightState,
+	RED_CLIP_LEVEL,
+	centreLightFromFrame,
+	faceLightFromFrame,
+	lightAfter,
+	lumaOfRgb,
+} from "./lightLevel";
+export {
+	LAST_RATE_KEY,
+	LAST_RATE_MAX_AGE_MS,
+	type LastRateStore,
+	type LastReading,
+	readLastReading,
+	writeLastReading,
+} from "./lastRate";
+export {
+	ADVICE_HOLD_MS,
+	ADVICE_TEXT,
+	type Advice,
+	adviceFor,
+	type CoachInput,
+	cameraStarved,
+	type GuideCause,
+	needsYou,
+	PulseGuide,
+	shownAfter,
+} from "./pulseGuide";
+export * from "./camera";

@@ -398,6 +398,20 @@ export {
 	type HeadRow,
 } from "./pulseCheck";
 export {
+	PassiveReader,
+	type PassiveOptions,
+	type PassiveReading,
+	PASSIVE_DEFAULTS,
+	PASSIVE_EVERY_S,
+	PASSIVE_HALF_AGREE_BPM,
+	PASSIVE_MIN_SNR_DB,
+	PASSIVE_RECENT_AGREE_BPM,
+	PASSIVE_RECENT_S,
+	PASSIVE_RESET_GAP_MS,
+	PASSIVE_WINDOW_S,
+	rawRoiSampleOf,
+} from "./passiveReader";
+export {
 	PulseDisplay,
 	type PulseDisplayView,
 	PULSE_DISPLAY_MEDIAN_MS,

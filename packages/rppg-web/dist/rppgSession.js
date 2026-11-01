@@ -7,6 +7,7 @@ import { loadFaceLandmarker } from "./mediapipeLoader.js";
 import { PulseCheck, pulseCheckCause, pulseCheckColourDamaged, shownPulseBpm, } from "./pulseCheck.js";
 import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
 import { ChestMotion } from "./chestBreathing.js";
+import { passiveReaderFor, } from "./passiveReader.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
 import { cameraStarved, MOVE_WINDOW_MS, meter, movementOf, MOVE_NOW_WINDOW_MS, } from "./pulseGuide.js";
@@ -235,6 +236,10 @@ export class RppgSession {
     /** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
     getPulseCheckResume() {
         return this.internals.pulseCheck?.resumePoint() ?? null;
+    }
+    /** With `passive`, the newest passive reading and its age; null before the first, or with the option off. */
+    passiveReading() {
+        return this.internals.passive?.reading() ?? null;
     }
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck() {
@@ -494,6 +499,7 @@ export async function createRppgSession(options) {
         ...options,
         pulseCheckResume: options.pulseCheckResume ?? lastReadingResume(lastReading),
     });
+    const passive = passiveReaderFor(options, pulseCheck);
     const faceMeshResult = await resolveFaceMesh(options.faceMesh);
     if (faceMeshResult.error)
         pendingErrors.push(faceMeshResult.error);
@@ -586,6 +592,7 @@ export async function createRppgSession(options) {
         onDiagnostics: options.onDiagnostics,
         onError: options.onError,
         pulseCheck,
+        passive,
         video: options.video,
         rateStore,
         lastReading,
