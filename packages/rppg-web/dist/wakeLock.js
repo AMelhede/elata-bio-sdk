@@ -1,3 +1,5 @@
+/** The user activations a refused lock is asked for again on (each is one in Safari and Chrome). */
+export const WAKE_LOCK_RETRY_EVENTS = ["pointerup", "touchend", "click", "keydown"];
 /** Holds a screen wake lock until the returned function is called. */
 export function keepScreenOn(nav, doc, onState) {
     const api = nav.wakeLock;
@@ -28,13 +30,36 @@ export function keepScreenOn(nav, doc, onState) {
             onState("granted");
         }, (e) => {
             asking = false;
-            onState(`denied:${e instanceof Error ? e.name : String(e)}`);
+            const name = e instanceof Error ? e.name : e?.name ?? String(e);
+            onState(`denied:${name}`);
+            if (name === "NotAllowedError")
+                waitForTap();
         });
+    };
+    let waiting = false;
+    const onTap = () => {
+        unwait();
+        ask();
+    };
+    const waitForTap = () => {
+        if (stopped || waiting)
+            return;
+        waiting = true;
+        for (const t of WAKE_LOCK_RETRY_EVENTS)
+            doc.addEventListener(t, onTap);
+    };
+    const unwait = () => {
+        if (!waiting)
+            return;
+        waiting = false;
+        for (const t of WAKE_LOCK_RETRY_EVENTS)
+            doc.removeEventListener(t, onTap);
     };
     doc.addEventListener("visibilitychange", ask);
     ask();
     return () => {
         stopped = true;
+        unwait();
         doc.removeEventListener("visibilitychange", ask);
         const s = held;
         held = null;

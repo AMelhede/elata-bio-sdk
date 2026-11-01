@@ -7,6 +7,11 @@
  * The browser drops the lock whenever the page is hidden, so it is asked for again each time the page is visible.
  *
  * Reports each state to `onState` for the saved file: granted, released, unsupported, or denied:<error name>.
+ *
+ * Safari on iPhone grants the lock only during a user activation (a tap): a request made when the camera is up, about
+ * 10 s after the tap that started it, is refused with NotAllowedError, as in both iPhone Safari recordings received
+ * (iOS 18.7, Safari 26.6). After a refusal it is asked for again on the next tap, click or key press (RETRY_EVENTS), the
+ * earliest moment Safari allows it.
  */
 export type WakeLockState =
 	| "granted"
@@ -23,9 +28,12 @@ interface NavLike {
 }
 interface DocLike {
 	visibilityState: string;
-	addEventListener(type: "visibilitychange", f: () => void): void;
-	removeEventListener(type: "visibilitychange", f: () => void): void;
+	addEventListener(type: string, f: () => void): void;
+	removeEventListener(type: string, f: () => void): void;
 }
+
+/** The user activations a refused lock is asked for again on (each is one in Safari and Chrome). */
+export const WAKE_LOCK_RETRY_EVENTS = ["pointerup", "touchend", "click", "keydown"] as const;
 
 /** Holds a screen wake lock until the returned function is called. */
 export function keepScreenOn(
@@ -60,14 +68,32 @@ export function keepScreenOn(
 			},
 			(e: unknown) => {
 				asking = false;
-				onState(`denied:${e instanceof Error ? e.name : String(e)}`);
+				const name = e instanceof Error ? e.name : (e as { name?: string })?.name ?? String(e);
+				onState(`denied:${name}`);
+				if (name === "NotAllowedError") waitForTap();
 			},
 		);
+	};
+	let waiting = false;
+	const onTap = () => {
+		unwait();
+		ask();
+	};
+	const waitForTap = () => {
+		if (stopped || waiting) return;
+		waiting = true;
+		for (const t of WAKE_LOCK_RETRY_EVENTS) doc.addEventListener(t, onTap);
+	};
+	const unwait = () => {
+		if (!waiting) return;
+		waiting = false;
+		for (const t of WAKE_LOCK_RETRY_EVENTS) doc.removeEventListener(t, onTap);
 	};
 	doc.addEventListener("visibilitychange", ask);
 	ask();
 	return () => {
 		stopped = true;
+		unwait();
 		doc.removeEventListener("visibilitychange", ask);
 		const s = held;
 		held = null;
