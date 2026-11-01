@@ -1,4 +1,4 @@
-import { headKeepsTime, headKeepsTimeAll } from "./headMotion.js";
+import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion.js";
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
 import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_MIN_AGREEING, OWN_PULSE_ONE_REGION_MIN_AGREEING, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
@@ -46,6 +46,9 @@ export const PULSE_CHECK_RULE_NAMES = [
     "oneRegion",
     "headMotion",
     "driftLine",
+    "quickerProof",
+    "keptFollow",
+    "movingFollow",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -89,6 +92,15 @@ export const COHERENT_START_BPM = 6;
 export const COHERENT_START_SHARE = 0.5;
 export const FOLLOW_RESUME_MIN_S = 6;
 export const FOLLOW_RESUME_REGIONS = 2;
+/**
+ * Rule movingFollow: how much weaker a window may be and still follow the number shown last while the head is moving
+ * (headMoving): movement adds noise the pulse does not carry, so the same heart reads a few dB weaker. Every received
+ * recording of the test page, its rules: seconds with a number per 100 Mac 39.7 to 41.6, laptop 50.0 to 51.0, phone 46.4
+ * to 46.9; shown numbers within 5 bpm or 10% of the reference unchanged on the phone (90 of 100) and the Mac, laptop 95
+ * to 94. Public lab set, finger reference: tuning half shown 39.9% to 40.9%, MAE 3.22 to 3.10, over 10 off 4.8% to
+ * 5.0%; held-out half (scored once) shown 53.7% to 53.8%, no-pulse 2.28 to 2.30 per 100.
+ */
+export const MOVING_FOLLOW_DB = 2;
 /**
  * Rule followRecent: the window's rate when it is the same heart as the number shown last (within FOLLOW_BPM, that
  * number at most FOLLOW_MS old, the window at FOLLOW_MIN_SNR_DB or more), else null. `blocked`: a taint, the blink
@@ -353,6 +365,9 @@ export function resolvePulseCheckRules(rules) {
         oneRegion: rules?.oneRegion !== false,
         headMotion: rules?.headMotion !== false,
         driftLine: rules?.driftLine !== false,
+        quickerProof: rules?.quickerProof !== false,
+        keptFollow: rules?.keptFollow !== false,
+        movingFollow: rules?.movingFollow !== false,
     };
 }
 /**
@@ -617,6 +632,8 @@ export class PulseCheck {
         this.followKept = null;
         /** Rule followRecent: the last number the check proved, with its time. */
         this.lastShown = null;
+        /** Rule keptFollow: a blink was seen before the break that reset the check (cleared by every other reset). */
+        this.blinkCarried = false;
         /** The newest in-band follower value, or null (the state's followerBpm). */
         this.followerBpm = null;
         this.lastEvalMs = null;
@@ -775,8 +792,15 @@ export class PulseCheck {
         // Frames that stopped arriving unannounced count as a lost face too: the windows would
         // otherwise run across the break.
         const last = this.samples[this.samples.length - 1];
-        if (last && timestampMs - last[0] > FACE_GONE_MS)
+        if (last && timestampMs - last[0] > FACE_GONE_MS) {
+            // Rule keptFollow: frames that stopped (the page hidden) do not take away the blink seen before, for the
+            // break's refill only, when the break is short enough for the kept rate (FOLLOW_RESUME_MS).
+            const carry = this.rules.keptFollow &&
+                this.blinks.seen &&
+                timestampMs - last[0] <= FOLLOW_RESUME_MS;
             this.reset();
+            this.blinkCarried = carry;
+        }
         this.lostSinceMs = null;
         const [f, l, r] = regions;
         this.samples.push([
@@ -874,7 +898,7 @@ export class PulseCheck {
             this.history.shift();
         let v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM, this.rules.oneRegion
             ? OWN_PULSE_ONE_REGION_MIN_AGREEING
-            : OWN_PULSE_MIN_AGREEING);
+            : OWN_PULSE_MIN_AGREEING, this.rules.quickerProof);
         // Rule moreReadings (re-lock): a streak that agrees with a rate proven moments ago is that rate again (relockVerdict).
         if (this.rules.moreReadings)
             v = relockVerdict(v, this.lastProven, timestampMs);
@@ -981,7 +1005,24 @@ export class PulseCheck {
                 headMatch ||
                 (est?.bpm != null && headTimed(est.bpm)) ||
                 !steadyLightAllows(windowScreenSteps, this.rules);
-            this.state.followBpm = followRate(this.lastShown, timestampMs, est?.bpm, est?.snrDb, blocked);
+            // Rule keptFollow: after a break, until the check proves a number again, the rate proven before it is the
+            // follow's anchor (FOLLOW_MS old at most), with the blink gate open again, FOLLOW_RESUME_REGIONS regions
+            // agreeing and the window at the proof's own bar (OWN_PULSE_MIN_SNR_DB).
+            const anchor = this.lastShown ??
+                (this.rules.keptFollow &&
+                    this.blinkGateOpen &&
+                    (est?.agreeing?.length ?? 0) >= FOLLOW_RESUME_REGIONS &&
+                    est?.snrDb != null &&
+                    est.snrDb >= OWN_PULSE_MIN_SNR_DB
+                    ? this.followKept
+                    : null);
+            // Rule movingFollow: a moving head's window follows at MOVING_FOLLOW_DB under the usual bar.
+            const movingBoost = this.rules.movingFollow &&
+                est?.snrDb != null &&
+                headMoving(this.head, timestampMs)
+                ? MOVING_FOLLOW_DB
+                : 0;
+            this.state.followBpm = followRate(anchor, timestampMs, est?.bpm, est?.snrDb != null ? est.snrDb + movingBoost : est?.snrDb, blocked);
             // Across a break: while the first window refills, the data so far against the number proven before it.
             const kept = this.followKept;
             const span = this.samples.length
@@ -991,7 +1032,7 @@ export class PulseCheck {
                 this.state.collecting &&
                 !blocked &&
                 !screenLit &&
-                this.blinkGateOpen &&
+                (this.blinkGateOpen || this.blinkCarried) &&
                 kept != null &&
                 timestampMs - kept.t <= this.keptMaxAgeMs &&
                 span >= FOLLOW_RESUME_MIN_S) {
@@ -1086,6 +1127,7 @@ export class PulseCheck {
         return this.evaluationCount;
     }
     reset() {
+        this.blinkCarried = false;
         this.room = [];
         this.samples = [];
         this.wall = [];

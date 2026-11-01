@@ -52,9 +52,9 @@ describe("rule followRecent across a break (the page left for the watch app)", (
 	// A clean 66 bpm pulse for 40 s, a 26 s break with no frames (the check resets), then the same pulse again. Without
 	// the refill branch nothing shows until a full window is in (16 s); with it, a number near 66 shows from about 6 s,
 	// only while the number before the break is at most FOLLOW_RESUME_MS old, and never without that number.
-	const run = (opts: { followRecent: boolean; breakS?: number; resumeBpm?: number; blinkGate?: boolean; blink?: boolean }) => {
+	const run = (opts: { followRecent: boolean; breakS?: number; resumeBpm?: number; blinkGate?: boolean; blink?: boolean; keptFollow?: boolean }) => {
 		return import("../pulseCheck").then(({ PulseCheck }) => {
-			const c = new PulseCheck({ rules: { moreReadings: true, followRecent: opts.followRecent, blinkGate: opts.blinkGate ?? false } });
+			const c = new PulseCheck({ rules: { moreReadings: true, followRecent: opts.followRecent, blinkGate: opts.blinkGate ?? false, keptFollow: opts.keptFollow } });
 			let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
 			const breakS = opts.breakS ?? 26, after: (number | null)[] = [];
 			const push = (s: number, bpm: number, blink: number | null) => {
@@ -82,8 +82,8 @@ describe("rule followRecent across a break (the page left for the watch app)", (
 		expect((await run({ followRecent: true, breakS: 60 })).slice(0, 14).every((b) => b == null)).toBe(true);
 		expect((await run({ followRecent: true, resumeBpm: 80 })).slice(0, 14).every((b) => b == null)).toBe(true);
 	});
-	it("with the blink gate on, only after a blink since coming back", async () => {
-		expect((await run({ followRecent: true, blinkGate: true, blink: false })).slice(0, 14).every((b) => b == null)).toBe(true);
+	it("with the blink gate on and rule keptFollow off, only after a blink since coming back", async () => {
+		expect((await run({ followRecent: true, blinkGate: true, blink: false, keptFollow: false })).slice(0, 14).every((b) => b == null)).toBe(true);
 		expect((await run({ followRecent: true, blinkGate: true, blink: true })).slice(0, 14).some((b) => b != null)).toBe(true);
 	});
 });

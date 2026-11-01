@@ -753,6 +753,19 @@ export const OWN_PULSE_SLOW_CAMERA_MIN_SNR_DB = -2;
  */
 export const OWN_PULSE_DARK_STREAK = 16;
 export const OWN_PULSE_DARK_MIN_SNR_DB = -4.5;
+/**
+ * Rule quickerProof (on unless false), its two halves. The dark entry proves from OWN_PULSE_QUICK_DARK_STREAK windows at
+ * a mean of OWN_PULSE_QUICK_DARK_MIN_SNR_DB (-5 dB is BUILDING_MIN_SNR_DB and FOLLOW_MIN_SNR_DB, the bar every other
+ * weak-window rule already uses); and a streak longer than OWN_PULSE_STREAK also proves when its newest OWN_PULSE_STREAK
+ * windows reach OWN_PULSE_MIN_SNR_DB, so older weak windows of the same rate cannot hold back a proof the newest make.
+ * Every received recording of the test page, its rules: laptop 51.0 to 52.3 seconds with a number per 100, shown
+ * numbers within 5 bpm or 10% of the reference 96 of 100 held; a silent 128 s still run 0 to 19 s with a number. Public
+ * lab set, finger reference: tuning half MAE 3.22 to 3.07, the tuning half thinned to 16.5 fps (a camera slowed for
+ * light) shown 28.3% to 31.3%; held-out half (scored once) shown 53.7% to 54.3%, MAE 2.33 to 2.33, over 10 off 2.1% to
+ * 2.1%, no-pulse 2.28 to 2.39 per 100. Off: 16 windows at -4.5, and the whole streak's mean.
+ */
+export const OWN_PULSE_QUICK_DARK_STREAK = 12;
+export const OWN_PULSE_QUICK_DARK_MIN_SNR_DB = -5;
 /** No single dark window below this counts (the sweep's floor). */
 export const OWN_PULSE_DARK_FLOOR_DB = -7;
 /**
@@ -873,6 +886,8 @@ export function ownPulseVerdict(
 	lowBand: number = OWN_PULSE_LOW_BAND_BPM,
 	/** Regions a window's line needs (OWN_PULSE_MIN_AGREEING; OWN_PULSE_ONE_REGION_MIN_AGREEING with rule oneRegion). */
 	minAgreeing: number = OWN_PULSE_MIN_AGREEING,
+	/** Rule quickerProof (OWN_PULSE_QUICK_DARK_*): the shorter dark entry, and a long streak judged on its newest windows too. */
+	quickerProof = false,
 ): {
 	verdict: OwnPulseVerdict;
 	bpm: number | null;
@@ -921,7 +936,10 @@ export function ownPulseVerdict(
 	};
 	const excess = snrs.reduce((sum, v) => sum + (v - OWN_PULSE_MIN_SNR_DB), 0);
 	if (
-		(streak >= OWN_PULSE_STREAK && avg(snrs) >= OWN_PULSE_MIN_SNR_DB) ||
+		(streak >= OWN_PULSE_STREAK &&
+			(avg(snrs) >= OWN_PULSE_MIN_SNR_DB ||
+				(quickerProof &&
+					avg(snrs.slice(0, OWN_PULSE_STREAK)) >= OWN_PULSE_MIN_SNR_DB))) ||
 		(streak >= OWN_PULSE_STRONG_STREAK &&
 			excess >= OWN_PULSE_STRONG_EXCESS_DB &&
 			avg(rates) >= OWN_PULSE_LOW_BAND_BPM)
@@ -957,8 +975,12 @@ export function ownPulseVerdict(
 			darkAgreeing.push(e.agreeing.length);
 		}
 		if (
-			darkRates.length >= OWN_PULSE_DARK_STREAK &&
-			avg(darkSnrs) >= OWN_PULSE_DARK_MIN_SNR_DB &&
+			darkRates.length >=
+				(quickerProof ? OWN_PULSE_QUICK_DARK_STREAK : OWN_PULSE_DARK_STREAK) &&
+			avg(darkSnrs) >=
+				(quickerProof
+					? OWN_PULSE_QUICK_DARK_MIN_SNR_DB
+					: OWN_PULSE_DARK_MIN_SNR_DB) &&
 			avg(darkAgreeing) >= OWN_PULSE_DARK_MEAN_AGREEING
 		) {
 			return {
