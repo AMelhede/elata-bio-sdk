@@ -233,6 +233,19 @@ export declare const CLEAR_RUNNER_UP_BPM = 15;
 /** The line's margin over its runner-up in a spectrum, dB (lineMarginDb). */
 export declare function lineMargin(P: readonly [number, number][], bpm: number): number;
 /**
+ * Rule driftLine (on unless false): a combined line under OWN_PULSE_DRIFT_LINE_BPM that fewer than all three regions
+ * carry cannot count under any rule (counts: below the low band only with all three; rest band from 52 only), so it
+ * must not hide the pulse: the window reads the strongest line at or above OWN_PULSE_LOW_BAND_BPM instead, when that
+ * is a local maximum of the whitened spectrum, its SNR judged on the spectrum as measured as for every line. On still
+ * laptop recordings a 45 to 49 line kept breaking streaks on a true 64 to 71, and 45 on a true 90 to 96. Every received
+ * recording of the test page, its rules: seconds with a number per 100 laptop 51.0 to 51.5, phone 46.2 to 46.5, Mac 39.7
+ * to 40.3; shown numbers within 5 bpm or 10% of the reference laptop 97 to 96 of 100, phone 90 to 90. Public lab set, finger reference: tuning half shown 39.9% to 40.6%, MAE 3.22 to 3.07, over 10 off
+ * 4.8% to 4.8%, no-pulse 1.66 to 1.78 per 100; held-out half (scored once) shown 52.7% to 53.7%, MAE 2.32 to 2.33,
+ * over 10 off 2.0% to 2.1%, no-pulse 2.17 to 2.28. Skipping every low-band line that lacks three regions (up to 58)
+ * hurt strong-signal recordings (it threw away rest-band rates); gating on the line's own SNR removed the gain.
+ */
+export declare const OWN_PULSE_DRIFT_LINE_BPM = 52;
+/**
  * Estimate over the most recent `windowS` seconds of raw samples. Returns null
  * when the window is not yet full or the frame rate is too low to resolve the
  * band (below 2x the band edge, i.e. 6 fps).
@@ -245,7 +258,9 @@ colourSwitch?: number,
 /** The least wall against the face at which it does (OWN_PULSE_SWAP_MIN_WALL_TO_FACE); 0 swaps over any wall seen. */
 swapMinWallToFace?: number, 
 /** Rule coherentFusion: read the line from the regions' pulses added in time (coherentSpectrum), not their spectra. */
-coherent?: boolean): OwnPulseEstimate | null;
+coherent?: boolean, 
+/** Rule driftLine (OWN_PULSE_DRIFT_LINE_BPM): a drift line no rule can count does not hide the strongest line above the low band. */
+driftLine?: boolean): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.

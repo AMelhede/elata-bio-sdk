@@ -280,6 +280,12 @@ export type PulseCheckRules = {
 	 * Off: as in 0.15.0-test.56, where a walking person's step rate showed as a heart rate.
 	 */
 	headMotion?: boolean;
+	/**
+	 * On unless false: a line under 52 bpm that fewer than three regions carry, which no rule can count, does not hide
+	 * the strongest line at or above 58 (pulseCheckCore OWN_PULSE_DRIFT_LINE_BPM, where the measurements are). Off: as in
+	 * 0.15.0-test.57 before 2026-11-01 evening, where such a drift line broke the streak of a true pulse.
+	 */
+	driftLine?: boolean;
 };
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
@@ -299,6 +305,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"coherentStart",
 	"oneRegion",
 	"headMotion",
+	"driftLine",
 ] as const;
 
 /**
@@ -684,6 +691,7 @@ export function resolvePulseCheckRules(
 		coherentStart: rules?.coherentStart !== false,
 		oneRegion: rules?.oneRegion !== false,
 		headMotion: rules?.headMotion !== false,
+		driftLine: rules?.driftLine !== false,
 	};
 }
 
@@ -1323,6 +1331,7 @@ export class PulseCheck {
 			OWN_PULSE_COLOUR_SWITCH,
 			this.swapMinWall,
 			this.rules.coherentFusion,
+			this.rules.driftLine,
 		);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// The wall's line for a window end, found once per evaluation: the taint, the wall check and
@@ -1527,6 +1536,7 @@ export class PulseCheck {
 					OWN_PULSE_COLOUR_SWITCH,
 					this.swapMinWall,
 					this.rules.coherentFusion,
+					this.rules.driftLine,
 				);
 				if (
 					e &&
@@ -1603,6 +1613,7 @@ export class PulseCheck {
 			OWN_PULSE_COLOUR_SWITCH,
 			this.swapMinWall,
 			this.rules.coherentFusion,
+			this.rules.driftLine,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {

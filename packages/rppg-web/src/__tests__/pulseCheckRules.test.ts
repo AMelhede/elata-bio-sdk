@@ -66,6 +66,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			coherentStart: true,
 			oneRegion: true,
 			headMotion: true,
+			driftLine: true,
 		});
 		expect(resolvePulseCheckRules({ restBand: false }).restBand).toBe(false);
 		expect(new PulseCheck().rules.restBand).toBe(true);

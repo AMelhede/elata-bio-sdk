@@ -88,6 +88,8 @@ export class MediaPipeFaceFrameSource {
          * so it never gets the longer reuse. Without a check, never.
          */
         this.blinkGateOpen = () => false;
+        /** Session option steadyLandmarks: each new find's points through the One Euro filter (steadyLandmarks.ts), or null. */
+        this.steady = null;
         this.fixes = resolveFixSwitches(fixes);
         this.canvas = document.createElement("canvas");
         const size = this.frameSize(video.videoWidth || video.width || 320, video.videoHeight || video.height || 240);
@@ -128,6 +130,7 @@ export class MediaPipeFaceFrameSource {
     async stop() {
         this.running = false;
         this.smoothedFaceRoi = null;
+        this.steady?.reset();
         this.lastFound = null;
         this.reuseRun = 0;
         this.faceStill = false;
@@ -187,6 +190,12 @@ export class MediaPipeFaceFrameSource {
                 this.reuseRun = 0;
                 const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
                 landmarks = result?.faceLandmarks?.[0] ?? null;
+                if (this.steady) {
+                    if (landmarks && landmarks.length)
+                        landmarks = this.steady.filter(landmarks, now);
+                    else
+                        this.steady.reset();
+                }
                 const prev = this.lastFound;
                 if (landmarks && landmarks.length && prev && now > prev.atMs) {
                     const a = faceSpan(prev.landmarks), b = faceSpan(landmarks);

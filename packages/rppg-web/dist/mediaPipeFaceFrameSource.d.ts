@@ -1,3 +1,4 @@
+import { SteadyLandmarks } from "./steadyLandmarks.js";
 import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitches.js";
 import { Frame, FrameSource, type FrameSourceError } from "./frameSource.js";
 import type { FaceLandmarkerLike } from "./mediapipeLoader.js";
@@ -75,6 +76,8 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
      * so it never gets the longer reuse. Without a check, never.
      */
     blinkGateOpen: () => boolean;
+    /** Session option steadyLandmarks: each new find's points through the One Euro filter (steadyLandmarks.ts), or null. */
+    steady: SteadyLandmarks | null;
     constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
     start(): Promise<void>;
     stop(): Promise<void>;

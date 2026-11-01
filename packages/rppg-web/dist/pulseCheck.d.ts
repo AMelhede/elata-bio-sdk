@@ -253,9 +253,15 @@ export type PulseCheckRules = {
      * Off: as in 0.15.0-test.56, where a walking person's step rate showed as a heart rate.
      */
     headMotion?: boolean;
+    /**
+     * On unless false: a line under 52 bpm that fewer than three regions carry, which no rule can count, does not hide
+     * the strongest line at or above 58 (pulseCheckCore OWN_PULSE_DRIFT_LINE_BPM, where the measurements are). Off: as in
+     * 0.15.0-test.57 before 2026-11-01 evening, where such a drift line broke the streak of a true pulse.
+     */
+    driftLine?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the

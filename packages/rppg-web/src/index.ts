@@ -48,6 +48,7 @@ export type {
 } from "./demoRunner";
 export { MediaPipeFrameSource } from "./mediaPipeFrameSource";
 export { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource";
+export { SteadyLandmarks, STEADY_MIN_CUTOFF_HZ, STEADY_BETA, type SteadyLandmarksOptions } from "./steadyLandmarks";
 export { loadFaceLandmarker } from "./mediapipeLoader";
 export type {
 	FaceLandmarkerLike,

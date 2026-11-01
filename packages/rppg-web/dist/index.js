@@ -8,6 +8,7 @@ export { BpmBayesTracker, DEFAULT_BPM_TRACKER_CONFIG_V1, parseBpmTrackerConfigV1
 export { DemoRunner } from "./demoRunner.js";
 export { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 export { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
+export { SteadyLandmarks, STEADY_MIN_CUTOFF_HZ, STEADY_BETA } from "./steadyLandmarks.js";
 export { loadFaceLandmarker } from "./mediapipeLoader.js";
 export { averageGreenInROI } from "./frameSource.js";
 export { AffectTracker } from "./affectTracker.js";

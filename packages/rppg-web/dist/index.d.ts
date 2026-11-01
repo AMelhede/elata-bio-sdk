@@ -11,6 +11,7 @@ export { DemoRunner } from "./demoRunner.js";
 export type { DemoRunnerOptions, DemoRunnerDiagnostics, DemoRunnerDropReason, } from "./demoRunner.js";
 export { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 export { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
+export { SteadyLandmarks, STEADY_MIN_CUTOFF_HZ, STEADY_BETA, type SteadyLandmarksOptions } from "./steadyLandmarks.js";
 export { loadFaceLandmarker } from "./mediapipeLoader.js";
 export type { FaceLandmarkerLike, FaceLandmarkerResult, LoadFaceLandmarkerOptions, } from "./mediapipeLoader.js";
 export { averageGreenInROI } from "./frameSource.js";

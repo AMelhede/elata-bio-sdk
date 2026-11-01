@@ -408,6 +408,30 @@ export function lineMargin(P, bpm) {
     return run > 0 && top > 0 ? 10 * Math.log10(top / run) : Number.POSITIVE_INFINITY;
 }
 /**
+ * Rule driftLine (on unless false): a combined line under OWN_PULSE_DRIFT_LINE_BPM that fewer than all three regions
+ * carry cannot count under any rule (counts: below the low band only with all three; rest band from 52 only), so it
+ * must not hide the pulse: the window reads the strongest line at or above OWN_PULSE_LOW_BAND_BPM instead, when that
+ * is a local maximum of the whitened spectrum, its SNR judged on the spectrum as measured as for every line. On still
+ * laptop recordings a 45 to 49 line kept breaking streaks on a true 64 to 71, and 45 on a true 90 to 96. Every received
+ * recording of the test page, its rules: seconds with a number per 100 laptop 51.0 to 51.5, phone 46.2 to 46.5, Mac 39.7
+ * to 40.3; shown numbers within 5 bpm or 10% of the reference laptop 97 to 96 of 100, phone 90 to 90. Public lab set, finger reference: tuning half shown 39.9% to 40.6%, MAE 3.22 to 3.07, over 10 off
+ * 4.8% to 4.8%, no-pulse 1.66 to 1.78 per 100; held-out half (scored once) shown 52.7% to 53.7%, MAE 2.32 to 2.33,
+ * over 10 off 2.0% to 2.1%, no-pulse 2.17 to 2.28. Skipping every low-band line that lacks three regions (up to 58)
+ * hurt strong-signal recordings (it threw away rest-band rates); gating on the line's own SNR removed the gain.
+ */
+export const OWN_PULSE_DRIFT_LINE_BPM = 52;
+function pastDriftLine(line, comb, measured, regions) {
+    if (!Number.isFinite(line.bpm) || line.bpm >= OWN_PULSE_DRIFT_LINE_BPM)
+        return line;
+    if (regions.filter((r) => Math.abs(r.bpm - line.bpm) <= OWN_PULSE_AGREE_BPM).length >= REGIONS.length)
+        return line;
+    const lo = OWN_PULSE_LOW_BAND_BPM / 60;
+    const alt = peakOfSpectrum(comb.map(([f, p]) => [f, f < lo ? 0 : p]), OWN_PULSE_HARMONIC_WEIGHT, measured);
+    const i = comb.findIndex(([f]) => Math.abs(f * 60 - alt.bpm) < 1e-6);
+    const isPeak = i > 0 && i < comb.length - 1 && comb[i - 1][1] < comb[i][1] && comb[i + 1][1] < comb[i][1];
+    return Number.isFinite(alt.bpm) && isPeak ? alt : line;
+}
+/**
  * Estimate over the most recent `windowS` seconds of raw samples. Returns null
  * when the window is not yet full or the frame rate is too low to resolve the
  * band (below 2x the band edge, i.e. 6 fps).
@@ -420,7 +444,9 @@ colourSwitch = OWN_PULSE_COLOUR_SWITCH,
 /** The least wall against the face at which it does (OWN_PULSE_SWAP_MIN_WALL_TO_FACE); 0 swaps over any wall seen. */
 swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE, 
 /** Rule coherentFusion: read the line from the regions' pulses added in time (coherentSpectrum), not their spectra. */
-coherent = false) {
+coherent = false, 
+/** Rule driftLine (OWN_PULSE_DRIFT_LINE_BPM): a drift line no rule can count does not hide the strongest line above the low band. */
+driftLine = false) {
     if (samples.length < 8)
         return null;
     const end = atMs;
@@ -478,7 +504,9 @@ coherent = false) {
     // (whitenedSpectrum); its SNR is judged on the spectrum as measured.
     const measured = coherent ? coherentSpectrum(pulses) : combinedSpectrum(spectra);
     const comb = whitenedSpectrum(measured);
-    const line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
+    let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
+    if (driftLine)
+        line = pastDriftLine(line, comb, measured, regions);
     const combined = coherent && Number.isFinite(line.snrDb) ? { ...line, snrDb: line.snrDb - COHERENT_SNR_OFFSET_DB } : line;
     const found = Number.isFinite(combined.bpm);
     const lineMarginDb = found ? lineMargin(comb, combined.bpm) : null;

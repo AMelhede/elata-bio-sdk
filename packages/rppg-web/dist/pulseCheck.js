@@ -45,6 +45,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "coherentStart",
     "oneRegion",
     "headMotion",
+    "driftLine",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -351,6 +352,7 @@ export function resolvePulseCheckRules(rules) {
         coherentStart: rules?.coherentStart !== false,
         oneRegion: rules?.oneRegion !== false,
         headMotion: rules?.headMotion !== false,
+        driftLine: rules?.driftLine !== false,
     };
 }
 /**
@@ -827,7 +829,7 @@ export class PulseCheck {
         this.lastEvalMs = timestampMs;
         const wallFrames = this.wallTally;
         this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
-        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
+        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine);
         if (est && est.skip)
             return;
         // The wall's line for a window end, found once per evaluation: the taint, the wall check and
@@ -993,7 +995,7 @@ export class PulseCheck {
                 kept != null &&
                 timestampMs - kept.t <= this.keptMaxAgeMs &&
                 span >= FOLLOW_RESUME_MIN_S) {
-                const e = estimateOwnPulse(this.samples, span, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
+                const e = estimateOwnPulse(this.samples, span, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine);
                 if (e &&
                     e.bpm != null &&
                     e.snrDb != null &&
@@ -1053,7 +1055,7 @@ export class PulseCheck {
             this.unsupported = 0;
             return null;
         }
-        const recent = estimateOwnPulse(this.samples, OWN_PULSE_SUPPORT_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion);
+        const recent = estimateOwnPulse(this.samples, OWN_PULSE_SUPPORT_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine);
         const rate = recent?.bpmFine ?? recent?.bpm ?? null;
         if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
             this.unsupported = 0;
