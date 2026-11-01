@@ -238,9 +238,15 @@ export type PulseCheckRules = {
      * 72). Numbers already running are not judged. An output gate only (startGated): the check's own state is untouched.
      */
     coherentStart?: boolean;
+    /**
+     * On unless false: one region carrying a window's line counts toward the proof instead of two
+     * (OWN_PULSE_ONE_REGION_MIN_AGREEING, where the measurements are). More readings at a wearable's accuracy; off: two
+     * regions, as in 0.15.0-test.56.
+     */
+    oneRegion?: boolean;
 };
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "foreheadPool", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the

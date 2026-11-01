@@ -619,18 +619,28 @@ function countsInDark(e, lowBand) {
 }
 /**
  * Regions that must carry a window's line for it to count, outside the dark
- * (the dark path keeps its own rule, OWN_PULSE_DARK_MIN_AGREEING).
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
+ * (the dark path keeps its own rule, OWN_PULSE_DARK_MIN_AGREEING), with rule oneRegion off.
  */
 export const OWN_PULSE_MIN_AGREEING = 2;
+/**
+ * Rule oneRegion (on unless false): one region carrying the line is enough. A real pulse that the other two regions
+ * miss (a shadow, hair, a moving cheek) counts, at the same SNR bar and streak. The pulse is under the whole face, so
+ * the measure of a wrong number is the share far from a reference, not agreement between regions. Public lab set,
+ * finger reference: tuning half shown 34.7% to 40.1%, MAE 2.95 to 3.24, over 10 off 4.4% to 5.1%; held-out half
+ * (scored once) 44.9% to 52.7%, MAE 2.15 to 2.32, over 10 off 1.5% to 2.0%, numbers on shuffled no-pulse copies 1.12
+ * to 2.19 per 100. Requiring a strong line from the lone region (-2, 0, +2 dB) removed the whole gain: the added
+ * readings are the weak one-region windows. Received test-page recordings: seconds with a number laptop 48.5 to 51.0,
+ * phone 46.3 to 47.5, Mac 36.6 to 40.7 per 100; typed references within 5 bpm or 10% on the shown number laptop 93 to
+ * 95 of 100, phone 90 to 90.
+ */
+export const OWN_PULSE_ONE_REGION_MIN_AGREEING = 1;
 /** Whether a window counts toward the verdict: a line and an SNR, every region behind a low-band line, and stronger evidence from a camera slowed by low light. */
-function counts(e, lowBand) {
+function counts(e, lowBand, minAgreeing) {
     if (e == null || e.bpm == null || e.snrDb == null)
         return false;
     if (slowedForLight(e) && e.snrDb < OWN_PULSE_SLOW_CAMERA_MIN_SNR_DB)
         return false;
-    if (!slowedForLight(e) && e.agreeing.length < OWN_PULSE_MIN_AGREEING)
+    if (!slowedForLight(e) && e.agreeing.length < minAgreeing)
         return false;
     if (e.bpm < OWN_PULSE_EDGE_BPM && e.snrDb < OWN_PULSE_EDGE_MIN_SNR_DB)
         return false;
@@ -669,14 +679,16 @@ export function ownPulseVerdict(history,
 /** The rate the previous verdict was measured at, if it was; enables the hold. */
 held = null, 
 /** Where the low band starts (OWN_PULSE_LOW_BAND_BPM; OWN_PULSE_EDGE_BPM with rule restBand). */
-lowBand = OWN_PULSE_LOW_BAND_BPM) {
+lowBand = OWN_PULSE_LOW_BAND_BPM, 
+/** Regions a window's line needs (OWN_PULSE_MIN_AGREEING; OWN_PULSE_ONE_REGION_MIN_AGREEING with rule oneRegion). */
+minAgreeing = OWN_PULSE_MIN_AGREEING) {
     let streak = 0;
     const rates = [];
     const fines = [];
     const snrs = [];
     for (let i = history.length - 1; i >= 0; i--) {
         const e = history[i];
-        if (!counts(e, lowBand))
+        if (!counts(e, lowBand, minAgreeing))
             break;
         if (rates.length && Math.abs(e.bpm - rates[0]) > OWN_PULSE_AGREE_BPM)
             break;
@@ -754,7 +766,7 @@ lowBand = OWN_PULSE_LOW_BAND_BPM) {
     if (held != null) {
         const recent = history.slice(-OWN_PULSE_STREAK);
         // A rate the dark entry measured is held by the windows that measured it.
-        const agreeing = recent.filter((e) => (counts(e, lowBand) || countsInDark(e, lowBand)) &&
+        const agreeing = recent.filter((e) => (counts(e, lowBand, minAgreeing) || countsInDark(e, lowBand)) &&
             Math.abs(e.bpm - held) <= OWN_PULSE_AGREE_BPM);
         if (agreeing.length >= OWN_PULSE_HOLD_MIN) {
             const heldRates = agreeing.map((e) => (e.bpmFine ?? e.bpm));

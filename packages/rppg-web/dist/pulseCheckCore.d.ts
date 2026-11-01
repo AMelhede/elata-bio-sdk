@@ -334,11 +334,21 @@ export declare const OWN_PULSE_DARK_MEAN_AGREEING = 1.5;
 export declare const OWN_PULSE_DARK_HOLD_SNR_DB = -5.5;
 /**
  * Regions that must carry a window's line for it to count, outside the dark
- * (the dark path keeps its own rule, OWN_PULSE_DARK_MIN_AGREEING).
- *
- * Value chosen by measurement on recorded captures against a reference pulse.
+ * (the dark path keeps its own rule, OWN_PULSE_DARK_MIN_AGREEING), with rule oneRegion off.
  */
 export declare const OWN_PULSE_MIN_AGREEING = 2;
+/**
+ * Rule oneRegion (on unless false): one region carrying the line is enough. A real pulse that the other two regions
+ * miss (a shadow, hair, a moving cheek) counts, at the same SNR bar and streak. The pulse is under the whole face, so
+ * the measure of a wrong number is the share far from a reference, not agreement between regions. Public lab set,
+ * finger reference: tuning half shown 34.7% to 40.1%, MAE 2.95 to 3.24, over 10 off 4.4% to 5.1%; held-out half
+ * (scored once) 44.9% to 52.7%, MAE 2.15 to 2.32, over 10 off 1.5% to 2.0%, numbers on shuffled no-pulse copies 1.12
+ * to 2.19 per 100. Requiring a strong line from the lone region (-2, 0, +2 dB) removed the whole gain: the added
+ * readings are the weak one-region windows. Received test-page recordings: seconds with a number laptop 48.5 to 51.0,
+ * phone 46.3 to 47.5, Mac 36.6 to 40.7 per 100; typed references within 5 bpm or 10% on the shown number laptop 93 to
+ * 95 of 100, phone 90 to 90.
+ */
+export declare const OWN_PULSE_ONE_REGION_MIN_AGREEING = 1;
 /**
  * Rule restBand only: a line from lowBand to OWN_PULSE_LOW_BAND_BPM that two of the three regions carry also needs
  * this much SNR. Without it the rule let no-pulse video show invented seconds in that band (sitting at 52 to 58,
@@ -374,7 +384,9 @@ export declare function ownPulseVerdict(history: readonly (OwnPulseEstimate | nu
 /** The rate the previous verdict was measured at, if it was; enables the hold. */
 held?: number | null, 
 /** Where the low band starts (OWN_PULSE_LOW_BAND_BPM; OWN_PULSE_EDGE_BPM with rule restBand). */
-lowBand?: number): {
+lowBand?: number, 
+/** Regions a window's line needs (OWN_PULSE_MIN_AGREEING; OWN_PULSE_ONE_REGION_MIN_AGREEING with rule oneRegion). */
+minAgreeing?: number): {
     verdict: OwnPulseVerdict;
     bpm: number | null;
     snrDb: number | null;

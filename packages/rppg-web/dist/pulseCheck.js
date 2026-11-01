@@ -1,5 +1,5 @@
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
-import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
+import { OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_MIN_AGREEING, OWN_PULSE_ONE_REGION_MIN_AGREEING, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
  * Following a proven rate. The windows that prove a rate span 16 s, so while the heart rate
  * moves the proven rate trails it. Once proven, the shown rate is the line in the newest 12 s
@@ -42,6 +42,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "roomLight",
     "followRecent",
     "coherentStart",
+    "oneRegion",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -342,6 +343,7 @@ export function resolvePulseCheckRules(rules) {
         roomLight: rules?.roomLight !== false,
         followRecent: rules?.followRecent === true,
         coherentStart: rules?.coherentStart !== false,
+        oneRegion: rules?.oneRegion !== false,
     };
 }
 /**
@@ -858,7 +860,9 @@ export class PulseCheck {
         this.history.push(tainted ? null : est);
         if (this.history.length > HISTORY_MAX)
             this.history.shift();
-        let v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM);
+        let v = ownPulseVerdict(this.history, this.held, this.rules.restBand ? OWN_PULSE_EDGE_BPM : OWN_PULSE_LOW_BAND_BPM, this.rules.oneRegion
+            ? OWN_PULSE_ONE_REGION_MIN_AGREEING
+            : OWN_PULSE_MIN_AGREEING);
         // Rule moreReadings (re-lock): a streak that agrees with a rate proven moments ago is that rate again (relockVerdict).
         if (this.rules.moreReadings)
             v = relockVerdict(v, this.lastProven, timestampMs);
