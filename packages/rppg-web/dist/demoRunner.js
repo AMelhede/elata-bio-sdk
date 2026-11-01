@@ -351,6 +351,7 @@ export class DemoRunner {
                         boxes[0] = { ...boxes[0], r: v.r, g: v.g, b: v.b };
                     }
                 }
+                this.opts.hrvRegions?.push(frame.timestampMs, boxes);
                 this.opts.pulseChecker.push(frame.timestampMs, boxes, wall?.rgb, frame.landmarks && !wall
                     ? wallMissReason(frame.landmarks, frame.width, frame.height)
                     : undefined, 

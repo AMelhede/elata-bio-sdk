@@ -74,6 +74,7 @@ import type {
 	BpmTrackerConfigV1,
 } from "./bpmBayesTracker";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow";
+import { HrvRegionBuffer, type HrvWindowResult } from "./hrvTracking";
 import type {
 	RppgModelDiagnosticsV1,
 	WaveformReconstructionV1,
@@ -153,7 +154,7 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 
 export type CreateRppgSessionOptions = Omit<
 	DemoRunnerOptions,
-	"onDiagnostics" | "onError" | "pulseChecker" | "chestMotion"
+	"onDiagnostics" | "onError" | "pulseChecker" | "chestMotion" | "hrvRegions"
 > & {
 	video: HTMLVideoElement;
 	/**
@@ -231,6 +232,15 @@ export type CreateRppgSessionOptions = Omit<
 	 * pulse check on it does not estimate breathing at all (its `respiration_rate` stays null), since no read hands it over.
 	 */
 	experimentalVitals?: boolean;
+	/**
+	 * Experimental, with `experimentalVitals` only. Which HRV `getExperimentalVitals()` hands over: "engine" (the
+	 * default, the engine's Hilbert-phase HRV as before) or "tracking", the tracking-band beat timer (hrvTracking.ts)
+	 * on the three face regions the pulse check reads, over the latest 60 s, given only when that window's SNR passes
+	 * the timer's gate, with its window in `hrvTracking`. Needs the pulse check on (its regions feed it). Against a
+	 * finger sensor on recorded webcam captures it read closer than the engine's method, still no better than a
+	 * constant, so it is for research and A/B only, never for showing a person.
+	 */
+	experimentalHrv?: "engine" | "tracking";
 	bpmTrackerConfig?: BpmTrackerConfigV1;
 	bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
 	experimental?: {
@@ -314,6 +324,8 @@ type SessionInternals = {
 	lastReading?: LastReading | null;
 	chestMotion?: ChestMotion | null;
 	experimentalVitals?: boolean;
+	/** The tracking-band timer's frames (experimentalHrv "tracking"); left out or null: the engine's HRV. */
+	hrvRegions?: Pick<HrvRegionBuffer, "read"> | null;
 	foreheadPool?: boolean;
 	light?: boolean;
 };
@@ -331,7 +343,27 @@ export type ExperimentalVitals = {
 	 * line's share of the band's power (1 a pure rhythm, near 0 noise). Null until the window is covered.
 	 */
 	breathing: { rate: number; share: number } | null;
+	/**
+	 * With `experimentalHrv: "tracking"` only: the timer's latest window (null before it has one), whatever the
+	 * session's conditions; `hrvRmssd` is its `rmssdMs` under them.
+	 */
+	hrvTracking?: ExperimentalHrvWindow | null;
 };
+
+/** The tracking-band timer's window as `getExperimentalVitals()` hands it over (see HrvWindowResult). */
+export type ExperimentalHrvWindow = Pick<
+	HrvWindowResult,
+	"rmssdMs" | "sdnnMs" | "snrDb" | "centreBpm" | "kept" | "pairs" | "gated" | "reason"
+>;
+
+/** Whether a session runs the tracking-band HRV timer: experimentalVitals on, asked for, and the pulse check on. */
+export function wantsHrvTracking(options: {
+	experimentalVitals?: boolean;
+	experimentalHrv?: "engine" | "tracking";
+	pulseCheck?: boolean;
+}): boolean {
+	return options.experimentalVitals === true && options.experimentalHrv === "tracking" && options.pulseCheck !== false;
+}
 
 /** Whether a session reads chest motion: only for `experimentalVitals`' breathing. */
 export function wantsChestMotion(options: {
@@ -629,12 +661,26 @@ export class RppgSession {
 		const state = this.internals.pulseCheck?.getState();
 		const proven =
 			!state || (state.verdict === "measured" && state.bpm != null);
+		const breathing = this.internals.chestMotion?.rate() ?? null;
+		if (this.internals.hrvRegions) {
+			const w = this.internals.hrvRegions.read();
+			const hrvTracking: ExperimentalHrvWindow | null = w
+				? { rmssdMs: w.rmssdMs, sdnnMs: w.sdnnMs, snrDb: w.snrDb, centreBpm: w.centreBpm, kept: w.kept, pairs: w.pairs, gated: w.gated, reason: w.reason }
+				: null;
+			const rm = hrvTracking?.rmssdMs;
+			return {
+				experimental: true,
+				hrvRmssd: !faceGone && proven && rm != null && Number.isFinite(rm) ? rm : null,
+				breathing,
+				hrvTracking,
+			};
+		}
 		const hrv = this.lastEngineMetrics?.hrv_rmssd;
 		return {
 			experimental: true,
 			hrvRmssd:
 				!faceGone && proven && Number.isFinite(hrv) ? (hrv as number) : null,
-			breathing: this.internals.chestMotion?.rate() ?? null,
+			breathing,
 		};
 	}
 
@@ -644,6 +690,7 @@ export class RppgSession {
 		pulseCheck: boolean;
 		pulseCheckRules: ResolvedPulseCheckRules | null;
 		experimentalVitals: boolean;
+		experimentalHrv: "engine" | "tracking";
 		foreheadPool: boolean;
 		light: boolean;
 	} {
@@ -665,6 +712,7 @@ export class RppgSession {
 			pulseCheck: this.internals.pulseCheck != null,
 			pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
 			experimentalVitals: this.internals.experimentalVitals === true,
+			experimentalHrv: this.internals.hrvRegions ? "tracking" : "engine",
 			foreheadPool:
 				this.internals.foreheadPool === true &&
 				this.internals.pulseCheck != null,
@@ -937,9 +985,11 @@ export async function createRppgSession(
 		: undefined;
 
 	const chestMotion = wantsChestMotion(options) ? new ChestMotion() : null;
+	const hrvRegions = wantsHrvTracking(options) && pulseCheck ? new HrvRegionBuffer() : null;
 	const runner = new DemoRunner(source, processor, {
 		fixes: options.fixes,
 		pulseChecker: pulseCheck,
+		hrvRegions,
 		foreheadPool: options.foreheadPool === true,
 		light: options.light === true && pulseCheck != null,
 		chestMotion,
@@ -1006,6 +1056,7 @@ export async function createRppgSession(
 			lastReading,
 			chestMotion,
 			experimentalVitals: options.experimentalVitals === true,
+			hrvRegions,
 			foreheadPool: options.foreheadPool === true,
 			light: options.light === true && pulseCheck != null,
 			backendDegraded: backendResult.mode !== "wasm",

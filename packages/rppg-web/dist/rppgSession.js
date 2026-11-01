@@ -14,7 +14,12 @@ import { RppgProcessor, withoutReading, } from "./rppgProcessor.js";
 import { loadWasmBackend, createUnavailableBackend, } from "./wasmBackend.js";
 import { DemoRunner, FACE_GONE_RESET_MS, FRAME_GAP_MS, } from "./demoRunner.js";
 import { WaveformFeatureWindowBuilder } from "./waveformFeatureWindow.js";
+import { HrvRegionBuffer } from "./hrvTracking.js";
 import { WaveformReconstructionController } from "./waveformReconstructionController.js";
+/** Whether a session runs the tracking-band HRV timer: experimentalVitals on, asked for, and the pulse check on. */
+export function wantsHrvTracking(options) {
+    return options.experimentalVitals === true && options.experimentalHrv === "tracking" && options.pulseCheck !== false;
+}
 /** Whether a session reads chest motion: only for `experimentalVitals`' breathing. */
 export function wantsChestMotion(options) {
     return options.experimentalVitals === true;
@@ -258,11 +263,25 @@ export class RppgSession {
             (this.runner.faceAbsentMs?.() ?? 0) >= FACE_GONE_RESET_MS;
         const state = this.internals.pulseCheck?.getState();
         const proven = !state || (state.verdict === "measured" && state.bpm != null);
+        const breathing = this.internals.chestMotion?.rate() ?? null;
+        if (this.internals.hrvRegions) {
+            const w = this.internals.hrvRegions.read();
+            const hrvTracking = w
+                ? { rmssdMs: w.rmssdMs, sdnnMs: w.sdnnMs, snrDb: w.snrDb, centreBpm: w.centreBpm, kept: w.kept, pairs: w.pairs, gated: w.gated, reason: w.reason }
+                : null;
+            const rm = hrvTracking?.rmssdMs;
+            return {
+                experimental: true,
+                hrvRmssd: !faceGone && proven && rm != null && Number.isFinite(rm) ? rm : null,
+                breathing,
+                hrvTracking,
+            };
+        }
         const hrv = this.lastEngineMetrics?.hrv_rmssd;
         return {
             experimental: true,
             hrvRmssd: !faceGone && proven && Number.isFinite(hrv) ? hrv : null,
-            breathing: this.internals.chestMotion?.rate() ?? null,
+            breathing,
         };
     }
     /** Which fixes and checks this session runs, for logging results against a build. */
@@ -283,6 +302,7 @@ export class RppgSession {
             pulseCheck: this.internals.pulseCheck != null,
             pulseCheckRules: this.internals.pulseCheck?.rules ?? null,
             experimentalVitals: this.internals.experimentalVitals === true,
+            experimentalHrv: this.internals.hrvRegions ? "tracking" : "engine",
             foreheadPool: this.internals.foreheadPool === true &&
                 this.internals.pulseCheck != null,
             light: this.internals.light === true,
@@ -509,9 +529,11 @@ export async function createRppgSession(options) {
         ? new WaveformReconstructionController(options.experimental.waveformReconstructor, options.experimental.inferenceIntervalMs)
         : undefined;
     const chestMotion = wantsChestMotion(options) ? new ChestMotion() : null;
+    const hrvRegions = wantsHrvTracking(options) && pulseCheck ? new HrvRegionBuffer() : null;
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
+        hrvRegions,
         foreheadPool: options.foreheadPool === true,
         light: options.light === true && pulseCheck != null,
         chestMotion,
@@ -569,6 +591,7 @@ export async function createRppgSession(options) {
         lastReading,
         chestMotion,
         experimentalVitals: options.experimentalVitals === true,
+        hrvRegions,
         foreheadPool: options.foreheadPool === true,
         light: options.light === true && pulseCheck != null,
         backendDegraded: backendResult.mode !== "wasm",

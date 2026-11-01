@@ -12,6 +12,7 @@ import { RppgProcessor, type Metrics, type RppgDebugIssueCode, type RppgDebugSna
 import { type WasmImporter } from "./wasmBackend.js";
 import { DemoRunner, type DemoRunnerDiagnostics, type DemoRunnerOptions } from "./demoRunner.js";
 import type { BpmEvidenceQualityProvider, BpmTrackerConfigV1 } from "./bpmBayesTracker.js";
+import { HrvRegionBuffer, type HrvWindowResult } from "./hrvTracking.js";
 import type { RppgModelDiagnosticsV1, WaveformReconstructionV1, WaveformReconstructor } from "./waveformModel.js";
 import { WaveformReconstructionController } from "./waveformReconstructionController.js";
 export type RppgSessionBackendPreference = "auto" | "wasm";
@@ -68,7 +69,7 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
     framesStopped: boolean;
     modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
-export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker" | "chestMotion"> & {
+export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker" | "chestMotion" | "hrvRegions"> & {
     video: HTMLVideoElement;
     /**
      * The real-pulse check (see pulseCheck.ts). ON by default in this test build. A heart rate
@@ -148,6 +149,15 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * pulse check on it does not estimate breathing at all (its `respiration_rate` stays null), since no read hands it over.
      */
     experimentalVitals?: boolean;
+    /**
+     * Experimental, with `experimentalVitals` only. Which HRV `getExperimentalVitals()` hands over: "engine" (the
+     * default, the engine's Hilbert-phase HRV as before) or "tracking", the tracking-band beat timer (hrvTracking.ts)
+     * on the three face regions the pulse check reads, over the latest 60 s, given only when that window's SNR passes
+     * the timer's gate, with its window in `hrvTracking`. Needs the pulse check on (its regions feed it). Against a
+     * finger sensor on recorded webcam captures it read closer than the engine's method, still no better than a
+     * constant, so it is for research and A/B only, never for showing a person.
+     */
+    experimentalHrv?: "engine" | "tracking";
     bpmTrackerConfig?: BpmTrackerConfigV1;
     bpmEvidenceQualityProvider?: BpmEvidenceQualityProvider;
     experimental?: {
@@ -228,6 +238,8 @@ type SessionInternals = {
     lastReading?: LastReading | null;
     chestMotion?: ChestMotion | null;
     experimentalVitals?: boolean;
+    /** The tracking-band timer's frames (experimentalHrv "tracking"); left out or null: the engine's HRV. */
+    hrvRegions?: Pick<HrvRegionBuffer, "read"> | null;
     foreheadPool?: boolean;
     light?: boolean;
 };
@@ -247,7 +259,20 @@ export type ExperimentalVitals = {
         rate: number;
         share: number;
     } | null;
+    /**
+     * With `experimentalHrv: "tracking"` only: the timer's latest window (null before it has one), whatever the
+     * session's conditions; `hrvRmssd` is its `rmssdMs` under them.
+     */
+    hrvTracking?: ExperimentalHrvWindow | null;
 };
+/** The tracking-band timer's window as `getExperimentalVitals()` hands it over (see HrvWindowResult). */
+export type ExperimentalHrvWindow = Pick<HrvWindowResult, "rmssdMs" | "sdnnMs" | "snrDb" | "centreBpm" | "kept" | "pairs" | "gated" | "reason">;
+/** Whether a session runs the tracking-band HRV timer: experimentalVitals on, asked for, and the pulse check on. */
+export declare function wantsHrvTracking(options: {
+    experimentalVitals?: boolean;
+    experimentalHrv?: "engine" | "tracking";
+    pulseCheck?: boolean;
+}): boolean;
 /** Whether a session reads chest motion: only for `experimentalVitals`' breathing. */
 export declare function wantsChestMotion(options: {
     experimentalVitals?: boolean;
@@ -333,6 +358,7 @@ export declare class RppgSession {
         pulseCheck: boolean;
         pulseCheckRules: ResolvedPulseCheckRules | null;
         experimentalVitals: boolean;
+        experimentalHrv: "engine" | "tracking";
         foreheadPool: boolean;
         light: boolean;
     };

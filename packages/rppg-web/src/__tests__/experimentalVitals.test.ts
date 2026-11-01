@@ -1,5 +1,6 @@
 import { FACE_GONE_RESET_MS } from "../demoRunner";
-import { RppgSession, wantsChestMotion } from "../rppgSession";
+import { RppgSession, wantsChestMotion, wantsHrvTracking } from "../rppgSession";
+import { HrvRegionBuffer, type HrvWindowResult } from "../hrvTracking";
 
 // experimentalVitals: HRV and chest breathing handed over in their own box, labelled experimental.
 // With the pulse check on, the session's own reads (getMetrics, the debug feed) never carry them.
@@ -14,8 +15,10 @@ type Opts = {
 	sinceRestart?: number | null;
 	hrv?: number | null;
 	chest?: { rate: number; share: number } | null;
+	/** The tracking-band timer's latest window (experimentalHrv "tracking"); left out: the engine's HRV. */
+	tracking?: Partial<HrvWindowResult> | null;
 };
-const make = ({ verdict = "measured", shown = 71.5, vitals = true, faceAbsentMs = 0, sinceRestart = null, hrv = raw.hrv_rmssd, chest = { rate: 14.5, share: 0.8 } }: Opts = {}) => {
+const make = ({ verdict = "measured", shown = 71.5, vitals = true, faceAbsentMs = 0, sinceRestart = null, hrv = raw.hrv_rmssd, chest = { rate: 14.5, share: 0.8 }, tracking }: Opts = {}) => {
 	const metrics = { ...raw, hrv_rmssd: hrv };
 	const engine = {
 		reads: 0,
@@ -36,6 +39,7 @@ const make = ({ verdict = "measured", shown = 71.5, vitals = true, faceAbsentMs 
 			pulseCheck: verdict == null ? null : ({ getState: () => ({ verdict, bpm: verdict === "measured" ? shown : null, snrDb: null, streak: 0 }) } as never),
 			chestMotion: { rate: () => chest, getSamples: () => [] } as never,
 			experimentalVitals: vitals,
+			...(tracking !== undefined ? { hrvRegions: { read: () => tracking } as never } : {}),
 		},
 	);
 	return { session, engine };
@@ -137,5 +141,72 @@ describe("which sessions read chest motion", () => {
 		expect(wantsChestMotion({})).toBe(false);
 		expect(wantsChestMotion({ experimentalVitals: false })).toBe(false);
 		expect(wantsChestMotion({ chestBreathing: true } as never)).toBe(false);
+	});
+});
+
+describe("experimentalHrv \"tracking\": the tracking-band beat timer (hrvTracking.ts) in place of the engine's HRV", () => {
+	const win = { rmssdMs: 42.5, sdnnMs: 51.2, snrDb: 2.3, centreBpm: 66, intervals: 66, kept: 60, pairs: 55, gated: false, reason: null };
+	it("hands over the timer's rMSSD, and its window in its own field", () => {
+		const v = vitalsAfterPoll({ tracking: win });
+		expect(v?.hrvRmssd).toBe(42.5);
+		expect(v?.hrvTracking).toEqual({ rmssdMs: 42.5, sdnnMs: 51.2, snrDb: 2.3, centreBpm: 66, kept: 60, pairs: 55, gated: false, reason: null });
+	});
+	it("gives no HRV under the timer's SNR gate, never the engine's in its place", () => {
+		const v = vitalsAfterPoll({ tracking: { ...win, rmssdMs: null, sdnnMs: null, gated: true, reason: "gated" } });
+		expect(v?.hrvRmssd).toBeNull();
+		expect(v?.hrvTracking?.gated).toBe(true);
+	});
+	it("gives no HRV before the timer has a window", () => {
+		const v = vitalsAfterPoll({ tracking: null });
+		expect(v?.hrvRmssd).toBeNull();
+		expect(v?.hrvTracking).toBeNull();
+	});
+	it("keeps the session's conditions: no proven rate or no face, no HRV", () => {
+		expect(vitalsAfterPoll({ tracking: win, verdict: "not-measured" })?.hrvRmssd).toBeNull();
+		expect(vitalsAfterPoll({ tracking: win, faceAbsentMs: FACE_GONE_RESET_MS })?.hrvRmssd).toBeNull();
+	});
+	it("leaves the default box as it was (no hrvTracking field), so an A/B against the engine's HRV is one switch", () => {
+		expect("hrvTracking" in (vitalsAfterPoll() ?? {})).toBe(false);
+	});
+	it("runs only with experimentalVitals on, the pulse check on (its three regions feed it), and asked for", () => {
+		expect(wantsHrvTracking({ experimentalVitals: true, experimentalHrv: "tracking" })).toBe(true);
+		expect(wantsHrvTracking({ experimentalVitals: true })).toBe(false);
+		expect(wantsHrvTracking({ experimentalVitals: true, experimentalHrv: "engine" })).toBe(false);
+		expect(wantsHrvTracking({ experimentalHrv: "tracking" })).toBe(false);
+		expect(wantsHrvTracking({ experimentalVitals: true, experimentalHrv: "tracking", pulseCheck: false })).toBe(false);
+	});
+	it("says which HRV in the session's switches", () => {
+		expect(make().session.getBuildSwitches().experimentalHrv).toBe("engine");
+		expect(make({ tracking: win }).session.getBuildSwitches().experimentalHrv).toBe("tracking");
+	});
+});
+
+describe("HrvRegionBuffer: the frames the timer reads", () => {
+	const rgb = { r: 150, g: 110, b: 90 };
+	it("keeps only the newest keepS seconds", () => {
+		const b = new HrvRegionBuffer(10);
+		for (let t = 0; t <= 30000; t += 33) b.push(t, [rgb, rgb, rgb]);
+		expect(b.size).toBeLessThanOrEqual(Math.ceil(10000 / 33) + 1);
+		expect(b.size).toBeGreaterThan(290);
+	});
+	it("needs three regions per frame, and reset() empties it", () => {
+		const b = new HrvRegionBuffer();
+		b.push(0, [rgb, rgb]);
+		expect(b.size).toBe(0);
+		b.push(0, [rgb, rgb, rgb]);
+		expect(b.size).toBe(1);
+		b.reset();
+		expect(b.size).toBe(0);
+		expect(b.read()).toBeNull();
+	});
+	it("reads at most once a second of frames: the same window object in between", () => {
+		const b = new HrvRegionBuffer();
+		for (let t = 0; t <= 70000; t += 33) b.push(t, [rgb, rgb, rgb]);
+		const first = b.read();
+		expect(first).not.toBeNull();
+		b.push(70033, [rgb, rgb, rgb]);
+		expect(b.read()).toBe(first);
+		for (let t = 70066; t <= 71100; t += 33) b.push(t, [rgb, rgb, rgb]);
+		expect(b.read()).not.toBe(first);
 	});
 });

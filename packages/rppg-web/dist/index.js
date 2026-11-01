@@ -20,6 +20,7 @@ export { createRppgSession, RppgSession, } from "./rppgSession.js";
 export { createManagedRppgSession, ManagedRppgSession, } from "./managedRppgSession.js";
 export { computeWaveformPeriodicityProfile } from "./rppgDiagnostics.js";
 export { computeTraceWaveformDebug } from "./rppgDiagnostics.js";
+export { dejitterFrameTimes, frameGaps, HRV_GAP_MS, HRV_MIN_SNR_DB, HRV_TRACK_HALF_HZ, HrvRegionBuffer, hrvFromBeats, hrvFromRegions, } from "./hrvTracking.js";
 export { analyzePulseWindow, calculateBpmViaAutocorrelation, cleanNnIntervalsMs, computeRmssdMs, detectBeatsViaHilbertPhase, detectPeaks, estimateDominantBpm, refinePeakByInterpolation, rmssdFromPeaks, temporalNormalize, } from "./pulseAnalysis.js";
 export { amplitudeEnvelope, dominantInBand, estimateRespiration, resampleTachogram, } from "./respirationAnalysis.js";
 export { Bandpass, ChannelGainController, ChromPulseModel, computeSignalSnrDb, PosPulseModel, spectralSnr, zeroPhaseBandpass, } from "./rppgSignalModel.js";

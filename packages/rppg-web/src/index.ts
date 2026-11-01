@@ -97,6 +97,7 @@ export {
 } from "./rppgSession";
 export type {
 	CreateRppgSessionOptions,
+	ExperimentalHrvWindow,
 	ExperimentalVitals,
 	RppgSessionBackendMode,
 	RppgSessionBackendPreference,
@@ -126,6 +127,17 @@ export type {
 	RppgTraceWaveformDebug,
 	ComputeTraceWaveformDebugOptions,
 } from "./rppgDiagnostics";
+export {
+	dejitterFrameTimes,
+	frameGaps,
+	HRV_GAP_MS,
+	HRV_MIN_SNR_DB,
+	HRV_TRACK_HALF_HZ,
+	HrvRegionBuffer,
+	hrvFromBeats,
+	hrvFromRegions,
+} from "./hrvTracking";
+export type { HrvRegionFrame, HrvWindowOptions, HrvWindowResult } from "./hrvTracking";
 export {
 	analyzePulseWindow,
 	calculateBpmViaAutocorrelation,

@@ -5,6 +5,7 @@ import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitche
 import { type FusionProjection, type FusionRoiName } from "./multiRoiFusion.js";
 import { type PulseCheck } from "./pulseCheck.js";
 import type { ChestMotion } from "./chestBreathing.js";
+import type { HrvRegionBuffer } from "./hrvTracking.js";
 import { RppgProcessor } from "./rppgProcessor.js";
 import { type RoiPixelSampler, type RppgRoiSampleV1 } from "./roiPixelSampler.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
@@ -51,6 +52,11 @@ export type DemoRunnerOptions = {
      * landmarks. The session creates it (`experimentalVitals`); null or left out: not read.
      */
     chestMotion?: ChestMotion | null;
+    /**
+     * The tracking-band HRV timer's frames (hrvTracking.ts), fed the same three regions as the pulse check, on the
+     * same frames. The session creates it (`experimentalHrv: "tracking"`); null or left out: not fed.
+     */
+    hrvRegions?: Pick<HrvRegionBuffer, "push"> | null;
     roi?: {
         x: number;
         y: number;

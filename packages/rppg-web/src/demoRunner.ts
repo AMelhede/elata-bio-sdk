@@ -30,6 +30,7 @@ import {
 } from "./multiRoiFusion";
 import { type PulseCheck, WallTracker, eyeBlink, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck";
 import type { ChestMotion } from "./chestBreathing";
+import type { HrvRegionBuffer } from "./hrvTracking";
 import { RppgProcessor } from "./rppgProcessor";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
@@ -87,6 +88,11 @@ export type DemoRunnerOptions = {
 	 * landmarks. The session creates it (`experimentalVitals`); null or left out: not read.
 	 */
 	chestMotion?: ChestMotion | null;
+	/**
+	 * The tracking-band HRV timer's frames (hrvTracking.ts), fed the same three regions as the pulse check, on the
+	 * same frames. The session creates it (`experimentalHrv: "tracking"`); null or left out: not fed.
+	 */
+	hrvRegions?: Pick<HrvRegionBuffer, "push"> | null;
 	roi?: { x: number; y: number; w: number; h: number } | null;
 	/** Face-mesh ROI geometry profile. */
 	roiGeometryProfile?: RoiGeometryProfile;
@@ -590,6 +596,7 @@ export class DemoRunner {
 						boxes[0] = { ...boxes[0], r: v.r, g: v.g, b: v.b };
 					}
 				}
+				this.opts.hrvRegions?.push(frame.timestampMs, boxes);
 				this.opts.pulseChecker.push(
 					frame.timestampMs,
 					boxes,
