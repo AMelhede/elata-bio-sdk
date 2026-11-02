@@ -213,12 +213,6 @@ export type PulseCheckRules = {
 	 */
 	blinkGate?: boolean;
 	/**
-	 * OFF unless true. Set by the session with its `foreheadPool` switch (the forehead the check is fed is the patch
-	 * pool, foreheadPool.ts), never on its own: with rule moreReadings, the building number then needs
-	 * POOL_BUILDING_STREAK agreeing windows instead of OWN_PULSE_STRONG_STREAK. Proof and re-lock are unchanged.
-	 */
-	foreheadPool?: boolean;
-	/**
 	 * OFF unless true, being measured (lane fp52): the line is read from the regions' pulses added in time
 	 * (coherentSpectrum) instead of their spectra added, and with rule moreReadings the building number needs
 	 * COHERENT_BUILDING_STREAK agreeing windows. Reads a light that steps the whole face more often too.
@@ -320,7 +314,6 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"restBand",
 	"moreReadings",
 	"blinkGate",
-	"foreheadPool",
 	"coherentFusion",
 	"clearWindows",
 	"shortStreak",
@@ -469,16 +462,6 @@ export function relockVerdict<
 }
 
 /**
- * Rule foreheadPool: the building number's streak while the forehead is the patch pool. The pool reads the forehead
- * far cleaner, so the combined line agrees more often, on no pulse as well. Measured on block-shuffled no-pulse copies
- * of recorded webcam captures (three cameras): at streak 4 the pool showed about a sixth more made-up seconds than the
- * box, most of them the building number, while its gain on real pulses was mostly proven numbers. At streak 5 it showed
- * fewer made-up seconds than the box at streak 4, and against a finger reference still nearly doubled the right numbers
- * on the two weaker cameras and raised the good camera's by a fifth.
- */
-export const POOL_BUILDING_STREAK = OWN_PULSE_STRONG_STREAK + 1;
-
-/**
  * Rule coherentFusion: the building number's streak (whatever the forehead). With the coherent line, on recorded
  * webcam sessions of two sets of people against a finger reference, three windows gave about a fifth more seconds with a
  * number than today's building streak at a mean error around the wearables' median, and somewhat more numbers on
@@ -524,17 +507,13 @@ export function countingStreak(
 
 export function buildingStreak(rules: ResolvedPulseCheckRules): number {
 	if (rules.shortStreak) return SHORT_BUILDING_STREAK;
-	return rules.coherentFusion
-		? COHERENT_BUILDING_STREAK
-		: rules.foreheadPool
-			? POOL_BUILDING_STREAK
-			: OWN_PULSE_STRONG_STREAK;
+	return rules.coherentFusion ? COHERENT_BUILDING_STREAK : OWN_PULSE_STRONG_STREAK;
 }
 
 /**
  * Rule moreReadings: the rate a streak may show while no proven rate is shown, or null. Only while nothing withholds
  * the window, and only for a streak at least `minStreak` windows long (OWN_PULSE_STRONG_STREAK, the shortest
- * streak the check ever accepts; POOL_BUILDING_STREAK under rule foreheadPool) whose mean SNR reaches
+ * streak the check ever accepts) whose mean SNR reaches
  * BUILDING_MIN_SNR_DB (two dB under the proof's bar).
  */
 export function buildingRate(
@@ -718,7 +697,6 @@ export function resolvePulseCheckRules(
 		restBand: rules?.restBand !== false,
 		moreReadings: rules?.moreReadings === true,
 		blinkGate: rules?.blinkGate === true,
-		foreheadPool: rules?.foreheadPool === true,
 		coherentFusion: rules?.coherentFusion === true,
 		clearWindows: rules?.clearWindows !== false,
 		shortStreak: rules?.shortStreak !== false,

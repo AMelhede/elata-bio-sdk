@@ -1116,12 +1116,8 @@ export function sessionPulseCheck(
 	>,
 ): PulseCheck | null {
 	if (options.pulseCheck === false) return null;
-	// Switch foreheadPool sets the check's rule of the same name, so the check always knows what it is fed.
 	const opts = {
-		rules:
-			options.foreheadPool === true
-				? { ...options.pulseCheckRules, foreheadPool: true }
-				: options.pulseCheckRules,
+		rules: options.pulseCheckRules,
 		resumeFrom: options.pulseCheckResume ?? null,
 	};
 	const rec = options.recordPulseCheckInputs;

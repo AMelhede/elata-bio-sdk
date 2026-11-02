@@ -57,7 +57,7 @@ describe("rule shortStreak", () => {
 	it("asks the building number for 2 windows, whatever else is on, and is on unless set to false", () => {
 		expect(SHORT_BUILDING_STREAK).toBe(2);
 		expect(buildingStreak(resolvePulseCheckRules({ coherentFusion: true, shortStreak: true }))).toBe(2);
-		expect(buildingStreak(resolvePulseCheckRules({ foreheadPool: true, shortStreak: true }))).toBe(2);
+		expect(buildingStreak(resolvePulseCheckRules({ shortStreak: true }))).toBe(2);
 		expect(buildingStreak(resolvePulseCheckRules({ coherentFusion: true, shortStreak: false }))).toBe(3);
 		expect(resolvePulseCheckRules().shortStreak).toBe(true);
 	});

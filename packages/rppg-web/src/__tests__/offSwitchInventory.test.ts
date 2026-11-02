@@ -6,7 +6,6 @@ import { PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules } from "../pulseCheck";
 // deleted) or its code removed. A new off switch, or one past its date, fails this test. The cap only goes down.
 const OFF_SWITCHES: Record<string, string> = {
 	moreReadings: "2026-11-30", // testers' paired runs; shows more numbers on photos, needs liveness first
-	foreheadPool: "2026-11-30", // set by the session switch foreheadPool; held-out on new files that record patches
 	coherentFusion: "2026-11-30", // page ?fusion=1 for the owner's paired runs; more numbers, more on lamps and no-pulse copies
 	blinkGate: "2026-11-30",
 	followRecent: "2026-11-30", // the owner's word to turn it on in the page; real recordings and lab passed (tools/decide.mjs)

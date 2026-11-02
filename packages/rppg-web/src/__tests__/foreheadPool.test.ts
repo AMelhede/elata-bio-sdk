@@ -78,31 +78,7 @@ describe("ForeheadPool", () => {
 });
 
 import { OWN_PULSE_STRONG_STREAK } from "../pulseCheckCore";
-import { POOL_BUILDING_STREAK, buildingRate, resolvePulseCheckRules, streakNeeded } from "../pulseCheck";
-import { sessionPulseCheck } from "../rppgSession";
-
-describe("rule foreheadPool: the building number needs one more window while the forehead is the pool", () => {
-	const v = (streak: number) => ({ verdict: "not-measured", streak, streakBpm: 70, streakSnrDb: 0 });
-	it("shows a streak of OWN_PULSE_STRONG_STREAK without the rule and needs POOL_BUILDING_STREAK with it", () => {
-		expect(POOL_BUILDING_STREAK).toBe(OWN_PULSE_STRONG_STREAK + 1);
-		expect(buildingRate(v(OWN_PULSE_STRONG_STREAK), false)).toBe(70);
-		expect(buildingRate(v(OWN_PULSE_STRONG_STREAK), false, POOL_BUILDING_STREAK)).toBeNull();
-		expect(buildingRate(v(POOL_BUILDING_STREAK), false, POOL_BUILDING_STREAK)).toBe(70);
-	});
-	it("tells an app's progress the same streak, and leaves re-lock as it was", () => {
-		const on = resolvePulseCheckRules({ moreReadings: true, foreheadPool: true, shortStreak: false });
-		const off = resolvePulseCheckRules({ moreReadings: true, shortStreak: false });
-		expect(streakNeeded(on, false)).toBe(POOL_BUILDING_STREAK);
-		expect(streakNeeded(off, false)).toBe(OWN_PULSE_STRONG_STREAK);
-		expect(streakNeeded(on, true)).toBe(streakNeeded(off, true));
-	});
-	it("is set by the session's foreheadPool switch, so the check always knows what it is fed, and is off otherwise", () => {
-		expect(sessionPulseCheck({ foreheadPool: true, pulseCheckRules: { moreReadings: true } })!.rules.foreheadPool).toBe(true);
-		expect(sessionPulseCheck({ foreheadPool: true, pulseCheckRules: { moreReadings: true } })!.rules.moreReadings).toBe(true);
-		expect(sessionPulseCheck({ pulseCheckRules: { moreReadings: true } })!.rules.foreheadPool).toBe(false);
-		expect(sessionPulseCheck({ foreheadPool: true, pulseCheck: false })).toBeNull();
-	});
-});
+import { buildingRate, resolvePulseCheckRules, streakNeeded } from "../pulseCheck";
 
 import { RecordingPulseCheck, parsePulseCheckRecording, replayPulseCheck, serializePulseCheckRecording } from "../pulseCheckRecording";
 import { shownPulseBpm } from "../pulseCheck";
@@ -125,7 +101,7 @@ describe("a recording with the pool keeps the forehead box it replaced, so the f
 		return live;
 	}
 	it("writes the box as the frame's last field with the pool and leaves the event as it was without", () => {
-		const a = new RecordingPulseCheck({ rules: { moreReadings: true, foreheadPool: true } });
+		const a = new RecordingPulseCheck({ rules: { moreReadings: true } });
 		feed(a, true);
 		const fa = a.getRecording().events.find((e) => e[0] === "f")!;
 		expect(fa.length).toBe(10);
@@ -134,18 +110,11 @@ describe("a recording with the pool keeps the forehead box it replaced, so the f
 		feed(b, false);
 		expect(b.getRecording().events.find((e) => e[0] === "f")!.length).toBe(9);
 	});
-	it("the check itself shows its first building number one window later under the rule", () => {
-		const first = (rules: object) => feed(new RecordingPulseCheck({ rules }), false, 0.03).findIndex((e) => e.bpm != null);
-		const plain = first({ moreReadings: true, shortStreak: false });
-		expect(plain).toBeGreaterThan(0);
-		expect(first({ moreReadings: true, foreheadPool: true, shortStreak: false })).toBe(plain + 1);
-	});
 	it("replays with its own rules, through a file, to every number the live check showed (the box is recorded only)", () => {
-		const check = new RecordingPulseCheck({ rules: { moreReadings: true, foreheadPool: true } });
+		const check = new RecordingPulseCheck({ rules: { moreReadings: true } });
 		const live = feed(check, true);
 		expect(live.filter((e) => e.bpm != null).length).toBeGreaterThan(10);
 		const rec = parsePulseCheckRecording(serializePulseCheckRecording(check.getRecording()));
-		expect(rec.rules.foreheadPool).toBe(true);
 		expect(replayPulseCheck(rec).evaluations.map((e) => ({ t: e.t, bpm: e.bpm }))).toEqual(live);
 	});
 });
@@ -179,10 +148,9 @@ describe("rule coherentFusion: the regions' pulses added in time", () => {
 		const best = Math.max(...pulses.map((p) => peakShare(coherentSpectrum([p]))));
 		expect(peakShare(coh)).toBeGreaterThan(best);
 	});
-	it("the building number needs one window fewer under the rule, whatever the forehead", () => {
+	it("the building number needs one window fewer under the rule", () => {
 		expect(COHERENT_BUILDING_STREAK).toBe(3);
-		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true, foreheadPool: true, shortStreak: false }))).toBe(3);
+		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true, shortStreak: false }))).toBe(3);
 		expect(streakNeeded(resolvePulseCheckRules({ moreReadings: true, coherentFusion: true, shortStreak: false }), false)).toBe(3);
-		expect(buildingStreak(resolvePulseCheckRules({ moreReadings: true, foreheadPool: true, shortStreak: false }))).toBe(5);
 	});
 });
