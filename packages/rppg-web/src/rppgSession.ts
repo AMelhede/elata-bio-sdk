@@ -15,6 +15,7 @@ import {
 	writeLastReading,
 } from "./lastRate";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
+import { createWorkerFaceFinder } from "./faceFinderWorker";
 import {
 	PulseCheck,
 	type PulseCheckResume,
@@ -209,6 +210,12 @@ export type CreateRppgSessionOptions = Omit<
 	 * unless set; `true` uses the defaults, an object sets them. Changes no other output.
 	 */
 	passive?: boolean | PassiveOptions;
+	/**
+	 * The face finder in a Web Worker (faceFinderWorker.ts), so this thread reads the face regions of every frame instead
+	 * of waiting on the finder. Off unless true; where a worker cannot be made or fails to load the model, the session
+	 * keeps the finder on this thread. Being measured: frames analysed on slowed browsers and phones.
+	 */
+	faceFinderWorker?: boolean;
 	/** With `passive`, called with each passive reading as it is made. */
 	onPassiveReading?: (reading: PassiveReading) => void;
 	/**
@@ -965,6 +972,10 @@ export async function createRppgSession(
 				options.fixes,
 			)
 		: new MediaPipeFrameSource(options.video, { fps: sampleRate });
+	if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
+		const finder = await createWorkerFaceFinder();
+		if (finder) source.asyncFinder = finder;
+	}
 
 	const backendResult = await resolveBackend(backendPreference, {
 		wasmJsUrl: options.wasmJsUrl,

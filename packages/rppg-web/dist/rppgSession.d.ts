@@ -120,6 +120,12 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * unless set; `true` uses the defaults, an object sets them. Changes no other output.
      */
     passive?: boolean | PassiveOptions;
+    /**
+     * The face finder in a Web Worker (faceFinderWorker.ts), so this thread reads the face regions of every frame instead
+     * of waiting on the finder. Off unless true; where a worker cannot be made or fails to load the model, the session
+     * keeps the finder on this thread. Being measured: frames analysed on slowed browsers and phones.
+     */
+    faceFinderWorker?: boolean;
     /** With `passive`, called with each passive reading as it is made. */
     onPassiveReading?: (reading: PassiveReading) => void;
     /**

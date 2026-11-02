@@ -1,6 +1,7 @@
 import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitches.js";
 import { Frame, FrameSource, type FrameSourceError } from "./frameSource.js";
 import type { FaceLandmarkerLike } from "./mediapipeLoader.js";
+import { type AsyncFaceFinder } from "./faceFinderWorker.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
 /**
  * Frame source backed by MediaPipe FaceLandmarker (tasks-vision). Each frame
@@ -62,6 +63,15 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     private vfcHandle;
     private smoothedFaceRoi;
     private lastError;
+    /**
+     * Session option faceFinderWorker: the face finder in a Web Worker (faceFinderWorker.ts), or null for the finder on
+     * this thread. With it, every frame's regions are read here from the newest landmarks the worker returned.
+     */
+    asyncFinder: AsyncFaceFinder | null;
+    /** A frame is on its way to the worker (the bitmap is being made), so no second one is sent. */
+    private finderSending;
+    /** Blendshapes from a worker result not yet attached to a frame (each result's go out once). */
+    private pendingBlendshapes;
     /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and how many frames in a row have reused them since. */
     private lastFound;
     private reuseRun;

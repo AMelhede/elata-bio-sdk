@@ -3,6 +3,7 @@ import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { defaultLastRateStore, lastReadingResume, readLastReading, writeLastReading, } from "./lastRate.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
+import { createWorkerFaceFinder } from "./faceFinderWorker.js";
 import { PulseCheck, pulseCheckCause, pulseCheckColourDamaged, shownPulseBpm, } from "./pulseCheck.js";
 import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
 import { ChestMotion } from "./chestBreathing.js";
@@ -508,6 +509,11 @@ export async function createRppgSession(options) {
     const source = faceMeshResult.faceMesh
         ? new MediaPipeFaceFrameSource(options.video, faceMeshResult.faceMesh, sampleRate, options.roiGeometryProfile, options.fixes)
         : new MediaPipeFrameSource(options.video, { fps: sampleRate });
+    if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
+        const finder = await createWorkerFaceFinder();
+        if (finder)
+            source.asyncFinder = finder;
+    }
     const backendResult = await resolveBackend(backendPreference, {
         wasmJsUrl: options.wasmJsUrl,
         wasmBinaryUrl: options.wasmBinaryUrl,

@@ -1,4 +1,5 @@
 import { resolveFixSwitches, } from "./fixSwitches.js";
+import { FACE_WORKER_MAX_AGE_MS } from "./faceFinderWorker.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, FUSION_ROI_NAMES, } from "./roiProfile.js";
 /**
  * Frame source backed by MediaPipe FaceLandmarker (tasks-vision). Each frame
@@ -75,6 +76,13 @@ export class MediaPipeFaceFrameSource {
         this.vfcHandle = null;
         this.smoothedFaceRoi = null;
         this.lastError = null;
+        /**
+         * Session option faceFinderWorker: the face finder in a Web Worker (faceFinderWorker.ts), or null for the finder on
+         * this thread. With it, every frame's regions are read here from the newest landmarks the worker returned.
+         */
+        this.asyncFinder = null;
+        /** A frame is on its way to the worker (the bitmap is being made), so no second one is sent. */
+        this.finderSending = false;
         /** Fix landmarkEveryOther: the last landmarks the face finder found and when, and how many frames in a row have reused them since. */
         this.lastFound = null;
         this.reuseRun = 0;
@@ -131,6 +139,9 @@ export class MediaPipeFaceFrameSource {
         this.lastFound = null;
         this.reuseRun = 0;
         this.faceStill = false;
+        // A result from before the stop belongs to the old frames: drop it, so a restart never places regions from it.
+        this.asyncFinder?.take();
+        this.pendingBlendshapes = undefined;
         const cancel = this.video.cancelVideoFrameCallback;
         if (this.vfcHandle !== null && typeof cancel === "function") {
             cancel.call(this.video, this.vfcHandle);
@@ -170,43 +181,80 @@ export class MediaPipeFaceFrameSource {
         }
         let landmarks = null;
         let blendshapes;
-        // Fix landmarkEveryOther: the LANDMARK_REUSE_FRAMES frames after a found face reuse its landmarks while fresh.
-        const longer = this.faceStill && this.blinkGateOpen();
-        const maxFrames = longer ? LANDMARK_STILL_REUSE_FRAMES : LANDMARK_REUSE_FRAMES;
-        const maxMs = longer ? LANDMARK_STILL_REUSE_MAX_MS : LANDMARK_REUSE_MAX_MS;
-        const reuse = this.fixes.landmarkEveryOther &&
-            this.lastFound != null &&
-            this.reuseRun < maxFrames &&
-            now - this.lastFound.atMs <= maxMs;
-        if (reuse && this.lastFound) {
-            landmarks = this.lastFound.landmarks;
-            this.reuseRun += 1;
-        }
-        else
-            try {
-                this.reuseRun = 0;
-                const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
-                landmarks = result?.faceLandmarks?.[0] ?? null;
+        if (this.asyncFinder) {
+            const finder = this.asyncFinder;
+            for (const r of finder.take()) {
                 const prev = this.lastFound;
-                if (landmarks && landmarks.length && prev && now > prev.atMs) {
-                    const a = faceSpan(prev.landmarks), b = faceSpan(landmarks);
-                    const perMs = Math.hypot(b.x - a.x, b.y - a.y) / b.w / (now - prev.atMs);
+                if (r.landmarks && r.landmarks.length && prev && r.atMs > prev.atMs) {
+                    const a = faceSpan(prev.landmarks), b = faceSpan(r.landmarks);
+                    const perMs = Math.hypot(b.x - a.x, b.y - a.y) / b.w / (r.atMs - prev.atMs);
                     this.faceStill = perMs * LANDMARK_STILL_REUSE_MAX_MS < LANDMARK_STILL_SHIFT;
                 }
                 else
                     this.faceStill = false;
-                this.lastFound = landmarks ? { landmarks, atMs: now } : null;
-                const categories = result?.faceBlendshapes?.[0]?.categories;
-                if (categories && categories.length) {
-                    blendshapes = categories.map((c) => ({
-                        categoryName: c.categoryName,
-                        score: c.score,
-                    }));
+                this.lastFound = r.landmarks && r.landmarks.length ? { landmarks: r.landmarks, atMs: r.atMs } : null;
+                if (r.blendshapes && r.blendshapes.length)
+                    this.pendingBlendshapes = r.blendshapes.map((c) => ({ categoryName: c.categoryName, score: c.score }));
+            }
+            if (!finder.busy && !this.finderSending && typeof createImageBitmap === "function") {
+                this.finderSending = true;
+                const at = now;
+                createImageBitmap(this.canvas)
+                    .then((bitmap) => {
+                    this.finderSending = false;
+                    if (this.running && this.asyncFinder === finder && !finder.busy)
+                        finder.request(bitmap, at);
+                    else
+                        bitmap.close();
+                })
+                    .catch(() => {
+                    this.finderSending = false;
+                });
+            }
+            if (this.lastFound && now - this.lastFound.atMs <= FACE_WORKER_MAX_AGE_MS)
+                landmarks = this.lastFound.landmarks;
+            blendshapes = this.pendingBlendshapes;
+            this.pendingBlendshapes = undefined;
+        }
+        else {
+            // Fix landmarkEveryOther: the LANDMARK_REUSE_FRAMES frames after a found face reuse its landmarks while fresh.
+            const longer = this.faceStill && this.blinkGateOpen();
+            const maxFrames = longer ? LANDMARK_STILL_REUSE_FRAMES : LANDMARK_REUSE_FRAMES;
+            const maxMs = longer ? LANDMARK_STILL_REUSE_MAX_MS : LANDMARK_REUSE_MAX_MS;
+            const reuse = this.fixes.landmarkEveryOther &&
+                this.lastFound != null &&
+                this.reuseRun < maxFrames &&
+                now - this.lastFound.atMs <= maxMs;
+            if (reuse && this.lastFound) {
+                landmarks = this.lastFound.landmarks;
+                this.reuseRun += 1;
+            }
+            else
+                try {
+                    this.reuseRun = 0;
+                    const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
+                    landmarks = result?.faceLandmarks?.[0] ?? null;
+                    const prev = this.lastFound;
+                    if (landmarks && landmarks.length && prev && now > prev.atMs) {
+                        const a = faceSpan(prev.landmarks), b = faceSpan(landmarks);
+                        const perMs = Math.hypot(b.x - a.x, b.y - a.y) / b.w / (now - prev.atMs);
+                        this.faceStill = perMs * LANDMARK_STILL_REUSE_MAX_MS < LANDMARK_STILL_SHIFT;
+                    }
+                    else
+                        this.faceStill = false;
+                    this.lastFound = landmarks ? { landmarks, atMs: now } : null;
+                    const categories = result?.faceBlendshapes?.[0]?.categories;
+                    if (categories && categories.length) {
+                        blendshapes = categories.map((c) => ({
+                            categoryName: c.categoryName,
+                            score: c.score,
+                        }));
+                    }
                 }
-            }
-            catch (error) {
-                this.reportError("face_mesh_failed", "face_mesh", error);
-            }
+                catch (error) {
+                    this.reportError("face_mesh_failed", "face_mesh", error);
+                }
+        }
         try {
             const img = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
             const ts = typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0
