@@ -331,6 +331,8 @@ type SessionInternals = {
 	faceTrackingDegraded?: boolean;
 	beforeStart?: () => Promise<void>;
 	waveformController?: WaveformReconstructionController;
+	/** Run once when the session is disposed (faceFinderWorker: the worker is closed with its session). */
+	onDispose?: () => void;
 	pulseCheck?: PulseCheck | null;
 	/** With `passive`, the passive reader fed from the pulse check. */
 	passive?: PassiveReader | null;
@@ -906,6 +908,9 @@ export class RppgSession {
 	}
 
 	async dispose(): Promise<void> {
+		const onDispose = this.internals.onDispose;
+		this.internals.onDispose = undefined;
+		onDispose?.();
 		await this.stop();
 		await this.internals.waveformController?.dispose();
 		this.processor.dispose();
@@ -972,9 +977,22 @@ export async function createRppgSession(
 				options.fixes,
 			)
 		: new MediaPipeFrameSource(options.video, { fps: sampleRate });
+	// faceFinderWorker: the worker loads its model in the background and takes over once ready; until then the finder on
+	// this thread runs, so a session never waits seconds for a phone to load a second model. The worker closes with the
+	// session, so a restart never leaves a second model running.
+	let workerClosed = false;
+	let closeWorker: (() => void) | undefined;
 	if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
-		const finder = await createWorkerFaceFinder();
-		if (finder) source.asyncFinder = finder;
+		closeWorker = () => {
+			workerClosed = true;
+			source.asyncFinder?.close();
+			source.asyncFinder = null;
+		};
+		void createWorkerFaceFinder().then((finder) => {
+			if (!finder) return;
+			if (workerClosed) finder.close();
+			else source.asyncFinder = finder;
+		});
 	}
 
 	const backendResult = await resolveBackend(backendPreference, {
@@ -1088,6 +1106,7 @@ export async function createRppgSession(
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,
+			onDispose: closeWorker,
 			beforeStart: async () => {
 				await waveformController?.init();
 				if (options.ensureVideoPlayback !== false) {

@@ -239,6 +239,8 @@ type SessionInternals = {
     faceTrackingDegraded?: boolean;
     beforeStart?: () => Promise<void>;
     waveformController?: WaveformReconstructionController;
+    /** Run once when the session is disposed (faceFinderWorker: the worker is closed with its session). */
+    onDispose?: () => void;
     pulseCheck?: PulseCheck | null;
     /** With `passive`, the passive reader fed from the pulse check. */
     passive?: PassiveReader | null;

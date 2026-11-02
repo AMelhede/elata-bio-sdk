@@ -1056,17 +1056,25 @@ export class RppgProcessor {
 	}
 
 	private assertBackendHealthy(operation: string) {
-		if (this.disposed || !this.pipeline) {
+		if (this.disposed) {
 			throw new Error(
 				`rPPG backend has been disposed; refusing ${operation}.`,
 			);
 		}
-		if (!this.failedBackendError) return;
-		const previousOp = this.failedOperation ?? "an earlier backend call";
-		throw new Error(
-			`rPPG backend is unavailable after a fatal error in ${previousOp}; refusing ${operation}.`,
-		);
+		// After a fatal error the pipeline is freed; say so with the first error, not as a dispose, which would hide the
+		// error that ended the engine.
+		if (this.failedBackendError) {
+			const previousOp = this.failedOperation ?? "an earlier backend call";
+			const first = this.failedBackendError instanceof Error ? this.failedBackendError.message : String(this.failedBackendError);
+			throw new Error(
+				`rPPG backend is unavailable after a fatal error in ${previousOp} (${first.slice(0, 200)}); refusing ${operation}.`,
+			);
+		}
+		if (!this.pipeline) {
+			throw new Error(`rPPG backend has no pipeline (the engine did not start); refusing ${operation}.`);
+		}
 	}
+
 
 	private failBackend(operation: string, cause: unknown) {
 		if (this.failedBackendError) return;

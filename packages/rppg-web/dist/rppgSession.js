@@ -458,6 +458,9 @@ export class RppgSession {
         this.emitDiagnostics();
     }
     async dispose() {
+        const onDispose = this.internals.onDispose;
+        this.internals.onDispose = undefined;
+        onDispose?.();
         await this.stop();
         await this.internals.waveformController?.dispose();
         this.processor.dispose();
@@ -509,10 +512,25 @@ export async function createRppgSession(options) {
     const source = faceMeshResult.faceMesh
         ? new MediaPipeFaceFrameSource(options.video, faceMeshResult.faceMesh, sampleRate, options.roiGeometryProfile, options.fixes)
         : new MediaPipeFrameSource(options.video, { fps: sampleRate });
+    // faceFinderWorker: the worker loads its model in the background and takes over once ready; until then the finder on
+    // this thread runs, so a session never waits seconds for a phone to load a second model. The worker closes with the
+    // session, so a restart never leaves a second model running.
+    let workerClosed = false;
+    let closeWorker;
     if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
-        const finder = await createWorkerFaceFinder();
-        if (finder)
-            source.asyncFinder = finder;
+        closeWorker = () => {
+            workerClosed = true;
+            source.asyncFinder?.close();
+            source.asyncFinder = null;
+        };
+        void createWorkerFaceFinder().then((finder) => {
+            if (!finder)
+                return;
+            if (workerClosed)
+                finder.close();
+            else
+                source.asyncFinder = finder;
+        });
     }
     const backendResult = await resolveBackend(backendPreference, {
         wasmJsUrl: options.wasmJsUrl,
@@ -607,6 +625,7 @@ export async function createRppgSession(options) {
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
         waveformController,
+        onDispose: closeWorker,
         beforeStart: async () => {
             await waveformController?.init();
             if (options.ensureVideoPlayback !== false) {

@@ -369,8 +369,9 @@ describe('RppgProcessor', () => {
     );
     expect(backend.pipeline.get_metrics).not.toHaveBeenCalled();
 
+    // The first error is named, not reported as a dispose.
     expect(() => p.pushSampleRgbMeta(1033, 0.5, 0.6, 0.7, 0.9, 0.1, 0.05)).toThrow(
-      'rPPG backend has been disposed',
+      /unavailable after a fatal error in push_sample_rgb_meta \(backend rejected sample\)/,
     );
     expect(backend.pipeline.push_sample_rgb_meta).toHaveBeenCalledTimes(1);
     expect(backend.pipeline.free).toHaveBeenCalledTimes(1);
