@@ -551,6 +551,13 @@ export class RppgProcessor {
 	private failedBackendError: Error | null = null;
 	private failedOperation: string | null = null;
 	private disposed = false;
+	/**
+	 * The engine's clock origin: each pipeline is handed times counted from its first sample, plus ENGINE_TIME_HEADROOM_MS.
+	 * The Rust engine breaks once a time passes 2^30 ms (about 12.4 days of device uptime, the clock Android gives the
+	 * frames): its 32-bit time can no longer tell 15 fps frames apart and get_metrics traps. Null until the first sample
+	 * of a pipeline.
+	 */
+	private engineOriginMs: number | null = null;
 	private readonly sampleRate: number;
 	private readonly windowSec: number;
 	/** The fix switches this processor applies (colourProjectionFix, noRateDoubling). */
@@ -666,7 +673,7 @@ export class RppgProcessor {
 		if (!Number.isFinite(timestampMs) || !Number.isFinite(intensity)) return;
 		this.assertBackendHealthy("push_sample");
 		if (typeof this.pipeline.push_sample === "function") {
-			const ts = coerceTimestamp(this.pipeline, timestampMs);
+			const ts = coerceTimestamp(this.pipeline, this.engineTime(timestampMs));
 			try {
 				this.pipeline.push_sample(ts as any, intensity);
 			} catch (error) {
@@ -728,7 +735,7 @@ export class RppgProcessor {
 		const safeSkinRatio = clampFinite(skinRatio, 1, 0, 1);
 		this.assertBackendHealthy("push_sample_rgb");
 		if (typeof this.pipeline.push_sample_rgb === "function") {
-			const ts = coerceTimestamp(this.pipeline, timestampMs);
+			const ts = coerceTimestamp(this.pipeline, this.engineTime(timestampMs));
 			try {
 				this.pipeline.push_sample_rgb(ts as any, r, g, b, safeSkinRatio);
 			} catch (error) {
@@ -781,7 +788,7 @@ export class RppgProcessor {
 		const safeClipRatio = clampFinite(clipRatio, 0, 0, 1);
 		this.assertBackendHealthy("push_sample_rgb_meta");
 		if (typeof this.pipeline.push_sample_rgb_meta === "function") {
-			const ts = coerceTimestamp(this.pipeline, timestampMs);
+			const ts = coerceTimestamp(this.pipeline, this.engineTime(timestampMs));
 			try {
 				this.pipeline.push_sample_rgb_meta(
 					ts as any,
@@ -851,6 +858,7 @@ export class RppgProcessor {
 		this.chromPulse.reset();
 		this.fusedQuality = null;
 		this.releasePipeline();
+		this.engineOriginMs = null;
 		try {
 			this.pipeline = this.newPipeline();
 		} catch (error) {
@@ -1053,6 +1061,12 @@ export class RppgProcessor {
 			}
 		}
 		return { bpm: null, confidence: 0.0, signal_quality: 0.0 };
+	}
+
+	/** A frame time on the engine's own clock (engineOriginMs). */
+	private engineTime(timestampMs: number): number {
+		if (this.engineOriginMs == null && Number.isFinite(timestampMs)) this.engineOriginMs = timestampMs - ENGINE_TIME_HEADROOM_MS;
+		return this.engineOriginMs == null ? timestampMs : timestampMs - this.engineOriginMs;
 	}
 
 	private assertBackendHealthy(operation: string) {
@@ -1532,6 +1546,9 @@ function failedMetrics(): Metrics {
 		respiration_confidence: null,
 	};
 }
+
+/** Headroom before a pipeline's first sample, so a frame slightly out of order never goes below zero. */
+const ENGINE_TIME_HEADROOM_MS = 10_000;
 
 function coerceTimestamp(pipeline: any, timestampMs: number): number | bigint {
 	if (

@@ -266,7 +266,8 @@ describe('RppgProcessor', () => {
     });
     const p = new RppgProcessor(backend as any, 30, 5);
     p.pushSample(1000, 0.5);
-    expect(backend.pipeline.push_sample).toHaveBeenCalledWith(1000, 0.5);
+    // The engine's clock starts at its first sample plus 10 s of headroom (engineClock.test.ts).
+    expect(backend.pipeline.push_sample).toHaveBeenCalledWith(10000, 0.5);
     const m = p.getMetrics();
     expect(m.bpm).toBe(72);
     expect(m.confidence).toBeGreaterThan(0.7);
@@ -415,9 +416,12 @@ describe('RppgProcessor', () => {
     backend.pipeline.__wbg_ptr = 12345;
     const p = new RppgProcessor(backend as any, 30, 5);
     p.pushSample(1000.7, 0.5);
+    p.pushSample(1034.2, 0.5);
     const callArg = backend.pipeline.push_sample.mock.calls[0][0];
     expect(typeof callArg).toBe('bigint');
-    expect(callArg).toBe(BigInt(1001));
+    expect(callArg).toBe(BigInt(10000));
+    // Spacing survives the rounding to whole milliseconds.
+    expect(backend.pipeline.push_sample.mock.calls[1][0]).toBe(BigInt(10034));
   });
 
   test('updateMuseMetrics delegates to fusion calibrator', () => {

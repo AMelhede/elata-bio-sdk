@@ -235,6 +235,13 @@ export declare class RppgProcessor {
     private failedBackendError;
     private failedOperation;
     private disposed;
+    /**
+     * The engine's clock origin: each pipeline is handed times counted from its first sample, plus ENGINE_TIME_HEADROOM_MS.
+     * The Rust engine breaks once a time passes 2^30 ms (about 12.4 days of device uptime, the clock Android gives the
+     * frames): its 32-bit time can no longer tell 15 fps frames apart and get_metrics traps. Null until the first sample
+     * of a pipeline.
+     */
+    private engineOriginMs;
     private readonly sampleRate;
     private readonly windowSec;
     /** The fix switches this processor applies (colourProjectionFix, noRateDoubling). */
@@ -314,6 +321,8 @@ export declare class RppgProcessor {
     getDebugSnapshot(nowMs?: number): RppgDebugSnapshot;
     getTraceSnapshot(maxPoints?: number): RppgTraceSnapshot;
     private readBackendMetrics;
+    /** A frame time on the engine's own clock (engineOriginMs). */
+    private engineTime;
     private assertBackendHealthy;
     private failBackend;
     private releasePipeline;
