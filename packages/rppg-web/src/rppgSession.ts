@@ -1,5 +1,4 @@
 import { LIGHT_CLIP_MAX, type LightLevel } from "./lightLevel";
-import { SteadyLandmarks, type SteadyLandmarksOptions } from "./steadyLandmarks";
 import type {
 	FrameSource,
 	FrameSourceError,
@@ -203,12 +202,6 @@ export type CreateRppgSessionOptions = Omit<
 	 * every second pixel of the three face region boxes per frame.
 	 */
 	light?: boolean;
-	/**
-	 * Face points that glide instead of snapping on each new find: the One Euro filter on the face finder's points
-	 * (steadyLandmarks.ts), so the regions stop jumping over the skin. Off unless set; `true` uses the defaults, an object
-	 * sets `minCutoffHz` and `beta`. Testing only until scored.
-	 */
-	steadyLandmarks?: boolean | SteadyLandmarksOptions;
 	/**
 	 * With `pulseCheck`, also read a heart rate for a person who is not waiting for one (passiveReader.ts): every
 	 * 5 s, the newest 48 s of what the check is fed, kept only when its two halves and its newest 16 s agree on the
@@ -972,8 +965,6 @@ export async function createRppgSession(
 				options.fixes,
 			)
 		: new MediaPipeFrameSource(options.video, { fps: sampleRate });
-	if (options.steadyLandmarks && source instanceof MediaPipeFaceFrameSource)
-		source.steady = new SteadyLandmarks(options.steadyLandmarks === true ? {} : options.steadyLandmarks);
 
 	const backendResult = await resolveBackend(backendPreference, {
 		wasmJsUrl: options.wasmJsUrl,
