@@ -567,7 +567,7 @@ export async function createRppgSession(options) {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
         hrvRegions,
-        foreheadPool: options.foreheadPool === true,
+        foreheadPool: options.foreheadPool ?? faceMeshResult.faceMesh != null,
         light: options.light === true && pulseCheck != null,
         chestMotion,
         roi: options.roi,

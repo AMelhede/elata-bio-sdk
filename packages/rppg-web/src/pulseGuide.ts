@@ -104,15 +104,6 @@ export function needsYou(a: Advice): boolean {
 	);
 }
 
-/** True when the advice asks the person to change something before a pulse can be read. */
-export function isBlocking(a: Advice): boolean {
-	return (
-		a === "no_camera" ||
-		a === "no_face" ||
-		a === "backlit" ||
-		a === "night_light"
-	);
-}
 
 /** What one moment of guidance is decided from. */
 export interface CoachInput {
@@ -151,47 +142,7 @@ export const WARM_MAX = 0.33;
 
 const WARMTH_WINDOW_MS = 2000;
 
-/** Green over red of the check's own face regions over the last WARMTH_WINDOW_MS. */
-export function warmthOf(
-	events: readonly (readonly unknown[])[],
-): number | null {
-	let r = 0,
-		g = 0,
-		last = -Infinity;
-	for (let i = events.length - 1; i >= 0; i--) {
-		const e = events[i];
-		if (e[0] !== "f") continue;
-		const t = e[1] as number;
-		if (last === -Infinity) last = t;
-		if (t < last - WARMTH_WINDOW_MS) break;
-		for (const reg of e[2] as readonly (readonly number[])[]) {
-			r += reg[0];
-			g += reg[1];
-		}
-	}
-	return r > 0 ? g / r : null;
-}
 
-/** Blue over red of the face regions: a warm filter cuts blue more than green, a dark picture does not. */
-export function blueWarmthOf(
-	events: readonly (readonly unknown[])[],
-): number | null {
-	let r = 0,
-		b = 0,
-		last = -Infinity;
-	for (let i = events.length - 1; i >= 0; i--) {
-		const e = events[i];
-		if (e[0] !== "f") continue;
-		const t = e[1] as number;
-		if (last === -Infinity) last = t;
-		if (t < last - WARMTH_WINDOW_MS) break;
-		for (const reg of e[2] as readonly (readonly number[])[]) {
-			r += reg[0];
-			b += reg[2];
-		}
-	}
-	return r > 0 ? b / r : null;
-}
 
 /** Head movement is judged over the last 8 s, as the pulse check asks its newest 8 s to carry the rate. */
 export const MOVE_WINDOW_MS = 8000;

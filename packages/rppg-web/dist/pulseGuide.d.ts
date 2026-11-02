@@ -28,8 +28,6 @@ export type Advice = "no_camera" | "no_face" | "backlit" | "night_light" | "more
 export declare const ADVICE_TEXT: Record<Advice, string>;
 /** True when the instruction asks the person to do something; only these are shown (progress is carried by the display). */
 export declare function needsYou(a: Advice): boolean;
-/** True when the advice asks the person to change something before a pulse can be read. */
-export declare function isBlocking(a: Advice): boolean;
 /** What one moment of guidance is decided from. */
 export interface CoachInput {
     readonly light: {
@@ -60,10 +58,6 @@ export declare const cameraStarved: (exposureTime: number | null | undefined) =>
 export type GuideCause = PulseCheckCause | "headMotion";
 /** Below this green over red on the face, the light on it is too orange to read a pulse (a warm screen filter or lamp). */
 export declare const WARM_MAX = 0.33;
-/** Green over red of the check's own face regions over the last WARMTH_WINDOW_MS. */
-export declare function warmthOf(events: readonly (readonly unknown[])[]): number | null;
-/** Blue over red of the face regions: a warm filter cuts blue more than green, a dark picture does not. */
-export declare function blueWarmthOf(events: readonly (readonly unknown[])[]): number | null;
 /** Head movement is judged over the last 8 s, as the pulse check asks its newest 8 s to carry the rate. */
 export declare const MOVE_WINDOW_MS = 8000;
 /** Head movement (median frame-to-frame centre shift over face width) above which "hold still" is the fix. */

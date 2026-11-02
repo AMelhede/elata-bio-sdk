@@ -102,7 +102,8 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
     };
     /**
      * With `pulseCheck`, read the forehead region from 49 small skin patches weighted toward the cleanest
-     * (foreheadPool.ts) instead of one box; the cheeks stay boxes. Off unless true. Costs a pixel pass over the
+     * (foreheadPool.ts) instead of one box; the cheeks stay boxes. On by default with the face mesh (set false to
+     * turn it off), since 2026-11-02. Costs a pixel pass over the
      * forehead patches per frame and one small spectrum per patch per second.
      */
     foreheadPool?: boolean;

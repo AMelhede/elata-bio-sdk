@@ -74,13 +74,6 @@ export function needsYou(a) {
         a === "flicker" ||
         a === "moving");
 }
-/** True when the advice asks the person to change something before a pulse can be read. */
-export function isBlocking(a) {
-    return (a === "no_camera" ||
-        a === "no_face" ||
-        a === "backlit" ||
-        a === "night_light");
-}
 /** A camera starved of light: its exposure (Chrome exposureTime, 100 microsecond units) is a frame long at 30 fps or more. */
 export const EXPOSURE_STARVED = 333;
 export const cameraStarved = (exposureTime) => exposureTime != null &&
@@ -89,44 +82,6 @@ export const cameraStarved = (exposureTime) => exposureTime != null &&
 /** Below this green over red on the face, the light on it is too orange to read a pulse (a warm screen filter or lamp). */
 export const WARM_MAX = 0.33;
 const WARMTH_WINDOW_MS = 2000;
-/** Green over red of the check's own face regions over the last WARMTH_WINDOW_MS. */
-export function warmthOf(events) {
-    let r = 0, g = 0, last = -Infinity;
-    for (let i = events.length - 1; i >= 0; i--) {
-        const e = events[i];
-        if (e[0] !== "f")
-            continue;
-        const t = e[1];
-        if (last === -Infinity)
-            last = t;
-        if (t < last - WARMTH_WINDOW_MS)
-            break;
-        for (const reg of e[2]) {
-            r += reg[0];
-            g += reg[1];
-        }
-    }
-    return r > 0 ? g / r : null;
-}
-/** Blue over red of the face regions: a warm filter cuts blue more than green, a dark picture does not. */
-export function blueWarmthOf(events) {
-    let r = 0, b = 0, last = -Infinity;
-    for (let i = events.length - 1; i >= 0; i--) {
-        const e = events[i];
-        if (e[0] !== "f")
-            continue;
-        const t = e[1];
-        if (last === -Infinity)
-            last = t;
-        if (t < last - WARMTH_WINDOW_MS)
-            break;
-        for (const reg of e[2]) {
-            r += reg[0];
-            b += reg[2];
-        }
-    }
-    return r > 0 ? b / r : null;
-}
 /** Head movement is judged over the last 8 s, as the pulse check asks its newest 8 s to carry the rate. */
 export const MOVE_WINDOW_MS = 8000;
 /** Head movement (median frame-to-frame centre shift over face width) above which "hold still" is the fix. */

@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types --test tests/coach.test.ts
-import { adviceFor, meter, isBlocking, needsYou, shownAfter, ADVICE_HOLD_MS, movementOf, MOVE_MAX, MOVE_WINDOW_MS, STALL_MS, WARM_MAX, warmthOf, blueWarmthOf, ADVICE_TEXT as ADVICE } from '../pulseGuide';
+import { adviceFor, meter, needsYou, shownAfter, ADVICE_HOLD_MS, movementOf, MOVE_MAX, MOVE_WINDOW_MS, STALL_MS, WARM_MAX, ADVICE_TEXT as ADVICE } from '../pulseGuide';
 // Ported from the test page's coach tests (2026-10-31): the instruction state machine now lives in the library.
 const assert = {
 	equal: (a: unknown, b: unknown, _m?: string) => expect(a).toBe(b),
@@ -31,8 +31,6 @@ test('too dark asks for the screen first, then for a real light once the lamp is
   assert.equal(adviceFor({ light: dark, faceFound: true, lampOn: false, hasNumber: false }), 'brighter_screen');
   assert.equal(adviceFor({ light: dark, faceFound: true, lampOn: true, hasNumber: false }), 'more_light');
   // Light advice never blocks: the ring keeps showing the check's progress while the person adds light.
-  assert.ok(!isBlocking('more_light'));
-  assert.ok(!isBlocking('brighter_screen'));
 });
 
 test('meter weights the centre: a dark centre in a bright frame reads as a dark face', () => {
@@ -139,23 +137,7 @@ test('a warm screen filter (night light, f.lux) is named before darkness or move
   // A number showing, or no face, wins as before.
   assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: true, hasNumber: true, warmth: 0.28 }), 'still');
   assert.equal(adviceFor({ light: lit, faceFound: false, lampOn: true, hasNumber: false, warmth: 0.28 }), 'no_face');
-  assert.ok(isBlocking('night_light'));
   assert.ok(WARM_MAX > 0.28 && WARM_MAX < 0.385);
-});
-
-test('blue over red of the face regions, for telling a warm filter from a dark picture', () => {
-  const f = (t: number, b: number) => ['f', t, [[1, 0.5, b], [1, 0.5, b], [1, 0.5, b]]];
-  assert.equal(blueWarmthOf([f(0, 0.3), f(1000, 0.3)]), 0.3);
-  assert.equal(blueWarmthOf([['r', null]]), null);
-});
-
-test("warmth is green over red of the check's own face regions over the last 2 s, and null without frames", () => {
-  const f = (t: number, g: number) => ['f', t, [[0.9, g, 0.1], [0.9, g, 0.1], [0.9, g, 0.1]]];
-  assert.equal(warmthOf([['r', null], f(0, 0.27), f(1000, 0.27), f(1500, 0.27)]), 0.3);
-  assert.equal(warmthOf([['r', null]]), null);
-  // Only the last 2 s count: an old white frame does not dilute a fresh warm one.
-  const v = warmthOf([f(0, 0.9), f(5000, 0.27), f(6000, 0.27)]);
-  assert.ok(v != null && Math.abs(v - 0.3) < 1e-9);
 });
 
 test('a moving head gets "hold still" at once, not the 42 s stall; light and face problems come first; a number wins', () => {
@@ -168,7 +150,6 @@ test('a moving head gets "hold still" at once, not the 42 s stall; light and fac
   assert.equal(adviceFor({ light: { face: 0.1, centre: 0.1, room: 0.1 }, faceFound: true, lampOn: false, hasNumber: false, movement: 0.5 }), 'brighter_screen');
   // With the screen lamp latched on in a dark room, movement still gets its own advice.
   assert.equal(adviceFor({ light: { face: 0.3, centre: 0.3, room: 0.3 }, faceFound: true, lampOn: true, hasNumber: false, movement: 0.5 }), 'moving');
-  assert.equal(isBlocking('still'), false);
 });
 
 test("with the check's own cause, the instruction names its fix and never says nothing is wrong over a weak signal (SPEC-reading-state.md section 4)", () => {
