@@ -77,10 +77,19 @@ test('an instruction changes only after the new one has held ADVICE_HOLD_MS; a n
   assert.equal(shownAfter(s, 'more_light', 99999, true).advice, 'still');
 });
 
-test('after 30 s with a face and no number, good light becomes a nudge', () => {
+test('no light instruction on time alone: 30 s with a lit face and no number stays "hold still" (2026-11-02, Macs)', () => {
+  // The stall line "Move closer to the light" fired on time alone; on Macs a number followed it 0 of 4 times.
   assert.equal(STALL_MS, 30_000);
   assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: false, hasNumber: false, searchingMs: 29_999 }), 'still');
-  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: false, hasNumber: false, searchingMs: 30_000 }), 'stalled');
+  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: false, hasNumber: false, searchingMs: 30_000 }), 'still');
+});
+
+test('a dark face gets the light ask while the first window fills, not 16 s later (2026-11-02)', () => {
+  const dark = { face: 0.15, centre: 0.15, room: 0.15 };
+  const base = { faceFound: true, hasNumber: false, cause: 'collecting' as const };
+  assert.equal(adviceFor({ ...base, light: dark, lampOn: false }), 'brighter_screen');
+  assert.equal(adviceFor({ ...base, light: dark, lampOn: true }), 'more_light');
+  assert.equal(adviceFor({ ...base, light: lit, lampOn: false }), 'still');
 });
 
 // ---- "Hold still": the 2026-10-20 Mac tester. Readings came when he was still (97% of seconds in his best run) and
@@ -107,7 +116,7 @@ test('with the screen lamp on and the face well lit, the page never asks for a b
   // 0.60 for 31 s while the page said "Turn screen brightness all the way up".
   const lit = { face: 0.56, centre: 0.56, room: 0.28 };
   assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: true, hasNumber: false }), 'still');
-  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: true, hasNumber: false, searchingMs: STALL_MS }), 'stalled');
+  assert.equal(adviceFor({ light: lit, faceFound: true, lampOn: true, hasNumber: false, searchingMs: STALL_MS }), 'still');
   // Lit by the lamp but still under the target: more screen light is still the right ask.
   assert.equal(adviceFor({ light: { face: 0.3, centre: 0.3, room: 0.2 }, faceFound: true, lampOn: true, hasNumber: false }), 'brighter_screen');
 });
@@ -220,7 +229,7 @@ test('a camera starved of light (exposure one frame long or more) on a weak sign
 });
 
 test('only an instruction that asks the person to do something is shown', () => {
-  for (const a of ['no_face', 'backlit', 'night_light', 'brighter_screen', 'more_light', 'flicker', 'stalled', 'moving'] as const) assert.equal(needsYou(a), true, a);
+  for (const a of ['no_face', 'backlit', 'night_light', 'brighter_screen', 'more_light', 'flicker', 'moving'] as const) assert.equal(needsYou(a), true, a);
   for (const a of ['no_camera', 'still', 'almost'] as const) assert.equal(needsYou(a), false, a);
 });
 
@@ -239,10 +248,10 @@ describe("PulseGuide: the line an app shows", () => {
 		const h = new PulseGuide();
 		for (let t = 0; t <= 20_000; t += 1000) expect(h.next(t, calm, false).text).toBeNull();
 	});
-	it("Safari: a long weak wait on a lit face, exposure unknown, gets the stall line; with exposure known it does not", async () => {
+	it("Safari and Mac: a long weak wait on a lit face, exposure unknown, gets no light line (it measured no light)", async () => {
 		const { adviceFor, STALL_MS } = await import("../pulseGuide");
 		const base = { light: lit, faceFound: true, lampOn: false, hasNumber: false, cause: "weakSignal" as const };
-		expect(adviceFor({ ...base, exposureKnown: false, searchingMs: STALL_MS })).toBe("stalled");
+		expect(adviceFor({ ...base, exposureKnown: false, searchingMs: STALL_MS })).toBe("still");
 		expect(adviceFor({ ...base, exposureKnown: false, searchingMs: STALL_MS - 1 })).toBe("still");
 		expect(adviceFor({ ...base, exposureKnown: true, searchingMs: STALL_MS })).toBe("still");
 		expect(adviceFor({ ...base, searchingMs: STALL_MS })).toBe("still");

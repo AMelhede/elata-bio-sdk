@@ -23,7 +23,7 @@ export declare function meter(data: ArrayLike<number>, size: number): {
     room: number;
 } | null;
 /** One instruction per state. */
-export type Advice = "no_camera" | "no_face" | "backlit" | "night_light" | "more_light" | "brighter_screen" | "flicker" | "moving" | "still" | "almost" | "stalled";
+export type Advice = "no_camera" | "no_face" | "backlit" | "night_light" | "more_light" | "brighter_screen" | "flicker" | "moving" | "still" | "almost";
 /** The words for each instruction: what to do, in a few plain words. */
 export declare const ADVICE_TEXT: Record<Advice, string>;
 /** True when the instruction asks the person to do something; only these are shown (progress is carried by the display). */

@@ -75,8 +75,7 @@ export type Advice =
 	| "flicker"
 	| "moving"
 	| "still"
-	| "almost"
-	| "stalled";
+	| "almost";
 
 /** The words for each instruction: what to do, in a few plain words. */
 export const ADVICE_TEXT: Record<Advice, string> = {
@@ -90,7 +89,6 @@ export const ADVICE_TEXT: Record<Advice, string> = {
 	moving: "Hold still",
 	still: "Hold still",
 	almost: "Hold still. Almost there",
-	stalled: "Still measuring. Move closer to the light",
 };
 
 /** True when the instruction asks the person to do something; only these are shown (progress is carried by the display). */
@@ -102,7 +100,6 @@ export function needsYou(a: Advice): boolean {
 		a === "brighter_screen" ||
 		a === "more_light" ||
 		a === "flicker" ||
-		a === "stalled" ||
 		a === "moving"
 	);
 }
@@ -291,7 +288,9 @@ function adviceUnburnt(s: CoachInput): Advice {
 		s.movement > MOVE_MAX &&
 		!(s.movementNow != null && s.movementNow <= MOVE_STILL_MAX);
 	if (s.cause) {
-		const a = adviceForCause(
+		// No light instruction on time alone: the stall line ("Move closer to the light" after 30 s with exposure unknown)
+		// measured no light, and on Macs a number followed it 0 of 4 times (2026-11-02); removed.
+		return adviceForCause(
 			s.cause,
 			face,
 			s.lampOn,
@@ -299,19 +298,11 @@ function adviceUnburnt(s: CoachInput): Advice {
 			s.movementNow != null && s.movementNow <= MOVE_STILL_MAX,
 			s.colourDamaged === true || s.starved === true,
 		);
-		if (
-			a === "still" &&
-			s.exposureKnown === false &&
-			(s.cause === "weakSignal" || s.cause === "noRate") &&
-			(s.searchingMs ?? 0) >= STALL_MS
-		)
-			return "stalled";
-		return a;
 	}
 	if (face < LUMA_FLOOR) return s.lampOn ? "more_light" : "brighter_screen";
 	if (moving) return "moving";
 	if (s.lampOn && face < LUMA_TARGET) return "brighter_screen";
-	return (s.searchingMs ?? 0) >= STALL_MS ? "stalled" : "still";
+	return "still";
 }
 
 function adviceForCause(
@@ -324,7 +315,11 @@ function adviceForCause(
 ): Advice {
 	switch (cause) {
 		// The window fills after a start or a return; a head moving then spoils it, so "hold still" is the fix there too.
+		// A face under LUMA_FLOOR gets the light ask from the first frames, as a per-frame face-brightness check does in
+		// shipping camera vitals (NuraLogix DeepAffex constraints, face mean under 48 of 255): on received runs a face
+		// that dark at 3 s was slow every time and never quick (2 of 31 slow runs, 0 of 78 quick, 2026-11-02).
 		case "collecting":
+			if (face < LUMA_FLOOR) return lampOn ? "more_light" : "brighter_screen";
 			return moving ? "moving" : "still";
 		case "shown":
 			return "almost";
