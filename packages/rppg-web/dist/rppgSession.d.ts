@@ -1,5 +1,4 @@
 import { type LightLevel } from "./lightLevel.js";
-import { type SteadyLandmarksOptions } from "./steadyLandmarks.js";
 import type { FrameSource } from "./frameSource.js";
 import { type LastRateStore, type LastReading } from "./lastRate.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
@@ -114,12 +113,6 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * every second pixel of the three face region boxes per frame.
      */
     light?: boolean;
-    /**
-     * Face points that glide instead of snapping on each new find: the One Euro filter on the face finder's points
-     * (steadyLandmarks.ts), so the regions stop jumping over the skin. Off unless set; `true` uses the defaults, an object
-     * sets `minCutoffHz` and `beta`. Testing only until scored.
-     */
-    steadyLandmarks?: boolean | SteadyLandmarksOptions;
     /**
      * With `pulseCheck`, also read a heart rate for a person who is not waiting for one (passiveReader.ts): every
      * 5 s, the newest 48 s of what the check is fed, kept only when its two halves and its newest 16 s agree on the

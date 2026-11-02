@@ -1,5 +1,4 @@
 import { LIGHT_CLIP_MAX } from "./lightLevel.js";
-import { SteadyLandmarks } from "./steadyLandmarks.js";
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { defaultLastRateStore, lastReadingResume, readLastReading, writeLastReading, } from "./lastRate.js";
@@ -509,8 +508,6 @@ export async function createRppgSession(options) {
     const source = faceMeshResult.faceMesh
         ? new MediaPipeFaceFrameSource(options.video, faceMeshResult.faceMesh, sampleRate, options.roiGeometryProfile, options.fixes)
         : new MediaPipeFrameSource(options.video, { fps: sampleRate });
-    if (options.steadyLandmarks && source instanceof MediaPipeFaceFrameSource)
-        source.steady = new SteadyLandmarks(options.steadyLandmarks === true ? {} : options.steadyLandmarks);
     const backendResult = await resolveBackend(backendPreference, {
         wasmJsUrl: options.wasmJsUrl,
         wasmBinaryUrl: options.wasmBinaryUrl,
