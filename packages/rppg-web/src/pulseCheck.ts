@@ -281,6 +281,13 @@ export type PulseCheckRules = {
 	 */
 	driftLine?: boolean;
 	/**
+	 * On unless false: a window whose rate the wall beside the face carries (lineCarries) is the light's, not evidence of
+	 * a pulse, so it never counts toward a streak. Restored 2026-11-02: deleted on 2026-10-30 on a replay with
+	 * coherentFusion off; with it on (the testers' page) a 120 Hz mains clip built a streak on windows the wall carried
+	 * and showed 180 bpm the second the wall's line dipped, which wallMatch (every one of the last 4 windows) lets through.
+	 */
+	lightTaint?: boolean;
+	/**
 	 * On unless false: the dark entry (a camera slowed for light, 15 to 18 fps) proves from 12 agreeing windows at a mean of
 	 * -5 dB instead of 16 at -4.5, and a streak longer than 8 windows also proves when its newest 8 average -3 dB
 	 * (pulseCheckCore OWN_PULSE_QUICK_DARK_STREAK, where the measurements are). Off: as in 0.15.0-test.57 before
@@ -324,6 +331,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"oneRegion",
 	"headMotion",
 	"driftLine",
+	"lightTaint",
 	"quickerProof",
 	"keptFollow",
 	"movingFollow",
@@ -697,16 +705,17 @@ export function resolvePulseCheckRules(
 		restBand: rules?.restBand !== false,
 		moreReadings: rules?.moreReadings === true,
 		blinkGate: rules?.blinkGate === true,
-		coherentFusion: rules?.coherentFusion === true,
+		coherentFusion: rules?.coherentFusion !== false,
 		clearWindows: rules?.clearWindows !== false,
 		shortStreak: rules?.shortStreak !== false,
 		steadyLight: rules?.steadyLight !== false,
 		roomLight: rules?.roomLight !== false,
-		followRecent: rules?.followRecent === true,
+		followRecent: rules?.followRecent !== false,
 		coherentStart: rules?.coherentStart !== false,
 		oneRegion: rules?.oneRegion !== false,
 		headMotion: rules?.headMotion !== false,
 		driftLine: rules?.driftLine !== false,
+		lightTaint: rules?.lightTaint !== false,
 		quickerProof: rules?.quickerProof !== false,
 		keptFollow: rules?.keptFollow !== false,
 		movingFollow: rules?.movingFollow !== false,
@@ -1397,6 +1406,7 @@ export class PulseCheck {
 		const tainted =
 			est?.bpm != null &&
 			(screenLit ||
+				(this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
 				(this.rules.roomLight &&
 					roomCarries(roomLineAt(timestampMs), est.bpm)) ||
 				headTimed(est.bpm));

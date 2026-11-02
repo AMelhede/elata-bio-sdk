@@ -53,7 +53,7 @@ describe("PulseCheck light rules, one switch each", () => {
 	it("every rule is on unless set to false, but the ones off unless set to true", () => {
 		expect(resolvePulseCheckRules()).toEqual({
 			screenLight: true,
-			coherentFusion: false,
+			coherentFusion: true,
 			restBand: true,
 			moreReadings: false,
 			blinkGate: false,
@@ -61,11 +61,12 @@ describe("PulseCheck light rules, one switch each", () => {
 			shortStreak: true,
 			steadyLight: true,
 			roomLight: true,
-			followRecent: false,
+			followRecent: true,
 			coherentStart: true,
 			oneRegion: true,
 			headMotion: true,
 			driftLine: true,
+			lightTaint: true,
 			quickerProof: true,
 			keptFollow: true,
 			movingFollow: true,

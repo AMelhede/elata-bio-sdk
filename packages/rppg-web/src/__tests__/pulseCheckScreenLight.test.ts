@@ -77,7 +77,7 @@ function exposurePulseRows(seconds: number): Row[] {
 
 /** Feeds the rows; returns every shown rate (one per second) and the last state. */
 function run(rows: Row[], screenLight: boolean) {
-	const check = new PulseCheck({ rules: { screenLight } });
+	const check = new PulseCheck({ rules: { screenLight, coherentFusion: false, followRecent: false, lightTaint: false } }); // screenLight alone, as measured
 	const shown: number[] = [];
 	let steps = 0;
 	let next = 1000;

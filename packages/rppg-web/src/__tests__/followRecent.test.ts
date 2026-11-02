@@ -2,9 +2,9 @@ import { FOLLOW_BPM, FOLLOW_MIN_SNR_DB, FOLLOW_MS, followRate, resolvePulseCheck
 
 // Rule followRecent (off unless true): while nothing shows, a window rate close to a number shown moments ago is shown.
 describe("rule followRecent", () => {
-	it("is off unless set to true", () => {
-		expect(resolvePulseCheckRules().followRecent).toBe(false);
-		expect(resolvePulseCheckRules({ followRecent: true }).followRecent).toBe(true);
+	it("is on unless set to false (2026-11-02: the tested setup is the default)", () => {
+		expect(resolvePulseCheckRules().followRecent).toBe(true);
+		expect(resolvePulseCheckRules({ followRecent: false }).followRecent).toBe(false);
 	});
 	it("follows a window within FOLLOW_BPM of a number shown within FOLLOW_MS, at FOLLOW_MIN_SNR_DB or more", () => {
 		expect([FOLLOW_BPM, FOLLOW_MS, FOLLOW_MIN_SNR_DB]).toEqual([6, 60_000, -5]);
@@ -32,7 +32,7 @@ describe("rule followRecent on a check", () => {
 		// A clean 66 bpm pulse, then 20 s of a weaker, slightly wandering one: proof first, then windows too noisy for a
 		// streak but close to the shown number.
 		const run = (followRecent: boolean) => {
-			const c = new PulseCheck({ rules: { moreReadings: true, followRecent } }); let shown = 0, before = 0, seed = 7;
+			const c = new PulseCheck({ rules: { moreReadings: true, followRecent, coherentFusion: false } }); let shown = 0, before = 0, seed = 7;
 			const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
 			for (let i = 0; i < 30 * 60; i++) {
 				const t = i * (1000 / 30), s = t / 1000; const late = s > 40;

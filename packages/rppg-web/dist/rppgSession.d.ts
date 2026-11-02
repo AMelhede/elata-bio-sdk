@@ -411,6 +411,8 @@ export declare function createRppgSession(options: CreateRppgSessionOptions): Pr
  * records its inputs with `recordPulseCheckInputs` (RecordingPulseCheck); else a plain PulseCheck,
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
+/** The rule settings a session with the face mesh starts from; an app's own settings win. */
+export declare function meshRuleDefaults(rules: PulseCheckRules | null | undefined): PulseCheckRules;
 export declare function sessionPulseCheck(options: Pick<CreateRppgSessionOptions, "pulseCheck" | "pulseCheckRules" | "recordPulseCheckInputs" | "foreheadPool" | "pulseCheckResume">): PulseCheck | null;
 export {};
 //# sourceMappingURL=rppgSession.d.ts.map

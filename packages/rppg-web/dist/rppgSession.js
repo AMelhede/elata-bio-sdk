@@ -498,14 +498,20 @@ export async function createRppgSession(options) {
     const lastReading = options.pulseCheck === false
         ? null
         : readLastReading(rateStore, Date.now());
-    const pulseCheck = sessionPulseCheck({
+    const checkOptions = {
         ...options,
         pulseCheckResume: options.pulseCheckResume ?? lastReadingResume(lastReading),
-    });
-    const passive = passiveReaderFor(options, pulseCheck);
+    };
+    let pulseCheck = sessionPulseCheck(checkOptions);
     const faceMeshResult = await resolveFaceMesh(options.faceMesh);
     if (faceMeshResult.error)
         pendingErrors.push(faceMeshResult.error);
+    // With the face mesh (it gives the blink scores and the forehead's patches), the check runs the setup tested with
+    // people: moreReadings with blinkGate. Without it blinkGate would withhold every rate, so they stay off. Rebuilt
+    // before any frame, so nothing is lost; an app's own rule settings win. (Testbed DECISIONS.md#library-defaults.)
+    if (pulseCheck && faceMeshResult.faceMesh)
+        pulseCheck = sessionPulseCheck({ ...checkOptions, pulseCheckRules: meshRuleDefaults(options.pulseCheckRules) });
+    const passive = passiveReaderFor(options, pulseCheck);
     const faceTrackingMode = faceMeshResult.faceMesh
         ? "face_mesh"
         : "video_frame";
@@ -620,7 +626,7 @@ export async function createRppgSession(options) {
         chestMotion,
         experimentalVitals: options.experimentalVitals === true,
         hrvRegions,
-        foreheadPool: options.foreheadPool === true,
+        foreheadPool: options.foreheadPool ?? faceMeshResult.faceMesh != null,
         light: options.light === true && pulseCheck != null,
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
@@ -649,6 +655,10 @@ export async function createRppgSession(options) {
  * records its inputs with `recordPulseCheckInputs` (RecordingPulseCheck); else a plain PulseCheck,
  * so with recording off the session runs exactly the check it ran before the option existed.
  */
+/** The rule settings a session with the face mesh starts from; an app's own settings win. */
+export function meshRuleDefaults(rules) {
+    return { moreReadings: true, blinkGate: true, ...(rules ?? {}) };
+}
 export function sessionPulseCheck(options) {
     if (options.pulseCheck === false)
         return null;

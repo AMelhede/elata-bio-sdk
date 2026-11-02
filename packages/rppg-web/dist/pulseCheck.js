@@ -45,6 +45,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "oneRegion",
     "headMotion",
     "driftLine",
+    "lightTaint",
     "quickerProof",
     "keptFollow",
     "movingFollow",
@@ -340,16 +341,17 @@ export function resolvePulseCheckRules(rules) {
         restBand: rules?.restBand !== false,
         moreReadings: rules?.moreReadings === true,
         blinkGate: rules?.blinkGate === true,
-        coherentFusion: rules?.coherentFusion === true,
+        coherentFusion: rules?.coherentFusion !== false,
         clearWindows: rules?.clearWindows !== false,
         shortStreak: rules?.shortStreak !== false,
         steadyLight: rules?.steadyLight !== false,
         roomLight: rules?.roomLight !== false,
-        followRecent: rules?.followRecent === true,
+        followRecent: rules?.followRecent !== false,
         coherentStart: rules?.coherentStart !== false,
         oneRegion: rules?.oneRegion !== false,
         headMotion: rules?.headMotion !== false,
         driftLine: rules?.driftLine !== false,
+        lightTaint: rules?.lightTaint !== false,
         quickerProof: rules?.quickerProof !== false,
         keptFollow: rules?.keptFollow !== false,
         movingFollow: rules?.movingFollow !== false,
@@ -875,6 +877,7 @@ export class PulseCheck {
         const headTimed = (bpm) => this.rules.headMotion && headKeepsTime(this.head, timestampMs, bpm);
         const tainted = est?.bpm != null &&
             (screenLit ||
+                (this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
                 (this.rules.roomLight &&
                     roomCarries(roomLineAt(timestampMs), est.bpm)) ||
                 headTimed(est.bpm));

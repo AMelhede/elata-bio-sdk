@@ -1,6 +1,6 @@
 import { DemoRunner } from "../demoRunner";
 import type { Frame, FrameSource } from "../frameSource";
-import { PulseCheck, type PulseCheckRules, type PulseCheckState, WallTracker } from "../pulseCheck";
+import { PulseCheck, type PulseCheckRules, type PulseCheckState, shownPulseBpm, WallTracker } from "../pulseCheck";
 import {
 	PULSE_CHECK_RECORDING_EVENTS_PER_SECOND,
 	PULSE_CHECK_RECORDING_FORMAT,
@@ -125,7 +125,8 @@ function evaluationsOf(check: PulseCheck, calls: readonly Call[]): PulseCheckSta
 	return out;
 }
 
-const shownOf = (s: PulseCheckState) => (s.verdict === "measured" ? s.bpm : null);
+// What a replay calls shown: the proven rate, else the building or followed one (shownPulseBpm).
+const shownOf = (s: PulseCheckState) => shownPulseBpm(s);
 const roundTrip = (r: PulseCheckRecording) => parsePulseCheckRecording(serializePulseCheckRecording(r));
 
 const SCENES: [string, () => Call[], { rules?: PulseCheckRules }][] = [
