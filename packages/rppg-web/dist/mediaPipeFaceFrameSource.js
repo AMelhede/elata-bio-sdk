@@ -1,5 +1,6 @@
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FACE_WORKER_MAX_AGE_MS } from "./faceFinderWorker.js";
+import { createBackgroundFrameFeed } from "./backgroundFrames.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, FUSION_ROI_NAMES, } from "./roiProfile.js";
 /**
  * Frame source backed by MediaPipe FaceLandmarker (tasks-vision). Each frame
@@ -96,6 +97,24 @@ export class MediaPipeFaceFrameSource {
          * so it never gets the longer reuse. Without a check, never.
          */
         this.blinkGateOpen = () => false;
+        /**
+         * Session option backgroundFrames (backgroundFrames.ts): while the page is hidden, frames come from the camera track
+         * read in a worker instead of the video element, which gets no frame callbacks hidden. Set before start().
+         */
+        this.backgroundFrames = false;
+        /** A test or app may hand its own feed; otherwise start() makes the worker feed from the video's track. */
+        this.backgroundFeed = null;
+        this.onVisibility = null;
+        /** Frames analysed from the background feed (diagnostics). */
+        this.backgroundFramesRead = 0;
+        /**
+         * The two paths' clocks are not assumed to agree (the track's frame timestamps against the video's mediaTime), so at
+         * each switch the new path's clock is moved to continue the old one by the wall time that passed.
+         */
+        this.clockPath = null;
+        this.clockOffset = 0;
+        this.lastTs = null;
+        this.lastTsWall = 0;
         this.fixes = resolveFixSwitches(fixes);
         this.canvas = document.createElement("canvas");
         const size = this.frameSize(video.videoWidth || video.width || 320, video.videoHeight || video.height || 240);
@@ -116,7 +135,9 @@ export class MediaPipeFaceFrameSource {
             const cb = (now, metadata) => {
                 if (!this.running)
                     return;
-                this.detectAndEmit(now, metadata);
+                // A late callback while the background feed has the frames: skip it, never analyse a frame twice.
+                if (!this.backgroundActive())
+                    this.detectAndEmit(now, metadata);
                 this.vfcHandle = this.video.requestVideoFrameCallback(cb);
             };
             this.vfcHandle = this.video.requestVideoFrameCallback(cb);
@@ -132,6 +153,52 @@ export class MediaPipeFaceFrameSource {
             };
             tick();
         }
+        if (this.backgroundFrames)
+            this.startBackground();
+    }
+    hidden() {
+        return typeof document !== "undefined" && document.visibilityState === "hidden";
+    }
+    backgroundActive() {
+        return this.backgroundFeed != null && this.hidden();
+    }
+    startBackground() {
+        if (!this.backgroundFeed) {
+            const stream = this.video.srcObject;
+            const track = stream && typeof stream.getVideoTracks === "function" ? stream.getVideoTracks()[0] : undefined;
+            this.backgroundFeed = track ? createBackgroundFrameFeed(track) : null;
+        }
+        const feed = this.backgroundFeed;
+        if (!feed)
+            return;
+        feed.onFrame = (f) => {
+            try {
+                if (this.running && this.hidden()) {
+                    this.backgroundFramesRead += 1;
+                    this.detectAndEmit(performance.now(), null, f);
+                }
+            }
+            finally {
+                f.close();
+                feed.ack();
+            }
+        };
+        this.onVisibility = () => feed.setActive(this.hidden());
+        if (typeof document !== "undefined")
+            document.addEventListener("visibilitychange", this.onVisibility);
+        feed.setActive(this.hidden());
+    }
+    /** The frame's time on the source's one clock: the path's own clock, continued across a switch of path. */
+    frameClock(raw, path, wall) {
+        if (this.clockPath !== path) {
+            if (this.clockPath != null && this.lastTs != null)
+                this.clockOffset = this.lastTs + (wall - this.lastTsWall) - raw;
+            this.clockPath = path;
+        }
+        const t = raw + this.clockOffset;
+        this.lastTs = t;
+        this.lastTsWall = wall;
+        return t;
     }
     async stop() {
         this.running = false;
@@ -142,6 +209,14 @@ export class MediaPipeFaceFrameSource {
         // A result from before the stop belongs to the old frames: drop it, so a restart never places regions from it.
         this.asyncFinder?.take();
         this.pendingBlendshapes = undefined;
+        if (this.onVisibility && typeof document !== "undefined")
+            document.removeEventListener("visibilitychange", this.onVisibility);
+        this.onVisibility = null;
+        this.backgroundFeed?.close();
+        this.backgroundFeed = null;
+        this.clockPath = null;
+        this.clockOffset = 0;
+        this.lastTs = null;
         const cancel = this.video.cancelVideoFrameCallback;
         if (this.vfcHandle !== null && typeof cancel === "function") {
             cancel.call(this.video, this.vfcHandle);
@@ -157,10 +232,12 @@ export class MediaPipeFaceFrameSource {
             ? analysisSize(w, h)
             : { width: w, height: h };
     }
-    detectAndEmit(now, metadata) {
+    detectAndEmit(now, metadata, trackFrame) {
         // Resize canvas if the video dimensions became known after construction.
-        if (this.video.videoWidth) {
-            const size = this.frameSize(this.video.videoWidth, this.video.videoHeight);
+        const srcW = trackFrame ? trackFrame.displayWidth : this.video.videoWidth;
+        const srcH = trackFrame ? trackFrame.displayHeight : this.video.videoHeight;
+        if (srcW) {
+            const size = this.frameSize(srcW, srcH);
             if (this.canvas.width !== size.width ||
                 this.canvas.height !== size.height) {
                 this.canvas.width = size.width;
@@ -173,7 +250,7 @@ export class MediaPipeFaceFrameSource {
         // landmarks now come from exactly the pixels the regions are sampled from, not from a
         // live video frame that may have advanced in between.
         try {
-            this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.drawImage((trackFrame ?? this.video), 0, 0, this.canvas.width, this.canvas.height);
         }
         catch (error) {
             this.reportError("capture_failed", "capture", error);
@@ -232,7 +309,7 @@ export class MediaPipeFaceFrameSource {
             else
                 try {
                     this.reuseRun = 0;
-                    const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth ? this.canvas : this.video, now);
+                    const result = this.faceLandmarker.detectForVideo(this.fixes.analysisWidth || trackFrame ? this.canvas : this.video, now);
                     landmarks = result?.faceLandmarks?.[0] ?? null;
                     const prev = this.lastFound;
                     if (landmarks && landmarks.length && prev && now > prev.atMs) {
@@ -257,9 +334,11 @@ export class MediaPipeFaceFrameSource {
         }
         try {
             const img = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-            const ts = typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0
-                ? metadata.mediaTime * 1000
-                : now;
+            const ts = trackFrame
+                ? this.frameClock(trackFrame.timestamp / 1000, "track", now)
+                : this.frameClock(typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0
+                    ? metadata.mediaTime * 1000
+                    : now, "video", now);
             const frame = {
                 data: img.data,
                 width: this.canvas.width,

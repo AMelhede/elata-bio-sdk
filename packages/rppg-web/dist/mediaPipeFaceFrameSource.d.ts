@@ -2,6 +2,7 @@ import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitche
 import { Frame, FrameSource, type FrameSourceError } from "./frameSource.js";
 import type { FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { type AsyncFaceFinder } from "./faceFinderWorker.js";
+import { type BackgroundFrameFeed } from "./backgroundFrames.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
 /**
  * Frame source backed by MediaPipe FaceLandmarker (tasks-vision). Each frame
@@ -85,8 +86,31 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
      * so it never gets the longer reuse. Without a check, never.
      */
     blinkGateOpen: () => boolean;
+    /**
+     * Session option backgroundFrames (backgroundFrames.ts): while the page is hidden, frames come from the camera track
+     * read in a worker instead of the video element, which gets no frame callbacks hidden. Set before start().
+     */
+    backgroundFrames: boolean;
+    /** A test or app may hand its own feed; otherwise start() makes the worker feed from the video's track. */
+    backgroundFeed: BackgroundFrameFeed | null;
+    private onVisibility;
+    /** Frames analysed from the background feed (diagnostics). */
+    backgroundFramesRead: number;
+    /**
+     * The two paths' clocks are not assumed to agree (the track's frame timestamps against the video's mediaTime), so at
+     * each switch the new path's clock is moved to continue the old one by the wall time that passed.
+     */
+    private clockPath;
+    private clockOffset;
+    private lastTs;
+    private lastTsWall;
     constructor(video: HTMLVideoElement, faceLandmarker: FaceLandmarkerLike, fps?: number, roiGeometryProfile?: RoiGeometryProfile, fixes?: RppgFixesOption);
     start(): Promise<void>;
+    private hidden;
+    private backgroundActive;
+    private startBackground;
+    /** The frame's time on the source's one clock: the path's own clock, continued across a switch of path. */
+    private frameClock;
     stop(): Promise<void>;
     getLastError(): FrameSourceError | null;
     /** Switches this source honours (analysisWidth). */

@@ -217,6 +217,13 @@ export type CreateRppgSessionOptions = Omit<
 	 * keeps the finder on this thread. Being measured: frames analysed on slowed browsers and phones.
 	 */
 	faceFinderWorker?: boolean;
+	/**
+	 * Keep reading frames while the page is hidden (backgroundFrames.ts): the camera track is read in a Web Worker and
+	 * each frame handed to the same analysis, so the pulse check and the passive reader continue behind other tabs and
+	 * apps. Off unless true; with the face mesh only; where the browser cannot read the track in a worker (no
+	 * MediaStreamTrackProcessor) nothing changes. A visible page reads frames as without it.
+	 */
+	backgroundFrames?: boolean;
 	/** With `passive`, called with each passive reading as it is made. */
 	onPassiveReading?: (reading: PassiveReading) => void;
 	/**
@@ -989,6 +996,7 @@ export async function createRppgSession(
 	// session, so a restart never leaves a second model running.
 	let workerClosed = false;
 	let closeWorker: (() => void) | undefined;
+	if (options.backgroundFrames === true && source instanceof MediaPipeFaceFrameSource) source.backgroundFrames = true;
 	if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
 		closeWorker = () => {
 			workerClosed = true;

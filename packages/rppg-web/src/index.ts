@@ -494,3 +494,4 @@ export {
 	shownAfter,
 } from "./pulseGuide";
 export * from "./camera";
+export { type BackgroundFrameFeed, createBackgroundFrameFeed } from "./backgroundFrames";

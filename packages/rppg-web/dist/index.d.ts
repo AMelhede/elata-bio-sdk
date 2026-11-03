@@ -90,4 +90,5 @@ export { CENTRE_BOX, type FaceLight, LIGHT_CLIP_MAX, LIGHT_LATCH_MS, LIGHT_START
 export { LAST_RATE_KEY, LAST_RATE_MAX_AGE_MS, type LastRateStore, type LastReading, readLastReading, writeLastReading, } from "./lastRate.js";
 export { ADVICE_HOLD_MS, ADVICE_TEXT, type Advice, adviceFor, type CoachInput, cameraStarved, type GuideCause, needsYou, PulseGuide, shownAfter, } from "./pulseGuide.js";
 export * from "./camera.js";
+export { type BackgroundFrameFeed, createBackgroundFrameFeed } from "./backgroundFrames.js";
 //# sourceMappingURL=index.d.ts.map
