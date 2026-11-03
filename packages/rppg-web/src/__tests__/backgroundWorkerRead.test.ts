@@ -63,6 +63,25 @@ describe('worker read, in the worker', () => {
 		expect(posts.map((p) => [p.msg.width, p.msg.height])).toEqual([[640, 480], [320, 240], [1280, 720]]);
 	});
 
+	test('while the page is busy, the next frame is read ahead and sent at the ack; one at most, later ones dropped', async () => {
+		const { scope, posts } = runWorker();
+		await scope.onmessage({ data: { active: true } });
+		await scope.onmessage({ data: { pixels: { maxWidth: 640, check: 0 } } });
+		const [a, b, c] = [frame(1280, 720, 1), frame(1280, 720, 2), frame(1280, 720, 3)];
+		await scope.readNow(readable([a, b, c]));
+		// a is with the page; b was read ahead (closed: its bytes are kept), c dropped; nothing sent but a yet.
+		expect(posts.map((p) => p.msg.timestamp)).toEqual([1]);
+		expect(b.closed && c.closed).toBe(true);
+		await scope.onmessage({ data: { ack: true } });
+		expect(posts.map((p) => p.msg.timestamp)).toEqual([1, 2]);
+		expect(new Uint8ClampedArray(posts[1].msg.pixels).length).toBe(640 * 360 * 4);
+		// Visible again: a frame read ahead is dropped, never sent late.
+		await scope.readNow(readable([frame(1280, 720, 4)]));
+		await scope.onmessage({ data: { active: false } });
+		await scope.onmessage({ data: { ack: true } });
+		expect(posts.map((p) => p.msg.timestamp)).toEqual([1, 2]);
+	});
+
 	test('without the option, or turned off, frames go over as frames', async () => {
 		const { scope, posts } = runWorker();
 		await scope.onmessage({ data: { active: true } });

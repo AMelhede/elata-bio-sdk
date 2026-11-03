@@ -21,38 +21,42 @@
  * at a time and drops the rest.
  */
 export const BACKGROUND_WORKER_SOURCE = `
-let active = false, inFlight = false, reader = null, clock = null, own = null, px = null, cv = null, cx = null;
+let active = false, inFlight = false, reader = null, clock = null, own = null, px = null, cv = null, cx = null, ready = null;
 // Worker read (px set): the frame drawn at the analysis size and read here, so the page's thread gets bytes, not a
 // frame to read back; the first px.check frames also go over as a copy, for the page to compare with its own read.
-const give = (f) => {
-  if (px && typeof OffscreenCanvas === 'function') {
-    try {
-      const w0 = f.displayWidth, h0 = f.displayHeight, sc = px.maxWidth > 0 ? Math.min(1, px.maxWidth / w0) : 1;
-      const w = Math.max(1, Math.round(w0 * sc)), h = Math.max(1, Math.round(h0 * sc));
-      if (!cv || cv.width !== w || cv.height !== h) { cv = new OffscreenCanvas(w, h); cx = cv.getContext('2d'); }
-      cx.drawImage(f, 0, 0, w, h);
-      const data = cx.getImageData(0, 0, w, h).data;
-      const m = { pixels: data.buffer, width: w, height: h, displayWidth: w0, displayHeight: h0, timestamp: f.timestamp };
-      if (px.check > 0) { px.check -= 1; m.copy = f; postMessage(m, [data.buffer, f]); } else { f.close(); postMessage(m, [data.buffer]); }
-      return;
-    } catch (err) { px = null; }
-  }
-  postMessage({ frame: f }, [f]);
+// While the page is busy with one frame, the next frame to come is drawn and read here (ready) and sent at the ack, so
+// the page never waits for a read; one ready at most, later frames are dropped as before.
+const prepare = (f) => {
+  try {
+    const w0 = f.displayWidth, h0 = f.displayHeight, sc = px.maxWidth > 0 ? Math.min(1, px.maxWidth / w0) : 1;
+    const w = Math.max(1, Math.round(w0 * sc)), h = Math.max(1, Math.round(h0 * sc));
+    if (!cv || cv.width !== w || cv.height !== h) { cv = new OffscreenCanvas(w, h); cx = cv.getContext('2d'); }
+    cx.drawImage(f, 0, 0, w, h);
+    const data = cx.getImageData(0, 0, w, h).data;
+    const m = { pixels: data.buffer, width: w, height: h, displayWidth: w0, displayHeight: h0, timestamp: f.timestamp };
+    if (px.check > 0) { px.check -= 1; m.copy = f; return { m, t: [data.buffer, f] }; }
+    f.close(); return { m, t: [data.buffer] };
+  } catch (err) { px = null; return null; }
 };
+const canRead = () => px != null && typeof OffscreenCanvas === 'function';
+const give = (f) => { const p = canRead() ? prepare(f) : null; if (p) postMessage(p.m, p.t); else postMessage({ frame: f }, [f]); };
+const drop = () => { if (ready) { try { ready.m.copy?.close(); } catch {} ready = null; } };
 const read = async (readable) => {
   reader = readable.getReader();
   for (;;) {
     let r; try { r = await reader.read(); } catch (err) { postMessage({ error: String(err) }); break; }
     if (r.done) break;
     const f = r.value;
-    if (active && !inFlight) { inFlight = true; give(f); } else f.close();
+    if (active && !inFlight) { inFlight = true; give(f); }
+    else if (active && ready == null && canRead()) { ready = prepare(f); if (!ready) f.close(); }
+    else f.close();
   }
 };
 onmessage = async (e) => {
   const d = e.data;
-  if (d.active != null) active = d.active;
-  if (d.ack) inFlight = false;
-  if (d.pixels !== undefined) px = d.pixels;
+  if (d.active != null) { active = d.active; if (!active) drop(); }
+  if (d.pixels !== undefined) { px = d.pixels; if (!px) drop(); }
+  if (d.ack) { inFlight = false; if (ready && active) { inFlight = true; postMessage(ready.m, ready.t); ready = null; } }
   if (d.stop) { try { await reader?.cancel(); } catch {} if (clock) clearInterval(clock); try { own?.stop(); } catch {} close(); return; }
   if (d.clock) clock = setInterval(() => { if (active && !inFlight) { inFlight = true; postMessage({ tick: true }); } }, d.clock);
   if (d.track) {
