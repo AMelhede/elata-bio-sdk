@@ -456,17 +456,23 @@ fn resample_rgb_into(
     r_out.clear();
     g_out.clear();
     b_out.clear();
-    let dt_ms = 1000.0_f32 / fs.max(1.0);
-    let mut t = start_t as f32;
-    let end = end_t as f32;
+    // Times stay in 64 bits, counted from the window's start: an f32 holds 24 bits, so at a
+    // device-uptime clock past 2^30 ms (12.4 days) adding one 33 ms step changed nothing and this
+    // loop never ended. The grid is indexed, not accumulated, so it cannot drift either.
+    let dt_ms = 1000.0_f64 / f64::from(fs.max(1.0));
+    let span = (end_t - start_t) as f64;
+    if span < 0.0 {
+        return false;
+    }
+    let steps = (span / dt_ms).floor() as usize + 1;
     let mut i = 0usize;
-    let expected = ((end - t) / dt_ms).max(0.0) as usize + 2;
-    r_out.reserve(expected);
-    g_out.reserve(expected);
-    b_out.reserve(expected);
+    r_out.reserve(steps);
+    g_out.reserve(steps);
+    b_out.reserve(steps);
 
-    while t <= end {
-        while i + 1 < samples.len() && (samples[i + 1].t_ms as f32) < t {
+    for k in 0..steps {
+        let t = k as f64 * dt_ms;
+        while i + 1 < samples.len() && ((samples[i + 1].t_ms - start_t) as f64) < t {
             i += 1;
         }
         if i + 1 >= samples.len() {
@@ -474,17 +480,15 @@ fn resample_rgb_into(
         }
         let s0 = &samples[i];
         let s1 = &samples[i + 1];
-        let t0 = s0.t_ms as f32;
-        let t1 = s1.t_ms as f32;
+        let t0 = (s0.t_ms - start_t) as f64;
+        let t1 = (s1.t_ms - start_t) as f64;
         if t1 <= t0 {
-            t += dt_ms;
             continue;
         }
-        let alpha = (t - t0) / (t1 - t0);
+        let alpha = ((t - t0) / (t1 - t0)) as f32;
         r_out.push(s0.r + (s1.r - s0.r) * alpha);
         g_out.push(s0.g + (s1.g - s0.g) * alpha);
         b_out.push(s0.b + (s1.b - s0.b) * alpha);
-        t += dt_ms;
     }
     r_out.len() >= 10
 }
