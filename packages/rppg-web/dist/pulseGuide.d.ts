@@ -45,6 +45,7 @@ export interface CoachInput {
     readonly warmth?: number | null;
     readonly blueWarmth?: number | null;
     readonly cause?: GuideCause | null;
+    /** The check's window colour is damaged (pulseCheckColourDamaged); recorded by apps, no longer a reason to ask for light on a lit face. */
     readonly colourDamaged?: boolean;
     readonly starved?: boolean;
     readonly exposureKnown?: boolean;

@@ -162,7 +162,7 @@ function adviceUnburnt(s) {
     if (s.cause) {
         // No light instruction on time alone: the stall line ("Move closer to the light" after 30 s with exposure unknown)
         // measured no light, and on Macs a number followed it 0 of 4 times (2026-11-02); removed.
-        return adviceForCause(s.cause, face, s.lampOn, moving, s.movementNow != null && s.movementNow <= MOVE_STILL_MAX, s.colourDamaged === true || s.starved === true);
+        return adviceForCause(s.cause, face, s.lampOn, moving, s.movementNow != null && s.movementNow <= MOVE_STILL_MAX, s.starved === true);
     }
     if (face < LUMA_FLOOR)
         return s.lampOn ? "more_light" : "brighter_screen";
@@ -172,7 +172,7 @@ function adviceUnburnt(s) {
         return "brighter_screen";
     return "still";
 }
-function adviceForCause(cause, face, lampOn, moving, stillNow, colourDamaged) {
+function adviceForCause(cause, face, lampOn, moving, stillNow, starved) {
     switch (cause) {
         // The window fills after a start or a return; a head moving then spoils it, so "hold still" is the fix there too.
         // A face under LUMA_FLOOR gets the light ask from the first frames, as a per-frame face-brightness check does in
@@ -196,7 +196,10 @@ function adviceForCause(cause, face, lampOn, moving, stillNow, colourDamaged) {
                 return lampOn ? "more_light" : "brighter_screen";
             if (face < LUMA_TARGET)
                 return "brighter_screen";
-            if (colourDamaged)
+            // A lit face (at or over LUMA_TARGET) is asked for light only when the camera is starved of it. The window's
+            // colour damage alone does not say the light is short: on received recordings it does not follow the face's
+            // brightness, and a phone face well over the target was told to add light for seconds on end.
+            if (starved)
                 return "more_light";
             return moving ? "moving" : "still";
         case "agreeing":

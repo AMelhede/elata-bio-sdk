@@ -118,6 +118,7 @@ export interface CoachInput {
 	readonly warmth?: number | null;
 	readonly blueWarmth?: number | null;
 	readonly cause?: GuideCause | null;
+	/** The check's window colour is damaged (pulseCheckColourDamaged); recorded by apps, no longer a reason to ask for light on a lit face. */
 	readonly colourDamaged?: boolean;
 	readonly starved?: boolean;
 	readonly exposureKnown?: boolean;
@@ -247,7 +248,7 @@ function adviceUnburnt(s: CoachInput): Advice {
 			s.lampOn,
 			moving,
 			s.movementNow != null && s.movementNow <= MOVE_STILL_MAX,
-			s.colourDamaged === true || s.starved === true,
+			s.starved === true,
 		);
 	}
 	if (face < LUMA_FLOOR) return s.lampOn ? "more_light" : "brighter_screen";
@@ -262,7 +263,7 @@ function adviceForCause(
 	lampOn: boolean,
 	moving: boolean,
 	stillNow: boolean,
-	colourDamaged: boolean,
+	starved: boolean,
 ): Advice {
 	switch (cause) {
 		// The window fills after a start or a return; a head moving then spoils it, so "hold still" is the fix there too.
@@ -284,7 +285,10 @@ function adviceForCause(
 		case "weakSignal":
 			if (face < LUMA_FLOOR) return lampOn ? "more_light" : "brighter_screen";
 			if (face < LUMA_TARGET) return "brighter_screen";
-			if (colourDamaged) return "more_light";
+			// A lit face (at or over LUMA_TARGET) is asked for light only when the camera is starved of it. The window's
+			// colour damage alone does not say the light is short: on received recordings it does not follow the face's
+			// brightness, and a phone face well over the target was told to add light for seconds on end.
+			if (starved) return "more_light";
 			return moving ? "moving" : "still";
 		case "agreeing":
 		case "waitingForBlink":

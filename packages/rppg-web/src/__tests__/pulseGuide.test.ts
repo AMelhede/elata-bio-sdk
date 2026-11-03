@@ -155,8 +155,8 @@ test('a moving head gets "hold still" at once, not the 42 s stall; light and fac
 test("with the check's own cause, the instruction names its fix and never says nothing is wrong over a weak signal (SPEC-reading-state.md section 4)", () => {
   const lit = { face: 0.5, centre: 0.5, room: 0.4 }, dim = { face: 0.3, centre: 0.3, room: 0.3 }, dark = { face: 0.1, centre: 0.1, room: 0.1 };
   const base = { faceFound: true, lampOn: false, hasNumber: false, searchingMs: 50_000, movement: 0.01, warmth: 0.65 };
-  assert.equal(adviceFor({ ...base, light: lit, cause: 'weakSignal', colourDamaged: true }), 'more_light');
-  assert.equal(adviceFor({ ...base, light: lit, cause: 'noRate', colourDamaged: true }), 'more_light');
+  assert.equal(adviceFor({ ...base, light: lit, cause: 'weakSignal', colourDamaged: true }), 'still');
+  assert.equal(adviceFor({ ...base, light: lit, cause: 'noRate', colourDamaged: true }), 'still');
   assert.equal(adviceFor({ ...base, light: dim, cause: 'weakSignal' }), 'brighter_screen');
   assert.equal(adviceFor({ ...base, light: dark, cause: 'weakSignal' }), 'brighter_screen');
   assert.equal(adviceFor({ ...base, light: dark, lampOn: true, cause: 'weakSignal' }), 'more_light');
@@ -183,7 +183,7 @@ test("light is named only where it is measurably the fault; a filling window say
   assert.equal(adviceFor({ ...base, light: lit, cause: 'collecting' }), 'still');
   assert.equal(adviceFor({ ...base, light: lit, cause: 'weakSignal' }), 'still');
   assert.equal(adviceFor({ ...base, light: lit, cause: 'noRate' }), 'still');
-  assert.equal(adviceFor({ ...base, light: lit, cause: 'weakSignal', colourDamaged: true }), 'more_light');
+  assert.equal(adviceFor({ ...base, light: lit, cause: 'weakSignal', colourDamaged: true }), 'still');
   assert.equal(ADVICE[adviceFor({ ...base, light: lit, cause: 'weakSignal' })], 'Hold still');
   // Owner's copy, 2026-10-29: "white" misled where the light was already white; the fix is the amount of light.
   assert.equal(ADVICE.more_light, 'Add some light in front of you');
@@ -272,6 +272,27 @@ test('"hold still" only while the head is still moving now, and it clears at onc
   const pts = Array.from({ length: 240 }, (_, i) => ({ t_ms: i * 33, x: i < 120 ? 300 + (i % 2) * 40 : 300, y: 240, w: 240 }));
   assert.ok(movementOf(pts, 239 * 33)! > MOVE_MAX);
   assert.ok(movementOf(pts, 239 * 33, MOVE_NOW_WINDOW_MS)! < MOVE_STILL_MAX);
+});
+
+describe("a lit face is asked for light only when the camera is starved, never for damaged colour alone", () => {
+	const { LUMA_TARGET } = jest.requireActual("../pulseGuide");
+	const atTarget = { face: LUMA_TARGET, centre: LUMA_TARGET, room: LUMA_TARGET };
+	const bright = { face: 0.48, centre: 0.48, room: 0.45 };
+	const base = { faceFound: true, lampOn: false, hasNumber: false, movement: 0.01, movementNow: 0.01 };
+	it("damaged colour on a face at or over LUMA_TARGET: hold still, or the head's own advice", () => {
+		for (const cause of ["noRate", "weakSignal"] as const)
+			for (const light of [atTarget, bright]) {
+				expect(adviceFor({ ...base, light, cause, colourDamaged: true, starved: false })).toBe("still");
+				expect(adviceFor({ ...base, light, cause, colourDamaged: true, movement: 0.2, movementNow: 0.1 })).toBe("moving");
+			}
+	});
+	it("a starved camera keeps the light ask, damaged colour or not", () => {
+		for (const colourDamaged of [true, false])
+			expect(adviceFor({ ...base, light: bright, cause: "weakSignal", colourDamaged, starved: true })).toBe("more_light");
+	});
+	it("a face under LUMA_TARGET is asked for screen light as before", () => {
+		expect(adviceFor({ ...base, light: { face: 0.3, centre: 0.3, room: 0.3 }, cause: "noRate", colourDamaged: true })).toBe("brighter_screen");
+	});
 });
 
 describe("a burnt-out face never gets a light instruction", () => {
