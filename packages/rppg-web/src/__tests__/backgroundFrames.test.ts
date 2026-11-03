@@ -110,7 +110,8 @@ describe('backgroundFrames', () => {
     src.onFrame = (f) => frames.push(f);
     await src.start();
     expect(feed.active).toEqual([false]);
-    cbs.shift()!(1000, { mediaTime: 1.0 });
+    // A video frame callback's time is on performance.now()'s clock in a browser, as the track path's wall time is.
+    cbs.shift()!(performance.now(), { mediaTime: 1.0 });
     expect(frames.length).toBe(1);
     const dropped = feed.send(1_033_000);
     expect(frames.length).toBe(1);
