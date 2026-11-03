@@ -140,6 +140,17 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * good at one difference; backgroundFrames.ts). On unless false.
      */
     backgroundWorkerRead?: boolean;
+    /**
+     * With `backgroundFrames`: while hidden, measure in bursts every this many ms instead of all the time (BackgroundDuty
+     * in backgroundFrames.ts, as a wrist reads heart rate in the day): each burst until a reading stands plus
+     * `backgroundHoldMs`, at most `backgroundMaxBurstMs`; between bursts the camera stays open and no frame is analysed.
+     * Left out or 0: all the time, as before.
+     */
+    backgroundEveryMs?: number;
+    /** With `backgroundEveryMs`: the longest burst, ms (BACKGROUND_MAX_BURST_MS). */
+    backgroundMaxBurstMs?: number;
+    /** With `backgroundEveryMs`: how long a burst goes on after its first reading, ms (BACKGROUND_HOLD_MS). */
+    backgroundHoldMs?: number;
     /** With `passive`, called with each passive reading as it is made. */
     onPassiveReading?: (reading: PassiveReading) => void;
     /**

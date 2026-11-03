@@ -38,6 +38,7 @@ import {
 	type PassiveReading,
 	passiveReaderFor,
 } from "./passiveReader";
+import { BackgroundDuty } from "./backgroundFrames";
 import {
 	type ResolvedRppgFixSwitches,
 	resolveFixSwitches,
@@ -230,6 +231,17 @@ export type CreateRppgSessionOptions = Omit<
 	 * good at one difference; backgroundFrames.ts). On unless false.
 	 */
 	backgroundWorkerRead?: boolean;
+	/**
+	 * With `backgroundFrames`: while hidden, measure in bursts every this many ms instead of all the time (BackgroundDuty
+	 * in backgroundFrames.ts, as a wrist reads heart rate in the day): each burst until a reading stands plus
+	 * `backgroundHoldMs`, at most `backgroundMaxBurstMs`; between bursts the camera stays open and no frame is analysed.
+	 * Left out or 0: all the time, as before.
+	 */
+	backgroundEveryMs?: number;
+	/** With `backgroundEveryMs`: the longest burst, ms (BACKGROUND_MAX_BURST_MS). */
+	backgroundMaxBurstMs?: number;
+	/** With `backgroundEveryMs`: how long a burst goes on after its first reading, ms (BACKGROUND_HOLD_MS). */
+	backgroundHoldMs?: number;
 	/** With `passive`, called with each passive reading as it is made. */
 	onPassiveReading?: (reading: PassiveReading) => void;
 	/**
@@ -983,7 +995,18 @@ export async function createRppgSession(
 	// before any frame, so nothing is lost; an app's own rule settings win. (Testbed DECISIONS.md#library-defaults.)
 	if (pulseCheck && faceMeshResult.faceMesh)
 		pulseCheck = sessionPulseCheck({ ...checkOptions, pulseCheckRules: meshRuleDefaults(options.pulseCheckRules) });
-	const passive = passiveReaderFor(options, pulseCheck);
+	// Passive readings made (option backgroundEveryMs reads it to know a burst's reading stood).
+	let passiveMade = 0;
+	const passive = passiveReaderFor(
+		{
+			...options,
+			onPassiveReading: (r) => {
+				passiveMade += 1;
+				options.onPassiveReading?.(r);
+			},
+		},
+		pulseCheck,
+	);
 
 	const faceTrackingMode: RppgSessionFaceTrackingMode = faceMeshResult.faceMesh
 		? "face_mesh"
@@ -1005,6 +1028,18 @@ export async function createRppgSession(
 	if (options.backgroundFrames === true && source instanceof MediaPipeFaceFrameSource) {
 		source.backgroundFrames = true;
 		source.backgroundWorkerRead = options.backgroundWorkerRead !== false;
+		if ((options.backgroundEveryMs ?? 0) > 0) {
+			source.backgroundDuty = new BackgroundDuty({
+				everyMs: options.backgroundEveryMs as number,
+				maxBurstMs: options.backgroundMaxBurstMs,
+				holdMs: options.backgroundHoldMs,
+			});
+			const check = pulseCheck;
+			source.backgroundReadingMark = () => {
+				const st = check?.getState();
+				return { evaluations: check?.evaluations ?? 0, measured: st?.verdict === "measured" && st.bpm != null, passive: passiveMade };
+			};
+		}
 	}
 	if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
 		closeWorker = () => {

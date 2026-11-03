@@ -8,6 +8,7 @@ import { PulseCheck, pulseCheckCause, pulseCheckColourDamaged, shownPulseBpm, } 
 import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
 import { ChestMotion } from "./chestBreathing.js";
 import { passiveReaderFor, } from "./passiveReader.js";
+import { BackgroundDuty } from "./backgroundFrames.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { ensureVideoPlaying } from "./videoPlayback.js";
 import { cameraStarved, MOVE_WINDOW_MS, meter, movementOf, MOVE_NOW_WINDOW_MS, } from "./pulseGuide.js";
@@ -511,7 +512,15 @@ export async function createRppgSession(options) {
     // before any frame, so nothing is lost; an app's own rule settings win. (Testbed DECISIONS.md#library-defaults.)
     if (pulseCheck && faceMeshResult.faceMesh)
         pulseCheck = sessionPulseCheck({ ...checkOptions, pulseCheckRules: meshRuleDefaults(options.pulseCheckRules) });
-    const passive = passiveReaderFor(options, pulseCheck);
+    // Passive readings made (option backgroundEveryMs reads it to know a burst's reading stood).
+    let passiveMade = 0;
+    const passive = passiveReaderFor({
+        ...options,
+        onPassiveReading: (r) => {
+            passiveMade += 1;
+            options.onPassiveReading?.(r);
+        },
+    }, pulseCheck);
     const faceTrackingMode = faceMeshResult.faceMesh
         ? "face_mesh"
         : "video_frame";
@@ -526,6 +535,18 @@ export async function createRppgSession(options) {
     if (options.backgroundFrames === true && source instanceof MediaPipeFaceFrameSource) {
         source.backgroundFrames = true;
         source.backgroundWorkerRead = options.backgroundWorkerRead !== false;
+        if ((options.backgroundEveryMs ?? 0) > 0) {
+            source.backgroundDuty = new BackgroundDuty({
+                everyMs: options.backgroundEveryMs,
+                maxBurstMs: options.backgroundMaxBurstMs,
+                holdMs: options.backgroundHoldMs,
+            });
+            const check = pulseCheck;
+            source.backgroundReadingMark = () => {
+                const st = check?.getState();
+                return { evaluations: check?.evaluations ?? 0, measured: st?.verdict === "measured" && st.bpm != null, passive: passiveMade };
+            };
+        }
     }
     if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
         closeWorker = () => {
