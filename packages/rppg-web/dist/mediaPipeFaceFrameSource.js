@@ -191,8 +191,9 @@ export class MediaPipeFaceFrameSource {
     /** The frame's time on the source's one clock: the path's own clock, continued across a switch of path. */
     frameClock(raw, path, wall) {
         if (this.clockPath !== path) {
+            // The wall gap is never negative: a video callback's time can run slightly ahead of performance.now().
             if (this.clockPath != null && this.lastTs != null)
-                this.clockOffset = this.lastTs + (wall - this.lastTsWall) - raw;
+                this.clockOffset = this.lastTs + Math.max(1, wall - this.lastTsWall) - raw;
             this.clockPath = path;
         }
         const t = raw + this.clockOffset;

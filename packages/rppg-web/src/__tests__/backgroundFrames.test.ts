@@ -101,6 +101,20 @@ describe('backgroundFrames', () => {
   });
   afterEach(() => { restore(); setVisibility('visible'); });
 
+  test('a video callback ahead of performance.now() still gives a track clock after the video clock', async () => {
+    const src = new MediaPipeFaceFrameSource(video as any, fakeLandmarker([{ landmarks: face }]), 30);
+    const feed = fakeFeed();
+    src.backgroundFrames = true;
+    src.backgroundFeed = feed;
+    const frames: Frame[] = [];
+    src.onFrame = (f) => frames.push(f);
+    await src.start();
+    cbs.shift()!(performance.now() + 5000, { mediaTime: 1.0 });
+    setVisibility('hidden');
+    feed.send(5_000_000);
+    expect(frames[1].timestampMs!).toBeGreaterThan(frames[0].timestampMs!);
+  });
+
   test('hidden: each track frame is analysed once, closed and acknowledged; visible: dropped, video frames analysed', async () => {
     const src = new MediaPipeFaceFrameSource(video as any, fakeLandmarker([{ landmarks: face }]), 30);
     const feed = fakeFeed();
