@@ -37,6 +37,14 @@ export interface BackgroundFrameFeed {
 	/** The frame handed over last is done with: the next may come (one frame in flight, never a queue). */
 	ack(): void;
 	close(): void;
+	/**
+	 * Call onWake once, about `ms` from now (a later call replaces an earlier one), from the worker: a worker's timers
+	 * keep their time while a hidden page's own fall to one a second, and after 5 minutes hidden Chromium's intensive
+	 * throttling can hold a chained page timer for most of a minute. A feed without it gets a page timer. Option
+	 * backgroundEveryMs's schedule runs on it.
+	 */
+	wakeIn?(ms: number): void;
+	onWake?: (() => void) | null;
 	/** Worker read (createBackgroundFrameFeed's workerReadMaxWidth): frames compared with the page's own read, and whether one differed (it is then off). */
 	workerRead?: { checked: number; differed: boolean };
 }
@@ -49,7 +57,7 @@ export interface BackgroundFrameFeed {
  * at a time and drops the rest.
  */
 export const BACKGROUND_WORKER_SOURCE = `
-let active = false, inFlight = false, reader = null, clock = null, own = null, px = null, cv = null, cx = null, ready = null;
+let active = false, inFlight = false, reader = null, clock = null, own = null, px = null, cv = null, cx = null, ready = null, wake = null;
 // Worker read (px set): the frame drawn at the analysis size and read here, so the page's thread gets bytes, not a
 // frame to read back; the first px.check frames also go over as a copy, for the page to compare with its own read.
 // While the page is busy with one frame, the next frame to come is drawn and read here (ready) and sent at the ack, so
@@ -84,6 +92,7 @@ onmessage = async (e) => {
   const d = e.data;
   if (d.active != null) { active = d.active; if (!active) drop(); }
   if (d.pixels !== undefined) { px = d.pixels; if (!px) drop(); }
+  if (d.wake != null) { clearTimeout(wake); wake = setTimeout(() => postMessage({ wake: true }), d.wake); }
   if (d.ack) { inFlight = false; if (ready && active) { inFlight = true; postMessage(ready.m, ready.t); ready = null; } }
   if (d.stop) { try { await reader?.cancel(); } catch {} if (clock) clearInterval(clock); try { own?.stop(); } catch {} close(); return; }
   if (d.clock) clock = setInterval(() => { if (active && !inFlight) { inFlight = true; postMessage({ tick: true }); } }, d.clock);
@@ -204,6 +213,10 @@ export function createBackgroundFrameFeed(track: MediaStreamTrack, video?: HTMLV
 	};
 	const feed: BackgroundFrameFeed = {
 		onFrame: null,
+		onWake: null,
+		wakeIn(ms) {
+			worker.postMessage({ wake: Math.max(0, ms) });
+		},
 		setActive(active) {
 			worker.postMessage({ active });
 		},
@@ -265,7 +278,8 @@ export function createBackgroundFrameFeed(track: MediaStreamTrack, video?: HTMLV
 	};
 	worker.onmessage = (ev: MessageEvent) => {
 		const d = ev.data;
-		if (d?.pixels) givePixels(d);
+		if (d?.wake) feed.onWake?.();
+		else if (d?.pixels) givePixels(d);
 		else if (d?.frame) give(d.frame as VideoFrame);
 		else if (d?.tick) {
 			let f: VideoFrame | null = null;
