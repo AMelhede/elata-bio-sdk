@@ -213,7 +213,7 @@ export class MediaPipeFaceFrameSource {
         if (duty) {
             const now = performance.now();
             if (hidden && duty.phase === "visible")
-                duty.begin(now, this.backgroundReadingMark());
+                duty.begin(now, this.backgroundReadingMark(), Date.now());
             else if (!hidden)
                 duty.visible(now);
             this.dutyArm();
@@ -238,7 +238,7 @@ export class MediaPipeFaceFrameSource {
         const now = performance.now();
         const next = duty.nextMs();
         if (duty.phase === "rest" && next != null && now >= next - 50) {
-            duty.begin(now, this.backgroundReadingMark());
+            duty.begin(now, this.backgroundReadingMark(), Date.now());
             this.backgroundFeed?.setActive(true);
         }
         else if (duty.phase === "burst")

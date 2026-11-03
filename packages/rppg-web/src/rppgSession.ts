@@ -38,7 +38,7 @@ import {
 	type PassiveReading,
 	passiveReaderFor,
 } from "./passiveReader";
-import { BackgroundDuty } from "./backgroundFrames";
+import { type BackgroundBurst, BackgroundDuty } from "./backgroundFrames";
 import {
 	type ResolvedRppgFixSwitches,
 	resolveFixSwitches,
@@ -681,6 +681,16 @@ export class RppgSession {
 		return this.internals.passive?.reading() ?? null;
 	}
 
+	/**
+	 * With `backgroundEveryMs`: the hidden bursts so far, oldest first (at most 64), each with its start and end
+	 * (performance.now() ms; the start also on the wall clock), when its reading stood and that reading; empty without
+	 * the option. Copies, so an app can save them.
+	 */
+	backgroundBursts(): BackgroundBurst[] {
+		const src = this.source as { backgroundDuty?: BackgroundDuty | null };
+		return (src.backgroundDuty?.bursts ?? []).map((b) => ({ ...b }));
+	}
+
 	/** State of the real-pulse check; null when `pulseCheck` is off. */
 	getPulseCheck(): PulseCheckState | null {
 		return this.internals.pulseCheck?.getState() ?? null;
@@ -1037,7 +1047,13 @@ export async function createRppgSession(
 			const check = pulseCheck;
 			source.backgroundReadingMark = () => {
 				const st = check?.getState();
-				return { evaluations: check?.evaluations ?? 0, measured: st?.verdict === "measured" && st.bpm != null, passive: passiveMade };
+				return {
+					evaluations: check?.evaluations ?? 0,
+					measured: st?.verdict === "measured" && st.bpm != null,
+					passive: passiveMade,
+					checkBpm: st?.bpm ?? null,
+					passiveBpm: passive?.reading()?.bpm ?? null,
+				};
 			};
 		}
 	}

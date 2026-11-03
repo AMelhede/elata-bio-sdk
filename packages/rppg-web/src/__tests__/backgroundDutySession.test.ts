@@ -89,7 +89,20 @@ describe("createRppgSession backgroundEveryMs", () => {
 		expect(src.backgroundFrames).toBe(true);
 		expect(src.backgroundDuty).toBeInstanceOf(BackgroundDuty);
 		expect([src.backgroundDuty.everyMs, src.backgroundDuty.maxBurstMs, src.backgroundDuty.holdMs]).toEqual([300_000, 90_000, 5000]);
-		expect(src.backgroundReadingMark()).toEqual({ evaluations: 0, measured: false, passive: 0 });
+		expect(src.backgroundReadingMark()).toEqual({ evaluations: 0, measured: false, passive: 0, checkBpm: null, passiveBpm: null });
+	});
+
+	test("backgroundBursts(): the schedule's bursts, as copies; empty without the option", async () => {
+		const s = await createRppgSession({ video: document.createElement("video"), faceMesh, autoStart: false, backgroundFrames: true, backgroundEveryMs: 300_000 });
+		const duty = mockedFaceSource.mock.instances[0].backgroundDuty as BackgroundDuty;
+		duty.begin(1000, { evaluations: 0, measured: false, passive: 0 }, 5);
+		duty.step(31_000, { evaluations: 30, measured: true, passive: 0, checkBpm: 68 });
+		const got = s.backgroundBursts();
+		expect(got).toEqual([{ startMs: 1000, startEpochMs: 5, endMs: 31_000, readingAfterMs: 30_000, bpm: 68, source: "check" }]);
+		got[0].bpm = 1;
+		expect(s.backgroundBursts()[0].bpm).toBe(68);
+		const plain = await createRppgSession({ video: document.createElement("video"), faceMesh, autoStart: false, backgroundFrames: true });
+		expect(plain.backgroundBursts()).toEqual([]);
 	});
 
 	test("defaults for the longest burst and the hold", async () => {

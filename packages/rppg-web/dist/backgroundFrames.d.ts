@@ -125,12 +125,20 @@ export interface BackgroundReadingMark {
     evaluations: number;
     measured: boolean;
     passive: number;
+    /** The check's proven rate now and the newest passive reading's rate, bpm (kept as a burst's reading). */
+    checkBpm?: number | null;
+    passiveBpm?: number | null;
 }
 export interface BackgroundBurst {
+    /** performance.now() ms, and the wall clock (Date.now()) at the start when the caller gave it. */
     startMs: number;
+    startEpochMs: number | null;
     endMs: number | null;
     /** When the burst's first reading stood, ms after its start; null when none did. */
     readingAfterMs: number | null;
+    /** That reading: its rate (bpm) and whether the check proved it or the passive reader made it. */
+    bpm: number | null;
+    source: "check" | "passive" | null;
 }
 /** The burst schedule, pure: the source calls it with performance.now() times and the session's reading marks. */
 export declare class BackgroundDuty {
@@ -144,8 +152,8 @@ export declare class BackgroundDuty {
     private readingMs;
     private mark;
     constructor(o: BackgroundDutyOptions);
-    /** The page went hidden (or a rest ended): a burst starts at `now`. */
-    begin(now: number, mark: BackgroundReadingMark): void;
+    /** The page went hidden (or a rest ended): a burst starts at `now` (`epochMs`: the wall clock then, for the record). */
+    begin(now: number, mark: BackgroundReadingMark, epochMs?: number | null): void;
     /** The page is visible at `now`: no schedule. */
     visible(now: number): void;
     /**

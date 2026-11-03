@@ -6,6 +6,7 @@ import { PulseCheck, type PulseCheckResume, type PulseCheckRules, type PulseChec
 import { type PulseCheckRecording } from "./pulseCheckRecording.js";
 import { ChestMotion, type ChestSample } from "./chestBreathing.js";
 import { type PassiveOptions, type PassiveReader, type PassiveReading } from "./passiveReader.js";
+import { type BackgroundBurst } from "./backgroundFrames.js";
 import { type ResolvedRppgFixSwitches } from "./fixSwitches.js";
 import { type CoachInput } from "./pulseGuide.js";
 import { RppgProcessor, type Metrics, type RppgDebugIssueCode, type RppgDebugSnapshot, type RppgProcessorBackendFailure, type RppgTraceSnapshot } from "./rppgProcessor.js";
@@ -376,6 +377,12 @@ export declare class RppgSession {
     getPulseCheckResume(): PulseCheckResume | null;
     /** With `passive`, the newest passive reading and its age; null before the first, or with the option off. */
     passiveReading(): PassiveReading | null;
+    /**
+     * With `backgroundEveryMs`: the hidden bursts so far, oldest first (at most 64), each with its start and end
+     * (performance.now() ms; the start also on the wall clock), when its reading stood and that reading; empty without
+     * the option. Copies, so an app can save them.
+     */
+    backgroundBursts(): BackgroundBurst[];
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
     /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */

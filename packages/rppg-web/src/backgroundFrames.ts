@@ -332,13 +332,21 @@ export interface BackgroundReadingMark {
 	evaluations: number;
 	measured: boolean;
 	passive: number;
+	/** The check's proven rate now and the newest passive reading's rate, bpm (kept as a burst's reading). */
+	checkBpm?: number | null;
+	passiveBpm?: number | null;
 }
 
 export interface BackgroundBurst {
+	/** performance.now() ms, and the wall clock (Date.now()) at the start when the caller gave it. */
 	startMs: number;
+	startEpochMs: number | null;
 	endMs: number | null;
 	/** When the burst's first reading stood, ms after its start; null when none did. */
 	readingAfterMs: number | null;
+	/** That reading: its rate (bpm) and whether the check proved it or the passive reader made it. */
+	bpm: number | null;
+	source: "check" | "passive" | null;
 }
 
 /** The burst schedule, pure: the source calls it with performance.now() times and the session's reading marks. */
@@ -359,13 +367,13 @@ export class BackgroundDuty {
 		this.holdMs = Math.max(0, o.holdMs ?? BACKGROUND_HOLD_MS);
 	}
 
-	/** The page went hidden (or a rest ended): a burst starts at `now`. */
-	begin(now: number, mark: BackgroundReadingMark): void {
+	/** The page went hidden (or a rest ended): a burst starts at `now` (`epochMs`: the wall clock then, for the record). */
+	begin(now: number, mark: BackgroundReadingMark, epochMs: number | null = null): void {
 		this.phase = "burst";
 		this.startMs = now;
 		this.readingMs = null;
 		this.mark = mark;
-		this.bursts.push({ startMs: now, endMs: null, readingAfterMs: null });
+		this.bursts.push({ startMs: now, startEpochMs: epochMs, endMs: null, readingAfterMs: null, bpm: null, source: null });
 		if (this.bursts.length > 64) this.bursts.shift();
 	}
 
@@ -383,10 +391,15 @@ export class BackgroundDuty {
 	step(now: number, mark: BackgroundReadingMark): boolean {
 		if (this.phase !== "burst") return false;
 		const m0 = this.mark as BackgroundReadingMark;
-		if (this.readingMs == null && ((mark.measured && mark.evaluations > m0.evaluations) || mark.passive > m0.passive)) {
+		const proven = mark.measured && mark.evaluations > m0.evaluations;
+		if (this.readingMs == null && (proven || mark.passive > m0.passive)) {
 			this.readingMs = now;
 			const b = this.bursts[this.bursts.length - 1];
-			if (b) b.readingAfterMs = now - this.startMs;
+			if (b) {
+				b.readingAfterMs = now - this.startMs;
+				b.source = proven ? "check" : "passive";
+				b.bpm = (proven ? mark.checkBpm : mark.passiveBpm) ?? null;
+			}
 		}
 		const over = now - this.startMs >= this.maxBurstMs || (this.readingMs != null && now - this.readingMs >= this.holdMs);
 		if (!over) return true;
