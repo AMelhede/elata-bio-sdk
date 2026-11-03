@@ -1,8 +1,7 @@
 /**
  * With `framesSeen`, a camera that reports itself live on return but sends no frame within `stallMs` is started again
- * too. Firefox on Android (the owner's phone, 2026-11-03): back from another app the track unmuted, yet no frame reached
- * the page for the 12 s before the file was saved. On every received file that records visibility, frames resumed 0.01
- * to 0.06 s after a return, once 2.91 s (the owner's 35-minute background run); 6 s is about twice that slowest return.
+ * too: a browser on a phone can unmute the track yet never hand the page another frame. Recorded returns resume within
+ * a fraction of a second, the slowest within a few seconds; the default is about twice that slowest return.
  */
 export const CAMERA_RETURN_STALL_MS = 6000;
 export function watchCameraReturn(track, onEnded, doc = document, opts = {}) {
