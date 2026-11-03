@@ -114,8 +114,11 @@ export class PassiveReader {
 		this.options = { ...PASSIVE_DEFAULTS, ...options };
 	}
 
-	/** One frame's row. Returns the reading this frame completed, or null. */
-	push(sample: RawRoiSample): PassiveReading | null {
+	/**
+	 * One frame's row. Returns the reading this frame completed, or null. With `show` false the frame still fills the
+	 * window but a reading it completes is dropped, never kept as the newest (a caller's liveness gate is shut).
+	 */
+	push(sample: RawRoiSample, show = true): PassiveReading | null {
 		const t = sample[0];
 		if (!Number.isFinite(t)) return null;
 		if (this.newestMs != null && t < this.newestMs) return null;
@@ -136,6 +139,7 @@ export class PassiveReader {
 		let drop = 0;
 		while (drop < this.samples.length && this.samples[drop][0] < keepFrom) drop++;
 		if (drop) this.samples.splice(0, drop);
+		if (!show) made = null;
 		if (made) this.last = made;
 		return made ? { ...made, ageMs: t - made.atMs } : null;
 	}
@@ -241,6 +245,8 @@ export function rawRoiSampleOf(
 
 /** What feedPassiveReader needs of a pulse check: its push, called with the check's own arguments. */
 export interface PassiveFeedable {
+	/** The check's rule blinkGate is satisfied (PulseCheck.blinkGateOpen); false withholds passive readings too. */
+	readonly blinkGateOpen?: boolean;
 	push(
 		timestampMs: number,
 		regions: readonly Rgb[],
@@ -254,7 +260,9 @@ export interface PassiveFeedable {
 
 /**
  * Hand the reader every frame the check is handed: the check's push runs first, unchanged and with the
- * same arguments, then the same row goes to the reader. The check's own state and outputs are untouched.
+ * same arguments, then the same row goes to the reader. The check's own state and outputs are untouched. While the
+ * check's blink gate is shut no passive reading is made either: a photo does not blink, and on recorded sessions
+ * people blinked before the first passive window was full, so the gate withheld no reading of a real face.
  */
 export function feedPassiveReader(
 	check: PassiveFeedable,
@@ -265,7 +273,7 @@ export function feedPassiveReader(
 	check.push = function (this: PassiveFeedable, ...args: Parameters<PassiveFeedable["push"]>) {
 		push.apply(this, args);
 		const row = rawRoiSampleOf(args[0], args[1], args[2], args[5]);
-		const made = row ? reader.push(row) : null;
+		const made = row ? reader.push(row, this.blinkGateOpen !== false) : null;
 		if (made) onReading?.(made);
 	};
 }

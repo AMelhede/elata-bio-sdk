@@ -182,6 +182,30 @@ describe("PassiveReader fed from the pulse check", () => {
 		expect(heard).toEqual(readAll(new PassiveReader(), fs));
 	});
 
+	it("makes no reading while the check's blink gate is shut, and reads once the eyes have blinked", () => {
+		// A photo does not blink: with rule blinkGate the passive lane waits for the same blink the live number waits for.
+		const fs = frames(steady(72), 0.01, 0, 70_000);
+		const pushAll = (check: PulseCheck, blinkAtMs: number | null) => {
+			for (const f of fs) {
+				const blink = blinkAtMs != null && f.t >= blinkAtMs && f.t < blinkAtMs + 150 ? 0.6 : 0.1;
+				check.push(f.t, f.regions, undefined, undefined, { x: 320, y: 240, faceWidth: 140, blink });
+			}
+		};
+		const still = new PulseCheck({ rules: { blinkGate: true } });
+		const shut: PassiveReading[] = [];
+		passiveReaderFor({ passive: true, onPassiveReading: (r) => shut.push(r) }, still);
+		pushAll(still, null);
+		expect(still.blinkGateOpen).toBe(false);
+		expect(shut).toEqual([]);
+		const alive = new PulseCheck({ rules: { blinkGate: true } });
+		const open: PassiveReading[] = [];
+		passiveReaderFor({ passive: true, onPassiveReading: (r) => open.push(r) }, alive);
+		pushAll(alive, 5_000);
+		expect(alive.blinkGateOpen).toBe(true);
+		expect(open.length).toBeGreaterThan(0);
+		expect(open).toEqual(readAll(new PassiveReader(), fs));
+	});
+
 	it("the session hands over nothing with the option off", () => {
 		const session = new RppgSession({} as never, {} as never, {} as never, "wasm", "face_mesh", {});
 		expect(session.passiveReading()).toBeNull();
