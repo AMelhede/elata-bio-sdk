@@ -55,8 +55,11 @@ export class PassiveReader {
         this.last = null;
         this.options = { ...PASSIVE_DEFAULTS, ...options };
     }
-    /** One frame's row. Returns the reading this frame completed, or null. */
-    push(sample) {
+    /**
+     * One frame's row. Returns the reading this frame completed, or null. With `show` false the frame still fills the
+     * window but a reading it completes is dropped, never kept as the newest (a caller's liveness gate is shut).
+     */
+    push(sample, show = true) {
         const t = sample[0];
         if (!Number.isFinite(t))
             return null;
@@ -84,6 +87,8 @@ export class PassiveReader {
             drop++;
         if (drop)
             this.samples.splice(0, drop);
+        if (!show)
+            made = null;
         if (made)
             this.last = made;
         return made ? { ...made, ageMs: t - made.atMs } : null;
@@ -173,14 +178,16 @@ export function rawRoiSampleOf(timestampMs, regions, wall, wallRaw) {
 }
 /**
  * Hand the reader every frame the check is handed: the check's push runs first, unchanged and with the
- * same arguments, then the same row goes to the reader. The check's own state and outputs are untouched.
+ * same arguments, then the same row goes to the reader. The check's own state and outputs are untouched. While the
+ * check's blink gate is shut no passive reading is made either: a photo does not blink, and on recorded sessions
+ * people blinked before the first passive window was full, so the gate withheld no reading of a real face.
  */
 export function feedPassiveReader(check, reader, onReading) {
     const push = check.push;
     check.push = function (...args) {
         push.apply(this, args);
         const row = rawRoiSampleOf(args[0], args[1], args[2], args[5]);
-        const made = row ? reader.push(row) : null;
+        const made = row ? reader.push(row, this.blinkGateOpen !== false) : null;
         if (made)
             onReading?.(made);
     };

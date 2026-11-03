@@ -82,8 +82,11 @@ export declare class PassiveReader {
     private newestMs;
     private last;
     constructor(options?: PassiveOptions);
-    /** One frame's row. Returns the reading this frame completed, or null. */
-    push(sample: RawRoiSample): PassiveReading | null;
+    /**
+     * One frame's row. Returns the reading this frame completed, or null. With `show` false the frame still fills the
+     * window but a reading it completes is dropped, never kept as the newest (a caller's liveness gate is shut).
+     */
+    push(sample: RawRoiSample, show?: boolean): PassiveReading | null;
     /** The newest reading, with its age against the newest frame pushed; null before the first. */
     reading(): PassiveReading | null;
     /** Forget every frame and reading; the next frame pushed starts the marks again. */
@@ -109,11 +112,15 @@ type Rgb = {
 export declare function rawRoiSampleOf(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallRaw?: Rgb): RawRoiSample | null;
 /** What feedPassiveReader needs of a pulse check: its push, called with the check's own arguments. */
 export interface PassiveFeedable {
+    /** The check's rule blinkGate is satisfied (PulseCheck.blinkGateOpen); false withholds passive readings too. */
+    readonly blinkGateOpen?: boolean;
     push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: unknown, head?: unknown, wallRaw?: Rgb, ...rest: unknown[]): void;
 }
 /**
  * Hand the reader every frame the check is handed: the check's push runs first, unchanged and with the
- * same arguments, then the same row goes to the reader. The check's own state and outputs are untouched.
+ * same arguments, then the same row goes to the reader. The check's own state and outputs are untouched. While the
+ * check's blink gate is shut no passive reading is made either: a photo does not blink, and on recorded sessions
+ * people blinked before the first passive window was full, so the gate withheld no reading of a real face.
  */
 export declare function feedPassiveReader(check: PassiveFeedable, reader: PassiveReader, onReading?: (reading: PassiveReading) => void): void;
 /**
