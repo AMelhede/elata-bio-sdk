@@ -564,6 +564,11 @@ export function buildingRate(
 export const BLINK_RISE = 0.1574;
 /** Rule blinkGate: the window whose median is the eyes' own open level. */
 export const BLINK_BASE_MS = 2000;
+/**
+ * Rule blinkGate: how long a rate the gate withheld may still show once the eyes blink, a third of the window
+ * (OWN_PULSE_WINDOW_S), so it still describes most of the window the check is reading.
+ */
+export const BLINK_HOLD_MS = 5000;
 /** Rule blinkGate: a blink ends within this long (a real blink lasts about 100 to 400 ms, Caffier 2003). */
 export const BLINK_MAX_MS = 500;
 
@@ -1220,6 +1225,8 @@ export class PulseCheck {
 	private lastShown: { bpm: number; t: number } | null = null;
 	/** Rule keptFollow: a blink was seen before the break that reset the check (cleared by every other reset). */
 	private blinkCarried = false;
+	/** Rule blinkGate: the latest rate the gate withheld, and when; shown once when the gate opens (BLINK_HOLD_MS). */
+	private gateHeld: { bpm: number; t: number } | null = null;
 	/** The newest in-band follower value, or null (the state's followerBpm). */
 	private followerBpm: number | null = null;
 	private lastEvalMs: number | null = null;
@@ -1522,10 +1529,26 @@ export class PulseCheck {
 			!this.blinks.seen &&
 			(this.state.bpm != null || this.state.buildingBpm != null)
 		) {
+			this.gateHeld = { bpm: (this.state.bpm ?? this.state.buildingBpm) as number, t: timestampMs };
 			this.state.verdict = "not-measured";
 			this.state.bpm = null;
 			this.state.buildingBpm = null;
 			this.state.waitingForBlink = true;
+		}
+		// Rule blinkGate: the blink proves a live face, not the rate, so a rate the gate withheld moments before the blink
+		// shows once when it opens, as the check's shortest accepted streak (buildingBpm), while nothing newer shows.
+		if (
+			this.rules.blinkGate &&
+			this.blinks.seen &&
+			this.gateHeld != null
+		) {
+			if (
+				this.state.bpm == null &&
+				this.state.buildingBpm == null &&
+				timestampMs - this.gateHeld.t <= BLINK_HOLD_MS
+			)
+				this.state.buildingBpm = this.gateHeld.bpm;
+			this.gateHeld = null;
 		}
 		// Rule followRecent: nothing shows, the window is the same heart as a number shown moments ago.
 		this.state.followBpm = null;
@@ -1717,6 +1740,7 @@ export class PulseCheck {
 		this.held = null;
 		this.lastProven = null;
 		this.lastShown = null;
+		this.gateHeld = null;
 		this.blinks.reset();
 		this.followerBpm = null;
 		this.lastEvalMs = null;

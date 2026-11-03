@@ -447,6 +447,11 @@ clear?: boolean): number | null;
 export declare const BLINK_RISE = 0.1574;
 /** Rule blinkGate: the window whose median is the eyes' own open level. */
 export declare const BLINK_BASE_MS = 2000;
+/**
+ * Rule blinkGate: how long a rate the gate withheld may still show once the eyes blink, a third of the window
+ * (OWN_PULSE_WINDOW_S), so it still describes most of the window the check is reading.
+ */
+export declare const BLINK_HOLD_MS = 5000;
 /** Rule blinkGate: a blink ends within this long (a real blink lasts about 100 to 400 ms, Caffier 2003). */
 export declare const BLINK_MAX_MS = 500;
 /**
@@ -683,6 +688,8 @@ export declare class PulseCheck {
     private lastShown;
     /** Rule keptFollow: a blink was seen before the break that reset the check (cleared by every other reset). */
     private blinkCarried;
+    /** Rule blinkGate: the latest rate the gate withheld, and when; shown once when the gate opens (BLINK_HOLD_MS). */
+    private gateHeld;
     /** The newest in-band follower value, or null (the state's followerBpm). */
     private followerBpm;
     private lastEvalMs;
