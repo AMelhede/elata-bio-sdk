@@ -56,4 +56,4 @@ export { CENTRE_BOX, LIGHT_CLIP_MAX, LIGHT_LATCH_MS, LIGHT_START, RED_CLIP_LEVEL
 export { LAST_RATE_KEY, LAST_RATE_MAX_AGE_MS, readLastReading, writeLastReading, } from "./lastRate.js";
 export { ADVICE_HOLD_MS, ADVICE_TEXT, adviceFor, cameraStarved, needsYou, PulseGuide, shownAfter, } from "./pulseGuide.js";
 export * from "./camera.js";
-export { createBackgroundFrameFeed } from "./backgroundFrames.js";
+export { BACKGROUND_HOLD_MS, BACKGROUND_MAX_BURST_MS, BackgroundDuty, createBackgroundFrameFeed, } from "./backgroundFrames.js";

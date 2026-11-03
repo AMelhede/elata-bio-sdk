@@ -84,4 +84,70 @@ export interface BackgroundFrameFeedOptions {
     workerReadMaxWidth?: number;
 }
 export declare function createBackgroundFrameFeed(track: MediaStreamTrack, video?: HTMLVideoElement, options?: BackgroundFrameFeedOptions): BackgroundFrameFeed | null;
+/**
+ * Session option backgroundEveryMs (with backgroundFrames): while hidden, measure in bursts instead of all the time,
+ * as a wrist wearable reads daytime heart rate (a minute or so of measuring every few minutes, skipped when the wearer
+ * is not still). A burst runs until a reading stands (the pulse check proves a rate, or the passive reader makes a
+ * reading), then BACKGROUND_HOLD_MS more, and never longer than maxBurstMs. Between bursts the worker drops every frame
+ * and the camera stays open: WebKit holds a hidden page's getUserMedia until the page is shown again (WebKitGTK 2.52.6,
+ * 0 of 4 hidden reopens settled; Chromium and Firefox reopened every time), so a camera stopped between bursts would
+ * end background readings in Safari. Bursts start every everyMs, counted from the last burst's start. The first burst starts when the
+ * page is hidden, with the check as it was (a person who just left the page has its window full). A burst after a rest
+ * starts with nothing kept: the frames stopped for longer than the check's and the reader's gap rules allow
+ * (FACE_GONE_MS in pulseCheck.ts, PASSIVE_RESET_GAP_MS), so both start afresh, blink gate included.
+ */
+export interface BackgroundDutyOptions {
+    everyMs: number;
+    maxBurstMs?: number;
+    holdMs?: number;
+}
+/**
+ * The longest burst, ms. Chosen by replaying received recordings cut into fresh bursts, and the lab set, at 60, 90
+ * and 120 s: the share of bursts with a reading rose with length on every device kind while the shown number's
+ * accuracy did not change, for a few seconds more measuring per reading (numbers: the testbed's SDK changelog).
+ */
+export declare const BACKGROUND_MAX_BURST_MS = 120000;
+/**
+ * After the first reading of a burst, measure this much longer. 0: holding 10 or 20 s more raised no device kind's
+ * share of shown numbers near the reference beyond its noise on the same replays, and costs its seconds every burst.
+ */
+export declare const BACKGROUND_HOLD_MS = 0;
+/** What the session reports of its readings (a mark): check evaluations made, whether it shows a proven rate, passive readings made. */
+export interface BackgroundReadingMark {
+    evaluations: number;
+    measured: boolean;
+    passive: number;
+}
+export interface BackgroundBurst {
+    startMs: number;
+    endMs: number | null;
+    /** When the burst's first reading stood, ms after its start; null when none did. */
+    readingAfterMs: number | null;
+}
+/** The burst schedule, pure: the source calls it with performance.now() times and the session's reading marks. */
+export declare class BackgroundDuty {
+    readonly everyMs: number;
+    readonly maxBurstMs: number;
+    readonly holdMs: number;
+    phase: "visible" | "burst" | "rest";
+    /** The newest bursts, oldest first (at most 64): diagnostics. */
+    readonly bursts: BackgroundBurst[];
+    private startMs;
+    private readingMs;
+    private mark;
+    constructor(o: BackgroundDutyOptions);
+    /** The page went hidden (or a rest ended): a burst starts at `now`. */
+    begin(now: number, mark: BackgroundReadingMark): void;
+    /** The page is visible at `now`: no schedule. */
+    visible(now: number): void;
+    /**
+     * A frame analysed (or a wake) in a burst at `now`, with the session's mark after it: true while the burst goes on.
+     * A reading stands when the check has evaluated since the burst began and shows a proven rate, or the reader made a
+     * reading since then.
+     */
+    step(now: number, mark: BackgroundReadingMark): boolean;
+    /** When the schedule next needs a call (performance.now() ms): the burst's longest end, or the next burst's start. */
+    nextMs(): number | null;
+    private end;
+}
 //# sourceMappingURL=backgroundFrames.d.ts.map

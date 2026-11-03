@@ -494,4 +494,13 @@ export {
 	shownAfter,
 } from "./pulseGuide";
 export * from "./camera";
-export { type BackgroundFrameFeed, createBackgroundFrameFeed } from "./backgroundFrames";
+export {
+	BACKGROUND_HOLD_MS,
+	BACKGROUND_MAX_BURST_MS,
+	BackgroundDuty,
+	type BackgroundBurst,
+	type BackgroundDutyOptions,
+	type BackgroundFrameFeed,
+	type BackgroundReadingMark,
+	createBackgroundFrameFeed,
+} from "./backgroundFrames";

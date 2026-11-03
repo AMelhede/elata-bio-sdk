@@ -267,3 +267,79 @@ export function createBackgroundFrameFeed(track, video, options = {}) {
     };
     return feed;
 }
+/**
+ * The longest burst, ms. Chosen by replaying received recordings cut into fresh bursts, and the lab set, at 60, 90
+ * and 120 s: the share of bursts with a reading rose with length on every device kind while the shown number's
+ * accuracy did not change, for a few seconds more measuring per reading (numbers: the testbed's SDK changelog).
+ */
+export const BACKGROUND_MAX_BURST_MS = 120000;
+/**
+ * After the first reading of a burst, measure this much longer. 0: holding 10 or 20 s more raised no device kind's
+ * share of shown numbers near the reference beyond its noise on the same replays, and costs its seconds every burst.
+ */
+export const BACKGROUND_HOLD_MS = 0;
+/** The burst schedule, pure: the source calls it with performance.now() times and the session's reading marks. */
+export class BackgroundDuty {
+    constructor(o) {
+        this.phase = "visible";
+        /** The newest bursts, oldest first (at most 64): diagnostics. */
+        this.bursts = [];
+        this.startMs = 0;
+        this.readingMs = null;
+        this.mark = null;
+        this.everyMs = Math.max(1000, o.everyMs);
+        this.maxBurstMs = Math.min(this.everyMs, Math.max(1000, o.maxBurstMs ?? BACKGROUND_MAX_BURST_MS));
+        this.holdMs = Math.max(0, o.holdMs ?? BACKGROUND_HOLD_MS);
+    }
+    /** The page went hidden (or a rest ended): a burst starts at `now`. */
+    begin(now, mark) {
+        this.phase = "burst";
+        this.startMs = now;
+        this.readingMs = null;
+        this.mark = mark;
+        this.bursts.push({ startMs: now, endMs: null, readingAfterMs: null });
+        if (this.bursts.length > 64)
+            this.bursts.shift();
+    }
+    /** The page is visible at `now`: no schedule. */
+    visible(now) {
+        if (this.phase === "burst")
+            this.end(now);
+        this.phase = "visible";
+    }
+    /**
+     * A frame analysed (or a wake) in a burst at `now`, with the session's mark after it: true while the burst goes on.
+     * A reading stands when the check has evaluated since the burst began and shows a proven rate, or the reader made a
+     * reading since then.
+     */
+    step(now, mark) {
+        if (this.phase !== "burst")
+            return false;
+        const m0 = this.mark;
+        if (this.readingMs == null && ((mark.measured && mark.evaluations > m0.evaluations) || mark.passive > m0.passive)) {
+            this.readingMs = now;
+            const b = this.bursts[this.bursts.length - 1];
+            if (b)
+                b.readingAfterMs = now - this.startMs;
+        }
+        const over = now - this.startMs >= this.maxBurstMs || (this.readingMs != null && now - this.readingMs >= this.holdMs);
+        if (!over)
+            return true;
+        this.end(now);
+        this.phase = "rest";
+        return false;
+    }
+    /** When the schedule next needs a call (performance.now() ms): the burst's longest end, or the next burst's start. */
+    nextMs() {
+        if (this.phase === "burst")
+            return this.startMs + this.maxBurstMs;
+        if (this.phase === "rest")
+            return this.startMs + this.everyMs;
+        return null;
+    }
+    end(now) {
+        const b = this.bursts[this.bursts.length - 1];
+        if (b && b.endMs == null)
+            b.endMs = now;
+    }
+}
