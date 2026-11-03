@@ -102,6 +102,11 @@ export class MediaPipeFaceFrameSource {
          * read in a worker instead of the video element, which gets no frame callbacks hidden. Set before start().
          */
         this.backgroundFrames = false;
+        /**
+         * Session option backgroundWorkerRead (on with backgroundFrames unless false): hidden frames drawn at the analysis size
+         * and read in the feed's worker, checked byte for byte against this source's own read first (backgroundFrames.ts).
+         */
+        this.backgroundWorkerRead = true;
         /** A test or app may hand its own feed; otherwise start() makes the worker feed from the video's track. */
         this.backgroundFeed = null;
         this.onVisibility = null;
@@ -166,7 +171,8 @@ export class MediaPipeFaceFrameSource {
         if (!this.backgroundFeed) {
             const stream = this.video.srcObject;
             const track = stream && typeof stream.getVideoTracks === "function" ? stream.getVideoTracks()[0] : undefined;
-            this.backgroundFeed = track ? createBackgroundFrameFeed(track, this.video) : null;
+            const workerRead = this.backgroundWorkerRead ? { workerReadMaxWidth: this.fixes.analysisWidth ? MAX_ANALYSIS_WIDTH : 0 } : {};
+            this.backgroundFeed = track ? createBackgroundFrameFeed(track, this.video, workerRead) : null;
         }
         const feed = this.backgroundFeed;
         if (!feed)
@@ -234,6 +240,9 @@ export class MediaPipeFaceFrameSource {
             : { width: w, height: h };
     }
     detectAndEmit(now, metadata, trackFrame) {
+        // A frame the feed's worker already drew at the analysis size and read: its bytes go on the canvas (for the face
+        // finder) and are the frame's pixels, the same bytes this source's own draw and read give (checked by the feed).
+        const read = trackFrame != null && "pixels" in trackFrame ? trackFrame : null;
         // Resize canvas if the video dimensions became known after construction.
         const srcW = trackFrame ? trackFrame.displayWidth : this.video.videoWidth;
         const srcH = trackFrame ? trackFrame.displayHeight : this.video.videoHeight;
@@ -251,7 +260,15 @@ export class MediaPipeFaceFrameSource {
         // landmarks now come from exactly the pixels the regions are sampled from, not from a
         // live video frame that may have advanced in between.
         try {
-            this.ctx.drawImage((trackFrame ?? this.video), 0, 0, this.canvas.width, this.canvas.height);
+            if (read) {
+                if (this.canvas.width !== read.width || this.canvas.height !== read.height) {
+                    this.canvas.width = read.width;
+                    this.canvas.height = read.height;
+                }
+                this.ctx.putImageData(new ImageData(read.pixels, read.width, read.height), 0, 0);
+            }
+            else
+                this.ctx.drawImage((trackFrame ?? this.video), 0, 0, this.canvas.width, this.canvas.height);
         }
         catch (error) {
             this.reportError("capture_failed", "capture", error);
@@ -334,7 +351,9 @@ export class MediaPipeFaceFrameSource {
                 }
         }
         try {
-            const img = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+            const img = read
+                ? { data: read.pixels }
+                : this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
             const ts = trackFrame
                 ? this.frameClock(trackFrame.timestamp / 1000, "track", now)
                 : this.frameClock(typeof metadata?.mediaTime === "number" && metadata.mediaTime > 0

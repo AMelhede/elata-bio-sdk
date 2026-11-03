@@ -13,7 +13,7 @@ import {
 } from "./frameSource";
 import type { FaceLandmarkerLike } from "./mediapipeLoader";
 import { FACE_WORKER_MAX_AGE_MS, type AsyncFaceFinder } from "./faceFinderWorker";
-import { type BackgroundFrameFeed, createBackgroundFrameFeed } from "./backgroundFrames";
+import { type BackgroundFrameFeed, type BackgroundPixels, createBackgroundFrameFeed } from "./backgroundFrames";
 import {
 	ELATA_FACE_YCBCR_V1_PROFILE,
 	FUSION_ROI_NAMES,
@@ -121,6 +121,11 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 	 * read in a worker instead of the video element, which gets no frame callbacks hidden. Set before start().
 	 */
 	public backgroundFrames = false;
+	/**
+	 * Session option backgroundWorkerRead (on with backgroundFrames unless false): hidden frames drawn at the analysis size
+	 * and read in the feed's worker, checked byte for byte against this source's own read first (backgroundFrames.ts).
+	 */
+	public backgroundWorkerRead = true;
 	/** A test or app may hand its own feed; otherwise start() makes the worker feed from the video's track. */
 	public backgroundFeed: BackgroundFrameFeed | null = null;
 	private onVisibility: (() => void) | null = null;
@@ -193,7 +198,8 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		if (!this.backgroundFeed) {
 			const stream = (this.video as HTMLVideoElement).srcObject as MediaStream | null;
 			const track = stream && typeof stream.getVideoTracks === "function" ? stream.getVideoTracks()[0] : undefined;
-			this.backgroundFeed = track ? createBackgroundFrameFeed(track, this.video) : null;
+			const workerRead = this.backgroundWorkerRead ? { workerReadMaxWidth: this.fixes.analysisWidth ? MAX_ANALYSIS_WIDTH : 0 } : {};
+			this.backgroundFeed = track ? createBackgroundFrameFeed(track, this.video, workerRead) : null;
 		}
 		const feed = this.backgroundFeed;
 		if (!feed) return;
@@ -263,7 +269,10 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 			: { width: w, height: h };
 	}
 
-	private detectAndEmit(now: number, metadata: any, trackFrame?: VideoFrame) {
+	private detectAndEmit(now: number, metadata: any, trackFrame?: VideoFrame | BackgroundPixels) {
+		// A frame the feed's worker already drew at the analysis size and read: its bytes go on the canvas (for the face
+		// finder) and are the frame's pixels, the same bytes this source's own draw and read give (checked by the feed).
+		const read = trackFrame != null && "pixels" in trackFrame ? trackFrame : null;
 		// Resize canvas if the video dimensions became known after construction.
 		const srcW = trackFrame ? trackFrame.displayWidth : this.video.videoWidth;
 		const srcH = trackFrame ? trackFrame.displayHeight : this.video.videoHeight;
@@ -284,13 +293,20 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		// landmarks now come from exactly the pixels the regions are sampled from, not from a
 		// live video frame that may have advanced in between.
 		try {
-			this.ctx.drawImage(
-				(trackFrame ?? this.video) as CanvasImageSource,
-				0,
-				0,
-				this.canvas.width,
-				this.canvas.height,
-			);
+			if (read) {
+				if (this.canvas.width !== read.width || this.canvas.height !== read.height) {
+					this.canvas.width = read.width;
+					this.canvas.height = read.height;
+				}
+				this.ctx.putImageData(new ImageData(read.pixels, read.width, read.height), 0, 0);
+			} else
+				this.ctx.drawImage(
+					(trackFrame ?? this.video) as CanvasImageSource,
+					0,
+					0,
+					this.canvas.width,
+					this.canvas.height,
+				);
 		} catch (error) {
 			this.reportError("capture_failed", "capture", error);
 			return;
@@ -366,12 +382,14 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		}
 
 		try {
-			const img = this.ctx.getImageData(
-				0,
-				0,
-				this.canvas.width,
-				this.canvas.height,
-			);
+			const img = read
+				? { data: read.pixels }
+				: this.ctx.getImageData(
+						0,
+						0,
+						this.canvas.width,
+						this.canvas.height,
+					);
 			const ts = trackFrame
 				? this.frameClock(trackFrame.timestamp / 1000, "track", now)
 				: this.frameClock(

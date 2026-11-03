@@ -523,8 +523,10 @@ export async function createRppgSession(options) {
     // session, so a restart never leaves a second model running.
     let workerClosed = false;
     let closeWorker;
-    if (options.backgroundFrames === true && source instanceof MediaPipeFaceFrameSource)
+    if (options.backgroundFrames === true && source instanceof MediaPipeFaceFrameSource) {
         source.backgroundFrames = true;
+        source.backgroundWorkerRead = options.backgroundWorkerRead !== false;
+    }
     if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
         closeWorker = () => {
             workerClosed = true;

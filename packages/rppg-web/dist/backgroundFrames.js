@@ -21,20 +21,38 @@
  * at a time and drops the rest.
  */
 export const BACKGROUND_WORKER_SOURCE = `
-let active = false, inFlight = false, reader = null, clock = null, own = null;
+let active = false, inFlight = false, reader = null, clock = null, own = null, px = null, cv = null, cx = null;
+// Worker read (px set): the frame drawn at the analysis size and read here, so the page's thread gets bytes, not a
+// frame to read back; the first px.check frames also go over as a copy, for the page to compare with its own read.
+const give = (f) => {
+  if (px && typeof OffscreenCanvas === 'function') {
+    try {
+      const w0 = f.displayWidth, h0 = f.displayHeight, sc = px.maxWidth > 0 ? Math.min(1, px.maxWidth / w0) : 1;
+      const w = Math.max(1, Math.round(w0 * sc)), h = Math.max(1, Math.round(h0 * sc));
+      if (!cv || cv.width !== w || cv.height !== h) { cv = new OffscreenCanvas(w, h); cx = cv.getContext('2d'); }
+      cx.drawImage(f, 0, 0, w, h);
+      const data = cx.getImageData(0, 0, w, h).data;
+      const m = { pixels: data.buffer, width: w, height: h, displayWidth: w0, displayHeight: h0, timestamp: f.timestamp };
+      if (px.check > 0) { px.check -= 1; m.copy = f; postMessage(m, [data.buffer, f]); } else { f.close(); postMessage(m, [data.buffer]); }
+      return;
+    } catch (err) { px = null; }
+  }
+  postMessage({ frame: f }, [f]);
+};
 const read = async (readable) => {
   reader = readable.getReader();
   for (;;) {
     let r; try { r = await reader.read(); } catch (err) { postMessage({ error: String(err) }); break; }
     if (r.done) break;
     const f = r.value;
-    if (active && !inFlight) { inFlight = true; postMessage({ frame: f }, [f]); } else f.close();
+    if (active && !inFlight) { inFlight = true; give(f); } else f.close();
   }
 };
 onmessage = async (e) => {
   const d = e.data;
   if (d.active != null) active = d.active;
   if (d.ack) inFlight = false;
+  if (d.pixels !== undefined) px = d.pixels;
   if (d.stop) { try { await reader?.cancel(); } catch {} if (clock) clearInterval(clock); try { own?.stop(); } catch {} close(); return; }
   if (d.clock) clock = setInterval(() => { if (active && !inFlight) { inFlight = true; postMessage({ tick: true }); } }, d.clock);
   if (d.track) {
@@ -67,7 +85,19 @@ const CHECK_H = 12;
  *   second, so the worker ticks and on each tick the page draws `video` and hands the drawing over when it differs
  *   from the last (Firefox 159, 145 s hidden: 26.2 new frames a second of 30). A frame's time is the tick's.
  */
-export function createBackgroundFrameFeed(track, video) {
+/**
+ * Worker read: frames the worker draws at the analysis size and reads itself, handed over as bytes. Hidden, the
+ * page's own read of a track frame (drawImage then getImageData) is a readback through the GPU process that the page's
+ * thread waits for, several times the cost of reading a visible video frame, and on a throttled hidden page that wait
+ * comes out of the frames it can analyse. A 2d OffscreenCanvas in the worker with no willReadFrequently gave the same
+ * bytes as the page's own read on every frame compared (with willReadFrequently, or through a resized ImageBitmap, it
+ * did not). Because a browser or GPU may draw otherwise, the first WORKER_READ_CHECK_FRAMES frames are read both ways
+ * on the page and compared byte for byte; one difference and the worker read stops for good and that frame and every
+ * later one are read on the page as before, so a number never moves because of where the read ran. Chromium's way
+ * (the processor on the page) only: the Safari and Firefox ways are unchanged.
+ */
+export const WORKER_READ_CHECK_FRAMES = 30;
+export function createBackgroundFrameFeed(track, video, options = {}) {
     const Proc = globalThis.MediaStreamTrackProcessor;
     if (typeof Worker === "undefined" || typeof Blob === "undefined")
         return null;
@@ -92,6 +122,8 @@ export function createBackgroundFrameFeed(track, video) {
             own = track.clone();
             // maxBufferSize 1: a frame not yet read is replaced by the newer one, so the worker never hands over a stale frame.
             const proc = new Proc({ track: own, maxBufferSize: 1 });
+            if (options.workerReadMaxWidth != null && typeof document !== "undefined")
+                worker.postMessage({ pixels: { maxWidth: options.workerReadMaxWidth, check: WORKER_READ_CHECK_FRAMES } });
             worker.postMessage({ readable: proc.readable }, [proc.readable]);
         }
         else {
@@ -164,9 +196,53 @@ export function createBackgroundFrameFeed(track, video) {
             feed.ack();
         }
     };
+    let verify = null;
+    /** The page's own read of `frame` at w x h (the frame source's way: 2d, willReadFrequently, drawImage, getImageData). */
+    const pageRead = (frame, w, h) => {
+        if (!verify) {
+            const c = document.createElement("canvas");
+            const x = c.getContext("2d", { willReadFrequently: true });
+            if (!x)
+                return null;
+            verify = { canvas: c, ctx: x };
+        }
+        if (verify.canvas.width !== w || verify.canvas.height !== h)
+            Object.assign(verify.canvas, { width: w, height: h });
+        verify.ctx.drawImage(frame, 0, 0, w, h);
+        return verify.ctx.getImageData(0, 0, w, h).data;
+    };
+    /** Worker-read frames compared with the page's read, and whether the worker read is still on. */
+    feed.workerRead = { checked: 0, differed: false };
+    const givePixels = (d) => {
+        const pixels = new Uint8ClampedArray(d.pixels);
+        const copy = d.copy;
+        if (copy) {
+            let same = false;
+            try {
+                const own = pageRead(copy, d.width, d.height);
+                same = own != null && own.length === pixels.length && own.every((v, i) => v === pixels[i]);
+            }
+            catch {
+                same = false;
+            }
+            const wr = feed.workerRead;
+            wr.checked += 1;
+            if (!same) {
+                // Off for good: this frame and every later one go over as frames, read on the page as without it.
+                wr.differed = true;
+                worker.postMessage({ pixels: null });
+                give(copy);
+                return;
+            }
+            copy.close();
+        }
+        give({ pixels, width: d.width, height: d.height, displayWidth: d.displayWidth, displayHeight: d.displayHeight, timestamp: d.timestamp, close() { } });
+    };
     worker.onmessage = (ev) => {
         const d = ev.data;
-        if (d?.frame)
+        if (d?.pixels)
+            givePixels(d);
+        else if (d?.frame)
             give(d.frame);
         else if (d?.tick) {
             let f = null;

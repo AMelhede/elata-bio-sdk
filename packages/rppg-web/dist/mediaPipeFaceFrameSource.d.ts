@@ -91,6 +91,11 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
      * read in a worker instead of the video element, which gets no frame callbacks hidden. Set before start().
      */
     backgroundFrames: boolean;
+    /**
+     * Session option backgroundWorkerRead (on with backgroundFrames unless false): hidden frames drawn at the analysis size
+     * and read in the feed's worker, checked byte for byte against this source's own read first (backgroundFrames.ts).
+     */
+    backgroundWorkerRead: boolean;
     /** A test or app may hand its own feed; otherwise start() makes the worker feed from the video's track. */
     backgroundFeed: BackgroundFrameFeed | null;
     private onVisibility;

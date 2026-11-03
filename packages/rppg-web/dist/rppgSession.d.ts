@@ -134,6 +134,12 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * MediaStreamTrackProcessor) nothing changes. A visible page reads frames as without it.
      */
     backgroundFrames?: boolean;
+    /**
+     * With `backgroundFrames`: hidden frames are drawn at the analysis size and read in the feed's worker instead of on
+     * the page's thread (Chromium; checked byte for byte against the page's own read on the first frames, and off for
+     * good at one difference; backgroundFrames.ts). On unless false.
+     */
+    backgroundWorkerRead?: boolean;
     /** With `passive`, called with each passive reading as it is made. */
     onPassiveReading?: (reading: PassiveReading) => void;
     /**
