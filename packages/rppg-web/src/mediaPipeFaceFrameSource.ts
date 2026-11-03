@@ -193,7 +193,7 @@ export class MediaPipeFaceFrameSource implements FrameSource {
 		if (!this.backgroundFeed) {
 			const stream = (this.video as HTMLVideoElement).srcObject as MediaStream | null;
 			const track = stream && typeof stream.getVideoTracks === "function" ? stream.getVideoTracks()[0] : undefined;
-			this.backgroundFeed = track ? createBackgroundFrameFeed(track) : null;
+			this.backgroundFeed = track ? createBackgroundFrameFeed(track, this.video) : null;
 		}
 		const feed = this.backgroundFeed;
 		if (!feed) return;

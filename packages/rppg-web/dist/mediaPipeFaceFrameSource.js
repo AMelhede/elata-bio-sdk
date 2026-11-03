@@ -166,7 +166,7 @@ export class MediaPipeFaceFrameSource {
         if (!this.backgroundFeed) {
             const stream = this.video.srcObject;
             const track = stream && typeof stream.getVideoTracks === "function" ? stream.getVideoTracks()[0] : undefined;
-            this.backgroundFeed = track ? createBackgroundFrameFeed(track) : null;
+            this.backgroundFeed = track ? createBackgroundFrameFeed(track, this.video) : null;
         }
         const feed = this.backgroundFeed;
         if (!feed)

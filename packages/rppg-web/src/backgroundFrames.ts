@@ -25,49 +25,125 @@ export interface BackgroundFrameFeed {
 	close(): void;
 }
 
-/** The worker: reads the track's frames; while active, hands one over at a time and drops the rest. */
+/**
+ * The worker, one of three ways (createBackgroundFrameFeed picks): `readable` (a MediaStreamTrackProcessor made on the
+ * page, Chromium), `track` (the track itself, transferred, and the processor made here: Safari 18+, whose
+ * MediaStreamTrackProcessor exists only in a dedicated worker), or `clock` (no processor anywhere, Firefox: the worker
+ * only ticks, and the page draws its own video element on each tick). While active it hands over one frame (or tick)
+ * at a time and drops the rest.
+ */
 export const BACKGROUND_WORKER_SOURCE = `
-let active = false, inFlight = false, reader = null;
+let active = false, inFlight = false, reader = null, clock = null, own = null;
+const read = async (readable) => {
+  reader = readable.getReader();
+  for (;;) {
+    let r; try { r = await reader.read(); } catch (err) { postMessage({ error: String(err) }); break; }
+    if (r.done) break;
+    const f = r.value;
+    if (active && !inFlight) { inFlight = true; postMessage({ frame: f }, [f]); } else f.close();
+  }
+};
 onmessage = async (e) => {
   const d = e.data;
   if (d.active != null) active = d.active;
   if (d.ack) inFlight = false;
-  if (d.stop) { try { await reader?.cancel(); } catch {} close(); return; }
-  if (d.readable) {
-    reader = d.readable.getReader();
-    for (;;) {
-      let r; try { r = await reader.read(); } catch (err) { postMessage({ error: String(err) }); break; }
-      if (r.done) break;
-      const f = r.value;
-      if (active && !inFlight) { inFlight = true; postMessage({ frame: f }, [f]); } else f.close();
-    }
+  if (d.stop) { try { await reader?.cancel(); } catch {} if (clock) clearInterval(clock); try { own?.stop(); } catch {} close(); return; }
+  if (d.clock) clock = setInterval(() => { if (active && !inFlight) { inFlight = true; postMessage({ tick: true }); } }, d.clock);
+  if (d.track) {
+    own = d.track;
+    let readable = null;
+    try { readable = new MediaStreamTrackProcessor({ track: own, maxBufferSize: 1 }).readable; } catch {}
+    if (!readable) { try { own.stop(); } catch {} own = null; postMessage({ unsupported: true }); return; }
+    read(readable);
   }
+  if (d.readable) read(d.readable);
 };`;
 
 /**
- * A worker-backed feed for the video track, or null where the browser cannot read a track in a worker this way (no
- * MediaStreamTrackProcessor on the page, no Worker, a CSP that forbids Blob workers): the source then keeps its
- * visible-only frames, as without the option. Chromium exposes MediaStreamTrackProcessor on the page and lets its
- * readable be transferred; Safari and Firefox are not handled here (untested).
+ * The clock way's tick period: twice the camera's 30 a second, so a new frame waits at most about 17 ms. At one tick a
+ * frame (33 ms), Firefox 159 hidden drew 26.2 of its fake camera's 30 new frames a second (bench bgprobe.html, 145 s).
  */
-export function createBackgroundFrameFeed(track: MediaStreamTrack): BackgroundFrameFeed | null {
+export const BACKGROUND_CLOCK_MS = 16;
+
+/** The clock way's change check: a frame is new when this small copy of it differs (a camera's noise always does). */
+const CHECK_W = 16;
+const CHECK_H = 12;
+
+/**
+ * A worker-backed feed for the video track, or null where no way works (no Worker, a CSP that forbids Blob workers,
+ * or neither a processor nor a video element to draw): the source then keeps its visible-only frames, as without the
+ * option. The three ways, tried in order:
+ * - a MediaStreamTrackProcessor on the page, its readable transferred (Chromium);
+ * - the track transferred to the worker and the processor made there (Safari 18+, which has the processor only in
+ *   dedicated workers: WebKitGTK 2.52.6 with Safari's default for it, on, read 19.3 of its mock camera's 19.3 frames a
+ *   second hidden for 145 s, bench bgprobe.html, 2026-11-03);
+ * - the clock, where there is no processor anywhere (Firefox 159: none on the page or in a worker, and its tracks are
+ *   not transferable): a hidden page's worker timers and messages keep their rate while its own timers fall to 1 a
+ *   second, so the worker ticks and on each tick the page draws `video` and hands the drawing over when it differs
+ *   from the last (Firefox 159, 145 s hidden: 26.2 new frames a second of 30). A frame's time is the tick's.
+ */
+export function createBackgroundFrameFeed(track: MediaStreamTrack, video?: HTMLVideoElement): BackgroundFrameFeed | null {
 	const Proc = (globalThis as { MediaStreamTrackProcessor?: new (o: { track: MediaStreamTrack; maxBufferSize?: number }) => { readable: ReadableStream } }).MediaStreamTrackProcessor;
-	if (typeof Proc !== "function" || typeof Worker === "undefined" || typeof Blob === "undefined") return null;
+	if (typeof Worker === "undefined" || typeof Blob === "undefined") return null;
+	const canClock = video != null && typeof VideoFrame === "function" && typeof document !== "undefined";
 	let worker: Worker;
 	let url = "";
-	let own: MediaStreamTrack;
+	let own: MediaStreamTrack | null = null;
+	let clockOn = false;
+	const startClock = (): boolean => {
+		if (!canClock) return false;
+		if (!clockOn) worker.postMessage({ clock: BACKGROUND_CLOCK_MS });
+		clockOn = true;
+		return true;
+	};
 	try {
-		// A clone, so the page's own track and video element are untouched, and stopping the feed stops only this one.
-		own = track.clone();
 		url = URL.createObjectURL(new Blob([BACKGROUND_WORKER_SOURCE], { type: "text/javascript" }));
 		worker = new Worker(url);
-		// maxBufferSize 1: a frame not yet read is replaced by the newer one, so the worker never hands over a stale frame.
-		const proc = new Proc({ track: own, maxBufferSize: 1 });
-		worker.postMessage({ readable: proc.readable }, [proc.readable as unknown as Transferable]);
+		if (typeof Proc === "function") {
+			// A clone, so the page's own track and video element are untouched, and stopping the feed stops only this one.
+			own = track.clone();
+			// maxBufferSize 1: a frame not yet read is replaced by the newer one, so the worker never hands over a stale frame.
+			const proc = new Proc({ track: own, maxBufferSize: 1 });
+			worker.postMessage({ readable: proc.readable }, [proc.readable as unknown as Transferable]);
+		} else {
+			const clone = track.clone();
+			let sent = false;
+			try {
+				worker.postMessage({ track: clone }, [clone as unknown as Transferable]);
+				sent = true;
+			} catch {
+				clone.stop();
+			}
+			// Not transferable (Firefox): the clock now, or no feed.
+			if (!sent && !startClock()) throw new Error("no way to read the track hidden");
+		}
 	} catch {
+		own?.stop();
 		if (url) URL.revokeObjectURL(url);
 		return null;
 	}
+	let canvas: HTMLCanvasElement | null = null;
+	let check: HTMLCanvasElement | null = null;
+	let last: Uint8ClampedArray | null = null;
+	/** The clock way: the video as drawn now, as a frame, or null when it still shows the frame handed over last. */
+	const drawn = (): VideoFrame | null => {
+		const v = video as HTMLVideoElement;
+		const w = v.videoWidth;
+		const h = v.videoHeight;
+		if (!w || !h) return null;
+		canvas ??= document.createElement("canvas");
+		check ??= Object.assign(document.createElement("canvas"), { width: CHECK_W, height: CHECK_H });
+		if (canvas.width !== w || canvas.height !== h) Object.assign(canvas, { width: w, height: h });
+		canvas.getContext("2d")?.drawImage(v, 0, 0, w, h);
+		const cx = check.getContext("2d", { willReadFrequently: true });
+		if (!cx) return null;
+		cx.drawImage(canvas, 0, 0, CHECK_W, CHECK_H);
+		const px = cx.getImageData(0, 0, CHECK_W, CHECK_H).data;
+		const prev = last;
+		if (prev && prev.length === px.length && px.every((x, i) => x === prev[i])) return null;
+		last = px;
+		return new VideoFrame(canvas, { timestamp: Math.round(performance.now() * 1000) });
+	};
 	const feed: BackgroundFrameFeed = {
 		onFrame: null,
 		setActive(active) {
@@ -78,19 +154,33 @@ export function createBackgroundFrameFeed(track: MediaStreamTrack): BackgroundFr
 		},
 		close() {
 			worker.postMessage({ stop: true });
-			own.stop();
+			own?.stop();
 			setTimeout(() => worker.terminate(), 1000);
 			URL.revokeObjectURL(url);
 		},
 	};
-	worker.onmessage = (ev: MessageEvent) => {
-		const f = ev.data?.frame as VideoFrame | undefined;
-		if (!f) return;
+	const give = (f: VideoFrame) => {
 		if (feed.onFrame) feed.onFrame(f);
 		else {
 			f.close();
 			feed.ack();
 		}
+	};
+	worker.onmessage = (ev: MessageEvent) => {
+		const d = ev.data;
+		if (d?.frame) give(d.frame as VideoFrame);
+		else if (d?.tick) {
+			let f: VideoFrame | null = null;
+			try {
+				f = drawn();
+			} catch {
+				f = null;
+			}
+			if (f) give(f);
+			else feed.ack();
+		}
+		// The track went over but the worker has no processor (WebKit with it off, Safari before 18): the clock instead.
+		else if (d?.unsupported) startClock();
 	};
 	return feed;
 }

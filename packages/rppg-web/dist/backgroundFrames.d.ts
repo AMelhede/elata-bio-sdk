@@ -23,13 +23,31 @@ export interface BackgroundFrameFeed {
     ack(): void;
     close(): void;
 }
-/** The worker: reads the track's frames; while active, hands one over at a time and drops the rest. */
-export declare const BACKGROUND_WORKER_SOURCE = "\nlet active = false, inFlight = false, reader = null;\nonmessage = async (e) => {\n  const d = e.data;\n  if (d.active != null) active = d.active;\n  if (d.ack) inFlight = false;\n  if (d.stop) { try { await reader?.cancel(); } catch {} close(); return; }\n  if (d.readable) {\n    reader = d.readable.getReader();\n    for (;;) {\n      let r; try { r = await reader.read(); } catch (err) { postMessage({ error: String(err) }); break; }\n      if (r.done) break;\n      const f = r.value;\n      if (active && !inFlight) { inFlight = true; postMessage({ frame: f }, [f]); } else f.close();\n    }\n  }\n};";
 /**
- * A worker-backed feed for the video track, or null where the browser cannot read a track in a worker this way (no
- * MediaStreamTrackProcessor on the page, no Worker, a CSP that forbids Blob workers): the source then keeps its
- * visible-only frames, as without the option. Chromium exposes MediaStreamTrackProcessor on the page and lets its
- * readable be transferred; Safari and Firefox are not handled here (untested).
+ * The worker, one of three ways (createBackgroundFrameFeed picks): `readable` (a MediaStreamTrackProcessor made on the
+ * page, Chromium), `track` (the track itself, transferred, and the processor made here: Safari 18+, whose
+ * MediaStreamTrackProcessor exists only in a dedicated worker), or `clock` (no processor anywhere, Firefox: the worker
+ * only ticks, and the page draws its own video element on each tick). While active it hands over one frame (or tick)
+ * at a time and drops the rest.
  */
-export declare function createBackgroundFrameFeed(track: MediaStreamTrack): BackgroundFrameFeed | null;
+export declare const BACKGROUND_WORKER_SOURCE = "\nlet active = false, inFlight = false, reader = null, clock = null, own = null;\nconst read = async (readable) => {\n  reader = readable.getReader();\n  for (;;) {\n    let r; try { r = await reader.read(); } catch (err) { postMessage({ error: String(err) }); break; }\n    if (r.done) break;\n    const f = r.value;\n    if (active && !inFlight) { inFlight = true; postMessage({ frame: f }, [f]); } else f.close();\n  }\n};\nonmessage = async (e) => {\n  const d = e.data;\n  if (d.active != null) active = d.active;\n  if (d.ack) inFlight = false;\n  if (d.stop) { try { await reader?.cancel(); } catch {} if (clock) clearInterval(clock); try { own?.stop(); } catch {} close(); return; }\n  if (d.clock) clock = setInterval(() => { if (active && !inFlight) { inFlight = true; postMessage({ tick: true }); } }, d.clock);\n  if (d.track) {\n    own = d.track;\n    let readable = null;\n    try { readable = new MediaStreamTrackProcessor({ track: own, maxBufferSize: 1 }).readable; } catch {}\n    if (!readable) { try { own.stop(); } catch {} own = null; postMessage({ unsupported: true }); return; }\n    read(readable);\n  }\n  if (d.readable) read(d.readable);\n};";
+/**
+ * The clock way's tick period: twice the camera's 30 a second, so a new frame waits at most about 17 ms. At one tick a
+ * frame (33 ms), Firefox 159 hidden drew 26.2 of its fake camera's 30 new frames a second (bench bgprobe.html, 145 s).
+ */
+export declare const BACKGROUND_CLOCK_MS = 16;
+/**
+ * A worker-backed feed for the video track, or null where no way works (no Worker, a CSP that forbids Blob workers,
+ * or neither a processor nor a video element to draw): the source then keeps its visible-only frames, as without the
+ * option. The three ways, tried in order:
+ * - a MediaStreamTrackProcessor on the page, its readable transferred (Chromium);
+ * - the track transferred to the worker and the processor made there (Safari 18+, which has the processor only in
+ *   dedicated workers: WebKitGTK 2.52.6 with Safari's default for it, on, read 19.3 of its mock camera's 19.3 frames a
+ *   second hidden for 145 s, bench bgprobe.html, 2026-11-03);
+ * - the clock, where there is no processor anywhere (Firefox 159: none on the page or in a worker, and its tracks are
+ *   not transferable): a hidden page's worker timers and messages keep their rate while its own timers fall to 1 a
+ *   second, so the worker ticks and on each tick the page draws `video` and hands the drawing over when it differs
+ *   from the last (Firefox 159, 145 s hidden: 26.2 new frames a second of 30). A frame's time is the tick's.
+ */
+export declare function createBackgroundFrameFeed(track: MediaStreamTrack, video?: HTMLVideoElement): BackgroundFrameFeed | null;
 //# sourceMappingURL=backgroundFrames.d.ts.map
