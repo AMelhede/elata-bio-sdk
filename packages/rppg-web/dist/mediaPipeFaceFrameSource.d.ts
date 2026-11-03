@@ -2,7 +2,7 @@ import { type ResolvedRppgFixSwitches, type RppgFixesOption } from "./fixSwitche
 import { Frame, FrameSource, type FrameSourceError } from "./frameSource.js";
 import type { FaceLandmarkerLike } from "./mediapipeLoader.js";
 import { type AsyncFaceFinder } from "./faceFinderWorker.js";
-import { type BackgroundFrameFeed } from "./backgroundFrames.js";
+import { BackgroundDuty, type BackgroundFrameFeed, type BackgroundReadingMark } from "./backgroundFrames.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
 /**
  * Frame source backed by MediaPipe FaceLandmarker (tasks-vision). Each frame
@@ -102,6 +102,13 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     /** Frames analysed from the background feed (diagnostics). */
     backgroundFramesRead: number;
     /**
+     * Session option backgroundEveryMs (BackgroundDuty in backgroundFrames.ts): while hidden, frames are analysed in
+     * bursts and dropped in the worker between them. Set before start(), with `backgroundReadingMark` (the session's).
+     */
+    backgroundDuty: BackgroundDuty | null;
+    backgroundReadingMark: () => BackgroundReadingMark;
+    private dutyTimer;
+    /**
      * The two paths' clocks are not assumed to agree (the track's frame timestamps against the video's mediaTime), so at
      * each switch the new path's clock is moved to continue the old one by the wall time that passed.
      */
@@ -114,6 +121,14 @@ export declare class MediaPipeFaceFrameSource implements FrameSource {
     private hidden;
     private backgroundActive;
     private startBackground;
+    /** Visible: the video path, no schedule. Hidden: the feed, all the time or (backgroundDuty) a burst from now. */
+    private backgroundVisibility;
+    /** After each frame in a burst: end the burst once its reading stood long enough, or at its longest. */
+    private dutyStep;
+    /** The schedule's timer came: a burst at its longest ends, a rest that is over starts the next burst. */
+    private dutyWake;
+    /** Set the one timer for the schedule's next moment: the worker's (keeps its time hidden), else the page's. */
+    private dutyArm;
     /** The frame's time on the source's one clock: the path's own clock, continued across a switch of path. */
     private frameClock;
     stop(): Promise<void>;

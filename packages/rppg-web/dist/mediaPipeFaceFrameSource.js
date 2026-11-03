@@ -1,6 +1,6 @@
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FACE_WORKER_MAX_AGE_MS } from "./faceFinderWorker.js";
-import { createBackgroundFrameFeed } from "./backgroundFrames.js";
+import { createBackgroundFrameFeed, } from "./backgroundFrames.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, FUSION_ROI_NAMES, } from "./roiProfile.js";
 /**
  * Frame source backed by MediaPipe FaceLandmarker (tasks-vision). Each frame
@@ -113,6 +113,13 @@ export class MediaPipeFaceFrameSource {
         /** Frames analysed from the background feed (diagnostics). */
         this.backgroundFramesRead = 0;
         /**
+         * Session option backgroundEveryMs (BackgroundDuty in backgroundFrames.ts): while hidden, frames are analysed in
+         * bursts and dropped in the worker between them. Set before start(), with `backgroundReadingMark` (the session's).
+         */
+        this.backgroundDuty = null;
+        this.backgroundReadingMark = () => ({ evaluations: 0, measured: false, passive: 0 });
+        this.dutyTimer = null;
+        /**
          * The two paths' clocks are not assumed to agree (the track's frame timestamps against the video's mediaTime), so at
          * each switch the new path's clock is moved to continue the old one by the wall time that passed.
          */
@@ -182,6 +189,7 @@ export class MediaPipeFaceFrameSource {
                 if (this.running && this.hidden()) {
                     this.backgroundFramesRead += 1;
                     this.detectAndEmit(performance.now(), null, f);
+                    this.dutyStep();
                 }
             }
             finally {
@@ -189,10 +197,69 @@ export class MediaPipeFaceFrameSource {
                 feed.ack();
             }
         };
-        this.onVisibility = () => feed.setActive(this.hidden());
+        feed.onWake = () => this.dutyWake();
+        this.onVisibility = () => this.backgroundVisibility();
         if (typeof document !== "undefined")
             document.addEventListener("visibilitychange", this.onVisibility);
-        feed.setActive(this.hidden());
+        this.backgroundVisibility();
+    }
+    /** Visible: the video path, no schedule. Hidden: the feed, all the time or (backgroundDuty) a burst from now. */
+    backgroundVisibility() {
+        const feed = this.backgroundFeed;
+        if (!feed)
+            return;
+        const duty = this.backgroundDuty;
+        const hidden = this.hidden();
+        if (duty) {
+            const now = performance.now();
+            if (hidden && duty.phase === "visible")
+                duty.begin(now, this.backgroundReadingMark());
+            else if (!hidden)
+                duty.visible(now);
+            this.dutyArm();
+        }
+        feed.setActive(hidden);
+    }
+    /** After each frame in a burst: end the burst once its reading stood long enough, or at its longest. */
+    dutyStep() {
+        const duty = this.backgroundDuty;
+        if (!duty || duty.phase !== "burst")
+            return;
+        if (!duty.step(performance.now(), this.backgroundReadingMark())) {
+            this.backgroundFeed?.setActive(false);
+            this.dutyArm();
+        }
+    }
+    /** The schedule's timer came: a burst at its longest ends, a rest that is over starts the next burst. */
+    dutyWake() {
+        const duty = this.backgroundDuty;
+        if (!duty || !this.running || !this.hidden())
+            return;
+        const now = performance.now();
+        const next = duty.nextMs();
+        if (duty.phase === "rest" && next != null && now >= next - 50) {
+            duty.begin(now, this.backgroundReadingMark());
+            this.backgroundFeed?.setActive(true);
+        }
+        else if (duty.phase === "burst")
+            this.dutyStep();
+        this.dutyArm();
+    }
+    /** Set the one timer for the schedule's next moment: the worker's (keeps its time hidden), else the page's. */
+    dutyArm() {
+        if (this.dutyTimer != null)
+            clearTimeout(this.dutyTimer);
+        this.dutyTimer = null;
+        const duty = this.backgroundDuty;
+        const next = duty?.nextMs();
+        if (!duty || next == null)
+            return;
+        const ms = Math.max(0, next - performance.now());
+        const feed = this.backgroundFeed;
+        if (feed?.wakeIn)
+            feed.wakeIn(ms);
+        else
+            this.dutyTimer = setTimeout(() => this.dutyWake(), ms);
     }
     /** The frame's time on the source's one clock: the path's own clock, continued across a switch of path. */
     frameClock(raw, path, wall) {
@@ -221,6 +288,10 @@ export class MediaPipeFaceFrameSource {
         this.onVisibility = null;
         this.backgroundFeed?.close();
         this.backgroundFeed = null;
+        if (this.dutyTimer != null)
+            clearTimeout(this.dutyTimer);
+        this.dutyTimer = null;
+        this.backgroundDuty?.visible(performance.now());
         this.clockPath = null;
         this.clockOffset = 0;
         this.lastTs = null;
