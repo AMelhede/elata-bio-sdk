@@ -66,6 +66,8 @@ export type PulseCheckState = {
 	roomMatch?: boolean;
 	/** Rule headMotion: the head kept time with the held rate (or half of it) in each of the last 4 windows. */
 	headMatch?: boolean;
+	/** Rule heldFrames: the newest window is a held picture (heldFrameShare at HELD_MAX_SHARE or more): not evidence. */
+	heldFrames?: boolean;
 	/** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
 	roomLine?: { bpm: number; snrDb: number } | null;
 	/**
@@ -320,6 +322,14 @@ export type PulseCheckRules = {
 	 * resets, as in 0.15.0-test.59.
 	 */
 	bridgeGap?: boolean;
+	/**
+	 * On unless false: a window in which HELD_MAX_SHARE or more of the frames sit in runs of HELD_RUN_FRAMES or more frames
+	 * whose three regions did not change (heldFrameShare) is not evidence of a pulse, and nothing follows on it. A camera's
+	 * own noise moves a region's mean every frame; a picture that holds still between updates is a video encoder's (a
+	 * phone or virtual camera sent at a low bitrate), whose update rhythm (a key frame every 2 s: 30, 60, 90 bpm) the
+	 * three regions share, and which the check could otherwise prove as a heart rate. Off: as in 0.15.0-test.59.
+	 */
+	heldFrames?: boolean;
 };
 
 /**
@@ -347,6 +357,43 @@ export function sameFaceAcrossGap(
 	);
 }
 
+/**
+ * Rule heldFrames: a frame is held when no region's R, G or B changed by more than HELD_EPS of its value since the frame
+ * before; held frames count in runs of HELD_RUN_FRAMES or more (a camera sending each of its 15 frames twice at 30 fps
+ * makes runs of 2, not evidence of an encoder). HELD_MAX_SHARE of a window's frames held makes it not evidence: a camera's
+ * own frames hold none, a low-bitrate encoder's windows well above it.
+ */
+export const HELD_EPS = 1e-4;
+export const HELD_RUN_FRAMES = 4;
+export const HELD_MAX_SHARE = 0.1;
+
+/** Rule heldFrames: the share of the window's frames (OWN_PULSE_WINDOW_S up to atMs) held in runs (see HELD_EPS). */
+export function heldFrameShare(
+	samples: readonly (readonly number[])[],
+	atMs: number,
+): number {
+	let i = samples.length - 1;
+	while (i > 0 && samples[i - 1][0] > atMs - OWN_PULSE_WINDOW_S * 1000) i--;
+	const n = samples.length - i;
+	if (n < 2) return 0;
+	let held = 0;
+	let run = 0;
+	for (let k = i + 1; k <= samples.length; k++) {
+		let same = k < samples.length;
+		if (same)
+			for (let c = 1; c <= 9 && same; c++) {
+				const a = samples[k - 1][c];
+				if (Math.abs(samples[k][c] - a) > HELD_EPS * Math.max(1e-9, Math.abs(a))) same = false;
+			}
+		if (same) run++;
+		else {
+			if (run + 1 >= HELD_RUN_FRAMES) held += run + 1;
+			run = 0;
+		}
+	}
+	return held / n;
+}
+
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
 
 export const PULSE_CHECK_RULE_NAMES = [
@@ -369,6 +416,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"keptFollow",
 	"movingFollow",
 	"bridgeGap",
+	"heldFrames",
 ] as const;
 
 /**
@@ -759,6 +807,7 @@ export function resolvePulseCheckRules(
 		keptFollow: rules?.keptFollow !== false,
 		movingFollow: rules?.movingFollow !== false,
 		bridgeGap: rules?.bridgeGap !== false,
+		heldFrames: rules?.heldFrames !== false,
 	};
 }
 
@@ -1455,9 +1504,15 @@ export class PulseCheck {
 		// Rule headMotion: a window whose rate the head keeps time with is the head's, not evidence of a pulse.
 		const headTimed = (bpm: number) =>
 			this.rules.headMotion && headKeepsTime(this.head, timestampMs, bpm);
+		// Rule heldFrames: a window of a picture that holds still between updates (a video encoder's) is not evidence.
+		const heldPicture =
+			this.rules.heldFrames &&
+			est?.bpm != null &&
+			heldFrameShare(this.samples, timestampMs) >= HELD_MAX_SHARE;
 		const tainted =
 			est?.bpm != null &&
 			(screenLit ||
+				heldPicture ||
 				(this.rules.lightTaint && lineCarries(lineAt(timestampMs), est.bpm, this.rules)) ||
 				(this.rules.roomLight &&
 					roomCarries(roomLineAt(timestampMs), est.bpm)) ||
@@ -1500,7 +1555,7 @@ export class PulseCheck {
 			headKeepsTimeAll(this.head, timestampMs, held);
 		this.followerBpm = null;
 		this.state =
-			wallMatch || roomMatch || headMatch
+			wallMatch || roomMatch || headMatch || heldPicture
 				? {
 						verdict: "not-measured",
 						bpm: null,
@@ -1509,6 +1564,7 @@ export class PulseCheck {
 						countingStreak: countingStreak(v, this.rules),
 						wallMatch,
 						...(headMatch ? { headMatch } : {}),
+						...(heldPicture ? { heldFrames: true } : {}),
 						...(this.rules.roomLight
 							? { roomMatch, roomLine: roomLineAt(timestampMs) }
 							: {}),
@@ -1613,6 +1669,7 @@ export class PulseCheck {
 				wallMatch ||
 				roomMatch ||
 				headMatch ||
+				heldPicture ||
 				(est?.bpm != null && headTimed(est.bpm)) ||
 				!steadyLightAllows(windowScreenSteps, this.rules);
 			// Rule keptFollow: after a break, until the check proves a number again, the rate proven before it is the
@@ -1651,6 +1708,7 @@ export class PulseCheck {
 				this.state.collecting &&
 				!blocked &&
 				!screenLit &&
+				!heldPicture &&
 				(this.blinkGateOpen || this.blinkCarried) &&
 				kept != null &&
 				timestampMs - kept.t <= this.keptMaxAgeMs &&

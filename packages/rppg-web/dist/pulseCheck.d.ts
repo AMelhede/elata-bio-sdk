@@ -40,6 +40,8 @@ export type PulseCheckState = {
     roomMatch?: boolean;
     /** Rule headMotion: the head kept time with the held rate (or half of it) in each of the last 4 windows. */
     headMatch?: boolean;
+    /** Rule heldFrames: the newest window is a held picture (heldFrameShare at HELD_MAX_SHARE or more): not evidence. */
+    heldFrames?: boolean;
     /** The room's strongest brightness line in the latest window (as wallLine), when the room was handed over. */
     roomLine?: {
         bpm: number;
@@ -293,6 +295,14 @@ export type PulseCheckRules = {
      * resets, as in 0.15.0-test.59.
      */
     bridgeGap?: boolean;
+    /**
+     * On unless false: a window in which HELD_MAX_SHARE or more of the frames sit in runs of HELD_RUN_FRAMES or more frames
+     * whose three regions did not change (heldFrameShare) is not evidence of a pulse, and nothing follows on it. A camera's
+     * own noise moves a region's mean every frame; a picture that holds still between updates is a video encoder's (a
+     * phone or virtual camera sent at a low bitrate), whose update rhythm (a key frame every 2 s: 30, 60, 90 bpm) the
+     * three regions share, and which the check could otherwise prove as a heart rate. Off: as in 0.15.0-test.59.
+     */
+    heldFrames?: boolean;
 };
 /**
  * Rule bridgeGap: the longest frame gap read across, set to take the camera stalls seen while the page stays visible
@@ -306,8 +316,19 @@ export declare const BRIDGE_MAX_SHIFT = 0.3;
 export declare const BRIDGE_MAX_SCALE = 0.2;
 /** Rule bridgeGap: the face after a frame gap is the face before it (BRIDGE_MAX_SHIFT, BRIDGE_MAX_SCALE). */
 export declare function sameFaceAcrossGap(before: Pick<HeadPosition, "x" | "y" | "faceWidth"> | null | undefined, after: Pick<HeadPosition, "x" | "y" | "faceWidth"> | null | undefined): boolean;
+/**
+ * Rule heldFrames: a frame is held when no region's R, G or B changed by more than HELD_EPS of its value since the frame
+ * before; held frames count in runs of HELD_RUN_FRAMES or more (a camera sending each of its 15 frames twice at 30 fps
+ * makes runs of 2, not evidence of an encoder). HELD_MAX_SHARE of a window's frames held makes it not evidence: a camera's
+ * own frames hold none, a low-bitrate encoder's windows well above it.
+ */
+export declare const HELD_EPS = 0.0001;
+export declare const HELD_RUN_FRAMES = 4;
+export declare const HELD_MAX_SHARE = 0.1;
+/** Rule heldFrames: the share of the window's frames (OWN_PULSE_WINDOW_S up to atMs) held in runs (see HELD_EPS). */
+export declare function heldFrameShare(samples: readonly (readonly number[])[], atMs: number): number;
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the

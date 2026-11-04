@@ -71,6 +71,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			keptFollow: true,
 			movingFollow: true,
 			bridgeGap: true,
+			heldFrames: true,
 		});
 		expect(resolvePulseCheckRules({ restBand: false }).restBand).toBe(false);
 		expect(new PulseCheck().rules.restBand).toBe(true);
