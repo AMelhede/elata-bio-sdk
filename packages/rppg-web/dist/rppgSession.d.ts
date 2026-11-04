@@ -261,6 +261,11 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
 type SessionInternals = {
     onDiagnostics?: (diagnostics: RppgSessionDiagnostics) => void;
     onError?: (error: RppgSessionError) => void;
+    /**
+     * getDiagnostics() inside onDiagnostics returns the object just handed to it (emitDiagnostics). Off with the engine's
+     * rate tracker on: each engine read steps the tracker, so a skipped read would change its numbers.
+     */
+    reuseDiagnosticsInCallback?: boolean;
     backendDegraded?: boolean;
     faceTrackingDegraded?: boolean;
     beforeStart?: () => Promise<void>;
@@ -329,6 +334,8 @@ export declare class RppgSession {
     private lastErrorValue;
     /** The engine read behind the latest getMetrics(), before any withholding (for getExperimentalVitals). */
     private lastEngineMetrics;
+    /** The diagnostics being handed to onDiagnostics, while that callback runs (see emitDiagnostics). */
+    private emitting;
     constructor(source: FrameSource, processor: RppgProcessor, runner: DemoRunner, backendMode: RppgSessionBackendMode, faceTrackingMode: RppgSessionFaceTrackingMode, internals?: SessionInternals);
     get lastError(): RppgSessionError | null;
     get state(): RppgSessionState;
@@ -426,10 +433,21 @@ export declare class RppgSession {
     private failed;
     getState(): RppgSessionState;
     getDiagnostics(nowMs?: number): RppgSessionDiagnostics;
+    private computeDiagnostics;
     start(): Promise<void>;
     stop(): Promise<void>;
     dispose(): Promise<void>;
     recordError(error: RppgSessionError): void;
+    /**
+     * Hands this frame's diagnostics to onDiagnostics. An app that reads getDiagnostics() inside that callback (the
+     * testers' page does, on every frame) gets the same object back instead of a second full analysis: the debug
+     * snapshot re-reads the engine's metrics, 7.5 ms of an HD frame on a slowed laptop CPU and about a tenth of its main
+     * thread (testbed cost bench, 2026-11-04, mom's laptop emulated). Nothing runs between the two calls, so every
+     * value is the one a second call would compute, apart from the clock-read fields (lastSampleAgeMs, and faceGone and
+     * framesStopped at their exact limit) a few microseconds apart. getDiagnostics(nowMs) with a time always computes.
+     * Only with the engine's rate tracker off (reuseDiagnosticsInCallback): with it on, every engine read is a tracker
+     * step (pipeline.rs get_metrics), so the skipped read would move the engine's own number.
+     */
     emitDiagnostics(): void;
 }
 /**

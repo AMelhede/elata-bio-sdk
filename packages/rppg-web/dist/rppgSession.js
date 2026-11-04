@@ -59,6 +59,8 @@ export class RppgSession {
         this.lastErrorValue = null;
         /** The engine read behind the latest getMetrics(), before any withholding (for getExperimentalVitals). */
         this.lastEngineMetrics = null;
+        /** The diagnostics being handed to onDiagnostics, while that callback runs (see emitDiagnostics). */
+        this.emitting = null;
         this.appliedLight = 0;
         this.meterCtx = null;
         this.meterAt = Number.NEGATIVE_INFINITY;
@@ -418,7 +420,14 @@ export class RppgSession {
             errorStage: null,
         };
     }
-    getDiagnostics(nowMs = Date.now()) {
+    getDiagnostics(nowMs) {
+        // Called from inside onDiagnostics without a time: the object that callback was just handed, computed for this
+        // same frame, instead of the whole analysis again (see emitDiagnostics).
+        if (this.emitting != null && nowMs === undefined && this.internals.reuseDiagnosticsInCallback)
+            return this.emitting;
+        return this.computeDiagnostics(nowMs ?? Date.now());
+    }
+    computeDiagnostics(nowMs) {
         // Before the debug snapshot's analysis, for the reason given in getMetrics.
         const framesStopped = this.framesStopped();
         const runnerDiagnostics = this.runner.getDiagnostics();
@@ -483,8 +492,30 @@ export class RppgSession {
         this.internals.onError?.(error);
         this.emitDiagnostics();
     }
+    /**
+     * Hands this frame's diagnostics to onDiagnostics. An app that reads getDiagnostics() inside that callback (the
+     * testers' page does, on every frame) gets the same object back instead of a second full analysis: the debug
+     * snapshot re-reads the engine's metrics, 7.5 ms of an HD frame on a slowed laptop CPU and about a tenth of its main
+     * thread (testbed cost bench, 2026-11-04, mom's laptop emulated). Nothing runs between the two calls, so every
+     * value is the one a second call would compute, apart from the clock-read fields (lastSampleAgeMs, and faceGone and
+     * framesStopped at their exact limit) a few microseconds apart. getDiagnostics(nowMs) with a time always computes.
+     * Only with the engine's rate tracker off (reuseDiagnosticsInCallback): with it on, every engine read is a tracker
+     * step (pipeline.rs get_metrics), so the skipped read would move the engine's own number.
+     */
     emitDiagnostics() {
-        this.internals.onDiagnostics?.(this.getDiagnostics());
+        // No callback, no analysis, as before (onDiagnostics?.(...) never evaluated its argument).
+        const cb = this.internals.onDiagnostics;
+        if (!cb)
+            return;
+        const diagnostics = this.computeDiagnostics(Date.now());
+        const outer = this.emitting;
+        this.emitting = diagnostics;
+        try {
+            cb(diagnostics);
+        }
+        finally {
+            this.emitting = outer;
+        }
     }
 }
 /**
@@ -658,6 +689,7 @@ export async function createRppgSession(options) {
     session = new RppgSession(source, processor, runner, backendResult.mode, faceTrackingMode, {
         onDiagnostics: options.onDiagnostics,
         onError: options.onError,
+        reuseDiagnosticsInCallback: !enableTracker,
         pulseCheck,
         passive,
         video: options.video,
