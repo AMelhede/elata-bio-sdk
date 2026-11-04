@@ -285,9 +285,29 @@ export type PulseCheckRules = {
      * 0.15.0-test.57 before 2026-11-01 night.
      */
     movingFollow?: boolean;
+    /**
+     * On unless false: frames that stop for at most FRAME_BRIDGE_MS, with the same face on both sides (sameFaceAcrossGap),
+     * are a freeze, not a break: the windows keep their samples and read across the hole (resample interpolates), instead
+     * of the check starting over and spending a whole window collecting at every freeze of a camera that stalls. Needs
+     * the head handed to push: with no head on either side the gap still resets. Off: every gap over FACE_GONE_MS
+     * resets, as in 0.15.0-test.59.
+     */
+    bridgeGap?: boolean;
 };
+/**
+ * Rule bridgeGap: the longest frame gap read across, set to take the camera stalls seen while the page stays visible
+ * with room for one frame interval at a slow camera's rate; the hole is a small share of the OWN_PULSE_WINDOW_S window,
+ * read as a straight line.
+ */
+export declare const FRAME_BRIDGE_MS = 2500;
+/** Rule bridgeGap: the same face across a gap, the head's centre moved at most this share of its width ... */
+export declare const BRIDGE_MAX_SHIFT = 0.3;
+/** ... and its width changed by at most this share. */
+export declare const BRIDGE_MAX_SCALE = 0.2;
+/** Rule bridgeGap: the face after a frame gap is the face before it (BRIDGE_MAX_SHIFT, BRIDGE_MAX_SCALE). */
+export declare function sameFaceAcrossGap(before: Pick<HeadPosition, "x" | "y" | "faceWidth"> | null | undefined, after: Pick<HeadPosition, "x" | "y" | "faceWidth"> | null | undefined): boolean;
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "lightTaint", "quickerProof", "keptFollow", "movingFollow"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the

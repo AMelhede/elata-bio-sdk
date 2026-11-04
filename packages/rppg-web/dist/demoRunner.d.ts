@@ -113,6 +113,8 @@ export type DemoRunnerOptions = {
 export type DemoRunnerDropReason = "frame_invalid" | "roi_missing" | "no_face" | "non_finite_intensity" | "out_of_order" | "processor_error";
 export type DemoRunnerDiagnostics = {
     framesSeen: number;
+    /** Frame gaps read across under the pulse check's rule bridgeGap (a freeze with the same face on both sides). */
+    bridgedGaps?: number;
     framesWithFaceRoi: number;
     framesWithFallbackRoi: number;
     framesWithMultiRoi: number;
@@ -194,6 +196,8 @@ export declare class DemoRunner {
     private lastFrameAt;
     /** The frames' own clock at the latest frame that carried one: a break in it restarts the analysis. */
     private lastFrameMs;
+    /** The head on the latest frame (null without a face mesh), for rule bridgeGap. */
+    private lastFrameHead;
     /** The wall clock (`now`) when the latest sample reached the processor; null before any. */
     private lastSampleAt;
     private readonly now;

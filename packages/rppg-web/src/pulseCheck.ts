@@ -312,7 +312,40 @@ export type PulseCheckRules = {
 	 * 0.15.0-test.57 before 2026-11-01 night.
 	 */
 	movingFollow?: boolean;
+	/**
+	 * On unless false: frames that stop for at most FRAME_BRIDGE_MS, with the same face on both sides (sameFaceAcrossGap),
+	 * are a freeze, not a break: the windows keep their samples and read across the hole (resample interpolates), instead
+	 * of the check starting over and spending a whole window collecting at every freeze of a camera that stalls. Needs
+	 * the head handed to push: with no head on either side the gap still resets. Off: every gap over FACE_GONE_MS
+	 * resets, as in 0.15.0-test.59.
+	 */
+	bridgeGap?: boolean;
 };
+
+/**
+ * Rule bridgeGap: the longest frame gap read across, set to take the camera stalls seen while the page stays visible
+ * with room for one frame interval at a slow camera's rate; the hole is a small share of the OWN_PULSE_WINDOW_S window,
+ * read as a straight line.
+ */
+export const FRAME_BRIDGE_MS = 2500;
+/** Rule bridgeGap: the same face across a gap, the head's centre moved at most this share of its width ... */
+export const BRIDGE_MAX_SHIFT = 0.3;
+/** ... and its width changed by at most this share. */
+export const BRIDGE_MAX_SCALE = 0.2;
+
+/** Rule bridgeGap: the face after a frame gap is the face before it (BRIDGE_MAX_SHIFT, BRIDGE_MAX_SCALE). */
+export function sameFaceAcrossGap(
+	before: Pick<HeadPosition, "x" | "y" | "faceWidth"> | null | undefined,
+	after: Pick<HeadPosition, "x" | "y" | "faceWidth"> | null | undefined,
+): boolean {
+	if (!before || !after) return false;
+	if (!(before.faceWidth > 0) || !(after.faceWidth > 0)) return false;
+	if (![before.x, before.y, after.x, after.y].every(Number.isFinite)) return false;
+	return (
+		Math.hypot(after.x - before.x, after.y - before.y) <= BRIDGE_MAX_SHIFT * before.faceWidth &&
+		Math.abs(after.faceWidth / before.faceWidth - 1) <= BRIDGE_MAX_SCALE
+	);
+}
 
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
 
@@ -335,6 +368,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"quickerProof",
 	"keptFollow",
 	"movingFollow",
+	"bridgeGap",
 ] as const;
 
 /**
@@ -724,6 +758,7 @@ export function resolvePulseCheckRules(
 		quickerProof: rules?.quickerProof !== false,
 		keptFollow: rules?.keptFollow !== false,
 		movingFollow: rules?.movingFollow !== false,
+		bridgeGap: rules?.bridgeGap !== false,
 	};
 }
 
@@ -1310,7 +1345,17 @@ export class PulseCheck {
 		// Frames that stopped arriving unannounced count as a lost face too: the windows would
 		// otherwise run across the break.
 		const last = this.samples[this.samples.length - 1];
-		if (last && timestampMs - last[0] > FACE_GONE_MS) {
+		// Rule bridgeGap: a short freeze with the same face on both sides keeps the windows (read across the hole).
+		const lastHead = this.head[this.head.length - 1];
+		const bridged =
+			last != null &&
+			this.rules.bridgeGap &&
+			timestampMs > last[0] &&
+			timestampMs - last[0] <= FRAME_BRIDGE_MS &&
+			lastHead != null &&
+			lastHead[0] === last[0] &&
+			sameFaceAcrossGap({ x: lastHead[1], y: lastHead[2], faceWidth: lastHead[3] }, head);
+		if (last && timestampMs - last[0] > FACE_GONE_MS && !bridged) {
 			// Rule keptFollow: frames that stopped (the page hidden) do not take away the blink seen before, for the
 			// break's refill only, when the break is short enough for the kept rate (FOLLOW_RESUME_MS).
 			const carry =

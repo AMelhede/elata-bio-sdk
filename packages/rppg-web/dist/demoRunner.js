@@ -5,7 +5,7 @@ import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSourc
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FUSION_ROIS, MultiRoiRppgFuser, } from "./multiRoiFusion.js";
-import { WallTracker, eyeBlink, headCentre, roomFromFrame, wallMissReason } from "./pulseCheck.js";
+import { FRAME_BRIDGE_MS, WallTracker, eyeBlink, headCentre, roomFromFrame, sameFaceAcrossGap, wallMissReason } from "./pulseCheck.js";
 import { ELATA_YCBCR_V1_PIXEL_SAMPLER, sampleRppgRoi, } from "./roiPixelSampler.js";
 import { ELATA_FACE_YCBCR_V1_PROFILE, } from "./roiProfile.js";
 /** How long without a face (face tracking on) before the session stops reporting and the analysis restarts when the face returns. */
@@ -90,6 +90,8 @@ export class DemoRunner {
         this.lastFrameAt = null;
         /** The frames' own clock at the latest frame that carried one: a break in it restarts the analysis. */
         this.lastFrameMs = null;
+        /** The head on the latest frame (null without a face mesh), for rule bridgeGap. */
+        this.lastFrameHead = null;
         /** The wall clock (`now`) when the latest sample reached the processor; null before any. */
         this.lastSampleAt = null;
         /** The wall beside the face, one signal across patches (see WallTracker in pulseCheck.ts). */
@@ -194,10 +196,13 @@ export class DemoRunner {
      * ("restart"). A frame older than the latest by less than that is out of order (a stale frame
      * delivered again): it is dropped, not read, and nothing restarts ("out_of_order").
      */
-    frameBreak(t) {
+    frameBreak(t, head = null) {
         if (t == null || !Number.isFinite(t))
             return null;
         const prev = this.lastFrameMs;
+        // Rule bridgeGap of the pulse check (FRAME_BRIDGE_MS): the face this frame against the last frame's.
+        const before = this.lastFrameHead;
+        this.lastFrameHead = head;
         if (!this.fixes.noFramesNoReading || prev == null) {
             this.lastFrameMs = t;
             return null;
@@ -207,6 +212,15 @@ export class DemoRunner {
         this.lastFrameMs = t;
         if (Math.abs(t - prev) <= FRAME_GAP_MS)
             return null;
+        // A freeze, not a break: frames that stopped for at most FRAME_BRIDGE_MS with the same face on both sides keep
+        // the analysis (its window reads across the hole), under the pulse check's rule bridgeGap.
+        if (this.opts.pulseChecker?.rules.bridgeGap &&
+            t > prev &&
+            t - prev <= FRAME_BRIDGE_MS &&
+            sameFaceAcrossGap(before, head)) {
+            this.diagnostics.bridgedGaps = (this.diagnostics.bridgedGaps ?? 0) + 1;
+            return null;
+        }
         // A face out of view stays out of view for as long as it already was: after a step back its
         // start is moved onto the new clock.
         if (t < prev && this.noFaceSinceMs != null) {
@@ -229,7 +243,7 @@ export class DemoRunner {
             return;
         this.diagnostics.framesSeen += 1;
         this.lastFrameAt = this.now();
-        const brk = this.frameBreak(frame.timestampMs);
+        const brk = this.frameBreak(frame.timestampMs, frame.landmarks && frame.landmarks.length ? headCentre(frame.landmarks, frame.width, frame.height) : null);
         if (brk === "out_of_order") {
             this.recordDrop("out_of_order");
             return;
