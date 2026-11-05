@@ -246,6 +246,20 @@ export declare function lineMargin(P: readonly [number, number][], bpm: number):
  */
 export declare const OWN_PULSE_DRIFT_LINE_BPM = 52;
 /**
+ * Rule slowDouble: a heart under the band (30 to 47 bpm) shows in the band as twice its rate, because a pulse's second
+ * harmonic carries 10 to 40% of the fundamental's power (Allen 2007, Physiol Meas 28:R1) while the fundamental sits
+ * below the band's floor. Face-wide drift has a line at its own rate but none at twice it. So a line within
+ * OWN_PULSE_AGREE_BPM of twice a slow line is withheld when (1) the slow line is the whitened spectrum's strongest local
+ * maximum in SLOW_DOUBLE_HZ, (2) the measured spectrum has a local maximum within one bin of twice it standing
+ * SLOW_DOUBLE_HARMONIC_FLOOR times its local floor (the median within 0.4 Hz, the bins beside the line left out), and
+ * (3) the slow line's measured power is at least SLOW_DOUBLE_FUNDAMENTAL_OVER_HARMONIC times the harmonic's, so the slow
+ * line is the fundamental and not the harmonic of something slower. It only withholds: no slow rate is ever shown.
+ */
+export declare const SLOW_DOUBLE_HZ: readonly [number, number];
+export declare const SLOW_DOUBLE_HARMONIC_FLOOR = 3;
+export declare const SLOW_DOUBLE_FUNDAMENTAL_OVER_HARMONIC = 4;
+export declare function lineIsSlowDouble(comb: Array<[number, number]>, measured: Array<[number, number]>, lineBpm: number): boolean;
+/**
  * Estimate over the most recent `windowS` seconds of raw samples. Returns null
  * when the window is not yet full or the frame rate is too low to resolve the
  * band (below 2x the band edge, i.e. 6 fps).
@@ -260,7 +274,9 @@ swapMinWallToFace?: number,
 /** Rule coherentFusion: read the line from the regions' pulses added in time (coherentSpectrum), not their spectra. */
 coherent?: boolean, 
 /** Rule driftLine (OWN_PULSE_DRIFT_LINE_BPM): a drift line no rule can count does not hide the strongest line above the low band. */
-driftLine?: boolean): OwnPulseEstimate | null;
+driftLine?: boolean, 
+/** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
+slowDouble?: boolean): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.

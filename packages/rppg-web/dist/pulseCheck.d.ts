@@ -256,6 +256,12 @@ export type PulseCheckRules = {
      */
     driftLine?: boolean;
     /**
+     * On unless false: a line at twice a slow line (30 to 47 bpm) that the spectrum itself supports, a real second
+     * harmonic of a heart under the band, is withheld instead of shown as the double (pulseCheckCore lineIsSlowDouble,
+     * where the measurements are). It never shows a slow rate. Off: as in 0.15.0-test.60 (before slowDouble).
+     */
+    slowDouble?: boolean;
+    /**
      * On unless false: a window whose rate the wall beside the face carries (lineCarries) is the light's, not evidence of
      * a pulse, so it never counts toward a streak. Restored 2026-11-02: deleted on 2026-10-30 on a replay with
      * coherentFusion off; with it on (the testers' page) a 120 Hz mains clip built a streak on windows the wall carried
@@ -328,7 +334,7 @@ export declare const HELD_MAX_SHARE = 0.1;
 /** Rule heldFrames: the share of the window's frames (OWN_PULSE_WINDOW_S up to atMs) held in runs (see HELD_EPS). */
 export declare function heldFrameShare(samples: readonly (readonly number[])[], atMs: number): number;
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the

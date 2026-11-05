@@ -179,6 +179,7 @@ export class PassiveReader {
 			this.options.swapMinWallToFace,
 			true,
 			true,
+			true,
 		);
 		const bpm = est?.bpmFine ?? est?.bpm;
 		if (!est || bpm == null || est.snrDb == null) return null;

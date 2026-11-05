@@ -283,6 +283,12 @@ export type PulseCheckRules = {
 	 */
 	driftLine?: boolean;
 	/**
+	 * On unless false: a line at twice a slow line (30 to 47 bpm) that the spectrum itself supports, a real second
+	 * harmonic of a heart under the band, is withheld instead of shown as the double (pulseCheckCore lineIsSlowDouble,
+	 * where the measurements are). It never shows a slow rate. Off: as in 0.15.0-test.60 (before slowDouble).
+	 */
+	slowDouble?: boolean;
+	/**
 	 * On unless false: a window whose rate the wall beside the face carries (lineCarries) is the light's, not evidence of
 	 * a pulse, so it never counts toward a streak. Restored 2026-11-02: deleted on 2026-10-30 on a replay with
 	 * coherentFusion off; with it on (the testers' page) a 120 Hz mains clip built a streak on windows the wall carried
@@ -411,6 +417,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"oneRegion",
 	"headMotion",
 	"driftLine",
+	"slowDouble",
 	"lightTaint",
 	"quickerProof",
 	"keptFollow",
@@ -802,6 +809,7 @@ export function resolvePulseCheckRules(
 		oneRegion: rules?.oneRegion !== false,
 		headMotion: rules?.headMotion !== false,
 		driftLine: rules?.driftLine !== false,
+		slowDouble: rules?.slowDouble !== false,
 		lightTaint: rules?.lightTaint !== false,
 		quickerProof: rules?.quickerProof !== false,
 		keptFollow: rules?.keptFollow !== false,
@@ -1471,6 +1479,7 @@ export class PulseCheck {
 			this.swapMinWall,
 			this.rules.coherentFusion,
 			this.rules.driftLine,
+			this.rules.slowDouble,
 		);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// The wall's line for a window end, found once per evaluation: the taint, the wall check and
@@ -1722,6 +1731,7 @@ export class PulseCheck {
 					this.swapMinWall,
 					this.rules.coherentFusion,
 					this.rules.driftLine,
+					this.rules.slowDouble,
 				);
 				if (
 					e &&
@@ -1799,6 +1809,7 @@ export class PulseCheck {
 			this.swapMinWall,
 			this.rules.coherentFusion,
 			this.rules.driftLine,
+			this.rules.slowDouble,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {

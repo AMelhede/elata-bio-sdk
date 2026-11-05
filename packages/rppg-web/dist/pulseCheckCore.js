@@ -432,6 +432,57 @@ function pastDriftLine(line, comb, measured, regions) {
     return Number.isFinite(alt.bpm) && isPeak ? alt : line;
 }
 /**
+ * Rule slowDouble: a heart under the band (30 to 47 bpm) shows in the band as twice its rate, because a pulse's second
+ * harmonic carries 10 to 40% of the fundamental's power (Allen 2007, Physiol Meas 28:R1) while the fundamental sits
+ * below the band's floor. Face-wide drift has a line at its own rate but none at twice it. So a line within
+ * OWN_PULSE_AGREE_BPM of twice a slow line is withheld when (1) the slow line is the whitened spectrum's strongest local
+ * maximum in SLOW_DOUBLE_HZ, (2) the measured spectrum has a local maximum within one bin of twice it standing
+ * SLOW_DOUBLE_HARMONIC_FLOOR times its local floor (the median within 0.4 Hz, the bins beside the line left out), and
+ * (3) the slow line's measured power is at least SLOW_DOUBLE_FUNDAMENTAL_OVER_HARMONIC times the harmonic's, so the slow
+ * line is the fundamental and not the harmonic of something slower. It only withholds: no slow rate is ever shown.
+ */
+export const SLOW_DOUBLE_HZ = [0.5, 0.78];
+export const SLOW_DOUBLE_HARMONIC_FLOOR = 3;
+export const SLOW_DOUBLE_FUNDAMENTAL_OVER_HARMONIC = 4;
+function isLocalMax(P, i) {
+    return i > 0 && i < P.length - 1 && P[i - 1][1] < P[i][1] && P[i + 1][1] < P[i][1];
+}
+export function lineIsSlowDouble(comb, measured, lineBpm) {
+    if (comb.length < 3 || !Number.isFinite(lineBpm))
+        return false;
+    const [lo, hi] = SLOW_DOUBLE_HZ;
+    let i = -1;
+    for (let k = 1; k < comb.length - 1; k++) {
+        const f = comb[k][0];
+        if (f < lo || f > hi || !isLocalMax(comb, k))
+            continue;
+        if (i < 0 || comb[k][1] > comb[i][1])
+            i = k;
+    }
+    if (i < 0)
+        return false;
+    const fs = comb[i][0];
+    if (Math.abs(lineBpm - 2 * fs * 60) > OWN_PULSE_AGREE_BPM)
+        return false;
+    const step = comb[1][0] - comb[0][0];
+    const j0 = Math.round((2 * fs - measured[0][0]) / step);
+    let j = -1;
+    for (const k of [j0 - 1, j0, j0 + 1])
+        if (k > 0 && k < measured.length - 1 && isLocalMax(measured, k) && (j < 0 || measured[k][1] > measured[j][1]))
+            j = k;
+    if (j < 0)
+        return false;
+    const nb = [];
+    for (let k = 0; k < measured.length; k++)
+        if (Math.abs(measured[k][0] - measured[j][0]) <= 0.4 && Math.abs(k - j) > 2)
+            nb.push(measured[k][1]);
+    nb.sort((a, b) => a - b);
+    const floor = nb[nb.length >> 1] || 1e-12;
+    if (measured[j][1] < SLOW_DOUBLE_HARMONIC_FLOOR * floor)
+        return false;
+    return measured[i][1] >= SLOW_DOUBLE_FUNDAMENTAL_OVER_HARMONIC * measured[j][1];
+}
+/**
  * Estimate over the most recent `windowS` seconds of raw samples. Returns null
  * when the window is not yet full or the frame rate is too low to resolve the
  * band (below 2x the band edge, i.e. 6 fps).
@@ -446,7 +497,9 @@ swapMinWallToFace = OWN_PULSE_SWAP_MIN_WALL_TO_FACE,
 /** Rule coherentFusion: read the line from the regions' pulses added in time (coherentSpectrum), not their spectra. */
 coherent = false, 
 /** Rule driftLine (OWN_PULSE_DRIFT_LINE_BPM): a drift line no rule can count does not hide the strongest line above the low band. */
-driftLine = false) {
+driftLine = false, 
+/** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
+slowDouble = false) {
     if (samples.length < 8)
         return null;
     const end = atMs;
@@ -507,6 +560,8 @@ driftLine = false) {
     let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
     if (driftLine)
         line = pastDriftLine(line, comb, measured, regions);
+    if (slowDouble && lineIsSlowDouble(comb, measured, line.bpm))
+        line = { bpm: Number.NaN, snrDb: Number.NEGATIVE_INFINITY };
     const combined = coherent && Number.isFinite(line.snrDb) ? { ...line, snrDb: line.snrDb - COHERENT_SNR_OFFSET_DB } : line;
     const found = Number.isFinite(combined.bpm);
     const lineMarginDb = found ? lineMargin(comb, combined.bpm) : null;

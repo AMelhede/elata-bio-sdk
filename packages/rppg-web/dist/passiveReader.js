@@ -117,7 +117,7 @@ export class PassiveReader {
         return Math.max(o.windowS * 1000, this.olderHalfAgoMs() + (o.windowS / 2) * 1000);
     }
     line(windowS, atMs) {
-        const est = estimateOwnPulse(this.samples, windowS, atMs, OWN_PULSE_COLOUR_SWITCH, this.options.swapMinWallToFace, true, true);
+        const est = estimateOwnPulse(this.samples, windowS, atMs, OWN_PULSE_COLOUR_SWITCH, this.options.swapMinWallToFace, true, true, true);
         const bpm = est?.bpmFine ?? est?.bpm;
         if (!est || bpm == null || est.snrDb == null)
             return null;
