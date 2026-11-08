@@ -21,7 +21,7 @@
  */
 import type { FacePatches } from "./facePatches";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion";
-import { PulseTracker, TRACKER_FIRST_WINDOW_S } from "./pulseTracker";
+import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S } from "./pulseTracker";
 import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
 	FPS_CEILING_SHARE,
@@ -132,7 +132,7 @@ export type PulseCheckState = {
 	/** Rule tracker: the tracker's posterior mass within the bar of its mode (it shows at TRACKER_SHOW or more). */
 	trackerMass?: number | null;
 	/** Rule tracker, for offline tuning: the window's measured in-band spectrum and evidence flags the tracker took. */
-	trackerIn?: { band: Array<[number, number]>; none: boolean; suppress: number[]; capBpm: number | null } | null;
+	trackerIn?: { band: Array<[number, number]>; none: boolean; suppress: number[]; capBpm: number | null; recent: Array<[number, number]>; seed: [number, number] | null } | null;
 };
 
 /**
@@ -1844,9 +1844,13 @@ export class PulseCheck {
 				);
 		}
 		// After a break, the rate shown before it (or the page's resume point) seeds the filter as a prior.
+		let seeded: [number, number] | null = null;
 		if (this.trackerSeedPending && this.followKept) {
 			const age = (t - this.followKept.t) / 1000;
-			if (age >= 0 && age * 1000 <= this.keptMaxAgeMs) this.tracker.seed(this.followKept.bpm, age);
+			if (age >= 0 && age * 1000 <= this.keptMaxAgeMs) {
+				this.tracker.seed(this.followKept.bpm, age);
+				seeded = [this.followKept.bpm, age];
+			}
 		}
 		this.trackerSeedPending = false;
 		const band = est?.measuredBand ?? null;
@@ -1864,9 +1868,27 @@ export class PulseCheck {
 		if (rl && roomCarries(rl, rl.bpm)) suppress.push(rl.bpm);
 		if (est?.bpm != null && headKeepsTime(this.head, t, est.bpm)) suppress.push(est.bpm);
 		const capBpm = est ? FPS_CEILING_SHARE * est.fps * 60 : null;
-		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm });
+		// The newest TRACKER_RECENT_S seconds, read only once a full window exists (before it, the growing window is recent).
+		const recentEst =
+			!none && est && est.windowS >= OWN_PULSE_WINDOW_S
+				? estimateOwnPulse(
+						this.samples,
+						TRACKER_RECENT_S,
+						t,
+						OWN_PULSE_COLOUR_SWITCH,
+						this.swapMinWall,
+						this.rules.coherentFusion,
+						this.rules.driftLine,
+						this.rules.slowDouble,
+						true,
+						this.rules.allPatches ? this.patchRows : null,
+						this.rules.fpsCeiling,
+					)
+				: null;
+		const recent = recentEst?.measuredBand ?? null;
+		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm, recent });
 		// For offline tuning: exactly what the tracker saw this second.
-		this.state.trackerIn = { band: band ?? [], none, suppress, capBpm };
+		this.state.trackerIn = { band: band ?? [], none, suppress, capBpm, recent: recent ?? [], seed: seeded };
 		this.state.verdict = s.shown ? "measured" : est ? "not-measured" : this.state.verdict;
 		this.state.bpm = s.shown ? Math.round(s.bpm * 10) / 10 : null;
 		this.state.via = s.shown ? "check" : null;

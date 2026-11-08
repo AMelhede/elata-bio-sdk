@@ -44,6 +44,12 @@ const EULER = 0.5772156649015329;
  * seed is a prior and never shows by itself; the face's own windows confirm it within seconds, or wear it away.
  */
 export const TRACKER_RESUME_MASS = 0.2;
+/**
+ * The newest TRACKER_RECENT_S seconds as a second source of evidence (a moving heart shows there before the full window
+ * catches up), tempered by TRACKER_TAU times this; Infinity leaves it out.
+ */
+export const TRACKER_RECENT_S = 8;
+export const TRACKER_RECENT_TAU_FACTOR = Number.POSITIVE_INFINITY;
 /** Before a full window, the tracker reads the window there is, from this many seconds (the growing window). */
 export const TRACKER_FIRST_WINDOW_S = 6;
 
@@ -55,6 +61,7 @@ export type TrackerParams = {
 	harmonic: number;
 	whitenBpm: number;
 	show: number;
+	recentTauFactor: number;
 };
 
 export const TRACKER_DEFAULTS: TrackerParams = {
@@ -65,6 +72,7 @@ export const TRACKER_DEFAULTS: TrackerParams = {
 	harmonic: TRACKER_HARMONIC,
 	whitenBpm: TRACKER_WHITEN_BPM,
 	show: TRACKER_SHOW,
+	recentTauFactor: TRACKER_RECENT_TAU_FACTOR,
 };
 
 export type TrackerStep = {
@@ -85,6 +93,8 @@ export type TrackerEvidence = {
 	suppressBpm?: readonly number[];
 	/** The window is not evidence at all (a held picture, a stepping light): time passes, nothing is learned. */
 	none?: boolean;
+	/** The newest TRACKER_RECENT_S seconds' in-band spectrum, as measured (second evidence; see TRACKER_RECENT_TAU_FACTOR). */
+	recent?: ReadonlyArray<readonly [number, number]> | null;
 };
 
 /** Linear interpolation of a spectrum given as ascending [bpm, power] rows; 0 outside it. */
@@ -146,6 +156,28 @@ export class PulseTracker {
 			return out;
 		});
 		this.a = new Float64Array(n);
+	}
+
+	/** Each rate's log evidence from one spectrum against its floor, tempered by `tau`; 0 where the rate cannot count. */
+	private evidence(
+		spectrum: ReadonlyArray<readonly [number, number]>,
+		cap: number,
+		sup: readonly number[],
+		tau: number,
+	): Float64Array {
+		const n = this.rates.length;
+		const H = this.rates.map((b) => powerAt(spectrum, b) + this.p.harmonic * powerAt(spectrum, 2 * b));
+		const l = new Float64Array(n);
+		const bandMedian = median(H);
+		const fit = this.edgeFit(H);
+		for (let j = 0; j < n; j++) {
+			const b = this.rates[j];
+			if (b > cap || sup.some((s) => Math.abs(s - b) <= Math.max(5, 0.1 * s))) continue;
+			const floor = this.p.whitenBpm > 0 ? Math.max(median(this.near[j].map((k) => H[k])), bandMedian) : bandMedian;
+			const noise = Math.max(floor / Math.LN2, fit[j]) + 1e-30;
+			l[j] = Math.log(Math.max(H[j] / noise, 1e-6)) / tau;
+		}
+		return l;
 	}
 
 	/** The edge floor (TRACKER_EDGE_BPM): the line fit at each rate near either end of the band, 0 elsewhere. */
@@ -229,21 +261,15 @@ export class PulseTracker {
 		for (let s = 0; s < steps; s++) this.predict();
 		const n = this.rates.length;
 		if (!ev.none && spectrum.length) {
-			const H = this.rates.map((b) => powerAt(spectrum, b) + this.p.harmonic * powerAt(spectrum, 2 * b));
-			const l = new Float64Array(n);
-			let lmax = 0; // the no-pulse state's evidence is log 1 = 0
-			const bandMedian = median(H);
-			const fit = this.edgeFit(H);
 			const cap = ev.capBpm ?? Infinity;
 			const sup = ev.suppressBpm ?? [];
-			for (let j = 0; j < n; j++) {
-				const b = this.rates[j];
-				if (b > cap || sup.some((s) => Math.abs(s - b) <= Math.max(5, 0.1 * s))) continue;
-				const floor = this.p.whitenBpm > 0 ? Math.max(median(this.near[j].map((k) => H[k])), bandMedian) : bandMedian;
-				const noise = Math.max(floor / Math.LN2, fit[j]) + 1e-30;
-				l[j] = Math.log(Math.max(H[j] / noise, 1e-6)) / this.p.tau;
-				if (l[j] > lmax) lmax = l[j];
+			const l = this.evidence(spectrum, cap, sup, this.p.tau);
+			if (ev.recent && ev.recent.length && Number.isFinite(this.p.recentTauFactor)) {
+				const l2 = this.evidence(ev.recent, cap, sup, this.p.tau * this.p.recentTauFactor);
+				for (let j = 0; j < n; j++) l[j] += l2[j];
 			}
+			let lmax = 0; // the no-pulse state's evidence is log 1 = 0
+			for (let j = 0; j < n; j++) if (l[j] > lmax) lmax = l[j];
 			let s = Math.exp(-lmax) * this.aN;
 			for (let j = 0; j < n; j++) {
 				this.a[j] *= Math.exp(l[j] - lmax);
