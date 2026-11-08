@@ -53,7 +53,7 @@ export const TRACKER_START_MASS = 0;
 /**
  * How wide the prior after a break is: a heart rate drifts back toward its own level rather than walking, so over a gap
  * of D s its change has a spread of TRACKER_SEED_SD_BPM x sqrt(1 - exp(-D / TRACKER_SEED_TAU_S)), never below the motion
- * step. Measured on the lab's finger reference (300 recordings, 5 s median): spread 3.1, 4.5, 5.4, 5.8, 6.7 bpm at gaps
+ * step. Measured on a lab finger reference (5 s median): spread 3.1, 4.5, 5.4, 5.8, 6.7 bpm at gaps
  * of 5, 10, 20, 30, 60 s, where the walk gives 6.7, 9.5, 13.4, 16.4, 23.2; 7 bpm and 20 s fit it. Infinity keeps the
  * walk (sigma x sqrt(D)). Under test (scratchpad tracker/a3).
  */
@@ -72,7 +72,7 @@ export const TRACKER_FIRST_WINDOW_S = 6;
  * there): a 7 s window ending 7 to 10 s into a received file is within 5 bpm of the file's 16 s line 44% of the time, the
  * same window from 30 s on 74% (tracker/a3/shortwin.mjs, 2026-11-07). 2 s, against 0, on the 8 sealed lab people (blind, once):
  * shown 54.9 to 53.7%, error 2.55 to 2.15 bpm, over 10 off 4.1 to 3.0%, made-up numbers on no-pulse copies 1.72 to 1.42 per
- * 100 s; the same direction on the open lab (stage 2). Fewer wrong numbers for 1 point of shown seconds: the owner's worth.
+ * 100 s; the same direction on the open lab (stage 2). Fewer wrong numbers for 1 point of shown seconds: a wrong number costs far more than a missing one.
  */
 export const TRACKER_SETTLE_S = 2;
 
