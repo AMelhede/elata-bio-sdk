@@ -300,19 +300,17 @@ export function peakAndSnr(x: number[]): { bpm: number; snrDb: number } {
  * adds in amplitude while noise that the regions do not share adds only in power; the spectra's sum (combinedSpectrum)
  * gains nothing from that. The cost: a light that steps every region alike adds coherently too.
  */
-export function coherentSpectrum(pulses: readonly number[][], weights?: readonly number[]): Array<[number, number]> {
+export function coherentSpectrum(pulses: readonly number[][]): Array<[number, number]> {
 	const N = pulses[0].length;
 	const sum = new Array<number>(N).fill(0);
-	for (let j = 0; j < pulses.length; j++) {
-		const d = pulses[j];
-		const wj = weights ? weights[j] : 1;
+	for (const d of pulses) {
 		let m = 0;
 		for (const v of d) m += v;
 		m /= N;
 		let v2 = 0;
 		for (const v of d) v2 += (v - m) ** 2;
 		const sd = Math.sqrt(v2 / N) || 1;
-		for (let k = 0; k < N; k++) sum[k] += (wj * (d[k] - m)) / sd;
+		for (let k = 0; k < N; k++) sum[k] += (d[k] - m) / sd;
 	}
 	return spectrum(sum);
 }
@@ -343,14 +341,6 @@ export const ALL_PATCHES_MIN_COUNT = 8;
  * fps above 120. Physics, the same on every camera.
  */
 export const FPS_CEILING_SHARE = 0.4;
-/**
- * Rule allPatches: each patch's weight in the line, in layout order (FACE_PATCH_LAYOUT_ID), learned on the 25 tuning
- * people of a public lab set (CC BY 4.0; Egorov et al., Gaze into the Heart, ACM MM 2025) and nothing else: how reliably
- * that spot of the face carried the pulse (mean share of its in-band power within 4 bpm of a finger reference), less
- * half the typical patch's, scaled to a mean of 1; a patch at 0 is left out. Judged on held-out people, every received
- * recording, no-pulse copies and slow and fast hearts (evsave tools/alldata learned.py).
- */
-export const ALL_PATCHES_WEIGHTS: readonly number[] = Object.freeze([0.848, 0.965, 1.054, 0.967, 0.98, 0.799, 1.093, 1.131, 1.228, 1.199, 1.126, 0.93, 1.09, 1.081, 1.206, 1.201, 1.181, 1.072, 1.025, 1.063, 1.211, 1.22, 1.163, 1.029, 0.81, 0.862, 0.97, 0.852, 0.764, 0.847, 0.924, 0.744, 1.021, 0.998, 1.094, 1.0, 1.106, 1.259, 1.123, 1.103, 1.024, 1.225, 1.033, 0.898, 0.968, 0.947, 0.962, 0.991, 1.132, 1.093, 1.021, 0.981, 1.123, 1.114, 1.217, 1.086, 0.915, 0.921, 1.112, 1.059, 0.982, 0.957, 1.011, 1.011, 1.163, 1.138, 1.133, 0.841, 0.834, 0.898, 1.116, 0.774, 0.838, 1.151, 1.132, 1.08, 1.071, 0.815, 0.745, 0.673, 0.785, 0.938, 0.92, 1.178, 1.146, 0.926, 0.829, 0.832, 0.689, 0.776, 0.752, 0.776, 0.824, 0.867, 0.796, 1.081, 1.125, 1.248, 1.121, 0.649, 0.763, 0.761, 0.73, 1.066, 1.056, 1.078, 1.128, 1.211, 1.145, 1.126, 1.066, 1.075, 1.062, 1.004, 0.944]);
 
 /**
  * Rule allPatches: each valid patch's POS pulse, detrended as the regions' are, for the coherent line (coherentSpectrum).
@@ -368,15 +358,12 @@ export function patchPulses(
 	startMs: number,
 	endMs: number,
 	frames: number,
-): { pulses: number[][]; weights: number[] } | null {
+): number[][] | null {
 	const pw = patches.filter((p) => p[0] >= startMs && p[0] <= endMs);
 	if (pw.length < ALL_PATCHES_MIN_VALID * frames || pw.length < 8) return null;
 	const count = pw[0][1].length / 3;
 	const out: number[][] = [];
-	const weights: number[] = [];
 	for (let i = 0; i < count; i++) {
-		const wi = ALL_PATCHES_WEIGHTS[i] ?? 1;
-		if (!(wi > 0)) continue;
 		const t: number[] = [];
 		const ch: number[][] = [[], [], []];
 		for (const [ms, v] of pw) {
@@ -390,9 +377,8 @@ export function patchPulses(
 		if (t.length < ALL_PATCHES_MIN_VALID * pw.length || t.length < 8) continue;
 		const [R, G, B] = ch.map((c) => resample(t, c, from, to));
 		out.push(detrend(pos(R, G, B), OWN_PULSE_DETREND_S));
-		weights.push(wi);
 	}
-	return out.length >= ALL_PATCHES_MIN_COUNT ? { pulses: out, weights } : null;
+	return out.length >= ALL_PATCHES_MIN_COUNT ? out : null;
 }
 
 export function combinedSpectrum(
@@ -764,7 +750,7 @@ export function estimateOwnPulse(
 	// (whitenedSpectrum); its SNR is judged on the spectrum as measured.
 	// Rule allPatches: the coherent line from every valid face patch instead of the three regions (patchPulses).
 	const fromPatches = coherent && method === "pos" && patches ? patchPulses(patches, from, to, start, end, win.length) : null;
-	const measured = coherent ? (fromPatches ? coherentSpectrum(fromPatches.pulses, fromPatches.weights) : coherentSpectrum(pulses)) : combinedSpectrum(spectra);
+	const measured = coherent ? coherentSpectrum(fromPatches ?? pulses) : combinedSpectrum(spectra);
 	const comb = whitenedSpectrum(measured);
 	let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
 	if (driftLine) line = pastDriftLine(line, comb, measured, regions);

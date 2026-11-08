@@ -47,20 +47,6 @@ describe("rule allPatches", () => {
 	it("a patch without skin on more than a tenth of the frames is left out", () => {
 		const { patches, end } = make(ALL_PATCHES_MIN_COUNT + 1);
 		patches.forEach((p, k) => { if (k % 5 === 0) p[1][0] = Number.NaN; });
-		expect(patchPulses(patches, 0, end / 1000, 0, end, N)?.pulses.length).toBe(ALL_PATCHES_MIN_COUNT);
-	});
-});
-
-import { FACE_PATCH_COUNT } from "../facePatches";
-import { ALL_PATCHES_WEIGHTS, coherentSpectrum } from "../pulseCheckCore";
-describe("allPatches learned weights", () => {
-	it("one weight per patch of the layout, none negative", () => {
-		expect(ALL_PATCHES_WEIGHTS.length).toBe(FACE_PATCH_COUNT);
-		expect(Math.min(...ALL_PATCHES_WEIGHTS)).toBeGreaterThanOrEqual(0);
-	});
-	it("a pulse weighted 0 adds nothing to the coherent line", () => {
-		const a = Array.from({ length: 320 }, (_, k) => Math.sin((2 * Math.PI * k) / 20));
-		const b = Array.from({ length: 320 }, (_, k) => Math.sin((2 * Math.PI * k) / 9));
-		expect(coherentSpectrum([a, b], [1, 0])).toEqual(coherentSpectrum([a]));
+		expect(patchPulses(patches, 0, end / 1000, 0, end, N)?.length).toBe(ALL_PATCHES_MIN_COUNT);
 	});
 });
