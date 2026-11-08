@@ -74,7 +74,6 @@ describe("PulseCheck light rules, one switch each", () => {
 			heldFrames: true,
 			allPatches: true,
 			fpsCeiling: false,
-			harmonicStart: false,
 			tracker: false,
 			slowDouble: true,
 		});

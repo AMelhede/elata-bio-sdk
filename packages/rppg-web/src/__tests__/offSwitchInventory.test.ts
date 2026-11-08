@@ -7,7 +7,6 @@ import { PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules } from "../pulseCheck";
 const OFF_SWITCHES: Record<string, string> = {
 	moreReadings: "2026-11-30", // testers' paired runs; shows more numbers on photos, needs liveness first
 	fpsCeiling: "2026-11-30", // being measured on received files and the full gate before it is turned on
-	harmonicStart: "2026-11-30", // being measured on received files and the full gate before it is turned on
 	tracker: "2026-12-31", // the one-model redesign: measured on every received file, the lab and the full gate before it replaces the streak rules
 	blinkGate: "2026-11-30",
 	experimentalVitals: "2026-12-31", // research box, never shown as a reading (a session option, not a rule)

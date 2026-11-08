@@ -6,8 +6,9 @@ import { PULSE_CHECK_RULE_NAMES } from "../pulseCheck";
 // AND records the rule as named debt (expiry and the tracker case that deletes it) in the private ledger. Deleting a rule
 // lowers the ceiling. Set 2026-11-06 at 25 (22 on the 5th, plus allPatches, fpsCeiling, harmonicStart); 26 the same
 // day for rule tracker, the mechanism itself, and back to 25 when rule trackLine, which it supersedes, was deleted.
-// When the tracker passes its gate, the rules it replaces are deleted.
-const RULE_CEILING = 25;
+// 24 the same day: harmonicStart deleted (its case passes on the tracker). When the tracker passes its gate, the rules
+// it replaces are deleted.
+const RULE_CEILING = 24;
 
 describe("rule ceiling", () => {
 	it("the count of the pulse check's rules never grows without a deliberate change here", () => {

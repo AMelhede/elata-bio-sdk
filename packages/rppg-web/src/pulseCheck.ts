@@ -352,12 +352,6 @@ export type PulseCheckRules = {
 	 */
 	allPatches?: boolean;
 	/**
-	 * OFF unless true, being measured (2026-11-06): with coherentStart, a new number also waits while a quarter of the
-	 * recent window rates sit within 10% of its double or its half (HARMONIC_START_SHARE): the camera cannot yet tell
-	 * the heart from its octave. Found on a workout file: a first number of 64 at a ring's 123.
-	 */
-	harmonicStart?: boolean;
-	/**
 	 * OFF unless true, being measured (2026-11-06): a window's line above 0.4 times its own frame rate (pulseCheckCore
 	 * FPS_CEILING_SHARE: past what the camera's frames resolve, where fast rates fold onto wrong ones) is not a line.
 	 * Changes nothing at 30 fps; acts only on slow cameras.
@@ -461,7 +455,6 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"bridgeGap",
 	"heldFrames",
 	"allPatches",
-	"harmonicStart",
 	"fpsCeiling",
 	"tracker",
 ] as const;
@@ -507,20 +500,6 @@ export const FOLLOW_RESUME_MS = 45_000;
 export const COHERENT_START_MS = 30_000;
 export const COHERENT_START_BPM = 6;
 export const COHERENT_START_SHARE = 0.5;
-/**
- * Rule harmonicStart: a new number waits while this share of the recent window rates (COHERENT_START_MS) lies within
- * HARMONIC_START_TOL of its double or its half. A quarter: a real heart's own windows almost never jump to an octave
- * (its harmonic is weaker than its fundamental), so a quarter of them there is the ambiguity, not noise; 10% because
- * an octave error is not exact (a 123 heart's half-rate line read 63-64, its double 135-139 in the same file).
- */
-export const HARMONIC_START_SHARE = 0.25;
-export const HARMONIC_START_TOL = 0.1;
-/** Rule harmonicStart: whether HARMONIC_START_SHARE of the window rates sit within HARMONIC_START_TOL of v's double or half. */
-export function octaveAmbiguous(rates: readonly number[], v: number): boolean {
-	if (!rates.length) return false;
-	const near = (b: number, x: number) => Math.abs(b - x) <= HARMONIC_START_TOL * x;
-	return rates.filter((b) => near(b, 2 * v) || near(b, v / 2)).length / rates.length >= HARMONIC_START_SHARE;
-}
 export const FOLLOW_RESUME_MIN_S = 6;
 export const FOLLOW_RESUME_REGIONS = 2;
 /**
@@ -871,7 +850,6 @@ export function resolvePulseCheckRules(
 		bridgeGap: rules?.bridgeGap !== false,
 		heldFrames: rules?.heldFrames !== false,
 		allPatches: rules?.allPatches !== false,
-		harmonicStart: rules?.harmonicStart === true,
 		fpsCeiling: rules?.fpsCeiling === true,
 		tracker: rules?.tracker === true,
 	};
@@ -1915,11 +1893,7 @@ export class PulseCheck {
 			? this.startHist.filter(([, b]) => Math.abs(b - v) <= COHERENT_START_BPM)
 					.length / n
 			: 1;
-		// Rule harmonicStart: a new number is also withheld while a real share of the same windows sits near its double or its
-		// half: the camera cannot yet tell which is the heart (a strong half-rate line with its double looks like a real heart
-		// at the half). A workout file showed 64 at a ring's 123 with 7 of 14 windows at 63-64 and 7 at 135-139.
-		const ambiguous = this.rules.harmonicStart && octaveAmbiguous(this.startHist.map(([, b]) => b), v);
-		if (share >= COHERENT_START_SHARE && !ambiguous) this.lastOutMs = t;
+		if (share >= COHERENT_START_SHARE) this.lastOutMs = t;
 		else this.state.startGated = true;
 	}
 
