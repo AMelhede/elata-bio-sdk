@@ -79,33 +79,6 @@ const MAX_LANDMARK = Math.max(...FACE_PATCH_LANDMARKS);
  * One frame's patches. `box`: the percentile box [x0, y0, w, h] in pixels the layout was placed in. `values`:
  * FACE_PATCH_COUNT x FACE_PATCH_FIELDS integers, patch after patch.
  */
-/**
- * Half-widths of the skin test around the face's own chroma: those of the fixed box it replaces (Cb 77 to 127, Cr 133 to
- * 173), so on a face whose colour sits at that box's centre the test is the same; it only moves with the face.
- */
-export const SKIN_CB_HALF = 25;
-export const SKIN_CR_HALF = 20;
-
-/**
- * The face's chroma this frame: the median Cb and Cr of the central half of the face box, every 4th pixel each way
- * (the centre is cheek and nose, skin on nearly every face; eyes, brows and hair sit at the box's edges).
- */
-export function faceChroma(data: ArrayLike<number>, W: number, H: number, bx: number, by: number, bw: number, bh: number): [number, number] {
-	const cbs: number[] = [], crs: number[] = [];
-	const x0 = Math.max(0, Math.round(bx + bw / 4)), x1 = Math.min(W, Math.round(bx + (3 * bw) / 4));
-	const y0 = Math.max(0, Math.round(by + bh / 4)), y1 = Math.min(H, Math.round(by + (3 * bh) / 4));
-	for (let row = y0; row < y1; row += 4)
-		for (let col = x0; col < x1; col += 4) {
-			const i = (row * W + col) * 4;
-			const r = data[i], g = data[i + 1], b = data[i + 2];
-			cbs.push(128 - 0.168736 * r - 0.331264 * g + 0.5 * b);
-			crs.push(128 + 0.5 * r - 0.418688 * g - 0.081312 * b);
-		}
-	if (!cbs.length) return [102, 153];
-	const med = (a: number[]) => a.sort((p, q) => p - q)[a.length >> 1];
-	return [med(cbs), med(crs)];
-}
-
 export type FacePatches = { box: [number, number, number, number]; values: Uint32Array };
 
 /** Reused sort buffers: the percentile box sorts every landmark twice a frame, with no allocation. */
@@ -144,9 +117,6 @@ export function facePatchesFromFrame(
 	const bw = Math.max(1, bx1 - bx0);
 	const bh = Math.max(1, by1 - by0);
 	const values = new Uint32Array(FACE_PATCH_COUNT * PF);
-	// Skin is judged against this face's own colour this frame (faceChroma), not a fixed box: a warm light, a camera's
-	// colour cast or a skin tone at the fixed box's edge moved every pixel out of it (a night-light run kept 1% of the face).
-	const [mcb, mcr] = faceChroma(data, W, H, bx0, by0, bw, bh);
 	const patch = (px0: number, py0: number, px1: number, py1: number, o: number) => {
 		const x0 = Math.max(0, Math.min(W, px0));
 		const x1 = Math.max(0, Math.min(W, px1));
@@ -160,7 +130,7 @@ export function facePatchesFromFrame(
 				n++;
 				const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
 				const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-				if (Math.abs(cb - mcb) <= SKIN_CB_HALF && Math.abs(cr - mcr) <= SKIN_CR_HALF) {
+				if (cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) {
 					sR += r;
 					sG += g;
 					sB += b;
@@ -211,7 +181,6 @@ export function foreheadPoolFromFrame(
 	const pick = (v: Float64Array, q: number) => v[Math.min(v.length - 1, Math.max(0, Math.floor((v.length - 1) * q)))];
 	const bx0 = pick(xs, 0.05) * W, bx1 = pick(xs, 0.95) * W, by0 = pick(ys, 0.03) * H, by1 = pick(ys, 0.97) * H;
 	const bw = Math.max(1, bx1 - bx0), bh = Math.max(1, by1 - by0);
-	const [mcb, mcr] = faceChroma(data, W, H, bx0, by0, bw, bh); // as facePatchesFromFrame
 	const mean = new Float64Array(FOREHEAD_POOL_SIZE * 3), skin = new Float64Array(FOREHEAD_POOL_SIZE), n = new Float64Array(FOREHEAD_POOL_SIZE);
 	const patch = (px0: number, py0: number, px1: number, py1: number, k: number) => {
 		const x0 = Math.max(0, Math.min(W, px0)), x1 = Math.max(0, Math.min(W, px1));
@@ -224,7 +193,7 @@ export function foreheadPoolFromFrame(
 				cnt++;
 				const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
 				const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-				if (Math.abs(cb - mcb) <= SKIN_CB_HALF && Math.abs(cr - mcr) <= SKIN_CR_HALF) { sR += r; sG += g; sB += b; sk++; }
+				if (cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) { sR += r; sG += g; sB += b; sk++; }
 			}
 		}
 		mean[3 * k] = sk ? sR / sk : NaN; mean[3 * k + 1] = sk ? sG / sk : NaN; mean[3 * k + 2] = sk ? sB / sk : NaN;
