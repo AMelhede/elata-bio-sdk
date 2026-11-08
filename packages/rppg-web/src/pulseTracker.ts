@@ -1,0 +1,211 @@
+/**
+ * Rule tracker: one model for "is there a pulse, and at what rate", in place of the streak rules.
+ *
+ * A forward hidden Markov filter over heart-rate bins (TRACKER_LO_BPM..TRACKER_HI_BPM, 1 bpm) plus one no-pulse
+ * state, stepped once per window (Rabiner 1989; the same structure as wrist-PPG trackers such as BeliefPPG, Bieri
+ * 2023, and TROIKA, Zhang 2015, with a no-pulse state added so a weak or absent pulse withholds instead of holding).
+ *
+ * - Evidence: each rate's band power plus TRACKER_HARMONIC of the power at twice the rate, against its noise floor: the
+ *   higher of the median power within TRACKER_WHITEN_BPM of that rate and the band's median (slow drift rises toward
+ *   low rates while a pulse is a narrow line, so a drift line at the band's bottom is not mistaken for a pulse, the
+ *   general form of rule driftLine; the band's median keeps a local floor that reads low by chance from making noise
+ *   look like a line). Its log is tempered by TRACKER_TAU, since windows a second apart share most of their samples.
+ * - Motion: within a pulse, the rate moves by a normal step of TRACKER_SIGMA_BPM per second. A heart does not drop
+ *   70 bpm in 2 s, so a jump to half or double the rate can only happen by leaving through the no-pulse state
+ *   (TRACKER_Q_OFF per second) and entering again (TRACKER_Q_ON, spread evenly over the rates: no prior that would
+ *   bend a slow or fast heart toward the middle).
+ * - Shown: the posterior mass within the bar (5 bpm or 10%) of its mode, at TRACKER_SHOW or more; the rate
+ *   shown is the posterior mean over that span.
+ *
+ * Values chosen by measurement on recorded captures against a reference pulse, with their no-pulse copies.
+ */
+
+export const TRACKER_LO_BPM = 42;
+export const TRACKER_HI_BPM = 180;
+export const TRACKER_HARMONIC = 0;
+export const TRACKER_WHITEN_BPM = 39;
+export const TRACKER_TAU = 4;
+export const TRACKER_SIGMA_BPM = 2;
+export const TRACKER_Q_OFF = 0.1;
+export const TRACKER_Q_ON = 0.02;
+export const TRACKER_SHOW = 0.4;
+/** Before a full window, the tracker reads the window there is, from this many seconds (the growing window). */
+export const TRACKER_FIRST_WINDOW_S = 6;
+
+export type TrackerParams = {
+	tau: number;
+	sigma: number;
+	qOff: number;
+	qOn: number;
+	harmonic: number;
+	whitenBpm: number;
+	show: number;
+};
+
+export const TRACKER_DEFAULTS: TrackerParams = {
+	tau: TRACKER_TAU,
+	sigma: TRACKER_SIGMA_BPM,
+	qOff: TRACKER_Q_OFF,
+	qOn: TRACKER_Q_ON,
+	harmonic: TRACKER_HARMONIC,
+	whitenBpm: TRACKER_WHITEN_BPM,
+	show: TRACKER_SHOW,
+};
+
+export type TrackerStep = {
+	/** Posterior mass within the bar of the mode (what TRACKER_SHOW is judged on). */
+	mass: number;
+	/** Posterior mean rate over that span. */
+	bpm: number;
+	/** 1 - P(no pulse). */
+	pPulse: number;
+	/** True when mass >= show. */
+	shown: boolean;
+};
+
+export type TrackerEvidence = {
+	/** Highest rate the window can carry (rule fpsCeiling's 0.4 x frame rate), or null for the whole band. */
+	capBpm?: number | null;
+	/** Rates the window's evidence must not count: a non-pulse source (the wall, the room, the head) carries them. */
+	suppressBpm?: readonly number[];
+	/** The window is not evidence at all (a held picture, a stepping light): time passes, nothing is learned. */
+	none?: boolean;
+};
+
+/** Linear interpolation of a spectrum given as ascending [bpm, power] rows; 0 outside it. */
+function powerAt(rows: ReadonlyArray<readonly [number, number]>, bpm: number): number {
+	const n = rows.length;
+	if (!n || bpm < rows[0][0] || bpm > rows[n - 1][0]) return 0;
+	let lo = 0;
+	let hi = n - 1;
+	while (hi - lo > 1) {
+		const mid = (lo + hi) >> 1;
+		if (rows[mid][0] <= bpm) lo = mid;
+		else hi = mid;
+	}
+	const [b0, p0] = rows[lo];
+	const [b1, p1] = rows[hi];
+	return b1 === b0 ? p0 : p0 + ((p1 - p0) * (bpm - b0)) / (b1 - b0);
+}
+
+function median(xs: number[]): number {
+	const s = xs.slice().sort((a, b) => a - b);
+	const m = s.length >> 1;
+	return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+export class PulseTracker {
+	readonly rates: number[];
+	private readonly K: Float64Array[];
+	private readonly near: number[][];
+	private a: Float64Array;
+	private aN = 1;
+	private lastMs: number | null = null;
+	readonly p: TrackerParams;
+
+	constructor(params: Partial<TrackerParams> = {}) {
+		this.p = { ...TRACKER_DEFAULTS, ...params };
+		this.rates = [];
+		for (let b = TRACKER_LO_BPM; b <= TRACKER_HI_BPM; b++) this.rates.push(b);
+		const n = this.rates.length;
+		// Column-normalised normal kernel: K[j][i] = P(rate j now | rate i a second ago).
+		const cols: Float64Array[] = [];
+		for (let i = 0; i < n; i++) {
+			const c = new Float64Array(n);
+			let s = 0;
+			for (let j = 0; j < n; j++) {
+				const d = (this.rates[j] - this.rates[i]) / this.p.sigma;
+				c[j] = Math.exp(-0.5 * d * d);
+				s += c[j];
+			}
+			for (let j = 0; j < n; j++) c[j] /= s;
+			cols.push(c);
+		}
+		this.K = cols;
+		this.near = this.rates.map((b) => {
+			if (this.p.whitenBpm <= 0) return [];
+			const out: number[] = [];
+			this.rates.forEach((r, j) => {
+				if (Math.abs(r - b) <= this.p.whitenBpm) out.push(j);
+			});
+			return out;
+		});
+		this.a = new Float64Array(n);
+	}
+
+	reset(): void {
+		this.a = new Float64Array(this.rates.length);
+		this.aN = 1;
+		this.lastMs = null;
+	}
+
+	/** One second of time with no evidence (the prior moves; nothing is learned). */
+	private predict(): void {
+		const n = this.rates.length;
+		const { qOff, qOn } = this.p;
+		const next = new Float64Array(n);
+		let sum = 0;
+		for (let i = 0; i < n; i++) {
+			const ai = this.a[i];
+			sum += ai;
+			if (ai === 0) continue;
+			const c = this.K[i];
+			for (let j = 0; j < n; j++) next[j] += ai * c[j];
+		}
+		const enter = (qOn * this.aN) / n;
+		for (let j = 0; j < n; j++) next[j] = (1 - qOff) * next[j] + enter;
+		this.aN = qOff * sum + (1 - qOn) * this.aN;
+		this.a = next;
+	}
+
+	/**
+	 * Advance to `timestampMs` and take one window's in-band power spectrum ([bpm, power], ascending, as measured,
+	 * not whitened). Returns the posterior summary.
+	 */
+	step(
+		timestampMs: number,
+		spectrum: ReadonlyArray<readonly [number, number]>,
+		ev: TrackerEvidence = {},
+	): TrackerStep {
+		const steps = this.lastMs == null ? 1 : Math.max(1, Math.round((timestampMs - this.lastMs) / 1000));
+		this.lastMs = timestampMs;
+		for (let s = 0; s < steps; s++) this.predict();
+		const n = this.rates.length;
+		if (!ev.none && spectrum.length) {
+			const H = this.rates.map((b) => powerAt(spectrum, b) + this.p.harmonic * powerAt(spectrum, 2 * b));
+			const l = new Float64Array(n);
+			let lmax = 0; // the no-pulse state's evidence is log 1 = 0
+			const bandMedian = median(H);
+			const cap = ev.capBpm ?? Infinity;
+			const sup = ev.suppressBpm ?? [];
+			for (let j = 0; j < n; j++) {
+				const b = this.rates[j];
+				if (b > cap || sup.some((s) => Math.abs(s - b) <= Math.max(5, 0.1 * s))) continue;
+				const floor = this.p.whitenBpm > 0 ? Math.max(median(this.near[j].map((k) => H[k])), bandMedian) : bandMedian;
+				const noise = floor / Math.LN2 + 1e-30;
+				l[j] = Math.log(Math.max(H[j] / noise, 1e-6)) / this.p.tau;
+				if (l[j] > lmax) lmax = l[j];
+			}
+			let s = Math.exp(-lmax) * this.aN;
+			for (let j = 0; j < n; j++) {
+				this.a[j] *= Math.exp(l[j] - lmax);
+				s += this.a[j];
+			}
+			this.aN = (Math.exp(-lmax) * this.aN) / s;
+			for (let j = 0; j < n; j++) this.a[j] /= s;
+		}
+		let m = 0;
+		for (let j = 1; j < n; j++) if (this.a[j] > this.a[m]) m = j;
+		const mode = this.rates[m];
+		const half = Math.max(5, 0.1 * mode);
+		let mass = 0;
+		let wsum = 0;
+		for (let j = 0; j < n; j++) {
+			if (Math.abs(this.rates[j] - mode) > half) continue;
+			mass += this.a[j];
+			wsum += this.a[j] * this.rates[j];
+		}
+		const bpm = mass > 0 ? wsum / mass : mode;
+		return { mass, bpm, pPulse: 1 - this.aN, shown: mass >= this.p.show };
+	}
+}

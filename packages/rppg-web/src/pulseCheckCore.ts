@@ -82,8 +82,8 @@ export interface OwnPulseEstimate {
 	 * band at least CLEAR_RUNNER_UP_BPM away on either side (Infinity with none, null with no line). Rule clearWindows.
 	 */
 	lineMarginDb?: number | null;
-	/** Rule trackLine: the window's whitened combined spectrum in the band, [bpm, power] per bin (only when asked for). */
-	band?: Array<[number, number]>;
+	/** Rule tracker: the window's in-band spectrum as measured (not whitened), [bpm, power] per bin (only when asked for). */
+	measuredBand?: Array<[number, number]>;
 	/** How the pulse was read from the colours this window (see OWN_PULSE_COLOUR_DAMAGE). */
 	method?: "pos" | "greenMinusWall";
 	/** The colour-damage measure this window (see OWN_PULSE_COLOUR_DAMAGE), or null. */
@@ -669,7 +669,7 @@ export function estimateOwnPulse(
 	driftLine = false,
 	/** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
 	slowDouble = false,
-	/** Rule trackLine: hand back the whitened in-band spectrum (`band`) for the line track across windows. */
+	/** Rule tracker: hand back the in-band spectrum as measured (`measuredBand`) for the tracker. */
 	wantBand = false,
 	/** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
 	patches: readonly PatchSample[] | null = null,
@@ -782,7 +782,7 @@ export function estimateOwnPulse(
 		wallToFace: wallToFace == null ? null : Math.round(wallToFace * 1000) / 1000,
 		...(wantBand
 			? {
-					band: comb
+					measuredBand: measured
 						.filter(([f]) => f >= OWN_PULSE_BAND_HZ[0] && f <= OWN_PULSE_BAND_HZ[1])
 						.map(([f, p]) => [f * 60, p] as [number, number]),
 				}
