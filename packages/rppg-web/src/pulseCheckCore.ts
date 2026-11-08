@@ -419,6 +419,48 @@ export function whitenedSpectrum(
 }
 
 /** POS (Wang 2017): temporally normalised RGB, S1 = G - B, S2 = G + B - 2R, h = S1 + alpha S2, 1.6 s sliding windows, overlap-added. */
+/**
+ * Rule adaptiveColour: the pulse from the colour mix this window's own video supports best. Every mix stays blind to a
+ * change of brightness (it lies in the plane orthogonal to [1, 1, 1], as POS's two signals do, de Haan 2017), so movement
+ * and a light stepping all channels alike stay out; within that plane the one direction kept is the one with the most
+ * heart-band power per unit of frame-to-frame noise (a 2 x 2 generalized eigenproblem, closed form). Under a warm light
+ * (a night light, a lamp) the starved channel is mostly camera noise and gets little weight, where POS's fixed mix adds
+ * it in; under white light the result is close to POS. One free direction per window, no constant fitted to any camera.
+ */
+export function adaptivePos(R: number[], G: number[], B: number[]): number[] {
+	const n = R.length;
+	const w = Math.max(3, Math.round(1.6 * OWN_PULSE_FS));
+	const norm = (x: number[]) => {
+		const m = movingMean(x, w);
+		return x.map((v, k) => v / (m[k] || 1) - 1);
+	};
+	const [r, g, b] = [norm(R), norm(G), norm(B)];
+	const s1 = r.map((_, k) => (g[k] - b[k]) / Math.SQRT2);
+	const s2 = r.map((_, k) => (-2 * r[k] + g[k] + b[k]) / Math.sqrt(6));
+	// Heart band: detrended and lightly smoothed (removes drift and most frame noise); noise: frame-to-frame steps.
+	const sm = Math.max(1, Math.round(OWN_PULSE_FS / (2 * OWN_PULSE_BAND_HZ[1])));
+	const band = (x: number[]) => movingMean(detrend(x, OWN_PULSE_DETREND_S), sm);
+	const [p1, p2] = [band(s1), band(s2)];
+	let a11 = 0, a12 = 0, a22 = 0, b11 = 0, b12 = 0, b22 = 0;
+	for (let k = 0; k < n; k++) {
+		a11 += p1[k] * p1[k]; a12 += p1[k] * p2[k]; a22 += p2[k] * p2[k];
+		if (k > 0) {
+			const d1 = s1[k] - s1[k - 1], d2 = s2[k] - s2[k - 1];
+			b11 += d1 * d1; b12 += d1 * d2; b22 += d2 * d2;
+		}
+	}
+	// Largest eigenvector of B^-1 A.
+	const det = b11 * b22 - b12 * b12;
+	if (!(det > 0)) return pos(R, G, B);
+	const [m11, m12, m21, m22] = [(b22 * a11 - b12 * a12) / det, (b22 * a12 - b12 * a22) / det, (b11 * a12 - b12 * a11) / det, (b11 * a22 - b12 * a12) / det];
+	const tr = m11 + m22, dd = Math.sqrt(Math.max(0, (m11 - m22) ** 2 / 4 + m12 * m21));
+	const lam = tr / 2 + dd;
+	let [v1, v2] = Math.abs(m12) > 1e-15 ? [m12, lam - m11] : [lam - m22, m21];
+	const len = Math.hypot(v1, v2) || 1;
+	v1 /= len; v2 /= len;
+	return s1.map((x, k) => v1 * x + v2 * s2[k]);
+}
+
 export function pos(R: number[], G: number[], B: number[]): number[] {
 	const win = Math.round(1.6 * OWN_PULSE_FS);
 	const h = new Array<number>(R.length).fill(0);
@@ -666,6 +708,8 @@ export function estimateOwnPulse(
 	wantBand = false,
 	/** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
 	patches: readonly PatchSample[] | null = null,
+	/** Rule adaptiveColour: each region's pulse from adaptivePos instead of POS's fixed mix. */
+	adaptive = false,
 ): OwnPulseEstimate | null {
 	if (samples.length < 8) return null;
 	const end = atMs;
@@ -705,7 +749,7 @@ export function estimateOwnPulse(
 			)
 		: null;
 	// POS once per region: the colour damage and the region's pulse read the same projection.
-	const posOf = channels.map(([R, G, B]) => pos(R, G, B));
+	const posOf = channels.map(([R, G, B]) => (adaptive ? adaptivePos(R, G, B) : pos(R, G, B)));
 	const damages = channels
 		.map(([, G], ri) => fastNoise(posOf[ri]) / fastNoise(zeroMeanNorm(G)))
 		.sort((a, b) => a - b);
