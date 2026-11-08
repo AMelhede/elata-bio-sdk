@@ -51,6 +51,15 @@ export const TRACKER_RESUME_MASS = 0.2;
  */
 export const TRACKER_START_MASS = 0;
 /**
+ * How wide the prior after a break is: a heart rate drifts back toward its own level rather than walking, so over a gap
+ * of D s its change has a spread of TRACKER_SEED_SD_BPM x sqrt(1 - exp(-D / TRACKER_SEED_TAU_S)), never below the motion
+ * step. Measured on the lab's finger reference (300 recordings, 5 s median): spread 3.1, 4.5, 5.4, 5.8, 6.7 bpm at gaps
+ * of 5, 10, 20, 30, 60 s, where the walk gives 6.7, 9.5, 13.4, 16.4, 23.2; 7 bpm and 20 s fit it. Infinity keeps the
+ * walk (sigma x sqrt(D)). Under test (scratchpad tracker/a3).
+ */
+export const TRACKER_SEED_SD_BPM = Infinity;
+export const TRACKER_SEED_TAU_S = 20;
+/**
  * The newest TRACKER_RECENT_S seconds as a second source of evidence (a moving heart shows there before the full window
  * catches up), tempered by TRACKER_TAU times this; Infinity leaves it out.
  */
@@ -222,7 +231,10 @@ export class PulseTracker {
 
 	/** Seed the filter with a rate shown `ageS` seconds ago (TRACKER_RESUME_MASS around it, widened by the motion step). */
 	seed(bpm: number, ageS: number, mass: number = TRACKER_RESUME_MASS): void {
-		const sd = this.p.sigma * Math.sqrt(Math.max(1, ageS));
+		const age = Math.max(1, ageS);
+		const sd = Number.isFinite(TRACKER_SEED_SD_BPM)
+			? Math.max(this.p.sigma, TRACKER_SEED_SD_BPM * Math.sqrt(1 - Math.exp(-age / TRACKER_SEED_TAU_S)))
+			: this.p.sigma * Math.sqrt(age);
 		const w = this.rates.map((r) => Math.exp(-0.5 * ((r - bpm) / sd) ** 2));
 		const sum = w.reduce((x, y) => x + y, 0) || 1;
 		this.a = Float64Array.from(w, (v) => (mass * v) / sum);
