@@ -75,14 +75,6 @@ export const TRACKER_FIRST_WINDOW_S = 6;
  * 100 s; the same direction on the open lab (stage 2). Fewer wrong numbers for 1 point of shown seconds: the owner's worth.
  */
 export const TRACKER_SETTLE_S = 2;
-/**
- * A window with holes in it (frames that never came: a camera stall the gap bridge spans) is worth only the part of it that was
- * observed: its evidence is tempered by coverage ^ this (coverage = the window's share of time within TRACKER_COVERAGE_GAP_S of
- * a frame). A regular 2 s hole every 8 s puts sidebands at +-7.5 bpm on the line, read whole as if it were the pulse. 0 = off
- * (every window whole, unchanged). Under test.
- */
-export const TRACKER_COVERAGE_POW = 0;
-export const TRACKER_COVERAGE_GAP_S = 0.25;
 
 export type TrackerParams = {
 	tau: number;
@@ -126,8 +118,6 @@ export type TrackerEvidence = {
 	none?: boolean;
 	/** The newest TRACKER_RECENT_S seconds' in-band spectrum, as measured (second evidence; see TRACKER_RECENT_TAU_FACTOR). */
 	recent?: ReadonlyArray<readonly [number, number]> | null;
-	/** How much of a whole window this one is worth, 0 to 1 (its share of time with frames; see TRACKER_COVERAGE_POW); 1 if left out. */
-	weight?: number;
 };
 
 /** Linear interpolation of a spectrum given as ascending [bpm, power] rows; 0 outside it. */
@@ -300,8 +290,7 @@ export class PulseTracker {
 		if (!ev.none && spectrum.length) {
 			const cap = ev.capBpm ?? Infinity;
 			const sup = ev.suppressBpm ?? [];
-			const w = Math.min(1, Math.max(0, ev.weight ?? 1));
-			const l = this.evidence(spectrum, cap, sup, this.p.tau / Math.max(w, 1e-9));
+			const l = this.evidence(spectrum, cap, sup, this.p.tau);
 			if (ev.recent && ev.recent.length && Number.isFinite(this.p.recentTauFactor)) {
 				const l2 = this.evidence(ev.recent, cap, sup, this.p.tau * this.p.recentTauFactor);
 				for (let j = 0; j < n; j++) l[j] += l2[j];

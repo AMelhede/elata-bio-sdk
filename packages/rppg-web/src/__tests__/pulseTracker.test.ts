@@ -140,19 +140,3 @@ describe("PulseTracker (rule tracker)", () => {
 		});
 	});
 });
-
-describe("tracker: a window's weight (TRACKER_COVERAGE_POW)", () => {
-	it("a window worth half builds belief more slowly than a whole one, and weight 1 is the same as none given", () => {
-		const r = rng(41);
-		const S = Array.from({ length: 12 }, () => spectrum(r, [[72, 6]]));
-		const mass = (w: number | undefined) => {
-			const T = new PulseTracker();
-			let m = 0;
-			S.forEach((sp, k) => (m = T.step(k * 1000, sp, w === undefined ? {} : { weight: w }).mass));
-			return m;
-		};
-		expect(mass(0.5)).toBeLessThan(mass(1));
-		expect(mass(1)).toBe(mass(undefined));
-		expect(mass(0)).toBeLessThan(0.05);
-	});
-});
