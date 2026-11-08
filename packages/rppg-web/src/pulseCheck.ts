@@ -131,6 +131,8 @@ export type PulseCheckState = {
 	screenLight?: boolean;
 	/** Rule tracker: the tracker's posterior mass within the bar of its mode (it shows at TRACKER_SHOW or more). */
 	trackerMass?: number | null;
+	/** Rule tracker, for offline tuning: the window's measured in-band spectrum and evidence flags the tracker took. */
+	trackerIn?: { band: Array<[number, number]>; none: boolean; suppress: number[]; capBpm: number | null } | null;
 };
 
 /**
@@ -1855,6 +1857,8 @@ export class PulseCheck {
 		if (est?.bpm != null && headKeepsTime(this.head, t, est.bpm)) suppress.push(est.bpm);
 		const capBpm = est ? FPS_CEILING_SHARE * est.fps * 60 : null;
 		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm });
+		// For offline tuning: exactly what the tracker saw this second.
+		this.state.trackerIn = { band: band ?? [], none, suppress, capBpm };
 		this.state.verdict = s.shown ? "measured" : est ? "not-measured" : this.state.verdict;
 		this.state.bpm = s.shown ? Math.round(s.bpm * 10) / 10 : null;
 		this.state.via = s.shown ? "check" : null;

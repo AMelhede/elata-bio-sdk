@@ -114,7 +114,7 @@ describe("PulseTracker (rule tracker)", () => {
 	it.each(["a", "b"])("matches the Python screen it was tuned with (parity fixture %s)", (name) => {
 		const fx = name === "a" ? require("./fixtures/tracker-parity-a.json") : require("./fixtures/tracker-parity-b.json");
 		const p = fx.params;
-		const T = new PulseTracker({ tau: p.tau, sigma: p.sigma, qOn: p.q_on, qOff: p.q_off, harmonic: p.w2, whitenBpm: p.wh, show: 0.4 });
+		const T = new PulseTracker({ tau: p.tau, sigma: p.sigma, qOn: p.q_on, qOff: p.q_off, show: p.show });
 		fx.expected.forEach(([t, mass, bpm, pPulse]: number[], i: number) => {
 			const rows = (fx.grid as number[]).map((b, k) => [b, fx.spectra[i][k]] as [number, number]);
 			const s = T.step(t * 1000, rows);

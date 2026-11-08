@@ -25,10 +25,19 @@ export const TRACKER_HI_BPM = 180;
 export const TRACKER_HARMONIC = 0;
 export const TRACKER_WHITEN_BPM = 39;
 export const TRACKER_TAU = 4;
-export const TRACKER_SIGMA_BPM = 2;
-export const TRACKER_Q_OFF = 0.1;
+export const TRACKER_SIGMA_BPM = 3;
+export const TRACKER_Q_OFF = 0.05;
 export const TRACKER_Q_ON = 0.02;
-export const TRACKER_SHOW = 0.4;
+export const TRACKER_SHOW = 0.25;
+/**
+ * Within this many bpm of either end of the band the median window is one-sided and reads below a drift that rises
+ * toward the edge, so there the floor is also a straight-line fit of log power over the neighbours (TRACKER_FIT_GAP_BPM
+ * and more away, so a rate's own line does not lift its floor), plus Euler's constant (for noise of mean m, the mean
+ * log power is log m - 0.577); the higher of the two counts.
+ */
+export const TRACKER_EDGE_BPM = 6;
+export const TRACKER_FIT_GAP_BPM = 6;
+const EULER = 0.5772156649015329;
 /** Before a full window, the tracker reads the window there is, from this many seconds (the growing window). */
 export const TRACKER_FIRST_WINDOW_S = 6;
 
@@ -133,6 +142,39 @@ export class PulseTracker {
 		this.a = new Float64Array(n);
 	}
 
+	/** The edge floor (TRACKER_EDGE_BPM): the line fit at each rate near either end of the band, 0 elsewhere. */
+	private edgeFit(H: number[]): Float64Array {
+		const n = this.rates.length;
+		const out = new Float64Array(n);
+		const lo = this.rates[0];
+		const hi = this.rates[n - 1];
+		for (let j = 0; j < n; j++) {
+			const b = this.rates[j];
+			if (b - lo >= TRACKER_EDGE_BPM && hi - b >= TRACKER_EDGE_BPM) continue;
+			let s0 = 0;
+			let sx = 0;
+			let sxx = 0;
+			let sy = 0;
+			let sxy = 0;
+			for (let k = 0; k < n; k++) {
+				const d = Math.abs(this.rates[k] - b);
+				if (d > this.p.whitenBpm || d <= TRACKER_FIT_GAP_BPM) continue;
+				const x = this.rates[k];
+				const y = Math.log(Math.max(H[k], 1e-30));
+				s0 += 1;
+				sx += x;
+				sxx += x * x;
+				sy += y;
+				sxy += x * y;
+			}
+			if (s0 < 2) continue;
+			const den = s0 * sxx - sx * sx;
+			const slope = den > 0 ? (s0 * sxy - sx * sy) / den : 0;
+			out[j] = Math.exp((sy - slope * sx) / s0 + slope * b + EULER);
+		}
+		return out;
+	}
+
 	reset(): void {
 		this.a = new Float64Array(this.rates.length);
 		this.aN = 1;
@@ -176,13 +218,14 @@ export class PulseTracker {
 			const l = new Float64Array(n);
 			let lmax = 0; // the no-pulse state's evidence is log 1 = 0
 			const bandMedian = median(H);
+			const fit = this.edgeFit(H);
 			const cap = ev.capBpm ?? Infinity;
 			const sup = ev.suppressBpm ?? [];
 			for (let j = 0; j < n; j++) {
 				const b = this.rates[j];
 				if (b > cap || sup.some((s) => Math.abs(s - b) <= Math.max(5, 0.1 * s))) continue;
 				const floor = this.p.whitenBpm > 0 ? Math.max(median(this.near[j].map((k) => H[k])), bandMedian) : bandMedian;
-				const noise = floor / Math.LN2 + 1e-30;
+				const noise = Math.max(floor / Math.LN2, fit[j]) + 1e-30;
 				l[j] = Math.log(Math.max(H[j] / noise, 1e-6)) / this.p.tau;
 				if (l[j] > lmax) lmax = l[j];
 			}
