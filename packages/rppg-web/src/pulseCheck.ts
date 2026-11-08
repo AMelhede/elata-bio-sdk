@@ -21,7 +21,7 @@
  */
 import type { FacePatches } from "./facePatches";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion";
-import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker";
+import { PulseTracker, TRACKER_COVERAGE_GAP_S, TRACKER_COVERAGE_POW, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker";
 import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
 	FPS_CEILING_SHARE,
@@ -1901,7 +1901,21 @@ export class PulseCheck {
 					)
 				: null;
 		const recent = recentEst?.measuredBand ?? null;
-		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm, recent });
+		// Rule tracker: a window's evidence weighs by the share of it the frames cover (TRACKER_COVERAGE_POW; 0 = whole).
+		let weight = 1;
+		if (TRACKER_COVERAGE_POW > 0 && est && !none) {
+			const from = t - est.windowS * 1000;
+			let covered = 0;
+			let prev = from;
+			for (const smp of this.samples) {
+				if (smp[0] < from || smp[0] > t) continue;
+				covered += Math.min(smp[0] - prev, TRACKER_COVERAGE_GAP_S * 1000);
+				prev = smp[0];
+			}
+			covered += Math.min(t - prev, TRACKER_COVERAGE_GAP_S * 1000);
+			weight = Math.pow(Math.min(1, covered / (est.windowS * 1000)), TRACKER_COVERAGE_POW);
+		}
+		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm, recent, weight });
 		// Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink); the
 		// tracker keeps its evidence meanwhile, so the number shows the second the gate opens.
 		const waiting = this.rules.blinkGate && !this.blinks.seen && s.shown;
