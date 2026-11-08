@@ -34,6 +34,7 @@ describe("release scrub", () => {
 		["a count of people with a word between", "within 3 breaths a minute in 24 of 29 windows on 16 still people", "measured count"],
 		["a count of recordings with a word between", "read on 18 locked-away recordings", "measured count"],
 		["a percentile of a measured set", "at most 2.6 dB (p99 2.2)", "percentile"],
+		["a dataset name outside its licence credit", "tuned on MCD-rPPG people", "dataset name (MCD)"],
 	])("catches %s", (_what, text, label) => {
 		expect(scrub(text).join(" | ")).toContain(label);
 	});
@@ -89,6 +90,7 @@ describe("release scrub", () => {
 		"level API when you want full lifecycle ownership.",
 		"export type PulsePeak = { t: number };",
 		"export const MCD_PROXY_INPUT_V1_PROFILE = fractionalProfile(",
+		"learned on the public lab set MCD-rPPG (CC BY 4.0; Egorov et al., ACM MM 2025)",
 		'ctx.strokeStyle = "rgba(34,197,94,0.9)";',
 		"(27 of 41 seconds on real wall footage, demo settings)",
 		"breathing read 14 to 21 in 42 of 42 seconds",

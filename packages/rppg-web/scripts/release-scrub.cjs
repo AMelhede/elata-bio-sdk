@@ -17,7 +17,9 @@ const MEASURED_LEVEL = String.raw`\d(?:\.\d+)?\s?(?:dB\b|%)`;
 
 const BANNED = [
 	// Dataset names (the upstream API's own MCD_* identifiers are not mentions: no word boundary).
-	[/\bMCD\b(?!_)|MCD-rPPG|mcd_rppg/, "dataset name (MCD)"],
+	// Allowed only as the licence's credit, written "MCD-rPPG (CC BY 4.0": CC BY requires naming the work whose data
+	// a shipped constant was learned from (owner, 2026-11-06); any other mention is still a testing detail.
+	[/\bMCD\b(?!_)(?!-rPPG \(CC BY 4\.0)|MCD-rPPG(?! \(CC BY 4\.0)|mcd_rppg/, "dataset name (MCD)"],
 	[/UBFC/i, "dataset name (UBFC)"],
 	[/\bMPU\b|MPU-rPPG/, "dataset name (MPU)"],
 	[/\bOura\b/i, "personal reference (Oura)"],
