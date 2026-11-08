@@ -1,0 +1,14 @@
+import { PULSE_CHECK_RULE_NAMES } from "../pulseCheck";
+
+// The pulse check's rules are patches around a design that does not yet track the rate over time (the one-model tracker
+// that replaces them is the planned redesign). A growing list of special-case rules is the sign the design is wrong, so
+// the count may not grow by accident: adding a rule fails this test until its author raises the ceiling here on purpose
+// AND records the rule as named debt (expiry and the tracker case that deletes it) in the private ledger. Deleting a rule
+// lowers the ceiling. Set 2026-11-06 at 25 (22 on the 5th, plus allPatches, fpsCeiling, harmonicStart).
+const RULE_CEILING = 25;
+
+describe("rule ceiling", () => {
+	it("the count of the pulse check's rules never grows without a deliberate change here", () => {
+		expect(PULSE_CHECK_RULE_NAMES.length).toBeLessThanOrEqual(RULE_CEILING);
+	});
+});
