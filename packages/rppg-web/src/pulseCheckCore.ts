@@ -41,8 +41,6 @@ export const OWN_PULSE_BAND_HZ: readonly [number, number] = [0.7, 3.0];
  * enough that a 60 s capture yields several independent verdicts.
  */
 export const OWN_PULSE_WINDOW_S = 16;
-/** Rule tracker: its spectrum starts here (27 bpm), below the band, so the noise at the band's bottom is read on both sides. */
-export const TRACKER_FLOOR_FROM_HZ = 0.45;
 /** Two regions agreeing within this many bpm counts as agreement (one bin + a half). */
 export const OWN_PULSE_AGREE_BPM = 6;
 
@@ -784,9 +782,8 @@ export function estimateOwnPulse(
 		wallToFace: wallToFace == null ? null : Math.round(wallToFace * 1000) / 1000,
 		...(wantBand
 			? {
-					// From TRACKER_FLOOR_FROM_HZ, below the band: the noise around the band's bottom is read on both sides of it.
 					measuredBand: measured
-						.filter(([f]) => f >= TRACKER_FLOOR_FROM_HZ && f <= OWN_PULSE_BAND_HZ[1])
+						.filter(([f]) => f >= OWN_PULSE_BAND_HZ[0] && f <= OWN_PULSE_BAND_HZ[1])
 						.map(([f, p]) => [f * 60, p] as [number, number]),
 				}
 			: {}),
