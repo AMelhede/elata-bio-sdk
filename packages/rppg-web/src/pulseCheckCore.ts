@@ -337,6 +337,13 @@ export const ALL_PATCHES_MIN_VALID = 0.9;
 /** Rule allPatches: the fewest such patches for the patch line; with fewer, the three regions' line is read. */
 export const ALL_PATCHES_MIN_COUNT = 8;
 /**
+ * Rule fpsCeiling: the highest rate a window trusts, as a share of its own frame rate. Sampling resolves rates below half
+ * the frame rate (Nyquist), and a camera's uneven frame times and the resampling to OWN_PULSE_FS fold energy back below
+ * that; 0.4 keeps a margin, so at 30 fps nothing changes (720 bpm) and at 7.5 fps a line above 180 bpm is withheld, at 5
+ * fps above 120. Physics, the same on every camera.
+ */
+export const FPS_CEILING_SHARE = 0.4;
+/**
  * Rule allPatches: each patch's weight in the line, in layout order (FACE_PATCH_LAYOUT_ID), learned on the 25 tuning
  * people of the public lab set MCD-rPPG (CC BY 4.0; Egorov et al., Gaze into the Heart, ACM MM 2025) and nothing else: how reliably
  * that spot of the face carried the pulse (mean share of its in-band power within 4 bpm of a finger reference), less
@@ -680,6 +687,8 @@ export function estimateOwnPulse(
 	wantBand = false,
 	/** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
 	patches: readonly PatchSample[] | null = null,
+	/** Rule fpsCeiling: a line above what the window's own frame rate resolves (FPS_CEILING_SHARE) is not a line. */
+	fpsCeiling = false,
 ): OwnPulseEstimate | null {
 	if (samples.length < 8) return null;
 	const end = atMs;
@@ -759,6 +768,7 @@ export function estimateOwnPulse(
 	const comb = whitenedSpectrum(measured);
 	let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
 	if (driftLine) line = pastDriftLine(line, comb, measured, regions);
+	if (fpsCeiling && line.bpm > FPS_CEILING_SHARE * fps * 60) line = { bpm: Number.NaN, snrDb: Number.NEGATIVE_INFINITY };
 	if (slowDouble && lineIsSlowDouble(comb, measured, line.bpm)) line = { bpm: Number.NaN, snrDb: Number.NEGATIVE_INFINITY };
 	const combined = coherent && Number.isFinite(line.snrDb) ? { ...line, snrDb: line.snrDb - COHERENT_SNR_OFFSET_DB } : line;
 	const found = Number.isFinite(combined.bpm);

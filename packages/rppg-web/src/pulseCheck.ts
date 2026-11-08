@@ -355,6 +355,12 @@ export type PulseCheckRules = {
 	 * average (pulseCheckCore patchPulses).
 	 */
 	allPatches?: boolean;
+	/**
+	 * OFF unless true, being measured (2026-11-06): a window's line above 0.4 times its own frame rate (pulseCheckCore
+	 * FPS_CEILING_SHARE: past what the camera's frames resolve, where fast rates fold onto wrong ones) is not a line.
+	 * Changes nothing at 30 fps; acts only on slow cameras.
+	 */
+	fpsCeiling?: boolean;
 };
 
 /**
@@ -445,6 +451,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"heldFrames",
 	"trackLine",
 	"allPatches",
+	"fpsCeiling",
 ] as const;
 
 /**
@@ -839,6 +846,7 @@ export function resolvePulseCheckRules(
 		heldFrames: rules?.heldFrames !== false,
 		trackLine: rules?.trackLine === true,
 		allPatches: rules?.allPatches !== false,
+		fpsCeiling: rules?.fpsCeiling === true,
 	};
 }
 
@@ -1592,6 +1600,7 @@ export class PulseCheck {
 			this.rules.slowDouble,
 			this.rules.trackLine,
 			this.rules.allPatches ? this.patchRows : null,
+			this.rules.fpsCeiling,
 		);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// Rule trackLine: the reported line follows the live track over the windows' spectra.
@@ -1848,6 +1857,7 @@ export class PulseCheck {
 					this.rules.slowDouble,
 					false,
 					this.rules.allPatches ? this.patchRows : null,
+			this.rules.fpsCeiling,
 				);
 				if (
 					e &&
@@ -1928,6 +1938,7 @@ export class PulseCheck {
 			this.rules.slowDouble,
 			false,
 			this.rules.allPatches ? this.patchRows : null,
+			this.rules.fpsCeiling,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
