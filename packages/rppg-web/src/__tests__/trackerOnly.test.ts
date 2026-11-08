@@ -25,4 +25,15 @@ describe("rule tracker runs alone", () => {
 		expect(shown.length).toBeGreaterThan(20);
 		expect(shown.every((b) => Math.abs(b - 72) <= 5)).toBe(true);
 	});
+	// Diagnostic only (ML1): each region's own line and the line's margin reach the replay, beside the tracker's inputs.
+	it("hands each region's line and the line margin to the replay", () => {
+		const on = run(true).filter((s) => s.trackerIn && s.trackerIn.band.length);
+		expect(on.length).toBeGreaterThan(20);
+		for (const s of on) {
+			expect(s.trackerIn!.regions!.length).toBe(3);
+			for (const [b, snr] of s.trackerIn!.regions!) expect(Number.isFinite(b) && Number.isFinite(snr)).toBe(true);
+		}
+		expect(on.some((s) => s.trackerIn!.regions!.every(([b]) => Math.abs(b - 72) <= 5))).toBe(true);
+	});
 });
+

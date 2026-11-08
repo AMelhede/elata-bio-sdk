@@ -132,7 +132,7 @@ export type PulseCheckState = {
 	/** Rule tracker: the tracker's posterior mass within the bar of its mode (it shows at TRACKER_SHOW or more). */
 	trackerMass?: number | null;
 	/** Rule tracker, for offline tuning: the window's measured in-band spectrum and evidence flags the tracker took. */
-	trackerIn?: { band: Array<[number, number]>; none: boolean; suppress: number[]; capBpm: number | null; recent: Array<[number, number]>; seed: [number, number] | null } | null;
+	trackerIn?: { band: Array<[number, number]>; none: boolean; suppress: number[]; capBpm: number | null; recent: Array<[number, number]>; seed: [number, number] | null; /** Diagnostic: each region's own line [bpm, SNR dB], and the combined line's margin over its runner-up (dB). Not read by the tracker. */ regions?: Array<[number, number]>; lineMarginDb?: number | null } | null;
 };
 
 /**
@@ -1936,7 +1936,7 @@ export class PulseCheck {
 			screenLight: est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW,
 			startGated: false,
 			// For offline tuning: exactly what the tracker saw this second.
-			trackerIn: { band: band ?? [], none, suppress, capBpm, recent: recent ?? [], seed: seeded },
+			trackerIn: { band: band ?? [], none, suppress, capBpm, recent: recent ?? [], seed: seeded, regions: (est?.regions ?? []).map((r) => [r.bpm, r.snrDb] as [number, number]), lineMarginDb: est?.lineMarginDb ?? null },
 			trackerMass: Math.round(s.mass * 1000) / 1000,
 		};
 		// The shown rate is what a break carries forward (resumePoint, and the seed after a reset).
