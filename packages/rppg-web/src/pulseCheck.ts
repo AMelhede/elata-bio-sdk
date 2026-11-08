@@ -215,7 +215,7 @@ export type PulseCheckRules = {
 	 */
 	blinkGate?: boolean;
 	/**
-	 * OFF unless true, being measured (lane fp52): the line is read from the regions' pulses added in time
+	 * On unless false (lane fp52): the line is read from the regions' pulses added in time
 	 * (coherentSpectrum) instead of their spectra added, and with rule moreReadings the building number needs
 	 * COHERENT_BUILDING_STREAK agreeing windows. Reads a light that steps the whole face more often too.
 	 */
@@ -241,7 +241,7 @@ export type PulseCheckRules = {
 	 */
 	steadyLight?: boolean;
 	/**
-	 * OFF unless true, being measured (evidence repo tools/follow.mjs). A resting heart changes a few bpm over seconds,
+	 * On unless false (evidence repo tools/follow.mjs). A resting heart changes a few bpm over seconds,
 	 * so when nothing shows, a window rate within FOLLOW_BPM of a number shown in the last FOLLOW_MS, at a window SNR
 	 * of at least FOLLOW_MIN_SNR_DB, is shown as `followBpm`: the same heart, not a new proof. It follows only a number
 	 * the check proved (never a building one, never one it followed), so it cannot walk away from the proof. Every

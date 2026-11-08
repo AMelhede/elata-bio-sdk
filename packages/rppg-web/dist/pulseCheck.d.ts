@@ -309,6 +309,14 @@ export type PulseCheckRules = {
      * three regions share, and which the check could otherwise prove as a heart rate. Off: as in 0.15.0-test.59.
      */
     heldFrames?: boolean;
+    /**
+     * OFF unless true, being measured (2026-11-05): the line reported for a window is the end of a live track over the
+     * windows' whitened spectra (forward Viterbi: a window's evidence plus the best earlier path, a capped cost per bpm of
+     * change beyond one bin, TRACK_FREE_BPM), not that window's strongest line alone, when the two differ by more than
+     * OWN_PULSE_AGREE_BPM. No rate is favoured: every rate starts equal, only change costs. Whether a window shows a number
+     * is decided as without it. Held-out lab people, same windows shown: lines more than 10 bpm off 21.2 to 16.7%.
+     */
+    trackLine?: boolean;
 };
 /**
  * Rule bridgeGap: the longest frame gap read across, set to take the camera stalls seen while the page stays visible
@@ -334,7 +342,7 @@ export declare const HELD_MAX_SHARE = 0.1;
 /** Rule heldFrames: the share of the window's frames (OWN_PULSE_WINDOW_S up to atMs) held in runs (see HELD_EPS). */
 export declare function heldFrameShare(samples: readonly (readonly number[])[], atMs: number): number;
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames", "trackLine"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -639,6 +647,36 @@ export declare function roomCarries(line: {
     bpm: number;
     snrDb: number;
 } | null, bpm: number): boolean;
+/**
+ * Rule trackLine: the track's step. A change of up to one bin (TRACK_FREE_BPM, a 16 s window's 3.75 bpm bin and a
+ * little) is free; beyond it each bpm costs TRACK_COST_PER_BPM in units of log whitened power, and no change costs more
+ * than TRACK_MAX_COST, so a line clearly stronger for a few windows always takes the track over (a wrong first lock does
+ * not hold). Fit on the tuning lab people only (25) at TRACK_STEP_MS, judged on 25 others; each setting is inside the
+ * searched grid (cost 0.1 to 6.4, cap 1 to unlimited).
+ */
+export declare const TRACK_COST_PER_BPM = 0.4;
+export declare const TRACK_FREE_BPM = 3.8;
+export declare const TRACK_MAX_COST = 3;
+/** Rule trackLine: the track moves on at most once per this many ms (the pace it was fit at); between, its end stands. */
+export declare const TRACK_STEP_MS = 1900;
+/** Rule trackLine: a gap with no window this long starts the track again from the window alone. */
+export declare const TRACK_RESET_MS = 6000;
+export type LineTrack = {
+    bpm: number[];
+    score: number[];
+    t: number;
+};
+/**
+ * Rule trackLine, one step of the live track (forward Viterbi): each bin's score is the window's evidence (log of its
+ * whitened power over the window's strongest) plus the best earlier score after the cost of the change to it. No bin is
+ * favoured at the start. Bins are matched by rate, so a window with a different frequency grid continues the track.
+ */
+export declare function advanceLineTrack(prev: LineTrack | null, band: ReadonlyArray<readonly [number, number]>, t: number): LineTrack;
+/** Rule trackLine: the track's end, its bin and its rate between bins (a log-parabola, as fineBpm). */
+export declare function trackedLine(track: LineTrack, band: ReadonlyArray<readonly [number, number]>): {
+    bpm: number;
+    fine: number;
+};
 /** Equal steps in one window that make it not evidence: the most that left real captures' readings unchanged. */
 export declare const SCREEN_STEPS_PER_WINDOW = 10;
 /**
@@ -725,6 +763,10 @@ export declare class PulseCheck {
     private headHandedOver;
     private history;
     private held;
+    /** Rule trackLine: the track's bins (bpm) and best path score ending in each, at the last window. */
+    private track;
+    /** Rule trackLine: advance the live track by this window and report its end when it differs from the strongest line. */
+    private followTrack;
     /** Rule blinkGate: the blinks seen since the face appeared. */
     private blinks;
     /** Rule moreReadings (re-lock): the latest proven rate and when it was proven, or null. */

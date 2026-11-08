@@ -74,6 +74,8 @@ export interface OwnPulseEstimate {
      * band at least CLEAR_RUNNER_UP_BPM away on either side (Infinity with none, null with no line). Rule clearWindows.
      */
     lineMarginDb?: number | null;
+    /** Rule trackLine: the window's whitened combined spectrum in the band, [bpm, power] per bin (only when asked for). */
+    band?: Array<[number, number]>;
     /** How the pulse was read from the colours this window (see OWN_PULSE_COLOUR_DAMAGE). */
     method?: "pos" | "greenMinusWall";
     /** The colour-damage measure this window (see OWN_PULSE_COLOUR_DAMAGE), or null. */
@@ -276,7 +278,9 @@ coherent?: boolean,
 /** Rule driftLine (OWN_PULSE_DRIFT_LINE_BPM): a drift line no rule can count does not hide the strongest line above the low band. */
 driftLine?: boolean, 
 /** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
-slowDouble?: boolean): OwnPulseEstimate | null;
+slowDouble?: boolean, 
+/** Rule trackLine: hand back the whitened in-band spectrum (`band`) for the line track across windows. */
+wantBand?: boolean): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.

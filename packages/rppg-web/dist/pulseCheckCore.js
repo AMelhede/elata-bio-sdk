@@ -499,7 +499,9 @@ coherent = false,
 /** Rule driftLine (OWN_PULSE_DRIFT_LINE_BPM): a drift line no rule can count does not hide the strongest line above the low band. */
 driftLine = false, 
 /** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
-slowDouble = false) {
+slowDouble = false, 
+/** Rule trackLine: hand back the whitened in-band spectrum (`band`) for the line track across windows. */
+wantBand = false) {
     if (samples.length < 8)
         return null;
     const end = atMs;
@@ -586,6 +588,13 @@ slowDouble = false) {
         wallSeen,
         wallLevel: wallLevel == null ? null : Math.round(wallLevel * 1000) / 1000,
         wallToFace: wallToFace == null ? null : Math.round(wallToFace * 1000) / 1000,
+        ...(wantBand
+            ? {
+                band: comb
+                    .filter(([f]) => f >= OWN_PULSE_BAND_HZ[0] && f <= OWN_PULSE_BAND_HZ[1])
+                    .map(([f, p]) => [f * 60, p]),
+            }
+            : {}),
     };
 }
 /**

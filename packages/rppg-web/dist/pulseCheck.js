@@ -110,6 +110,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "movingFollow",
     "bridgeGap",
     "heldFrames",
+    "trackLine",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -424,6 +425,7 @@ export function resolvePulseCheckRules(rules) {
         movingFollow: rules?.movingFollow !== false,
         bridgeGap: rules?.bridgeGap !== false,
         heldFrames: rules?.heldFrames !== false,
+        trackLine: rules?.trackLine === true,
     };
 }
 /**
@@ -555,6 +557,66 @@ function lineCarries(line, bpm, rules) {
         family.some((k) => Math.abs(k * line.bpm - bpm) <= OWN_PULSE_AGREE_BPM));
 }
 const EVAL_EVERY_MS = 1000;
+/**
+ * Rule trackLine: the track's step. A change of up to one bin (TRACK_FREE_BPM, a 16 s window's 3.75 bpm bin and a
+ * little) is free; beyond it each bpm costs TRACK_COST_PER_BPM in units of log whitened power, and no change costs more
+ * than TRACK_MAX_COST, so a line clearly stronger for a few windows always takes the track over (a wrong first lock does
+ * not hold). Fit on the tuning lab people only (25) at TRACK_STEP_MS, judged on 25 others; each setting is inside the
+ * searched grid (cost 0.1 to 6.4, cap 1 to unlimited).
+ */
+export const TRACK_COST_PER_BPM = 0.4;
+export const TRACK_FREE_BPM = 3.8;
+export const TRACK_MAX_COST = 3;
+/** Rule trackLine: the track moves on at most once per this many ms (the pace it was fit at); between, its end stands. */
+export const TRACK_STEP_MS = 1900;
+/** Rule trackLine: a gap with no window this long starts the track again from the window alone. */
+export const TRACK_RESET_MS = 6000;
+/**
+ * Rule trackLine, one step of the live track (forward Viterbi): each bin's score is the window's evidence (log of its
+ * whitened power over the window's strongest) plus the best earlier score after the cost of the change to it. No bin is
+ * favoured at the start. Bins are matched by rate, so a window with a different frequency grid continues the track.
+ */
+export function advanceLineTrack(prev, band, t) {
+    const top = Math.max(...band.map(([, p]) => p), 1e-30);
+    const ev = band.map(([, p]) => Math.log(p / top + 1e-6));
+    if (!prev || t - prev.t > TRACK_RESET_MS)
+        return { bpm: band.map(([b]) => b), score: ev, t };
+    if (t - prev.t < TRACK_STEP_MS)
+        return prev;
+    let score = band.map(([b], i) => {
+        let best = Number.NEGATIVE_INFINITY;
+        for (let j = 0; j < prev.bpm.length; j++) {
+            const c = prev.score[j] -
+                Math.min(TRACK_MAX_COST, TRACK_COST_PER_BPM * Math.max(0, Math.abs(b - prev.bpm[j]) - TRACK_FREE_BPM));
+            if (c > best)
+                best = c;
+        }
+        return ev[i] + best;
+    });
+    const m = Math.max(...score);
+    score = score.map((v) => v - m);
+    return { bpm: band.map(([b]) => b), score, t };
+}
+/** Rule trackLine: the track's end, its bin and its rate between bins (a log-parabola, as fineBpm). */
+export function trackedLine(track, band) {
+    let k = 0;
+    for (let i = 1; i < track.score.length; i++)
+        if (track.score[i] > track.score[k])
+            k = i;
+    const tb = track.bpm[k];
+    let fine = tb;
+    if (k > 0 && k < band.length - 1) {
+        const ln = (p) => Math.log(Math.max(p, 1e-30));
+        const a = ln(band[k - 1][1]);
+        const b = ln(band[k][1]);
+        const c = ln(band[k + 1][1]);
+        const den = a - 2 * b + c;
+        const d = den !== 0 ? (a - c) / (2 * den) : 0;
+        if (Math.abs(d) <= 0.5)
+            fine = tb + d * (band[k + 1][0] - tb);
+    }
+    return { bpm: tb, fine };
+}
 /*
  * Rule screenLight. Blood cannot make a step: a pulse changes the skin smoothly, a few percent over a
  * whole beat, while a screen, a lamp switched or an exposure change scales all the skin at once, in one
@@ -680,6 +742,8 @@ export class PulseCheck {
         this.headHandedOver = false;
         this.history = [];
         this.held = null;
+        /** Rule trackLine: the track's bins (bpm) and best path score ending in each, at the last window. */
+        this.track = null;
         /** Rule blinkGate: the blinks seen since the face appeared. */
         this.blinks = new BlinkDetector();
         /** Rule moreReadings (re-lock): the latest proven rate and when it was proven, or null. */
@@ -783,6 +847,20 @@ export class PulseCheck {
     /** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */
     get swapMinWall() {
         return 0;
+    }
+    /** Rule trackLine: advance the live track by this window and report its end when it differs from the strongest line. */
+    followTrack(est, t) {
+        if (!est.band || est.band.length < 3)
+            return;
+        this.track = advanceLineTrack(this.track, est.band, t);
+        if (est.bpm == null)
+            return;
+        // Between steps the track stands; its end is read on the bins it last moved on.
+        const end = trackedLine(this.track, this.track.bpm.length === est.band.length ? est.band : this.track.bpm.map((b) => [b, 1]));
+        if (Math.abs(end.bpm - est.bpm) <= OWN_PULSE_AGREE_BPM)
+            return;
+        est.bpm = Math.round(end.bpm * 10) / 10;
+        est.bpmFine = Math.round(end.fine * 10) / 10;
     }
     /**
      * Whether a caller should compute push's diagnostics: when rule roomLight needs the room, and always in a
@@ -920,9 +998,12 @@ export class PulseCheck {
         this.lastEvalMs = timestampMs;
         const wallFrames = this.wallTally;
         this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
-        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble);
+        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, this.rules.trackLine);
         if (est && est.skip)
             return;
+        // Rule trackLine: the reported line follows the live track over the windows' spectra.
+        if (this.rules.trackLine && est)
+            this.followTrack(est, timestampMs);
         // The wall's line for a window end, found once per evaluation: the taint, the wall check and
         // the state read the newest one, and the wall rows do not change while this runs.
         const lines = new Map();
@@ -1215,6 +1296,7 @@ export class PulseCheck {
         return this.evaluationCount;
     }
     reset() {
+        this.track = null;
         this.blinkCarried = false;
         this.room = [];
         this.samples = [];
