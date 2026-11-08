@@ -67,6 +67,12 @@ export const TRACKER_RECENT_S = 8;
 export const TRACKER_RECENT_TAU_FACTOR = Number.POSITIVE_INFINITY;
 /** Before a full window, the tracker reads the window there is, from this many seconds (the growing window). */
 export const TRACKER_FIRST_WINDOW_S = 6;
+/**
+ * Seconds after a start or reset that the tracker's window leaves out (the camera settles its exposure and white balance
+ * there): a 7 s window ending 7 to 10 s into a received file is within 5 bpm of the file's 16 s line 44% of the time, the
+ * same window from 30 s on 74% (tracker/a3/shortwin.mjs, 2026-11-07). 0 leaves nothing out (unchanged). Under test.
+ */
+export const TRACKER_SETTLE_S = 0;
 
 export type TrackerParams = {
 	tau: number;

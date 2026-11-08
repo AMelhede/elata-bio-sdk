@@ -21,7 +21,7 @@
  */
 import type { FacePatches } from "./facePatches";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion";
-import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S } from "./pulseTracker";
+import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker";
 import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
 	FPS_CEILING_SHARE,
@@ -1835,12 +1835,16 @@ export class PulseCheck {
 		windowScreenSteps: number | null,
 	): void {
 		// Before a full window, the window there is (TRACKER_FIRST_WINDOW_S and up), so evidence counts from the start.
-		if (!est && this.samples.length) {
-			const have = Math.floor((t - this.samples[0][0]) / 1000);
-			if (have >= TRACKER_FIRST_WINDOW_S && have < OWN_PULSE_WINDOW_S)
+		// Rule tracker: the first TRACKER_SETTLE_S seconds after a start or reset are left out of the tracker's window until a
+		// full window fits after them (the camera's exposure and white balance settle there).
+		const settle = TRACKER_SETTLE_S;
+		const have = this.samples.length ? Math.floor((t - this.samples[0][0]) / 1000) : 0;
+		if ((!est || (settle > 0 && have < OWN_PULSE_WINDOW_S + settle)) && this.samples.length) {
+			const usable = Math.min(OWN_PULSE_WINDOW_S, have - settle);
+			if (usable >= TRACKER_FIRST_WINDOW_S && (settle > 0 || have < OWN_PULSE_WINDOW_S))
 				est = estimateOwnPulse(
 					this.samples,
-					have,
+					usable,
 					t,
 					OWN_PULSE_COLOUR_SWITCH,
 					this.swapMinWall,
