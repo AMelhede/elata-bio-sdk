@@ -337,10 +337,12 @@ export const ALL_PATCHES_MIN_COUNT = 8;
 /**
  * Rule fpsCeiling: the highest rate a window trusts, as a share of its own frame rate. Sampling resolves rates below half
  * the frame rate (Nyquist), and a camera's uneven frame times and the resampling to OWN_PULSE_FS fold energy back below
- * that; 0.4 keeps a margin, so at 30 fps nothing changes (720 bpm) and at 7.5 fps a line above 180 bpm is withheld, at 5
- * fps above 120. Physics, the same on every camera.
+ * that. 0.33, not 0.4: at about 6 fps a 70 bpm pulse's 2nd harmonic (140) and its 3rd, folded (6 x 60 - 210 = 150), stack
+ * just under a 0.4 cap (144), and both the streak rules and the tracker showed about 140 against a finger's 70 (full gate, 7.5 fps
+ * cells, 2026-11-07). At 0.33 nothing changes at 9.1 fps and up (the cap passes 180 bpm); at 6 fps lines above 119 are withheld.
+ * Kept 7.5 fps files, tracker on: right 197 to 389, wrong 244 to 12. Physics, the same on every camera.
  */
-export const FPS_CEILING_SHARE = 0.4;
+export const FPS_CEILING_SHARE = 0.33;
 
 /**
  * Rule allPatches: each valid patch's POS pulse, detrended as the regions' are, for the coherent line (coherentSpectrum).
