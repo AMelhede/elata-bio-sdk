@@ -8,6 +8,7 @@ const OFF_SWITCHES: Record<string, string> = {
 	moreReadings: "2026-11-30", // testers' paired runs; shows more numbers on photos, needs liveness first
 	trackLine: "2026-11-30", // being measured on received files and the full gate before it is turned on
 	fpsCeiling: "2026-11-30", // being measured on received files and the full gate before it is turned on
+	harmonicStart: "2026-11-30", // being measured on received files and the full gate before it is turned on
 	blinkGate: "2026-11-30",
 	experimentalVitals: "2026-12-31", // research box, never shown as a reading (a session option, not a rule)
 };
