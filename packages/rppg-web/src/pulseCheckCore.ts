@@ -345,7 +345,7 @@ export const ALL_PATCHES_MIN_COUNT = 8;
 export const FPS_CEILING_SHARE = 0.4;
 /**
  * Rule allPatches: each patch's weight in the line, in layout order (FACE_PATCH_LAYOUT_ID), learned on the 25 tuning
- * people of the public lab set MCD-rPPG (CC BY 4.0; Egorov et al., Gaze into the Heart, ACM MM 2025) and nothing else: how reliably
+ * people of a public lab set (CC BY 4.0; Egorov et al., Gaze into the Heart, ACM MM 2025) and nothing else: how reliably
  * that spot of the face carried the pulse (mean share of its in-band power within 4 bpm of a finger reference), less
  * half the typical patch's, scaled to a mean of 1; a patch at 0 is left out. Judged on held-out people, every received
  * recording, no-pulse copies and slow and fast hearts (evsave tools/alldata learned.py).
