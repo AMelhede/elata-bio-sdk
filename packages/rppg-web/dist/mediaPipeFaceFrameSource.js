@@ -1,3 +1,4 @@
+import { frameAdvanceGate } from "./frameAdvance.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FACE_WORKER_MAX_AGE_MS } from "./faceFinderWorker.js";
 import { createBackgroundFrameFeed, } from "./backgroundFrames.js";
@@ -155,12 +156,15 @@ export class MediaPipeFaceFrameSource {
             this.vfcHandle = this.video.requestVideoFrameCallback(cb);
         }
         else {
+            // A camera slower than the timer is read once per frame it presents, not once per tick (frameAdvance.ts).
+            const advanced = frameAdvanceGate(this.video);
             const tick = () => {
                 if (!this.running)
                     return;
                 // performance.now(), the clock requestVideoFrameCallback gives: every frame time in the library is on it.
                 // Date.now() here froze the page where the callback is missing (Safari before 15.4, Firefox before 132).
-                this.detectAndEmit(performance.now(), null);
+                if (advanced())
+                    this.detectAndEmit(performance.now(), null);
                 setTimeout(tick, interval);
             };
             tick();

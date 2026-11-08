@@ -320,6 +320,19 @@ describe('MediaPipeFaceFrameSource edge cases', () => {
     for (const f of frames) expect(Math.abs((f.timestampMs ?? NaN) - perf)).toBeLessThan(1000);
     for (const call of (landmarker.detectForVideo as jest.Mock).mock.calls) expect(Math.abs(call[1] - perf)).toBeLessThan(1000);
   });
+  test('the timer fallback reads a 7.5 fps camera once per presented frame, not once per tick', async () => {
+    // frameAdvance.ts: under the 30 Hz timer each 7.5 fps frame was read 4 times, runs heldFrames takes for an encoder.
+    jest.useFakeTimers();
+    const restore = setupCanvasMock(200, 100);
+    const video = new FakeVideo(200, 100) as any; let presented = 0; video.getVideoPlaybackQuality = () => ({ totalVideoFrames: presented });
+    const landmarker = fakeLandmarker([{}]);
+    const src = new MediaPipeFaceFrameSource(video as HTMLVideoElement, landmarker, 30);
+    await src.start();
+    for (let i = 0; i < 40; i++) { if (i % 4 === 0) presented++; jest.advanceTimersByTime(1000 / 30); }
+    const reads = (landmarker.detectForVideo as jest.Mock).mock.calls.length;
+    await src.stop(); restore(); jest.useRealTimers();
+    expect(reads).toBeGreaterThanOrEqual(9); expect(reads).toBeLessThanOrEqual(11);
+  });
 });
 
 describe('MediaPipeFaceFrameSource analysis width switch', () => {

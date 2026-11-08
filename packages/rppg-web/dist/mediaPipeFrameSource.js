@@ -1,3 +1,4 @@
+import { frameAdvanceGate } from "./frameAdvance.js";
 export class MediaPipeFrameSource {
     constructor(video, opts = {}) {
         this.video = video;
@@ -36,9 +37,14 @@ export class MediaPipeFrameSource {
             this.vfcHandle = this.video.requestVideoFrameCallback(cb);
         }
         else {
+            // A camera slower than the timer is read once per frame it presents, not once per tick (frameAdvance.ts).
+            const advanced = frameAdvanceGate(this.video);
             this.timer = setInterval(
             // performance.now(), the clock requestVideoFrameCallback gives (Date.now() here froze the page).
-            () => this.captureFrame(performance.now(), null), interval);
+            () => {
+                if (advanced())
+                    this.captureFrame(performance.now(), null);
+            }, interval);
         }
     }
     async stop() {
