@@ -34,8 +34,8 @@ describe("rule blinkGate", () => {
 	it("is off by default", () => {
 		expect(resolvePulseCheckRules().blinkGate).toBe(false);
 	});
-	function run(gate: boolean, blinkAt: number | null) {
-		const check = new PulseCheck({ rules: { blinkGate: gate } });
+	function run(gate: boolean, blinkAt: number | null, tracker = false) {
+		const check = new PulseCheck({ rules: { blinkGate: gate, tracker } });
 		const shown: (number | null)[] = [];
 		const s = scores(60, 0.06, 0.03, blinkAt == null ? [] : [{ at: blinkAt, ms: 200 }]);
 		for (const [t, blink] of s) {
@@ -54,5 +54,14 @@ describe("rule blinkGate", () => {
 		const i = 41 * 30;
 		expect(late.slice(0, 40 * 30).every((b) => b == null)).toBe(true);
 		expect(late.slice(i)).toEqual(run(false, 40).slice(i));
+	});
+	it("holds with the tracker deciding too: nothing on a face that never blinks, and the tracker's own number from the blink on", () => {
+		const off = run(false, null, true);
+		expect(off.some((b) => b != null)).toBe(true);
+		expect(run(true, null, true).every((b) => b == null)).toBe(true);
+		const late = run(true, 40, true);
+		const i = 41 * 30;
+		expect(late.slice(0, 40 * 30).every((b) => b == null)).toBe(true);
+		expect(late.slice(i)).toEqual(run(false, 40, true).slice(i));
 	});
 });

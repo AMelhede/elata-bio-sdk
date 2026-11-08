@@ -1564,6 +1564,14 @@ export class PulseCheck {
 			if (!roomLines.has(ms)) roomLines.set(ms, wallLine(this.room, ms, false));
 			return roomLines.get(ms) ?? null;
 		};
+		// Rule tracker: the tracker alone decides, so none of the streak's work runs (its verdict, its support window, the
+		// follow and the start gate): run under the tracker and then overridden, it was 9% of the evaluation's time on a
+		// received phone recording and cost slow devices frames, and with them the number (full gate 2026-11-06).
+		if (this.rules.tracker) {
+			this.trackerDecides(est, timestampMs, lineAt, roomLineAt, wallFrames, windowScreenSteps);
+			this.evaluationCount += 1;
+			return;
+		}
 		// Rule headMotion: a window whose rate the head keeps time with is the head's, not evidence of a pulse.
 		const headTimed = (bpm: number) =>
 			this.rules.headMotion && headKeepsTime(this.head, timestampMs, bpm);
@@ -1808,8 +1816,7 @@ export class PulseCheck {
 			timestampMs - this.lastProven.t <= RELOCK_MS;
 		this.state.windowScreenSteps = windowScreenSteps;
 		this.state.screenLight = screenLit;
-		if (this.rules.tracker) this.trackerDecides(est, timestampMs, lineAt, roomLineAt);
-		else this.gateStart(timestampMs);
+		this.gateStart(timestampMs);
 		this.evaluationCount += 1;
 	}
 
@@ -1824,6 +1831,8 @@ export class PulseCheck {
 		t: number,
 		lineAt: (ms: number) => { bpm: number; snrDb: number } | null,
 		roomLineAt: (ms: number) => { bpm: number; snrDb: number } | null,
+		wallFrames: PulseCheckState["wallFrames"],
+		windowScreenSteps: number | null,
 	): void {
 		// Before a full window, the window there is (TRACKER_FIRST_WINDOW_S and up), so evidence counts from the start.
 		if (!est && this.samples.length) {
@@ -1858,7 +1867,8 @@ export class PulseCheck {
 		// frames, a frozen or low-bitrate stream) still carries the face: treated as no evidence it cost slow devices their
 		// number in the full gate (Safari 14 51.4 to 11.4 per 100, frame freezes 40.0 to 17.5) while the compressed-video
 		// cells showed no wrong number either way.
-		const none = band == null || screenSteps(this.samples, t) >= SCREEN_STEPS_PER_WINDOW;
+		const steps = windowScreenSteps ?? screenSteps(this.samples, t);
+		const none = band == null || steps >= SCREEN_STEPS_PER_WINDOW;
 		// Rates a source other than the heart carries: the wall's and the room's own lines past their bars, and the
 		// window's line when the head keeps time with it.
 		const suppress: number[] = [];
@@ -1888,18 +1898,45 @@ export class PulseCheck {
 				: null;
 		const recent = recentEst?.measuredBand ?? null;
 		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm, recent });
-		// For offline tuning: exactly what the tracker saw this second.
-		this.state.trackerIn = { band: band ?? [], none, suppress, capBpm, recent: recent ?? [], seed: seeded };
-		this.state.verdict = s.shown ? "measured" : est ? "not-measured" : this.state.verdict;
-		this.state.bpm = s.shown ? Math.round(s.bpm * 10) / 10 : null;
-		this.state.via = s.shown ? "check" : null;
-		this.state.buildingBpm = null;
-		this.state.followBpm = null;
-		this.state.startGated = false;
-		this.state.wallMatch = false;
-		this.state.trackerMass = Math.round(s.mass * 1000) / 1000;
+		// Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink); the
+		// tracker keeps its evidence meanwhile, so the number shows the second the gate opens.
+		const waiting = this.rules.blinkGate && !this.blinks.seen && s.shown;
+		const shown = s.shown && !waiting;
+		this.state = {
+			verdict: shown ? "measured" : est ? "not-measured" : "unknown",
+			bpm: shown ? Math.round(s.bpm * 10) / 10 : null,
+			via: shown ? "check" : null,
+			snrDb: est?.snrDb ?? null,
+			streak: 0,
+			countingStreak: 0,
+			wallMatch: false,
+			...(this.rules.roomLight ? { roomMatch: false, roomLine: roomLineAt(t) } : {}),
+			...(waiting ? { waitingForBlink: true } : {}),
+			windowBpm: est?.bpm ?? null,
+			windowSnrDb: est?.snrDb ?? null,
+			windowMethod: est?.method ?? null,
+			windowColourDamage: est?.colourDamage ?? null,
+			windowWallSeen: est?.wallSeen ?? false,
+			windowWallLevel: est?.wallLevel ?? null,
+			windowWallToFace: est?.wallToFace ?? null,
+			wallLine: wl,
+			wallFrames,
+			collecting: !this.samples.length || t - this.samples[0][0] < OWN_PULSE_WINDOW_S * 1000,
+			windowFill: this.samples.length ? Math.min(1, (t - this.samples[0][0]) / (OWN_PULSE_WINDOW_S * 1000)) : 0,
+			followerBpm: null,
+			heldBpm: null,
+			buildingBpm: null,
+			followBpm: null,
+			relockOpen: false,
+			windowScreenSteps,
+			screenLight: est?.bpm != null && windowScreenSteps != null && windowScreenSteps >= SCREEN_STEPS_PER_WINDOW,
+			startGated: false,
+			// For offline tuning: exactly what the tracker saw this second.
+			trackerIn: { band: band ?? [], none, suppress, capBpm, recent: recent ?? [], seed: seeded },
+			trackerMass: Math.round(s.mass * 1000) / 1000,
+		};
 		// The shown rate is what a break carries forward (resumePoint, and the seed after a reset).
-		if (s.shown) {
+		if (shown) {
 			this.followKept = { bpm: s.bpm, t };
 			this.keptEpochMs = this.now();
 			this.keptMaxAgeMs = FOLLOW_RESUME_MS;
