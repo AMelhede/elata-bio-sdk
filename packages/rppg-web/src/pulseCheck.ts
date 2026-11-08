@@ -1815,6 +1815,8 @@ export class PulseCheck {
 
 	/** Rule tracker: the one-model tracker (pulseTracker.ts). */
 	private tracker = new PulseTracker();
+	/** Rule tracker: a reset (or a resume point) happened; seed the filter from followKept at the next window. */
+	private trackerSeedPending = true;
 
 	/** Rule tracker: one window into the tracker, and the shown number from it alone (replaces the streak's decision). */
 	private trackerDecides(
@@ -1841,6 +1843,12 @@ export class PulseCheck {
 					this.rules.fpsCeiling,
 				);
 		}
+		// After a break, the rate shown before it (or the page's resume point) seeds the filter as a prior.
+		if (this.trackerSeedPending && this.followKept) {
+			const age = (t - this.followKept.t) / 1000;
+			if (age >= 0 && age * 1000 <= this.keptMaxAgeMs) this.tracker.seed(this.followKept.bpm, age);
+		}
+		this.trackerSeedPending = false;
 		const band = est?.measuredBand ?? null;
 		// No evidence: no window, a held picture (a video encoder's), or a light stepping on the face.
 		const none =
@@ -1867,6 +1875,12 @@ export class PulseCheck {
 		this.state.startGated = false;
 		this.state.wallMatch = false;
 		this.state.trackerMass = Math.round(s.mass * 1000) / 1000;
+		// The shown rate is what a break carries forward (resumePoint, and the seed after a reset).
+		if (s.shown) {
+			this.followKept = { bpm: s.bpm, t };
+			this.keptEpochMs = this.now();
+			this.keptMaxAgeMs = FOLLOW_RESUME_MS;
+		}
 	}
 
 	/** Rule coherentStart: the window rates of the last COHERENT_START_MS, and when a number last went out. Kept through a reset. */
@@ -1962,6 +1976,7 @@ export class PulseCheck {
 
 	reset(): void {
 		this.tracker.reset();
+		this.trackerSeedPending = true;
 		this.blinkCarried = false;
 		this.room = [];
 		this.samples = [];

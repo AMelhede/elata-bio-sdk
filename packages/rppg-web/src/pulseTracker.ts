@@ -38,6 +38,12 @@ export const TRACKER_SHOW = 0.25;
 export const TRACKER_EDGE_BPM = 6;
 export const TRACKER_FIT_GAP_BPM = 6;
 const EULER = 0.5772156649015329;
+/**
+ * A rate shown before a break (a camera restart, the page left and come back) seeds the filter after it: this much
+ * posterior mass around that rate, widened by the motion step for the time since. Below TRACKER_SHOW on purpose: the
+ * seed is a prior and never shows by itself; the face's own windows confirm it within seconds, or wear it away.
+ */
+export const TRACKER_RESUME_MASS = 0.2;
 /** Before a full window, the tracker reads the window there is, from this many seconds (the growing window). */
 export const TRACKER_FIRST_WINDOW_S = 6;
 
@@ -173,6 +179,15 @@ export class PulseTracker {
 			out[j] = Math.exp((sy - slope * sx) / s0 + slope * b + EULER);
 		}
 		return out;
+	}
+
+	/** Seed the filter with a rate shown `ageS` seconds ago (TRACKER_RESUME_MASS around it, widened by the motion step). */
+	seed(bpm: number, ageS: number, mass: number = TRACKER_RESUME_MASS): void {
+		const sd = this.p.sigma * Math.sqrt(Math.max(1, ageS));
+		const w = this.rates.map((r) => Math.exp(-0.5 * ((r - bpm) / sd) ** 2));
+		const sum = w.reduce((x, y) => x + y, 0) || 1;
+		this.a = Float64Array.from(w, (v) => (mass * v) / sum);
+		this.aN = 1 - mass;
 	}
 
 	reset(): void {

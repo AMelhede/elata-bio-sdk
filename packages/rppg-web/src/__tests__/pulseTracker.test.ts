@@ -1,6 +1,6 @@
 // Jest provides require; this package's tests carry no Node type declarations.
 declare const require: (id: string) => any;
-import { PulseTracker, TRACKER_LO_BPM, TRACKER_HI_BPM } from "../pulseTracker";
+import { PulseTracker, TRACKER_LO_BPM, TRACKER_HI_BPM, TRACKER_RESUME_MASS, TRACKER_SHOW } from "../pulseTracker";
 
 // Seeded noise: exponential power per bin (a chi-square with 2 degrees of freedom, as a periodogram bin of noise).
 function rng(seed: number) {
@@ -109,6 +109,22 @@ describe("PulseTracker (rule tracker)", () => {
 			if (s.shown && s.bpm > 120) high++;
 		}
 		expect(high).toBe(0);
+	});
+
+	it("a resume seed is a prior: alone it never shows, with the face agreeing it shows sooner", () => {
+		expect(TRACKER_RESUME_MASS).toBeLessThan(TRACKER_SHOW);
+		const r = rng(9);
+		const seeded = new PulseTracker();
+		seeded.seed(72, 20);
+		const alone = run(seeded, 6, 66, () => spectrum(r));
+		expect(alone.filter((o) => o.shown).length).toBe(0);
+		const firstWith = (seed: boolean) => {
+			const rr = rng(10);
+			const T = new PulseTracker();
+			if (seed) T.seed(72, 20);
+			return run(T, 6, 66, () => spectrum(rr, [[72, 6]])).find((o) => o.shown)?.t ?? 999;
+		};
+		expect(firstWith(true)).toBeLessThan(firstWith(false));
 	});
 
 	it.each(["a", "b"])("matches the Python screen it was tuned with (parity fixture %s)", (name) => {
