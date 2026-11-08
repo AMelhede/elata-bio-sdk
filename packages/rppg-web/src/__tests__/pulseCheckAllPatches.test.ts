@@ -28,9 +28,9 @@ function make(patchCount: number) {
 }
 
 describe("rule allPatches", () => {
-	it("is off unless true, and is a named rule", () => {
-		expect(resolvePulseCheckRules().allPatches).toBe(false);
-		expect(resolvePulseCheckRules({ allPatches: true }).allPatches).toBe(true);
+	it("is on unless false, and is a named rule", () => {
+		expect(resolvePulseCheckRules().allPatches).toBe(true);
+		expect(resolvePulseCheckRules({ allPatches: false }).allPatches).toBe(false);
 		expect(PULSE_CHECK_RULE_NAMES).toContain("allPatches");
 	});
 	it("a pulse only the patches carry together: the regions' line reads their 100, the patches' line reads 72", () => {

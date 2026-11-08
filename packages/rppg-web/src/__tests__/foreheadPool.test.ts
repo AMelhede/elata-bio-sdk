@@ -101,12 +101,12 @@ describe("a recording with the pool keeps the forehead box it replaced, so the f
 		return live;
 	}
 	it("writes the box as the frame's last field with the pool and leaves the event as it was without", () => {
-		const a = new RecordingPulseCheck({ rules: { moreReadings: true } });
+		const a = new RecordingPulseCheck({ rules: { moreReadings: true, allPatches: false } });
 		feed(a, true);
 		const fa = a.getRecording().events.find((e) => e[0] === "f")!;
 		expect(fa.length).toBe(10);
 		expect(fa[9]).toEqual([0.61, 0.41, 0.31]);
-		const b = new RecordingPulseCheck({ rules: { moreReadings: true } });
+		const b = new RecordingPulseCheck({ rules: { moreReadings: true, allPatches: false } });
 		feed(b, false);
 		expect(b.getRecording().events.find((e) => e[0] === "f")!.length).toBe(9);
 	});

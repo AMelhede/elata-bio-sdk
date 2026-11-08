@@ -110,7 +110,7 @@ describe("a recording with the light switch keeps the face light and both levels
 		return live;
 	}
 	it("writes [luma, red clip, asked, rendered] after a null forehead box, and the same numbers replay", () => {
-		const a = new RecordingPulseCheck({ rules: { moreReadings: true } });
+		const a = new RecordingPulseCheck({ rules: { moreReadings: true, allPatches: false } });
 		const live = feed(a, true);
 		const fa = a.getRecording().events.find((e) => e[0] === "f")!;
 		expect(fa.length).toBe(11);
@@ -119,7 +119,7 @@ describe("a recording with the light switch keeps the face light and both levels
 		const back = parsePulseCheckRecording(serializePulseCheckRecording(a.getRecording()));
 		const replayed = replayPulseCheck(back).evaluations.map((e) => e.bpm);
 		expect(replayed).toEqual(live);
-		const b = new RecordingPulseCheck({ rules: { moreReadings: true } });
+		const b = new RecordingPulseCheck({ rules: { moreReadings: true, allPatches: false } });
 		expect(feed(b, false)).toEqual(live);
 		expect(b.getRecording().events.find((e) => e[0] === "f")!.length).toBe(9);
 	});

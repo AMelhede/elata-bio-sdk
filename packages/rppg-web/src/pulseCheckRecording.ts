@@ -39,6 +39,7 @@ import {
 	type RoomCorner,
 	type RoomCorners,
 	PULSE_CHECK_RULE_NAMES,
+	resolvePulseCheckRules,
 	PulseCheck,
 	type PulseCheckResume,
 	type PulseCheckRules,
@@ -179,7 +180,8 @@ export class RecordingPulseCheck extends PulseCheck {
 
 	constructor(opts: { rules?: PulseCheckRules; seconds?: number; facePatches?: boolean; resumeFrom?: PulseCheckResume | null; now?: () => number } = {}) {
 		super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now });
-		this.recPatches = opts.facePatches === true;
+		// Kept when asked for, and whenever the check itself reads them (rule allPatches), so a replay sees what it saw.
+		this.recPatches = opts.facePatches === true || resolvePulseCheckRules(opts.rules).allPatches;
 		const seconds = opts.seconds ?? PULSE_CHECK_RECORDING_SECONDS;
 		if (!(seconds > 0) || !Number.isFinite(seconds))
 			throw new RangeError(`recordPulseCheckInputs seconds must be a positive number, not ${seconds}`);
@@ -242,7 +244,7 @@ export class RecordingPulseCheck extends PulseCheck {
 
 	/** True only when built with facePatches: the frame source then computes the 115 patches for the record. */
 	override get wantsFacePatches(): boolean {
-		return this.recPatches || super.wantsFacePatches;
+		return this.recPatches;
 	}
 
 	override faceLost(timestampMs: number): void {

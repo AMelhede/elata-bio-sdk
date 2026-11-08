@@ -346,7 +346,7 @@ export type PulseCheckRules = {
 	 */
 	trackLine?: boolean;
 	/**
-	 * OFF unless true, being measured (2026-11-05): with coherentFusion, the line is read from the 115 face patches
+	 * On unless false, from 2026-11-06: with coherentFusion, the line is read from the 115 face patches
 	 * (facePatches.ts), each patch's pulse at equal spread added in time, instead of the three regions; a patch counts in
 	 * a window when it has skin on 90% of its frames, and with fewer than 8 such patches the regions' line is read. Every
 	 * other rule still reads the three regions. A session with the face mesh computes the patches each frame while it is
@@ -838,7 +838,7 @@ export function resolvePulseCheckRules(
 		bridgeGap: rules?.bridgeGap !== false,
 		heldFrames: rules?.heldFrames !== false,
 		trackLine: rules?.trackLine === true,
-		allPatches: rules?.allPatches === true,
+		allPatches: rules?.allPatches !== false,
 	};
 }
 

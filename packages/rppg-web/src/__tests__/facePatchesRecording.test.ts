@@ -44,13 +44,14 @@ const proc = {
 	resetSignal: jest.fn(),
 };
 describe("facePatches: which checks want them", () => {
-	test("only a recording built with facePatches wants them", () => {
-		expect(new PulseCheck().wantsFacePatches).toBe(false);
-		expect(new RecordingPulseCheck().wantsFacePatches).toBe(false);
+	test("a check wants them when it reads them (rule allPatches) or a recording keeps them", () => {
+		expect(new PulseCheck().wantsFacePatches).toBe(true);
+		expect(new PulseCheck({ rules: { allPatches: false } }).wantsFacePatches).toBe(false);
+		expect(new RecordingPulseCheck({ rules: { allPatches: false } }).wantsFacePatches).toBe(false);
 		expect(new RecordingPulseCheck({ facePatches: true }).wantsFacePatches).toBe(true);
 		expect(sessionPulseCheck({ recordPulseCheckInputs: { facePatches: true } })?.wantsFacePatches).toBe(true);
-		expect(sessionPulseCheck({ recordPulseCheckInputs: { seconds: 60 } })?.wantsFacePatches).toBe(false);
-		expect(sessionPulseCheck({ recordPulseCheckInputs: true })?.wantsFacePatches).toBe(false);
+		expect(sessionPulseCheck({ recordPulseCheckInputs: { seconds: 60 } })?.wantsFacePatches).toBe(true);
+		expect(sessionPulseCheck({ recordPulseCheckInputs: true })?.wantsFacePatches).toBe(true);
 	});
 });
 
@@ -88,7 +89,7 @@ describe("facePatches: the recorded field", () => {
 		const rec = new RecordingPulseCheck({ facePatches: true });
 		rec.push(1000, regions, undefined, undefined, undefined, undefined, { facePatches: null });
 		expect((rec.getRecording().events[0] as unknown[])[11]).toBeNull();
-		const off = new RecordingPulseCheck();
+		const off = new RecordingPulseCheck({ rules: { allPatches: false } });
 		off.push(1000, regions, undefined, undefined, undefined, undefined, { facePatches: patches });
 		expect((off.getRecording().events[0] as unknown[]).length).toBe(9);
 		expect(off.getRecording().facePatchLayout).toBeUndefined();
