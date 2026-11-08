@@ -82,6 +82,8 @@ export interface OwnPulseEstimate {
 	 * band at least CLEAR_RUNNER_UP_BPM away on either side (Infinity with none, null with no line). Rule clearWindows.
 	 */
 	lineMarginDb?: number | null;
+	/** Rule trackLine: the window's whitened combined spectrum in the band, [bpm, power] per bin (only when asked for). */
+	band?: Array<[number, number]>;
 	/** How the pulse was read from the colours this window (see OWN_PULSE_COLOUR_DAMAGE). */
 	method?: "pos" | "greenMinusWall";
 	/** The colour-damage measure this window (see OWN_PULSE_COLOUR_DAMAGE), or null. */
@@ -607,6 +609,8 @@ export function estimateOwnPulse(
 	driftLine = false,
 	/** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
 	slowDouble = false,
+	/** Rule trackLine: hand back the whitened in-band spectrum (`band`) for the line track across windows. */
+	wantBand = false,
 ): OwnPulseEstimate | null {
 	if (samples.length < 8) return null;
 	const end = atMs;
@@ -709,6 +713,13 @@ export function estimateOwnPulse(
 		wallSeen,
 		wallLevel: wallLevel == null ? null : Math.round(wallLevel * 1000) / 1000,
 		wallToFace: wallToFace == null ? null : Math.round(wallToFace * 1000) / 1000,
+		...(wantBand
+			? {
+					band: comb
+						.filter(([f]) => f >= OWN_PULSE_BAND_HZ[0] && f <= OWN_PULSE_BAND_HZ[1])
+						.map(([f, p]) => [f * 60, p] as [number, number]),
+				}
+			: {}),
 	};
 }
 
