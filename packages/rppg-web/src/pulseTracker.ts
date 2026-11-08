@@ -70,9 +70,11 @@ export const TRACKER_FIRST_WINDOW_S = 6;
 /**
  * Seconds after a start or reset that the tracker's window leaves out (the camera settles its exposure and white balance
  * there): a 7 s window ending 7 to 10 s into a received file is within 5 bpm of the file's 16 s line 44% of the time, the
- * same window from 30 s on 74% (tracker/a3/shortwin.mjs, 2026-11-07). 0 leaves nothing out (unchanged). Under test.
+ * same window from 30 s on 74% (tracker/a3/shortwin.mjs, 2026-11-07). 2 s, against 0, on the 8 sealed lab people (blind, once):
+ * shown 54.9 to 53.7%, error 2.55 to 2.15 bpm, over 10 off 4.1 to 3.0%, made-up numbers on no-pulse copies 1.72 to 1.42 per
+ * 100 s; the same direction on the open lab (stage 2). Fewer wrong numbers for 1 point of shown seconds: the owner's worth.
  */
-export const TRACKER_SETTLE_S = 0;
+export const TRACKER_SETTLE_S = 2;
 
 export type TrackerParams = {
 	tau: number;
