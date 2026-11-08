@@ -45,6 +45,12 @@ const EULER = 0.5772156649015329;
  */
 export const TRACKER_RESUME_MASS = 0.2;
 /**
+ * Belief in a pulse when the filter starts or resets, spread evenly over the rates (the rest on no pulse). 0 starts every
+ * session and every return from all-no-pulse, so belief can only enter at TRACKER_Q_ON a second; the filter's own
+ * stationary mix, TRACKER_Q_ON / (TRACKER_Q_ON + TRACKER_Q_OFF), is the textbook start. Under test (scratchpad tracker/p0).
+ */
+export const TRACKER_START_MASS = 0;
+/**
  * The newest TRACKER_RECENT_S seconds as a second source of evidence (a moving heart shows there before the full window
  * catches up), tempered by TRACKER_TAU times this; Infinity leaves it out.
  */
@@ -155,7 +161,8 @@ export class PulseTracker {
 			});
 			return out;
 		});
-		this.a = new Float64Array(n);
+		this.a = new Float64Array(n).fill(TRACKER_START_MASS / n);
+		this.aN = 1 - TRACKER_START_MASS;
 	}
 
 	/** Each rate's log evidence from one spectrum against its floor, tempered by `tau`; 0 where the rate cannot count. */
@@ -223,8 +230,8 @@ export class PulseTracker {
 	}
 
 	reset(): void {
-		this.a = new Float64Array(this.rates.length);
-		this.aN = 1;
+		this.a = new Float64Array(this.rates.length).fill(TRACKER_START_MASS / this.rates.length);
+		this.aN = 1 - TRACKER_START_MASS;
 		this.lastMs = null;
 	}
 
