@@ -351,6 +351,8 @@ export function patchPulses(
 	startMs: number,
 	endMs: number,
 	frames: number,
+	/** With colour damage the regions read green minus the wall (greenMinusWall); the patches then do the same. */
+	wall: number[] | null = null,
 ): number[][] | null {
 	const pw = patches.filter((p) => p[0] >= startMs && p[0] <= endMs);
 	if (pw.length < ALL_PATCHES_MIN_VALID * frames || pw.length < 8) return null;
@@ -369,7 +371,7 @@ export function patchPulses(
 		}
 		if (t.length < ALL_PATCHES_MIN_VALID * pw.length || t.length < 8) continue;
 		const [R, G, B] = ch.map((c) => resample(t, c, from, to));
-		out.push(detrend(pos(R, G, B), OWN_PULSE_DETREND_S));
+		out.push(detrend(wall ? greenMinusWall(G, wall) : pos(R, G, B), OWN_PULSE_DETREND_S));
 	}
 	return out.length >= ALL_PATCHES_MIN_COUNT ? out : null;
 }
@@ -740,7 +742,7 @@ export function estimateOwnPulse(
 	// The line is chosen, and its rate fitted, against its local noise floor
 	// (whitenedSpectrum); its SNR is judged on the spectrum as measured.
 	// Rule allPatches: the coherent line from every valid face patch instead of the three regions (patchPulses).
-	const fromPatches = coherent && method === "pos" && patches ? patchPulses(patches, from, to, start, end, win.length) : null;
+	const fromPatches = coherent && patches ? patchPulses(patches, from, to, start, end, win.length, method === "greenMinusWall" ? wall : null) : null;
 	const measured = coherent ? coherentSpectrum(fromPatches ?? pulses) : combinedSpectrum(spectra);
 	const comb = whitenedSpectrum(measured);
 	let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
