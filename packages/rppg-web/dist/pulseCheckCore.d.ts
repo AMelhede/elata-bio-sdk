@@ -74,8 +74,8 @@ export interface OwnPulseEstimate {
      * band at least CLEAR_RUNNER_UP_BPM away on either side (Infinity with none, null with no line). Rule clearWindows.
      */
     lineMarginDb?: number | null;
-    /** Rule trackLine: the window's whitened combined spectrum in the band, [bpm, power] per bin (only when asked for). */
-    band?: Array<[number, number]>;
+    /** Rule tracker: the window's in-band spectrum as measured (not whitened), [bpm, power] per bin (only when asked for). */
+    measuredBand?: Array<[number, number]>;
     /** How the pulse was read from the colours this window (see OWN_PULSE_COLOUR_DAMAGE). */
     method?: "pos" | "greenMinusWall";
     /** The colour-damage measure this window (see OWN_PULSE_COLOUR_DAMAGE), or null. */
@@ -166,6 +166,37 @@ export declare function coherentSpectrum(pulses: readonly number[][]): Array<[nu
  * as the spectra's sum does (white-noise simulation, the null's own calibration; it is not tuned on people).
  */
 export declare const COHERENT_SNR_OFFSET_DB = 1.8;
+/**
+ * Rule allPatches: one frame's 115 face patches (facePatches.ts) as colour means, [timestamp ms, R G B per patch in
+ * layout order], NaN for a patch with no skin pixels that frame.
+ */
+export type PatchSample = [number, Float32Array];
+/**
+ * Rule allPatches: a patch is read in a window only when it has skin on at least this share of the window's frames
+ * (the all-data harness's loader, evsave tools/alldata: an interpolated guess over more is not a measurement).
+ */
+export declare const ALL_PATCHES_MIN_VALID = 0.9;
+/** Rule allPatches: the fewest such patches for the patch line; with fewer, the three regions' line is read. */
+export declare const ALL_PATCHES_MIN_COUNT = 8;
+/**
+ * Rule fpsCeiling: the highest rate a window trusts, as a share of its own frame rate. Sampling resolves rates below half
+ * the frame rate (Nyquist), and a camera's uneven frame times and the resampling to OWN_PULSE_FS fold energy back below
+ * that. 0.33, not 0.4: at about 6 fps a 70 bpm pulse's 2nd harmonic (140) and its 3rd, folded (6 x 60 - 210 = 150), stack
+ * just under a 0.4 cap (144), and both the streak rules and the tracker showed about 140 against a finger's 70 (full gate, 7.5 fps
+ * cells, 2026-11-07). At 0.33 nothing changes at 9.1 fps and up (the cap passes 180 bpm); at 6 fps lines above 119 are withheld.
+ * Kept 7.5 fps files, tracker on: right 197 to 389, wrong 244 to 12. Physics, the same on every camera.
+ */
+export declare const FPS_CEILING_SHARE = 0.33;
+/**
+ * Rule allPatches: each valid patch's POS pulse, detrended as the regions' are, for the coherent line (coherentSpectrum).
+ * The pulse is in step across the face while each patch's camera noise is its own, so 115 small patches added at
+ * equal spread average more noise away than three large regions; measured on the all-data harness (evsave
+ * tools/alldata, combining.py "all patches"): public lab set held-out people within 10 bpm 90.5 to 92.7 (Full HD), 64.0 to
+ * 67.8 (USB), 50.2 to 50.6 (Iriun); received references one laptop 67 to 80, one phone 77 to 92, the rest
+ * within one reference; no-pulse copies' line SNR median -5.4 to -5.3 dB (no added risk on average).
+ * Null when the window holds too few patch frames or too few valid patches.
+ */
+export declare function patchPulses(patches: readonly PatchSample[], from: number, to: number, startMs: number, endMs: number, frames: number): number[][] | null;
 export declare function combinedSpectrum(spectra: Array<Array<[number, number]>>): Array<[number, number]>;
 /**
  * The combined spectrum judged against its LOCAL noise floor.
@@ -279,8 +310,12 @@ coherent?: boolean,
 driftLine?: boolean, 
 /** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
 slowDouble?: boolean, 
-/** Rule trackLine: hand back the whitened in-band spectrum (`band`) for the line track across windows. */
-wantBand?: boolean): OwnPulseEstimate | null;
+/** Rule tracker: hand back the in-band spectrum as measured (`measuredBand`) for the tracker. */
+wantBand?: boolean, 
+/** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
+patches?: readonly PatchSample[] | null, 
+/** Rule fpsCeiling: a line above what the window's own frame rate resolves (FPS_CEILING_SHARE) is not a line. */
+fpsCeiling?: boolean): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.

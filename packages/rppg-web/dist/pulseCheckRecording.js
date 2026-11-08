@@ -33,7 +33,7 @@
  */
 import { FACE_PATCH_LAYOUT_ID } from "./facePatches.js";
 import { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
-import { PULSE_CHECK_RULE_NAMES, PulseCheck, shownPulseBpm, } from "./pulseCheck.js";
+import { PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, PulseCheck, shownPulseBpm, } from "./pulseCheck.js";
 /** The `format` field of every recording. */
 export const PULSE_CHECK_RECORDING_FORMAT = "rppg-web/pulse-check-inputs";
 /** The `version` field: raised whenever the meaning of a field changes. A replay refuses other versions. */
@@ -77,7 +77,8 @@ export class RecordingPulseCheck extends PulseCheck {
         this.recDropped = 0;
         /** The newest finite frame time seen, the clock that events without their own time are filed under. */
         this.recLastT = null;
-        this.recPatches = opts.facePatches === true;
+        // Kept when asked for, and whenever the check itself reads them (rule allPatches), so a replay sees what it saw.
+        this.recPatches = opts.facePatches === true || resolvePulseCheckRules(opts.rules).allPatches;
         const seconds = opts.seconds ?? PULSE_CHECK_RECORDING_SECONDS;
         if (!(seconds > 0) || !Number.isFinite(seconds))
             throw new RangeError(`recordPulseCheckInputs seconds must be a positive number, not ${seconds}`);
@@ -213,8 +214,9 @@ export function replayPulseCheck(recording, options = {}) {
             const [, t, regions, wall, wallRaw, wallMiss, head, room] = e;
             const before = check.evaluations;
             check.push(t, regions.map(toRgb), wall ? toRgb(wall) : undefined, wallMiss ?? undefined, head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2], ...(head[7] != null ? { blink: head[7] } : {}) }, wallRaw ? toRgb(wallRaw) : undefined, 
-            // The room (from test.42), which only rule roomLight reads.
-            room ? { room: roomOf(room) } : undefined);
+            // The room (from test.42), which only rule roomLight reads; the face patches (field [11]), which only rule
+            // allPatches reads.
+            room || e[11] ? { ...(room ? { room: roomOf(room) } : {}), ...(e[11] ? { facePatches: { box: e[11].slice(0, 4), values: Uint32Array.from(e[11].slice(4)) } } : {}) } : undefined);
             if (check.evaluations !== before) {
                 const state = check.getState();
                 evaluations.push({ t, bpm: shownPulseBpm(state), state });

@@ -222,6 +222,56 @@ export function coherentSpectrum(pulses) {
  * as the spectra's sum does (white-noise simulation, the null's own calibration; it is not tuned on people).
  */
 export const COHERENT_SNR_OFFSET_DB = 1.8;
+/**
+ * Rule allPatches: a patch is read in a window only when it has skin on at least this share of the window's frames
+ * (the all-data harness's loader, evsave tools/alldata: an interpolated guess over more is not a measurement).
+ */
+export const ALL_PATCHES_MIN_VALID = 0.9;
+/** Rule allPatches: the fewest such patches for the patch line; with fewer, the three regions' line is read. */
+export const ALL_PATCHES_MIN_COUNT = 8;
+/**
+ * Rule fpsCeiling: the highest rate a window trusts, as a share of its own frame rate. Sampling resolves rates below half
+ * the frame rate (Nyquist), and a camera's uneven frame times and the resampling to OWN_PULSE_FS fold energy back below
+ * that. 0.33, not 0.4: at about 6 fps a 70 bpm pulse's 2nd harmonic (140) and its 3rd, folded (6 x 60 - 210 = 150), stack
+ * just under a 0.4 cap (144), and both the streak rules and the tracker showed about 140 against a finger's 70 (full gate, 7.5 fps
+ * cells, 2026-11-07). At 0.33 nothing changes at 9.1 fps and up (the cap passes 180 bpm); at 6 fps lines above 119 are withheld.
+ * Kept 7.5 fps files, tracker on: right 197 to 389, wrong 244 to 12. Physics, the same on every camera.
+ */
+export const FPS_CEILING_SHARE = 0.33;
+/**
+ * Rule allPatches: each valid patch's POS pulse, detrended as the regions' are, for the coherent line (coherentSpectrum).
+ * The pulse is in step across the face while each patch's camera noise is its own, so 115 small patches added at
+ * equal spread average more noise away than three large regions; measured on the all-data harness (evsave
+ * tools/alldata, combining.py "all patches"): public lab set held-out people within 10 bpm 90.5 to 92.7 (Full HD), 64.0 to
+ * 67.8 (USB), 50.2 to 50.6 (Iriun); received references one laptop 67 to 80, one phone 77 to 92, the rest
+ * within one reference; no-pulse copies' line SNR median -5.4 to -5.3 dB (no added risk on average).
+ * Null when the window holds too few patch frames or too few valid patches.
+ */
+export function patchPulses(patches, from, to, startMs, endMs, frames) {
+    const pw = patches.filter((p) => p[0] >= startMs && p[0] <= endMs);
+    if (pw.length < ALL_PATCHES_MIN_VALID * frames || pw.length < 8)
+        return null;
+    const count = pw[0][1].length / 3;
+    const out = [];
+    for (let i = 0; i < count; i++) {
+        const t = [];
+        const ch = [[], [], []];
+        for (const [ms, v] of pw) {
+            const r = v[i * 3];
+            if (!Number.isFinite(r))
+                continue;
+            t.push(ms / 1000);
+            ch[0].push(r);
+            ch[1].push(v[i * 3 + 1]);
+            ch[2].push(v[i * 3 + 2]);
+        }
+        if (t.length < ALL_PATCHES_MIN_VALID * pw.length || t.length < 8)
+            continue;
+        const [R, G, B] = ch.map((c) => resample(t, c, from, to));
+        out.push(detrend(pos(R, G, B), OWN_PULSE_DETREND_S));
+    }
+    return out.length >= ALL_PATCHES_MIN_COUNT ? out : null;
+}
 export function combinedSpectrum(spectra) {
     const [lo, hi] = OWN_PULSE_BAND_HZ;
     const out = spectra[0].map(([f]) => [f, 0]);
@@ -262,49 +312,88 @@ export function whitenedSpectrum(P) {
 }
 /** POS (Wang 2017): temporally normalised RGB, S1 = G - B, S2 = G + B - 2R, h = S1 + alpha S2, 1.6 s sliding windows, overlap-added. */
 export function pos(R, G, B) {
+    // POS (Wang et al. 2017): per 1.6 s window, the channels over their window means, S1 = g - b, S2 = g + b - 2r,
+    // h = S1 + (sd S1 / sd S2) S2, overlap-added. The window means and the two spreads come from running sums (O(N) for all
+    // windows, not 7 passes over each); the overlap-add stays per window, as written, since folding it into running sums
+    // cancels large terms when a window's S2 is nearly flat (measured on a received file: errors to 2e-6 of the signal).
+    // It was 38% of an evaluation's time on a received phone file, run over every face patch each second. A test holds it
+    // to the textbook form within 1e-9 of the signal.
+    const N = R.length;
     const win = Math.round(1.6 * OWN_PULSE_FS);
-    const h = new Array(R.length).fill(0);
-    // One buffer per signal for every window, and every operation in the order first written, so
-    // the output is the same to the bit (a test pins it) without an allocation per window.
-    const s1 = new Float64Array(win);
-    const s2 = new Float64Array(win);
-    const sd = (a) => {
-        let m = 0;
-        for (let i = 0; i < win; i++)
-            m += a[i];
-        m /= win;
-        let v = 0;
-        for (let i = 0; i < win; i++)
-            v += (a[i] - m) ** 2;
-        return Math.sqrt(v / win) || 1;
-    };
-    for (let n = win; n <= R.length; n++) {
-        const m = n - win;
-        let mr = 0;
-        let mg = 0;
-        let mb = 0;
-        for (let k = m; k < n; k++) {
-            mr += R[k];
-            mg += G[k];
-            mb += B[k];
+    const h = new Array(N).fill(0);
+    if (N < win)
+        return h;
+    // Centred on the first sample, so the squares and products summed are small and keep their precision.
+    const c0 = R[0];
+    const c1 = G[0];
+    const c2 = B[0];
+    // Nine running sums in one buffer, interleaved: r, g, b, rr, gg, bb, rg, rb, gb (centred values), and per channel the
+    // count of samples that differ from the one before: a window with none is exactly flat (a held frame), and its spread is
+    // exactly zero, as the textbook form finds it (a running sum leaves a rounding residue there instead).
+    const P = new Float64Array(9 * (N + 1));
+    const D = new Int32Array(3 * (N + 1));
+    for (let k = 0; k < N; k++) {
+        const r = R[k] - c0;
+        const g = G[k] - c1;
+        const b = B[k] - c2;
+        const o = 9 * k;
+        P[o + 9] = P[o] + r;
+        P[o + 10] = P[o + 1] + g;
+        P[o + 11] = P[o + 2] + b;
+        P[o + 12] = P[o + 3] + r * r;
+        P[o + 13] = P[o + 4] + g * g;
+        P[o + 14] = P[o + 5] + b * b;
+        P[o + 15] = P[o + 6] + r * g;
+        P[o + 16] = P[o + 7] + r * b;
+        P[o + 17] = P[o + 8] + g * b;
+        const d = 3 * k;
+        D[d + 3] = D[d] + (k > 0 && R[k] !== R[k - 1] ? 1 : 0);
+        D[d + 4] = D[d + 1] + (k > 0 && G[k] !== G[k - 1] ? 1 : 0);
+        D[d + 5] = D[d + 2] + (k > 0 && B[k] !== B[k - 1] ? 1 : 0);
+    }
+    for (let m = 0; m + win <= N; m++) {
+        const om = 9 * m;
+        const on = 9 * (m + win);
+        // Changes within the window: between its samples m+1 .. m+win-1 and the one before each.
+        const flat = (c) => D[3 * (m + win) + c] - D[3 * (m + 1) + c] === 0;
+        const ar = (P[on] - P[om]) / win;
+        const ag = (P[on + 1] - P[om + 1]) / win;
+        const ab = (P[on + 2] - P[om + 2]) / win;
+        const mr = ar + c0;
+        const mg = ag + c1;
+        const mb = ab + c2;
+        const fr = flat(0);
+        const fg = flat(1);
+        const fb = flat(2);
+        const vr = fr ? 0 : (P[on + 3] - P[om + 3]) / win - ar * ar;
+        const vg = fg ? 0 : (P[on + 4] - P[om + 4]) / win - ag * ag;
+        const vb = fb ? 0 : (P[on + 5] - P[om + 5]) / win - ab * ab;
+        const crg = fr || fg ? 0 : (P[on + 6] - P[om + 6]) / win - ar * ag;
+        const crb = fr || fb ? 0 : (P[on + 7] - P[om + 7]) / win - ar * ab;
+        const cgb = fg || fb ? 0 : (P[on + 8] - P[om + 8]) / win - ag * ab;
+        const gg = vg / (mg * mg);
+        const bb = vb / (mb * mb);
+        const rr = vr / (mr * mr);
+        const gb = cgb / (mg * mb);
+        const rg = crg / (mr * mg);
+        const rb = crb / (mr * mb);
+        // A spread of zero (a flat projection) is not divided by, as the textbook sd's `|| 1`.
+        const sd1 = (fg && fb) ? 1 : Math.sqrt(Math.max(0, gg + bb - 2 * gb)) || 1;
+        const sd2 = (fr && fg && fb) ? 1 : Math.sqrt(Math.max(0, gg + bb + 4 * rr + 2 * gb - 4 * rg - 4 * rb)) || 1;
+        const alpha = sd1 / sd2;
+        // A window of frozen pixels (all three channels flat) adds exactly zero, as in the textbook form; computed, it left a
+        // residue of 1e-15 that became a full-weight noise patch downstream once each patch is scaled to its own power (a
+        // received file's window SNR moved 12 dB).
+        if (fr && fg && fb)
+            continue;
+        const ir = 1 / mr;
+        const ig = 1 / mg;
+        const ib = 1 / mb;
+        for (let k = m; k < m + win; k++) {
+            const g = G[k] * ig;
+            const b = B[k] * ib;
+            h[k] += g - b + alpha * (g + b - 2 * R[k] * ir);
         }
-        mr /= win;
-        mg /= win;
-        mb /= win;
-        for (let k = m; k < n; k++) {
-            const r = R[k] / mr;
-            const g = G[k] / mg;
-            const b = B[k] / mb;
-            s1[k - m] = g - b;
-            s2[k - m] = g + b - 2 * r;
-        }
-        const alpha = sd(s1) / sd(s2);
-        let mean = 0;
-        for (let i = 0; i < win; i++)
-            mean += s1[i] + alpha * s2[i];
-        mean /= win;
-        for (let k = 0; k < win; k++)
-            h[m + k] += s1[k] + alpha * s2[k] - mean;
     }
     return h;
 }
@@ -500,8 +589,12 @@ coherent = false,
 driftLine = false, 
 /** Rule slowDouble (lineIsSlowDouble): a line at twice a slow line the spectrum itself supports is withheld. */
 slowDouble = false, 
-/** Rule trackLine: hand back the whitened in-band spectrum (`band`) for the line track across windows. */
-wantBand = false) {
+/** Rule tracker: hand back the in-band spectrum as measured (`measuredBand`) for the tracker. */
+wantBand = false, 
+/** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
+patches = null, 
+/** Rule fpsCeiling: a line above what the window's own frame rate resolves (FPS_CEILING_SHARE) is not a line. */
+fpsCeiling = false) {
     if (samples.length < 8)
         return null;
     const end = atMs;
@@ -557,11 +650,15 @@ wantBand = false) {
     // per-region peaks stay for diagnostics and for the low-band agreement rule.
     // The line is chosen, and its rate fitted, against its local noise floor
     // (whitenedSpectrum); its SNR is judged on the spectrum as measured.
-    const measured = coherent ? coherentSpectrum(pulses) : combinedSpectrum(spectra);
+    // Rule allPatches: the coherent line from every valid face patch instead of the three regions (patchPulses).
+    const fromPatches = coherent && method === "pos" && patches ? patchPulses(patches, from, to, start, end, win.length) : null;
+    const measured = coherent ? coherentSpectrum(fromPatches ?? pulses) : combinedSpectrum(spectra);
     const comb = whitenedSpectrum(measured);
     let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
     if (driftLine)
         line = pastDriftLine(line, comb, measured, regions);
+    if (fpsCeiling && line.bpm > FPS_CEILING_SHARE * fps * 60)
+        line = { bpm: Number.NaN, snrDb: Number.NEGATIVE_INFINITY };
     if (slowDouble && lineIsSlowDouble(comb, measured, line.bpm))
         line = { bpm: Number.NaN, snrDb: Number.NEGATIVE_INFINITY };
     const combined = coherent && Number.isFinite(line.snrDb) ? { ...line, snrDb: line.snrDb - COHERENT_SNR_OFFSET_DB } : line;
@@ -590,7 +687,7 @@ wantBand = false) {
         wallToFace: wallToFace == null ? null : Math.round(wallToFace * 1000) / 1000,
         ...(wantBand
             ? {
-                band: comb
+                measuredBand: measured
                     .filter(([f]) => f >= OWN_PULSE_BAND_HZ[0] && f <= OWN_PULSE_BAND_HZ[1])
                     .map(([f, p]) => [f * 60, p]),
             }
