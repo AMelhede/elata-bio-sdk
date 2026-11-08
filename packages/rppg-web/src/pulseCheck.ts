@@ -355,12 +355,6 @@ export type PulseCheckRules = {
 	 * average (pulseCheckCore patchPulses).
 	 */
 	allPatches?: boolean;
-	/**
-	 * OFF unless true, being measured (2026-11-05): each region's pulse from the colour mix the window's own video
-	 * supports best (pulseCheckCore adaptivePos), still blind to brightness changes, instead of POS's fixed mix; a warm
-	 * light's starved channel, mostly camera noise, then gets little weight.
-	 */
-	adaptiveColour?: boolean;
 };
 
 /**
@@ -451,7 +445,6 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"heldFrames",
 	"trackLine",
 	"allPatches",
-	"adaptiveColour",
 ] as const;
 
 /**
@@ -846,7 +839,6 @@ export function resolvePulseCheckRules(
 		heldFrames: rules?.heldFrames !== false,
 		trackLine: rules?.trackLine === true,
 		allPatches: rules?.allPatches === true,
-		adaptiveColour: rules?.adaptiveColour === true,
 	};
 }
 
@@ -1600,7 +1592,6 @@ export class PulseCheck {
 			this.rules.slowDouble,
 			this.rules.trackLine,
 			this.rules.allPatches ? this.patchRows : null,
-			this.rules.adaptiveColour,
 		);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// Rule trackLine: the reported line follows the live track over the windows' spectra.
@@ -1857,7 +1848,6 @@ export class PulseCheck {
 					this.rules.slowDouble,
 					false,
 					this.rules.allPatches ? this.patchRows : null,
-			this.rules.adaptiveColour,
 				);
 				if (
 					e &&
@@ -1938,7 +1928,6 @@ export class PulseCheck {
 			this.rules.slowDouble,
 			false,
 			this.rules.allPatches ? this.patchRows : null,
-			this.rules.adaptiveColour,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
