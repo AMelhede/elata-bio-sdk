@@ -242,7 +242,7 @@ export class RecordingPulseCheck extends PulseCheck {
 
 	/** True only when built with facePatches: the frame source then computes the 115 patches for the record. */
 	override get wantsFacePatches(): boolean {
-		return this.recPatches;
+		return this.recPatches || super.wantsFacePatches;
 	}
 
 	override faceLost(timestampMs: number): void {
@@ -366,8 +366,9 @@ export function replayPulseCheck(
 				wallMiss ?? undefined,
 				head === false ? undefined : head === null ? null : { x: head[0], y: head[1], faceWidth: head[2], ...(head[7] != null ? { blink: head[7] } : {}) },
 				wallRaw ? toRgb(wallRaw) : undefined,
-				// The room (from test.42), which only rule roomLight reads.
-				room ? { room: roomOf(room) } : undefined,
+				// The room (from test.42), which only rule roomLight reads; the face patches (field [11]), which only rule
+				// allPatches reads.
+				room || e[11] ? { ...(room ? { room: roomOf(room) } : {}), ...(e[11] ? { facePatches: { box: e[11].slice(0, 4) as [number, number, number, number], values: Uint32Array.from(e[11].slice(4)) } } : {}) } : undefined,
 			);
 			if (check.evaluations !== before) {
 				const state = check.getState();

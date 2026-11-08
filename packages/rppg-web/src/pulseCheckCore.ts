@@ -321,6 +321,59 @@ export function coherentSpectrum(pulses: readonly number[][]): Array<[number, nu
  */
 export const COHERENT_SNR_OFFSET_DB = 1.8;
 
+/**
+ * Rule allPatches: one frame's 115 face patches (facePatches.ts) as colour means, [timestamp ms, R G B per patch in
+ * layout order], NaN for a patch with no skin pixels that frame.
+ */
+export type PatchSample = [number, Float32Array];
+
+/**
+ * Rule allPatches: a patch is read in a window only when it has skin on at least this share of the window's frames
+ * (the all-data harness's loader, evsave tools/alldata: an interpolated guess over more is not a measurement).
+ */
+export const ALL_PATCHES_MIN_VALID = 0.9;
+/** Rule allPatches: the fewest such patches for the patch line; with fewer, the three regions' line is read. */
+export const ALL_PATCHES_MIN_COUNT = 8;
+
+/**
+ * Rule allPatches: each valid patch's POS pulse, detrended as the regions' are, for the coherent line (coherentSpectrum).
+ * The pulse is in step across the face while each patch's camera noise is its own, so 115 small patches added at
+ * equal spread average more noise away than three large regions; measured on the all-data harness (evsave
+ * tools/alldata, combining.py "all patches"): public lab set held-out people within 10 bpm 90.5 to 92.7 (Full HD), 64.0 to
+ * 67.8 (USB), 50.2 to 50.6 (Iriun); received references one laptop 67 to 80, one phone 77 to 92, the rest
+ * within one reference; no-pulse copies' line SNR median -5.4 to -5.3 dB (no added risk on average).
+ * Null when the window holds too few patch frames or too few valid patches.
+ */
+export function patchPulses(
+	patches: readonly PatchSample[],
+	from: number,
+	to: number,
+	startMs: number,
+	endMs: number,
+	frames: number,
+): number[][] | null {
+	const pw = patches.filter((p) => p[0] >= startMs && p[0] <= endMs);
+	if (pw.length < ALL_PATCHES_MIN_VALID * frames || pw.length < 8) return null;
+	const count = pw[0][1].length / 3;
+	const out: number[][] = [];
+	for (let i = 0; i < count; i++) {
+		const t: number[] = [];
+		const ch: number[][] = [[], [], []];
+		for (const [ms, v] of pw) {
+			const r = v[i * 3];
+			if (!Number.isFinite(r)) continue;
+			t.push(ms / 1000);
+			ch[0].push(r);
+			ch[1].push(v[i * 3 + 1]);
+			ch[2].push(v[i * 3 + 2]);
+		}
+		if (t.length < ALL_PATCHES_MIN_VALID * pw.length || t.length < 8) continue;
+		const [R, G, B] = ch.map((c) => resample(t, c, from, to));
+		out.push(detrend(pos(R, G, B), OWN_PULSE_DETREND_S));
+	}
+	return out.length >= ALL_PATCHES_MIN_COUNT ? out : null;
+}
+
 export function combinedSpectrum(
 	spectra: Array<Array<[number, number]>>,
 ): Array<[number, number]> {
@@ -611,6 +664,8 @@ export function estimateOwnPulse(
 	slowDouble = false,
 	/** Rule trackLine: hand back the whitened in-band spectrum (`band`) for the line track across windows. */
 	wantBand = false,
+	/** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
+	patches: readonly PatchSample[] | null = null,
 ): OwnPulseEstimate | null {
 	if (samples.length < 8) return null;
 	const end = atMs;
@@ -684,7 +739,9 @@ export function estimateOwnPulse(
 	// per-region peaks stay for diagnostics and for the low-band agreement rule.
 	// The line is chosen, and its rate fitted, against its local noise floor
 	// (whitenedSpectrum); its SNR is judged on the spectrum as measured.
-	const measured = coherent ? coherentSpectrum(pulses) : combinedSpectrum(spectra);
+	// Rule allPatches: the coherent line from every valid face patch instead of the three regions (patchPulses).
+	const fromPatches = coherent && method === "pos" && patches ? patchPulses(patches, from, to, start, end, win.length) : null;
+	const measured = coherent ? coherentSpectrum(fromPatches ?? pulses) : combinedSpectrum(spectra);
 	const comb = whitenedSpectrum(measured);
 	let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
 	if (driftLine) line = pastDriftLine(line, comb, measured, regions);

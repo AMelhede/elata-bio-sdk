@@ -41,6 +41,7 @@ import {
 	type RawRoiSample,
 	detrend,
 	estimateOwnPulse,
+	type PatchSample,
 	ownPulseVerdict,
 	peakOfSpectrum,
 	resample,
@@ -344,6 +345,16 @@ export type PulseCheckRules = {
 	 * is decided as without it. Held-out lab people, same windows shown: lines more than 10 bpm off 21.2 to 16.7%.
 	 */
 	trackLine?: boolean;
+	/**
+	 * OFF unless true, being measured (2026-11-05): with coherentFusion, the line is read from the 115 face patches
+	 * (facePatches.ts), each patch's pulse at equal spread added in time, instead of the three regions; a patch counts in
+	 * a window when it has skin on 90% of its frames, and with fewer than 8 such patches the regions' line is read. Every
+	 * other rule still reads the three regions. A session with the face mesh computes the patches each frame while it is
+	 * on (about 0.5 ms a frame at 640x480). All-data harness: held-out lab people within 10 bpm 90.5 to 92.7 (Full HD),
+	 * received references on one laptop 67 to 80 and one phone 77 to 92 of 100, no-pulse line SNR unchanged on
+	 * average (pulseCheckCore patchPulses).
+	 */
+	allPatches?: boolean;
 };
 
 /**
@@ -433,6 +444,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"bridgeGap",
 	"heldFrames",
 	"trackLine",
+	"allPatches",
 ] as const;
 
 /**
@@ -826,6 +838,7 @@ export function resolvePulseCheckRules(
 		bridgeGap: rules?.bridgeGap !== false,
 		heldFrames: rules?.heldFrames !== false,
 		trackLine: rules?.trackLine === true,
+		allPatches: rules?.allPatches === true,
 	};
 }
 
@@ -1368,6 +1381,8 @@ export class PulseCheck {
 	}
 
 	private samples: RawRoiSample[] = [];
+	/** Rule allPatches: each frame's face patches as colour means (PatchSample), kept as long as the samples. */
+	private patchRows: PatchSample[] = [];
 	private wall: [number, number, number, number][] = [];
 	/** The room (roomFromFrame) as handed over, for rule roomLight, kept as long as the wall. */
 	private room: [number, number, number, number][] = [];
@@ -1433,7 +1448,7 @@ export class PulseCheck {
 
 	/** Whether a caller should compute the 115 face patches for push's diagnostics: only a recording built to keep them. */
 	get wantsFacePatches(): boolean {
-		return false;
+		return this.rules.allPatches;
 	}
 
 	/**
@@ -1529,6 +1544,18 @@ export class PulseCheck {
 		]);
 		while (this.samples.length && this.samples[0][0] < timestampMs - KEEP_MS)
 			this.samples.shift();
+		// Rule allPatches: the frame's patches as means; a frame without them (no mesh) is simply not kept.
+		const fp = this.rules.allPatches ? diag?.facePatches : null;
+		if (fp) {
+			const n = fp.values.length / 5;
+			const means = new Float32Array(n * 3);
+			for (let i = 0; i < n; i++) {
+				const sk = fp.values[i * 5 + 3];
+				for (let c = 0; c < 3; c++) means[i * 3 + c] = sk > 0 ? fp.values[i * 5 + c] / sk : Number.NaN;
+			}
+			this.patchRows.push([timestampMs, means]);
+		}
+		while (this.patchRows.length && this.patchRows[0][0] < timestampMs - KEEP_MS) this.patchRows.shift();
 		if (wall) this.wall.push([timestampMs, wall.r, wall.g, wall.b]);
 		while (this.wall.length && this.wall[0][0] < timestampMs - WALL_KEEP_MS)
 			this.wall.shift();
@@ -1564,6 +1591,7 @@ export class PulseCheck {
 			this.rules.driftLine,
 			this.rules.slowDouble,
 			this.rules.trackLine,
+			this.rules.allPatches ? this.patchRows : null,
 		);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// Rule trackLine: the reported line follows the live track over the windows' spectra.
@@ -1818,6 +1846,8 @@ export class PulseCheck {
 					this.rules.coherentFusion,
 					this.rules.driftLine,
 					this.rules.slowDouble,
+					false,
+					this.rules.allPatches ? this.patchRows : null,
 				);
 				if (
 					e &&
@@ -1896,6 +1926,8 @@ export class PulseCheck {
 			this.rules.coherentFusion,
 			this.rules.driftLine,
 			this.rules.slowDouble,
+			false,
+			this.rules.allPatches ? this.patchRows : null,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
@@ -1934,6 +1966,7 @@ export class PulseCheck {
 		this.blinkCarried = false;
 		this.room = [];
 		this.samples = [];
+		this.patchRows = [];
 		this.wall = [];
 		this.head = [];
 		this.headHandedOver = false;

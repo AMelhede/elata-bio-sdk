@@ -635,7 +635,10 @@ export class DemoRunner {
 					// the room in the frame's upper corners, and where the wall patch sat this frame.
 					this.opts.pulseChecker.wantsDiagnostics
 						? { room: roomFromFrame(frame, frame.landmarks ?? null), patch: wall?.patch ?? null, ...(foreheadBox ? { foreheadBox } : {}), ...(this.opts.light ? { light: { face: this.faceLight, wanted: this.lightState.level, applied: this.lightApplied } } : {}), ...(this.opts.pulseChecker.wantsFacePatches ? { facePatches: facePatchesFromFrame(frame, frame.landmarks) } : {}) }
-						: undefined,
+						: // Rule allPatches: the patches are the check's input, so they are computed without a recording too.
+							this.opts.pulseChecker.wantsFacePatches
+							? { facePatches: facePatchesFromFrame(frame, frame.landmarks) }
+							: undefined,
 				);
 			}
 			if (frame.roi) {
