@@ -1854,11 +1854,11 @@ export class PulseCheck {
 		}
 		this.trackerSeedPending = false;
 		const band = est?.measuredBand ?? null;
-		// No evidence: no window, a held picture (a video encoder's), or a light stepping on the face.
-		const none =
-			band == null ||
-			heldFrameShare(this.samples, t) >= HELD_MAX_SHARE ||
-			screenSteps(this.samples, t) >= SCREEN_STEPS_PER_WINDOW;
+		// No evidence: no window, or a light stepping on the face. A window with held frames (a slow camera repeating
+		// frames, a frozen or low-bitrate stream) still carries the face: treated as no evidence it cost slow devices their
+		// number in the full gate (Safari 14 51.4 to 11.4 per 100, frame freezes 40.0 to 17.5) while the compressed-video
+		// cells showed no wrong number either way.
+		const none = band == null || screenSteps(this.samples, t) >= SCREEN_STEPS_PER_WINDOW;
 		// Rates a source other than the heart carries: the wall's and the room's own lines past their bars, and the
 		// window's line when the head keeps time with it.
 		const suppress: number[] = [];
@@ -1869,8 +1869,9 @@ export class PulseCheck {
 		if (est?.bpm != null && headKeepsTime(this.head, t, est.bpm)) suppress.push(est.bpm);
 		const capBpm = est ? FPS_CEILING_SHARE * est.fps * 60 : null;
 		// The newest TRACKER_RECENT_S seconds, read only once a full window exists (before it, the growing window is recent).
+		// Only computed while it counts: on a 2-core budget phone the extra window cost frames (6.7 to 5.5 a second).
 		const recentEst =
-			!none && est && est.windowS >= OWN_PULSE_WINDOW_S
+			!none && est && est.windowS >= OWN_PULSE_WINDOW_S && Number.isFinite(this.tracker.p.recentTauFactor)
 				? estimateOwnPulse(
 						this.samples,
 						TRACKER_RECENT_S,
