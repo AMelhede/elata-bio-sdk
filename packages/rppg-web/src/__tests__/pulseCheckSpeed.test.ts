@@ -66,17 +66,41 @@ function textbookPos(R: number[], G: number[], B: number[]): number[] {
 	return h;
 }
 
+/** Equal to the textbook form within 1e-9 of the signal's own size (running sums round differently, never more). */
+function close(a: number[], b: number[]) {
+	expect(a.length).toBe(b.length);
+	const scale = Math.max(1e-300, ...b.map(Math.abs));
+	const worst = Math.max(0, ...a.map((v, i) => Math.abs(v - b[i])));
+	expect(worst / scale).toBeLessThan(1e-9);
+}
+
 describe("pulse check colour projection", () => {
 	let seed = 11;
 	const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
-	test.each([10, 32, 33, 160, 320])("equals POS as first written, bit for bit, at %i samples", (N) => {
+	test.each([10, 32, 33, 160, 320])("equals POS as first written, to rounding, at %i samples", (N) => {
 		for (let rep = 0; rep < 3; rep++) {
 			const p = (k: number) => 0.01 * Math.sin((2 * Math.PI * 1.2 * k) / OWN_PULSE_FS);
 			const R = Array.from({ length: N }, (_, k) => 150 * (1 - 0.3 * p(k)) + rnd());
 			const G = Array.from({ length: N }, (_, k) => 120 * (1 - p(k)) + rnd());
 			const B = Array.from({ length: N }, (_, k) => 100 * (1 - 0.6 * p(k)) + rnd());
-			expect(pos(R, G, B)).toEqual(textbookPos(R, G, B));
+			close(pos(R, G, B), textbookPos(R, G, B));
 		}
+	});
+
+	test("a patch of frozen pixels gives exactly zero, as the textbook form does (no rounding residue)", () => {
+		const N = 119;
+		const R = Array.from({ length: N }, () => 0.3667450980392157);
+		const G = Array.from({ length: N }, () => 0.03686274509803922);
+		const B = Array.from({ length: N }, () => 0.030274509803921566);
+		expect(pos(R, G, B).every((v) => v === 0)).toBe(true);
+	});
+
+	test("a channel that goes flat after its first samples (clipped at 255) is a zero spread too", () => {
+		const N = 200;
+		const R = Array.from({ length: N }, (_, k) => (k < 40 ? 180 + Math.sin(k) : 255));
+		const G = Array.from({ length: N }, (_, k) => 120 + Math.sin(0.7 * k));
+		const B = Array.from({ length: N }, (_, k) => (k < 40 ? 90 + Math.cos(k) : 255));
+		close(pos(R, G, B), textbookPos(R, G, B));
 	});
 
 	test("a flat channel gives a zero spread and is not divided by", () => {
@@ -84,7 +108,7 @@ describe("pulse check colour projection", () => {
 		const R = Array.from({ length: N }, () => 150);
 		const G = Array.from({ length: N }, (_, k) => 120 + Math.sin(k));
 		const B = Array.from({ length: N }, () => 100);
-		expect(pos(R, G, B)).toEqual(textbookPos(R, G, B));
+		close(pos(R, G, B), textbookPos(R, G, B));
 		expect(pos(R, G, B).every(Number.isFinite)).toBe(true);
 	});
 });

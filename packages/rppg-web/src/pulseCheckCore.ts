@@ -427,45 +427,86 @@ export function whitenedSpectrum(
 
 /** POS (Wang 2017): temporally normalised RGB, S1 = G - B, S2 = G + B - 2R, h = S1 + alpha S2, 1.6 s sliding windows, overlap-added. */
 export function pos(R: number[], G: number[], B: number[]): number[] {
+	// POS (Wang et al. 2017): per 1.6 s window, the channels over their window means, S1 = g - b, S2 = g + b - 2r,
+	// h = S1 + (sd S1 / sd S2) S2, overlap-added. The window means and the two spreads come from running sums (O(N) for all
+	// windows, not 7 passes over each); the overlap-add stays per window, as written, since folding it into running sums
+	// cancels large terms when a window's S2 is nearly flat (measured on a received file: errors to 2e-6 of the signal).
+	// It was 38% of an evaluation's time on a received phone file, run over every face patch each second. A test holds it
+	// to the textbook form within 1e-9 of the signal.
+	const N = R.length;
 	const win = Math.round(1.6 * OWN_PULSE_FS);
-	const h = new Array<number>(R.length).fill(0);
-	// One buffer per signal for every window, and every operation in the order first written, so
-	// the output is the same to the bit (a test pins it) without an allocation per window.
-	const s1 = new Float64Array(win);
-	const s2 = new Float64Array(win);
-	const sd = (a: Float64Array) => {
-		let m = 0;
-		for (let i = 0; i < win; i++) m += a[i];
-		m /= win;
-		let v = 0;
-		for (let i = 0; i < win; i++) v += (a[i] - m) ** 2;
-		return Math.sqrt(v / win) || 1;
-	};
-	for (let n = win; n <= R.length; n++) {
-		const m = n - win;
-		let mr = 0;
-		let mg = 0;
-		let mb = 0;
-		for (let k = m; k < n; k++) {
-			mr += R[k];
-			mg += G[k];
-			mb += B[k];
+	const h = new Array<number>(N).fill(0);
+	if (N < win) return h;
+	// Centred on the first sample, so the squares and products summed are small and keep their precision.
+	const c0 = R[0];
+	const c1 = G[0];
+	const c2 = B[0];
+	// Nine running sums in one buffer, interleaved: r, g, b, rr, gg, bb, rg, rb, gb (centred values), and per channel the
+	// count of samples that differ from the one before: a window with none is exactly flat (a held frame), and its spread is
+	// exactly zero, as the textbook form finds it (a running sum leaves a rounding residue there instead).
+	const P = new Float64Array(9 * (N + 1));
+	const D = new Int32Array(3 * (N + 1));
+	for (let k = 0; k < N; k++) {
+		const r = R[k] - c0;
+		const g = G[k] - c1;
+		const b = B[k] - c2;
+		const o = 9 * k;
+		P[o + 9] = P[o] + r;
+		P[o + 10] = P[o + 1] + g;
+		P[o + 11] = P[o + 2] + b;
+		P[o + 12] = P[o + 3] + r * r;
+		P[o + 13] = P[o + 4] + g * g;
+		P[o + 14] = P[o + 5] + b * b;
+		P[o + 15] = P[o + 6] + r * g;
+		P[o + 16] = P[o + 7] + r * b;
+		P[o + 17] = P[o + 8] + g * b;
+		const d = 3 * k;
+		D[d + 3] = D[d] + (k > 0 && R[k] !== R[k - 1] ? 1 : 0);
+		D[d + 4] = D[d + 1] + (k > 0 && G[k] !== G[k - 1] ? 1 : 0);
+		D[d + 5] = D[d + 2] + (k > 0 && B[k] !== B[k - 1] ? 1 : 0);
+	}
+	for (let m = 0; m + win <= N; m++) {
+		const om = 9 * m;
+		const on = 9 * (m + win);
+		// Changes within the window: between its samples m+1 .. m+win-1 and the one before each.
+		const flat = (c: number) => D[3 * (m + win) + c] - D[3 * (m + 1) + c] === 0;
+		const ar = (P[on] - P[om]) / win;
+		const ag = (P[on + 1] - P[om + 1]) / win;
+		const ab = (P[on + 2] - P[om + 2]) / win;
+		const mr = ar + c0;
+		const mg = ag + c1;
+		const mb = ab + c2;
+		const fr = flat(0);
+		const fg = flat(1);
+		const fb = flat(2);
+		const vr = fr ? 0 : (P[on + 3] - P[om + 3]) / win - ar * ar;
+		const vg = fg ? 0 : (P[on + 4] - P[om + 4]) / win - ag * ag;
+		const vb = fb ? 0 : (P[on + 5] - P[om + 5]) / win - ab * ab;
+		const crg = fr || fg ? 0 : (P[on + 6] - P[om + 6]) / win - ar * ag;
+		const crb = fr || fb ? 0 : (P[on + 7] - P[om + 7]) / win - ar * ab;
+		const cgb = fg || fb ? 0 : (P[on + 8] - P[om + 8]) / win - ag * ab;
+		const gg = vg / (mg * mg);
+		const bb = vb / (mb * mb);
+		const rr = vr / (mr * mr);
+		const gb = cgb / (mg * mb);
+		const rg = crg / (mr * mg);
+		const rb = crb / (mr * mb);
+		// A spread of zero (a flat projection) is not divided by, as the textbook sd's `|| 1`.
+		const sd1 = (fg && fb) ? 1 : Math.sqrt(Math.max(0, gg + bb - 2 * gb)) || 1;
+		const sd2 = (fr && fg && fb) ? 1 : Math.sqrt(Math.max(0, gg + bb + 4 * rr + 2 * gb - 4 * rg - 4 * rb)) || 1;
+		const alpha = sd1 / sd2;
+		// A window of frozen pixels (all three channels flat) adds exactly zero, as in the textbook form; computed, it left a
+		// residue of 1e-15 that became a full-weight noise patch downstream once each patch is scaled to its own power (a
+		// received file's window SNR moved 12 dB).
+		if (fr && fg && fb) continue;
+		const ir = 1 / mr;
+		const ig = 1 / mg;
+		const ib = 1 / mb;
+		for (let k = m; k < m + win; k++) {
+			const g = G[k] * ig;
+			const b = B[k] * ib;
+			h[k] += g - b + alpha * (g + b - 2 * R[k] * ir);
 		}
-		mr /= win;
-		mg /= win;
-		mb /= win;
-		for (let k = m; k < n; k++) {
-			const r = R[k] / mr;
-			const g = G[k] / mg;
-			const b = B[k] / mb;
-			s1[k - m] = g - b;
-			s2[k - m] = g + b - 2 * r;
-		}
-		const alpha = sd(s1) / sd(s2);
-		let mean = 0;
-		for (let i = 0; i < win; i++) mean += s1[i] + alpha * s2[i];
-		mean /= win;
-		for (let k = 0; k < win; k++) h[m + k] += s1[k] + alpha * s2[k] - mean;
 	}
 	return h;
 }
