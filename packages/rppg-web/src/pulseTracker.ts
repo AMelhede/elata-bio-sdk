@@ -76,6 +76,20 @@ export const TRACKER_FIRST_WINDOW_S = 6;
  */
 export const TRACKER_SETTLE_S = 2;
 
+/**
+ * A heart under the band (25 to 42 bpm) reads as its 2nd or 3rd harmonic, since the band starts at 42. Physics tells the
+ * two apart without reading under 42, where breathing, sway and drift lines live on real recordings: a heart truly at the
+ * shown rate m has nothing at 1.5 m (or at 2/3 and 4/3 of m), while the 2nd harmonic of a heart at m / 2 brings its 3rd
+ * harmonic at 1.5 m, and a 3rd harmonic brings the 2nd and 4th. The shown number is withheld when, for f0 = m / 2 or m / 3
+ * under 42, the lowest harmonics a heart truly at m cannot have (1.5 m for f0 = m / 2; 2/3 m and 4/3 m for m / 3) each
+ * show a line: the strongest point within max(2 bpm, half a bin) of it at least this many times the band's median, and
+ * above the points 6 bpm either side. 0 turns it off. Measured offline on the library's own spectra (evsave TRIED
+ * "A4 v4", 2026-11-09), at 8: fires on 0.36% of 7422 laptop, 0 of 2026 phone and 0.27% of 734 Mac shown seconds of
+ * received recordings, 0.68 and 1.18% of the lab's (mostly wrong numbers removed), against 99% of the shown seconds of
+ * synthetic hearts at 30 to 40 bpm (the earlier check under 42 cost 0.7 to 3.4% of real seconds).
+ */
+export const TRACKER_INTERHARMONIC_K = 8;
+
 export type TrackerParams = {
 	tau: number;
 	sigma: number;
@@ -85,6 +99,7 @@ export type TrackerParams = {
 	whitenBpm: number;
 	show: number;
 	recentTauFactor: number;
+	interHarmonicK: number;
 };
 
 export const TRACKER_DEFAULTS: TrackerParams = {
@@ -96,6 +111,7 @@ export const TRACKER_DEFAULTS: TrackerParams = {
 	whitenBpm: TRACKER_WHITEN_BPM,
 	show: TRACKER_SHOW,
 	recentTauFactor: TRACKER_RECENT_TAU_FACTOR,
+	interHarmonicK: TRACKER_INTERHARMONIC_K,
 };
 
 export type TrackerStep = {
@@ -317,6 +333,30 @@ export class PulseTracker {
 			wsum += this.a[j] * this.rates[j];
 		}
 		const bpm = mass > 0 ? wsum / mass : mode;
-		return { mass, bpm, pPulse: 1 - this.aN, shown: mass >= this.p.show };
+		const shown = mass >= this.p.show && !(this.p.interHarmonicK > 0 && !ev.none && slowHeartHarmonics(spectrum, Math.round(bpm), this.p.interHarmonicK));
+		return { mass, bpm, pPulse: 1 - this.aN, shown };
 	}
+}
+
+/** TRACKER_INTERHARMONIC_K: true when the shown rate `mode` reads as the 2nd or 3rd harmonic of a heart under 42. */
+export function slowHeartHarmonics(spectrum: ReadonlyArray<readonly [number, number]>, mode: number, k: number): boolean {
+	if (spectrum.length < 3) return false;
+	const pw = spectrum.map((r) => r[1]).sort((a, b) => a - b);
+	const med = pw[pw.length >> 1];
+	const step = spectrum[1][0] - spectrum[0][0];
+	const tol = Math.max(2, step / 2);
+	const near = (c: number, w: number) => {
+		let p = 0;
+		for (const [x, q] of spectrum) if (Math.abs(x - c) <= w && q > p) p = q;
+		return p;
+	};
+	for (const d of [2, 3]) {
+		const f0 = mode / d;
+		if (f0 >= TRACKER_LO_BPM || f0 < 25) continue;
+		// Only the lowest harmonics a heart truly at `mode` cannot have (a camera's upper harmonics are weak).
+		const need = (d === 2 ? [1.5 * mode] : [(2 * mode) / 3, (4 * mode) / 3]).filter((c) => c >= TRACKER_LO_BPM && c <= TRACKER_HI_BPM);
+		if (!need.length) continue;
+		if (need.every((c) => { const p = near(c, tol); return p >= k * med && p > near(c - 6, 3) && p > near(c + 6, 3); })) return true;
+	}
+	return false;
 }
