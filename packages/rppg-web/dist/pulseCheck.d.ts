@@ -722,6 +722,14 @@ export declare class PulseCheck {
             t: number;
             maxAgeMs?: number;
         } | null;
+        /**
+         * Rule tracker: the person's own usual rate (lastRate.ts readPersonalRate), the filter's prior whenever it starts
+         * with nothing recent from this face (pulseTracker.ts TRACKER_PRIOR_*). Null or left out: a hand-over older than
+         * a short break serves instead, else none.
+         */
+        personalRate?: number | null;
+        /** Rule tracker: the person's own spread around personalRate (readPersonalPrior), or null for TRACKER_PRIOR_SD_BPM. */
+        personalSpread?: number | null;
     });
     private readonly now;
     /** A hand-over not yet placed on this check's frame clock (placed at the first frame). */
@@ -819,6 +827,10 @@ export declare class PulseCheck {
     private tracker;
     /** Rule tracker: a reset (or a resume point) happened; seed the filter from followKept at the next window. */
     private trackerSeedPending;
+    /** Rule tracker: the person's own rate as handed in (constructor personalRate), or null. */
+    readonly personalRate: number | null;
+    /** Rule tracker: the person's own spread, or null. */
+    readonly personalSpread: number | null;
     /** Rule tracker: one window into the tracker, and the shown number from it alone (replaces the streak's decision). */
     private trackerDecides;
     /** Rule coherentStart: the window rates of the last COHERENT_START_MS, and when a number last went out. Kept through a reset. */

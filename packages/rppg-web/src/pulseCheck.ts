@@ -1234,9 +1234,23 @@ export class PulseCheck {
 			now?: () => number;
 			/** For replay only: a hand-over already placed on the recording's frame clock (PulseCheckRecording.resume). */
 			resumeAt?: { bpm: number; t: number; maxAgeMs?: number } | null;
+			/**
+			 * Rule tracker: the person's own usual rate (lastRate.ts readPersonalRate), the filter's prior whenever it starts
+			 * with nothing recent from this face (pulseTracker.ts TRACKER_PRIOR_*). Null or left out: a hand-over older than
+			 * a short break serves instead, else none.
+			 */
+			personalRate?: number | null;
+			/** Rule tracker: the person's own spread around personalRate (readPersonalPrior), or null for TRACKER_PRIOR_SD_BPM. */
+			personalSpread?: number | null;
 		} = {},
 	) {
 		this.rules = resolvePulseCheckRules(opts.rules);
+		const pr = opts.personalRate;
+		if (pr != null && !(pr > 0 && Number.isFinite(pr)))
+			throw new RangeError(`personalRate must be a finite bpm above 0, not ${pr}`);
+		this.personalRate = pr ?? null;
+		const ps = opts.personalSpread;
+		this.personalSpread = ps != null && ps > 0 && Number.isFinite(ps) ? ps : null;
 		this.now = opts.now ?? Date.now;
 		const r = opts.resumeFrom;
 		if (r != null) {
@@ -1824,6 +1838,10 @@ export class PulseCheck {
 	private tracker = new PulseTracker();
 	/** Rule tracker: a reset (or a resume point) happened; seed the filter from followKept at the next window. */
 	private trackerSeedPending = true;
+	/** Rule tracker: the person's own rate as handed in (constructor personalRate), or null. */
+	readonly personalRate: number | null;
+	/** Rule tracker: the person's own spread, or null. */
+	readonly personalSpread: number | null;
 
 	/** Rule tracker: one window into the tracker, and the shown number from it alone (replaces the streak's decision). */
 	private trackerDecides(
@@ -1857,12 +1875,21 @@ export class PulseCheck {
 				);
 		}
 		// After a break, the rate shown before it (or the page's resume point) seeds the filter as a prior.
+		// A rate from this face within a short break seeds the walk from it; anything older, or nothing, starts from the
+		// person's own rate (a hand-over from an earlier session is the person's rate, not this face's last second: seeded
+		// as a walk over hours it was flat, a bare start mass, TRIED 2026-11-09).
 		let seeded: [number, number] | null = null;
-		if (this.trackerSeedPending && this.followKept) {
-			const age = (t - this.followKept.t) / 1000;
-			if (age >= 0 && age * 1000 <= this.keptMaxAgeMs) {
+		if (this.trackerSeedPending) {
+			const age = this.followKept ? (t - this.followKept.t) / 1000 : Infinity;
+			if (this.followKept && age >= 0 && age * 1000 <= Math.min(this.keptMaxAgeMs, FOLLOW_RESUME_MS)) {
 				this.tracker.seed(this.followKept.bpm, age);
 				seeded = [this.followKept.bpm, age];
+			} else {
+				const own = this.personalRate ?? this.followKept?.bpm ?? null;
+				if (own != null) {
+					this.tracker.seedPrior(own, this.personalRate != null ? (this.personalSpread ?? undefined) : undefined);
+					seeded = [own, -1];
+				}
 			}
 		}
 		this.trackerSeedPending = false;

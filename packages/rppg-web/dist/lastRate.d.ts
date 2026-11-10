@@ -25,6 +25,33 @@ export declare function defaultLastRateStore(): LastRateStore | null;
 export declare function readLastReading(store: LastRateStore | null | undefined, nowMs: number): LastReading | null;
 /** The kept reading as the next session's hand-over. */
 export declare function lastReadingResume(r: LastReading | null): PulseCheckResume | null;
-/** Keeps a rate proven on this face; a storage failure changes nothing. */
-export declare function writeLastReading(store: LastRateStore | null | undefined, r: LastReading): void;
+/**
+ * The person's own rate: every session's last proven rate is kept (up to PERSONAL_RATE_SESSIONS, none older than
+ * PERSONAL_RATE_MAX_AGE_MS), and the rate is their recency-weighted median, each session weighing half as much per
+ * PERSONAL_RATE_HALF_LIFE_DAYS of age: a resting level that drifts (fitness, season, illness) is followed within days
+ * while one odd session cannot move it, and a history of any length is used without a cut-off. The spread is the
+ * person's own (1.48 x the weighted median absolute deviation, PERSONAL_SPREAD_MIN..MAX bpm) once
+ * PERSONAL_SPREAD_MIN_SESSIONS sessions exist. Screened per person and device on received files spanning about four
+ * weeks (evsave TRIED 2026-11-09, F2 pp7): half-lives 7 to 90 days and none scored alike there (prior off the session's
+ * rate median 4.4 to 4.6 bpm), so 30 days follows a real drift in weeks; the own spread brought the first number 17 to
+ * 15 s at the same references. About 30 bytes a session.
+ */
+export declare const PERSONAL_RATE_SESSIONS = 400;
+export declare const PERSONAL_RATE_MAX_AGE_MS: number;
+export declare const PERSONAL_RATE_HALF_LIFE_DAYS = 30;
+export declare const PERSONAL_SPREAD_MIN = 6;
+export declare const PERSONAL_SPREAD_MAX = 15;
+export declare const PERSONAL_SPREAD_MIN_SESSIONS = 4;
+/** The person's own rate and spread on this device, or null with no usable history. */
+export declare function readPersonalPrior(store: LastRateStore | null | undefined, nowMs: number): {
+    bpm: number;
+    sd: number | null;
+} | null;
+/** The person's own rate on this device (readPersonalPrior's rate), or null. */
+export declare function readPersonalRate(store: LastRateStore | null | undefined, nowMs: number): number | null;
+/**
+ * Keeps a rate proven on this face; a storage failure changes nothing. `sessionMs` names the session (its start), so
+ * each session keeps one entry, its latest rate, among the person's recent sessions.
+ */
+export declare function writeLastReading(store: LastRateStore | null | undefined, r: LastReading, sessionMs?: number): void;
 //# sourceMappingURL=lastRate.d.ts.map

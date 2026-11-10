@@ -87,7 +87,7 @@ export { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
 export { ForeheadPool, FOREHEAD_TAU_SKIN, FOREHEAD_TAU_SWING, FOREHEAD_PRUNE } from "./foreheadPool.js";
 export { foreheadPoolFromFrame, FOREHEAD_POOL_SIZE } from "./facePatches.js";
 export { CENTRE_BOX, type FaceLight, LIGHT_CLIP_MAX, LIGHT_LATCH_MS, LIGHT_START, type LightLevel, type LightState, RED_CLIP_LEVEL, centreLightFromFrame, faceLightFromFrame, lightAfter, lumaOfRgb, } from "./lightLevel.js";
-export { LAST_RATE_KEY, LAST_RATE_MAX_AGE_MS, type LastRateStore, type LastReading, readLastReading, writeLastReading, } from "./lastRate.js";
+export { LAST_RATE_KEY, LAST_RATE_MAX_AGE_MS, type LastRateStore, type LastReading, PERSONAL_RATE_MAX_AGE_MS, PERSONAL_RATE_HALF_LIFE_DAYS, PERSONAL_RATE_SESSIONS, readLastReading, readPersonalPrior, readPersonalRate, writeLastReading, } from "./lastRate.js";
 export { ADVICE_HOLD_MS, ADVICE_TEXT, type Advice, adviceFor, type CoachInput, cameraStarved, type GuideCause, needsYou, PulseGuide, shownAfter, } from "./pulseGuide.js";
 export * from "./camera.js";
 export { BACKGROUND_HOLD_MS, BACKGROUND_MAX_BURST_MS, BackgroundDuty, type BackgroundBurst, type BackgroundDutyOptions, type BackgroundFrameFeed, type BackgroundReadingMark, createBackgroundFrameFeed, } from "./backgroundFrames.js";

@@ -84,6 +84,10 @@ export type PulseCheckRecording = {
         t: number;
         maxAgeMs?: number;
     };
+    /** Only when the session handed in the person's own rate (PulseCheck personalRate): that rate. */
+    prior?: number;
+    /** With prior, when the session handed in the person's own spread too. */
+    priorSd?: number;
     /** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
     dropped: number;
     events: PulseCheckInputEvent[];
@@ -112,6 +116,8 @@ export declare class RecordingPulseCheck extends PulseCheck {
         facePatches?: boolean;
         resumeFrom?: PulseCheckResume | null;
         now?: () => number;
+        personalRate?: number | null;
+        personalSpread?: number | null;
     });
     push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss, head?: HeadPosition | null, wallRaw?: Rgb, diag?: PulseCheckFrameDiag): void;
     /** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */
@@ -163,6 +169,8 @@ export type PulseCheckReplay = {
  */
 export declare function replayPulseCheck(recording: PulseCheckRecording, options?: {
     rules?: PulseCheckRules;
+    personalRate?: number | null;
+    personalSpread?: number | null;
 }): PulseCheckReplay;
 /** A recording as JSON text, every number kept exactly (see parsePulseCheckRecording). */
 export declare function serializePulseCheckRecording(recording: PulseCheckRecording): string;

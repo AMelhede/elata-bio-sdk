@@ -138,6 +138,10 @@ export type PulseCheckRecording = {
 	facePatchLayout?: string;
 	/** Only after a camera restart with pulseCheckResume: the rate handed over, on this recording's frame clock. */
 	resume?: { bpm: number; t: number; maxAgeMs?: number };
+	/** Only when the session handed in the person's own rate (PulseCheck personalRate): that rate. */
+	prior?: number;
+	/** With prior, when the session handed in the person's own spread too. */
+	priorSd?: number;
 	/** Events let go from the start to stay within the bound; 0 means everything since the check was made. */
 	dropped: number;
 	events: PulseCheckInputEvent[];
@@ -178,8 +182,8 @@ export class RecordingPulseCheck extends PulseCheck {
 
 	private readonly recPatches: boolean;
 
-	constructor(opts: { rules?: PulseCheckRules; seconds?: number; facePatches?: boolean; resumeFrom?: PulseCheckResume | null; now?: () => number } = {}) {
-		super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now });
+	constructor(opts: { rules?: PulseCheckRules; seconds?: number; facePatches?: boolean; resumeFrom?: PulseCheckResume | null; now?: () => number; personalRate?: number | null; personalSpread?: number | null } = {}) {
+		super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now, personalRate: opts.personalRate, personalSpread: opts.personalSpread });
 		// Kept when asked for, and whenever the check itself reads them (rule allPatches), so a replay sees what it saw.
 		this.recPatches = opts.facePatches === true || resolvePulseCheckRules(opts.rules).allPatches;
 		const seconds = opts.seconds ?? PULSE_CHECK_RECORDING_SECONDS;
@@ -269,6 +273,8 @@ export class RecordingPulseCheck extends PulseCheck {
 			seconds: this.recSeconds,
 			...(this.recPatches ? { facePatchLayout: FACE_PATCH_LAYOUT_ID } : {}),
 			...(this.resumeSeed ? { resume: { ...this.resumeSeed } } : {}),
+			...(this.personalRate != null ? { prior: this.personalRate } : {}),
+			...(this.personalRate != null && this.personalSpread != null ? { priorSd: this.personalSpread } : {}),
 			dropped: this.recDropped,
 			events,
 		};
@@ -348,13 +354,15 @@ const toRgb = (c: PulseCheckRgb): Rgb => ({ r: c[0], g: c[1], b: c[2] });
  */
 export function replayPulseCheck(
 	recording: PulseCheckRecording,
-	options: { rules?: PulseCheckRules } = {},
+	options: { rules?: PulseCheckRules; personalRate?: number | null; personalSpread?: number | null } = {},
 ): PulseCheckReplay {
 	checkHeader(recording);
 	const own: PulseCheckRules = Object.fromEntries(
 		PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true || (name === "moreReadings" && legacyMoreReadings(recording.rules))]),
 	);
-	const check = new PulseCheck({ rules: options.rules ?? own, resumeAt: recording.resume ?? null });
+	// personalRate: the person's own rate to replay with (an evaluation handing each recording the rate the person's
+	// earlier recordings left, as the device would have); left out, the one the recording carries.
+	const check = new PulseCheck({ rules: options.rules ?? own, resumeAt: recording.resume ?? null, personalRate: options.personalRate !== undefined ? options.personalRate : (recording.prior ?? null), personalSpread: options.personalRate !== undefined ? (options.personalSpread ?? null) : (recording.priorSd ?? null) });
 	const reads: PulseCheckReplayRead[] = [];
 	const evaluations: PulseCheckReplayEvaluation[] = [];
 	for (const e of recording.events) {

@@ -58,6 +58,23 @@ export declare const TRACKER_START_MASS = 0;
 export declare const TRACKER_SEED_SD_BPM: number;
 export declare const TRACKER_SEED_TAU_S = 20;
 /**
+ * The person's own rate as the prior whenever the filter starts with nothing recent from this face (a new session, or a
+ * return after more than a short break): a heart's resting level belongs to the person, not the session, so the rates
+ * near it are searched first. This much mass, spread as a normal of TRACKER_PRIOR_SD_BPM around it; while it is in the
+ * filter the show bar is TRACKER_PRIOR_SHOW, so a number still needs the face's own evidence (the prior's mass would
+ * otherwise do part of the evidence's work, which is what made a flat start mass show numbers on no-pulse copies,
+ * TRIED 11-07), for the whole session: dropping it back at the face's first number failed the blind check (sealed 8
+ * no-pulse 1.42 to 1.92 per 100 s); at 0.30 all session the sealed 8 read MAE 2.14 to 1.89 but no-pulse 1.42 to 1.49,
+ * so 0.32. The spread is the person's own when their history gives one (lastRate.ts readPersonalPrior). Screened on every received file and the lab with its no-pulse copies (evsave TRIED 2026-11-09, F2):
+ * first number 21 to 15 s on the received files and 27 to 23 s on the lab (prior taken from the person's other camera
+ * and state), lab right 90.8 to 90.9%, no-pulse copies 0.97 to 0.88 per 100 s; a lower bar alone (0.20) reached only
+ * 18 s at 2.27 per 100 s. 12 bpm: the screen's spreads 7, 12 and 20 scored within a point of each other; 12 covers a
+ * resting rate's day-to-day spread with room for a morning against an evening.
+ */
+export declare const TRACKER_PRIOR_SD_BPM = 12;
+export declare const TRACKER_PRIOR_MASS = 0.2;
+export declare const TRACKER_PRIOR_SHOW = 0.3;
+/**
  * The newest TRACKER_RECENT_S seconds as a second source of evidence (a moving heart shows there before the full window
  * catches up), tempered by TRACKER_TAU times this; Infinity leaves it out.
  */
@@ -96,6 +113,9 @@ export type TrackerParams = {
     show: number;
     recentTauFactor: number;
     interHarmonicK: number;
+    priorSd: number;
+    priorMass: number;
+    priorShow: number;
 };
 export declare const TRACKER_DEFAULTS: TrackerParams;
 export type TrackerStep = {
@@ -105,7 +125,7 @@ export type TrackerStep = {
     bpm: number;
     /** 1 - P(no pulse). */
     pPulse: number;
-    /** True when mass >= show. */
+    /** True when mass >= the show bar (show, or priorShow while a personal prior is in the filter). */
     shown: boolean;
 };
 export type TrackerEvidence = {
@@ -125,6 +145,8 @@ export declare class PulseTracker {
     private a;
     private aN;
     private lastMs;
+    private showBar;
+    private prior;
     readonly p: TrackerParams;
     constructor(params?: Partial<TrackerParams>);
     /** Each rate's log evidence from one spectrum against its floor, tempered by `tau`; 0 where the rate cannot count. */
@@ -133,6 +155,13 @@ export declare class PulseTracker {
     private edgeFit;
     /** Seed the filter with a rate shown `ageS` seconds ago (TRACKER_RESUME_MASS around it, widened by the motion step). */
     seed(bpm: number, ageS: number, mass?: number): void;
+    /**
+     * Seed the filter with the person's own rate (TRACKER_PRIOR_*): their usual level, not a rate just shown. Raises the
+     * show bar to priorShow until the next reset.
+     */
+    seedPrior(bpm: number, sd?: number): void;
+    /** True while a personal prior is in the filter (seedPrior since the last reset). */
+    get priorSeeded(): boolean;
     reset(): void;
     /** One second of time with no evidence (the prior moves; nothing is learned). */
     private predict;

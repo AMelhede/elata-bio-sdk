@@ -39,10 +39,83 @@ export function readLastReading(store, nowMs) {
 export function lastReadingResume(r) {
     return r ? { bpm: r.bpm, atEpochMs: r.atEpochMs, maxAgeMs: LAST_RATE_MAX_AGE_MS } : null;
 }
-/** Keeps a rate proven on this face; a storage failure changes nothing. */
-export function writeLastReading(store, r) {
+/**
+ * The person's own rate: every session's last proven rate is kept (up to PERSONAL_RATE_SESSIONS, none older than
+ * PERSONAL_RATE_MAX_AGE_MS), and the rate is their recency-weighted median, each session weighing half as much per
+ * PERSONAL_RATE_HALF_LIFE_DAYS of age: a resting level that drifts (fitness, season, illness) is followed within days
+ * while one odd session cannot move it, and a history of any length is used without a cut-off. The spread is the
+ * person's own (1.48 x the weighted median absolute deviation, PERSONAL_SPREAD_MIN..MAX bpm) once
+ * PERSONAL_SPREAD_MIN_SESSIONS sessions exist. Screened per person and device on received files spanning about four
+ * weeks (evsave TRIED 2026-11-09, F2 pp7): half-lives 7 to 90 days and none scored alike there (prior off the session's
+ * rate median 4.4 to 4.6 bpm), so 30 days follows a real drift in weeks; the own spread brought the first number 17 to
+ * 15 s at the same references. About 30 bytes a session.
+ */
+export const PERSONAL_RATE_SESSIONS = 400;
+export const PERSONAL_RATE_MAX_AGE_MS = 365 * 24 * 3600000;
+export const PERSONAL_RATE_HALF_LIFE_DAYS = 30;
+export const PERSONAL_SPREAD_MIN = 6;
+export const PERSONAL_SPREAD_MAX = 15;
+export const PERSONAL_SPREAD_MIN_SESSIONS = 4;
+function keptEntries(raw) {
+    if (!raw)
+        return [];
     try {
-        store?.setItem(LAST_RATE_KEY, JSON.stringify({ bpm: Math.round(r.bpm * 10) / 10, atEpochMs: r.atEpochMs }));
+        const v = JSON.parse(raw);
+        const ok = (e) => typeof e.bpm === "number" && e.bpm > 0 && Number.isFinite(e.bpm) && typeof e.at === "number" && Number.isFinite(e.at) && typeof e.s === "number";
+        if (Array.isArray(v.recent))
+            return v.recent.filter(ok);
+        // A store written before the person's rate was kept: its one reading is one session.
+        if (typeof v.bpm === "number" && typeof v.atEpochMs === "number")
+            return [{ s: v.atEpochMs, bpm: v.bpm, at: v.atEpochMs }].filter(ok);
+    }
+    catch {
+        /* unreadable: nothing kept */
+    }
+    return [];
+}
+function weightedMedian(xs) {
+    const o = [...xs].sort((a, b) => a[0] - b[0]);
+    const half = o.reduce((t, [, w]) => t + w, 0) / 2;
+    let c = 0;
+    for (const [x, w] of o) {
+        c += w;
+        if (c >= half)
+            return x;
+    }
+    return o[o.length - 1][0];
+}
+/** The person's own rate and spread on this device, or null with no usable history. */
+export function readPersonalPrior(store, nowMs) {
+    try {
+        const e = keptEntries(store?.getItem(LAST_RATE_KEY)).filter((x) => x.at <= nowMs && nowMs - x.at <= PERSONAL_RATE_MAX_AGE_MS);
+        if (!e.length)
+            return null;
+        const w = e.map((x) => [x.bpm, 0.5 ** ((nowMs - x.at) / 86400000 / PERSONAL_RATE_HALF_LIFE_DAYS)]);
+        const bpm = weightedMedian(w);
+        const sd = e.length >= PERSONAL_SPREAD_MIN_SESSIONS
+            ? Math.min(PERSONAL_SPREAD_MAX, Math.max(PERSONAL_SPREAD_MIN, 1.48 * weightedMedian(w.map(([x, k]) => [Math.abs(x - bpm), k]))))
+            : null;
+        return { bpm, sd };
+    }
+    catch {
+        return null;
+    }
+}
+/** The person's own rate on this device (readPersonalPrior's rate), or null. */
+export function readPersonalRate(store, nowMs) {
+    return readPersonalPrior(store, nowMs)?.bpm ?? null;
+}
+/**
+ * Keeps a rate proven on this face; a storage failure changes nothing. `sessionMs` names the session (its start), so
+ * each session keeps one entry, its latest rate, among the person's recent sessions.
+ */
+export function writeLastReading(store, r, sessionMs) {
+    try {
+        const bpm = Math.round(r.bpm * 10) / 10;
+        const s = sessionMs ?? r.atEpochMs;
+        const recent = keptEntries(store?.getItem(LAST_RATE_KEY)).filter((x) => x.s !== s);
+        recent.push({ s, bpm, at: r.atEpochMs });
+        store?.setItem(LAST_RATE_KEY, JSON.stringify({ bpm, atEpochMs: r.atEpochMs, recent: recent.slice(-PERSONAL_RATE_SESSIONS) }));
     }
     catch {
         /* private mode or full storage: the next session starts from nothing, as before */

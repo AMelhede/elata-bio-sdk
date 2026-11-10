@@ -67,7 +67,7 @@ const roomOf = (r) => {
  */
 export class RecordingPulseCheck extends PulseCheck {
     constructor(opts = {}) {
-        super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now });
+        super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now, personalRate: opts.personalRate, personalSpread: opts.personalSpread });
         /** A fixed-size circular buffer: `recCount` events from index `recHead`, oldest first. */
         this.recRing = [];
         /** The clock each kept event is filed under: the newest frame time seen when it arrived (or the first one, for events before it). */
@@ -156,6 +156,8 @@ export class RecordingPulseCheck extends PulseCheck {
             seconds: this.recSeconds,
             ...(this.recPatches ? { facePatchLayout: FACE_PATCH_LAYOUT_ID } : {}),
             ...(this.resumeSeed ? { resume: { ...this.resumeSeed } } : {}),
+            ...(this.personalRate != null ? { prior: this.personalRate } : {}),
+            ...(this.personalRate != null && this.personalSpread != null ? { priorSd: this.personalSpread } : {}),
             dropped: this.recDropped,
             events,
         };
@@ -206,7 +208,9 @@ const toRgb = (c) => ({ r: c[0], g: c[1], b: c[2] });
 export function replayPulseCheck(recording, options = {}) {
     checkHeader(recording);
     const own = Object.fromEntries(PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true || (name === "moreReadings" && legacyMoreReadings(recording.rules))]));
-    const check = new PulseCheck({ rules: options.rules ?? own, resumeAt: recording.resume ?? null });
+    // personalRate: the person's own rate to replay with (an evaluation handing each recording the rate the person's
+    // earlier recordings left, as the device would have); left out, the one the recording carries.
+    const check = new PulseCheck({ rules: options.rules ?? own, resumeAt: recording.resume ?? null, personalRate: options.personalRate !== undefined ? options.personalRate : (recording.prior ?? null), personalSpread: options.personalRate !== undefined ? (options.personalSpread ?? null) : (recording.priorSd ?? null) });
     const reads = [];
     const evaluations = [];
     for (const e of recording.events) {

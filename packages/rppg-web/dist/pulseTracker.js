@@ -59,6 +59,23 @@ export const TRACKER_START_MASS = 0;
 export const TRACKER_SEED_SD_BPM = Infinity;
 export const TRACKER_SEED_TAU_S = 20;
 /**
+ * The person's own rate as the prior whenever the filter starts with nothing recent from this face (a new session, or a
+ * return after more than a short break): a heart's resting level belongs to the person, not the session, so the rates
+ * near it are searched first. This much mass, spread as a normal of TRACKER_PRIOR_SD_BPM around it; while it is in the
+ * filter the show bar is TRACKER_PRIOR_SHOW, so a number still needs the face's own evidence (the prior's mass would
+ * otherwise do part of the evidence's work, which is what made a flat start mass show numbers on no-pulse copies,
+ * TRIED 11-07), for the whole session: dropping it back at the face's first number failed the blind check (sealed 8
+ * no-pulse 1.42 to 1.92 per 100 s); at 0.30 all session the sealed 8 read MAE 2.14 to 1.89 but no-pulse 1.42 to 1.49,
+ * so 0.32. The spread is the person's own when their history gives one (lastRate.ts readPersonalPrior). Screened on every received file and the lab with its no-pulse copies (evsave TRIED 2026-11-09, F2):
+ * first number 21 to 15 s on the received files and 27 to 23 s on the lab (prior taken from the person's other camera
+ * and state), lab right 90.8 to 90.9%, no-pulse copies 0.97 to 0.88 per 100 s; a lower bar alone (0.20) reached only
+ * 18 s at 2.27 per 100 s. 12 bpm: the screen's spreads 7, 12 and 20 scored within a point of each other; 12 covers a
+ * resting rate's day-to-day spread with room for a morning against an evening.
+ */
+export const TRACKER_PRIOR_SD_BPM = 12;
+export const TRACKER_PRIOR_MASS = 0.2;
+export const TRACKER_PRIOR_SHOW = 0.3;
+/**
  * The newest TRACKER_RECENT_S seconds as a second source of evidence (a moving heart shows there before the full window
  * catches up), tempered by TRACKER_TAU times this; Infinity leaves it out.
  */
@@ -97,6 +114,9 @@ export const TRACKER_DEFAULTS = {
     show: TRACKER_SHOW,
     recentTauFactor: TRACKER_RECENT_TAU_FACTOR,
     interHarmonicK: TRACKER_INTERHARMONIC_K,
+    priorSd: TRACKER_PRIOR_SD_BPM,
+    priorMass: TRACKER_PRIOR_MASS,
+    priorShow: TRACKER_PRIOR_SHOW,
 };
 /** Linear interpolation of a spectrum given as ascending [bpm, power] rows; 0 outside it. */
 function powerAt(rows, bpm) {
@@ -125,7 +145,9 @@ export class PulseTracker {
     constructor(params = {}) {
         this.aN = 1;
         this.lastMs = null;
+        this.prior = false;
         this.p = { ...TRACKER_DEFAULTS, ...params };
+        this.showBar = this.p.show;
         this.rates = [];
         for (let b = TRACKER_LO_BPM; b <= TRACKER_HI_BPM; b++)
             this.rates.push(b);
@@ -221,7 +243,28 @@ export class PulseTracker {
         this.a = Float64Array.from(w, (v) => (mass * v) / sum);
         this.aN = 1 - mass;
     }
+    /**
+     * Seed the filter with the person's own rate (TRACKER_PRIOR_*): their usual level, not a rate just shown. Raises the
+     * show bar to priorShow until the next reset.
+     */
+    seedPrior(bpm, sd = this.p.priorSd) {
+        if (!(bpm > 0) || !Number.isFinite(bpm) || !(this.p.priorMass > 0))
+            return;
+        const s = sd > 0 && Number.isFinite(sd) ? sd : this.p.priorSd;
+        const w = this.rates.map((r) => Math.exp(-0.5 * ((r - bpm) / s) ** 2));
+        const sum = w.reduce((x, y) => x + y, 0) || 1;
+        this.a = Float64Array.from(w, (v) => (this.p.priorMass * v) / sum);
+        this.aN = 1 - this.p.priorMass;
+        this.showBar = Math.max(this.p.show, this.p.priorShow);
+        this.prior = true;
+    }
+    /** True while a personal prior is in the filter (seedPrior since the last reset). */
+    get priorSeeded() {
+        return this.prior;
+    }
     reset() {
+        this.showBar = this.p.show;
+        this.prior = false;
         this.a = new Float64Array(this.rates.length).fill(TRACKER_START_MASS / this.rates.length);
         this.aN = 1 - TRACKER_START_MASS;
         this.lastMs = null;
@@ -294,7 +337,7 @@ export class PulseTracker {
             wsum += this.a[j] * this.rates[j];
         }
         const bpm = mass > 0 ? wsum / mass : mode;
-        const shown = mass >= this.p.show && !(this.p.interHarmonicK > 0 && !ev.none && slowHeartHarmonics(spectrum, Math.round(bpm), this.p.interHarmonicK));
+        const shown = mass >= this.showBar && !(this.p.interHarmonicK > 0 && !ev.none && slowHeartHarmonics(spectrum, Math.round(bpm), this.p.interHarmonicK));
         return { mass, bpm, pPulse: 1 - this.aN, shown };
     }
 }

@@ -478,7 +478,12 @@ export {
 	LAST_RATE_MAX_AGE_MS,
 	type LastRateStore,
 	type LastReading,
+	PERSONAL_RATE_MAX_AGE_MS,
+	PERSONAL_RATE_HALF_LIFE_DAYS,
+	PERSONAL_RATE_SESSIONS,
 	readLastReading,
+	readPersonalPrior,
+	readPersonalRate,
 	writeLastReading,
 } from "./lastRate";
 export {

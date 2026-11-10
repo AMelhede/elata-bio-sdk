@@ -12,6 +12,7 @@ import {
 	type LastReading,
 	lastReadingResume,
 	readLastReading,
+	readPersonalPrior,
 	writeLastReading,
 } from "./lastRate";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
@@ -668,6 +669,8 @@ export class RppgSession {
 	}
 
 	private keptAt: number | null = null;
+	/** This session's name in the kept rates (its start): one entry per session in the person's own rate. */
+	private readonly keptSession = Date.now();
 	/** A rate proven on this face (not itself a hand-over) is kept for the next session. */
 	private keepLastRate(check: PulseCheck): void {
 		const store = this.internals.rateStore;
@@ -675,7 +678,7 @@ export class RppgSession {
 		const r = check.resumePoint();
 		if (!r || r.maxAgeMs !== undefined || r.atEpochMs === this.keptAt) return;
 		this.keptAt = r.atEpochMs;
-		writeLastReading(store, { bpm: r.bpm, atEpochMs: r.atEpochMs });
+		writeLastReading(store, { bpm: r.bpm, atEpochMs: r.atEpochMs }, this.keptSession);
 	}
 
 	/** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
@@ -1029,6 +1032,8 @@ export async function createRppgSession(
 		...options,
 		pulseCheckResume:
 			options.pulseCheckResume ?? lastReadingResume(lastReading),
+		// The person's own rate on this device (lastRate.ts), the tracker's prior at each start (rule tracker).
+		...(() => { const p = options.pulseCheck === false ? null : readPersonalPrior(rateStore, Date.now()); return { personalRate: p?.bpm ?? null, personalSpread: p?.sd ?? null }; })(),
 	};
 	let pulseCheck = sessionPulseCheck(checkOptions);
 
@@ -1258,12 +1263,14 @@ export function sessionPulseCheck(
 		| "recordPulseCheckInputs"
 		| "foreheadPool"
 		| "pulseCheckResume"
-	>,
+	> & { personalRate?: number | null; personalSpread?: number | null },
 ): PulseCheck | null {
 	if (options.pulseCheck === false) return null;
 	const opts = {
 		rules: options.pulseCheckRules,
 		resumeFrom: options.pulseCheckResume ?? null,
+		personalRate: options.personalRate ?? null,
+		personalSpread: options.personalSpread ?? null,
 	};
 	const rec = options.recordPulseCheckInputs;
 	if (rec === true || (rec != null && rec !== false && typeof rec === "object"))

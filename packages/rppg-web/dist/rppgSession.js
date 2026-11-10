@@ -1,7 +1,7 @@
 import { LIGHT_CLIP_MAX } from "./lightLevel.js";
 import { MediaPipeFaceFrameSource } from "./mediaPipeFaceFrameSource.js";
 import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
-import { defaultLastRateStore, lastReadingResume, readLastReading, writeLastReading, } from "./lastRate.js";
+import { defaultLastRateStore, lastReadingResume, readLastReading, readPersonalPrior, writeLastReading, } from "./lastRate.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
 import { createWorkerFaceFinder } from "./faceFinderWorker.js";
 import { PulseCheck, pulseCheckCause, pulseCheckColourDamaged, shownPulseBpm, } from "./pulseCheck.js";
@@ -67,6 +67,8 @@ export class RppgSession {
         this.meterValue = null;
         this.searchSince = null;
         this.keptAt = null;
+        /** This session's name in the kept rates (its start): one entry per session in the person's own rate. */
+        this.keptSession = Date.now();
     }
     get lastError() {
         return this.lastErrorValue;
@@ -234,7 +236,7 @@ export class RppgSession {
         if (!r || r.maxAgeMs !== undefined || r.atEpochMs === this.keptAt)
             return;
         this.keptAt = r.atEpochMs;
-        writeLastReading(store, { bpm: r.bpm, atEpochMs: r.atEpochMs });
+        writeLastReading(store, { bpm: r.bpm, atEpochMs: r.atEpochMs }, this.keptSession);
     }
     /** The rate to hand to the next session after a camera restart (its pulseCheckResume); null before a proven rate. */
     getPulseCheckResume() {
@@ -542,6 +544,8 @@ export async function createRppgSession(options) {
     const checkOptions = {
         ...options,
         pulseCheckResume: options.pulseCheckResume ?? lastReadingResume(lastReading),
+        // The person's own rate on this device (lastRate.ts), the tracker's prior at each start (rule tracker).
+        ...(() => { const p = options.pulseCheck === false ? null : readPersonalPrior(rateStore, Date.now()); return { personalRate: p?.bpm ?? null, personalSpread: p?.sd ?? null }; })(),
     };
     let pulseCheck = sessionPulseCheck(checkOptions);
     const faceMeshResult = await resolveFaceMesh(options.faceMesh);
@@ -737,6 +741,8 @@ export function sessionPulseCheck(options) {
     const opts = {
         rules: options.pulseCheckRules,
         resumeFrom: options.pulseCheckResume ?? null,
+        personalRate: options.personalRate ?? null,
+        personalSpread: options.personalSpread ?? null,
     };
     const rec = options.recordPulseCheckInputs;
     if (rec === true || (rec != null && rec !== false && typeof rec === "object"))
