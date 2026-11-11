@@ -92,6 +92,23 @@ export const TRACKER_FIRST_WINDOW_S = 6;
  * 100 s; the same direction on the open lab (stage 2). Fewer wrong numbers for 1 point of shown seconds: a wrong number costs far more than a missing one.
  */
 export const TRACKER_SETTLE_S = 2;
+/**
+ * Rule startEvidence. Until a full window has come in since a start or reset, the tracker's window is the growing window:
+ * it holds every second the face has given so far, so it is by itself all the evidence there is. The filter steps on it
+ * like any other window, one second's worth a look (TRACKER_TAU assumes a window that shares all but one second with the
+ * last), which is safe and slow. With the rule on, the same window is ALSO judged alone, as a sequential test against the
+ * prior: the prior (the person's own rate when the device knows it, even entry when it does not) moved to now, times this
+ * one window's evidence at an honest weight, TRACKER_START_WEIGHT x (power over the floor - 1) per rate (for a line in
+ * noise the log likelihood ratio is the power over the floor itself; real camera noise has a heavier tail, hence under 1).
+ * When that belief alone clears the show bar on TRACKER_START_LOOKS looks in a row at one rate, it becomes the filter's
+ * belief and the number shows. Each look starts again from the prior, so nothing is counted twice, and a prior at the wrong
+ * rate (another person, a heart after exercise) gets no help: the window's own line then has to outweigh it as for a
+ * stranger. Measured on the library's own spectra (evsave TRIED FB3, 2026-11-11).
+ */
+export const TRACKER_START_WEIGHT = 0.35;
+export const TRACKER_START_LOOKS = 2;
+/** Rule startEvidence: a buffer whose first frame is new and under this many seconds old has just started empty. */
+export const TRACKER_START_BEGIN_S = 3;
 
 /**
  * A heart under the band (25 to 42 bpm) reads as its 2nd or 3rd harmonic, since the band starts at 42. Physics tells the
@@ -120,6 +137,8 @@ export type TrackerParams = {
 	priorSd: number;
 	priorMass: number;
 	priorShow: number;
+	startWeight: number;
+	startLooks: number;
 };
 
 export const TRACKER_DEFAULTS: TrackerParams = {
@@ -135,6 +154,8 @@ export const TRACKER_DEFAULTS: TrackerParams = {
 	priorSd: TRACKER_PRIOR_SD_BPM,
 	priorMass: TRACKER_PRIOR_MASS,
 	priorShow: TRACKER_PRIOR_SHOW,
+	startWeight: TRACKER_START_WEIGHT,
+	startLooks: TRACKER_START_LOOKS,
 };
 
 export type TrackerStep = {
@@ -157,6 +178,11 @@ export type TrackerEvidence = {
 	none?: boolean;
 	/** The newest TRACKER_RECENT_S seconds' in-band spectrum, as measured (second evidence; see TRACKER_RECENT_TAU_FACTOR). */
 	recent?: ReadonlyArray<readonly [number, number]> | null;
+	/**
+	 * Rule startEvidence: the spectrum is the growing window's, holding this many seconds, all there is since the start or
+	 * reset. It is also judged alone against the prior (TRACKER_START_WEIGHT).
+	 */
+	wholeS?: number | null;
 };
 
 /** Linear interpolation of a spectrum given as ascending [bpm, power] rows; 0 outside it. */
@@ -187,6 +213,12 @@ export class PulseTracker {
 	private readonly near: number[][];
 	private a: Float64Array;
 	private aN = 1;
+	/** Rule startEvidence: the prior alone (the last seed or reset, moved in time, no evidence taken). */
+	private b: Float64Array;
+	private bN = 1;
+	/** Rule startEvidence: looks in a row on which the window alone showed, and the rate it showed. */
+	private looks = 0;
+	private lookBpm: number | null = null;
 	private lastMs: number | null = null;
 	private showBar: number;
 	private prior = false;
@@ -222,6 +254,8 @@ export class PulseTracker {
 		});
 		this.a = new Float64Array(n).fill(TRACKER_START_MASS / n);
 		this.aN = 1 - TRACKER_START_MASS;
+		this.b = Float64Array.from(this.a);
+		this.bN = this.aN;
 	}
 
 	/** Each rate's log evidence from one spectrum against its floor, tempered by `tau`; 0 where the rate cannot count. */
@@ -289,6 +323,8 @@ export class PulseTracker {
 		const sum = w.reduce((x, y) => x + y, 0) || 1;
 		this.a = Float64Array.from(w, (v) => (mass * v) / sum);
 		this.aN = 1 - mass;
+		this.b = Float64Array.from(this.a);
+		this.bN = this.aN;
 	}
 
 	/**
@@ -302,8 +338,21 @@ export class PulseTracker {
 		const sum = w.reduce((x, y) => x + y, 0) || 1;
 		this.a = Float64Array.from(w, (v) => (this.p.priorMass * v) / sum);
 		this.aN = 1 - this.p.priorMass;
+		this.b = Float64Array.from(this.a);
+		this.bN = this.aN;
 		this.showBar = Math.max(this.p.show, this.p.priorShow);
 		this.prior = true;
+	}
+
+	/**
+	 * Rule startEvidence: a growing window begins now (a start, a reset, or frames coming back after a break longer than the
+	 * buffer), so the belief as it stands is the prior that window is judged against.
+	 */
+	markStart(): void {
+		this.b = Float64Array.from(this.a);
+		this.bN = this.aN;
+		this.looks = 0;
+		this.lookBpm = null;
 	}
 
 	/** True while a personal prior is in the filter (seedPrior since the last reset). */
@@ -316,26 +365,33 @@ export class PulseTracker {
 		this.prior = false;
 		this.a = new Float64Array(this.rates.length).fill(TRACKER_START_MASS / this.rates.length);
 		this.aN = 1 - TRACKER_START_MASS;
+		this.b = Float64Array.from(this.a);
+		this.bN = this.aN;
 		this.lastMs = null;
 	}
 
 	/** One second of time with no evidence (the prior moves; nothing is learned). */
 	private predict(): void {
+		[this.a, this.aN] = this.moved(this.a, this.aN);
+		[this.b, this.bN] = this.moved(this.b, this.bN);
+	}
+
+	/** A belief (rates and no-pulse) one second on. */
+	private moved(a: Float64Array, aN: number): [Float64Array, number] {
 		const n = this.rates.length;
 		const { qOff, qOn } = this.p;
 		const next = new Float64Array(n);
 		let sum = 0;
 		for (let i = 0; i < n; i++) {
-			const ai = this.a[i];
+			const ai = a[i];
 			sum += ai;
 			if (ai === 0) continue;
 			const c = this.K[i];
 			for (let j = 0; j < n; j++) next[j] += ai * c[j];
 		}
-		const enter = (qOn * this.aN) / n;
+		const enter = (qOn * aN) / n;
 		for (let j = 0; j < n; j++) next[j] = (1 - qOff) * next[j] + enter;
-		this.aN = qOff * sum + (1 - qOn) * this.aN;
-		this.a = next;
+		return [next, qOff * sum + (1 - qOn) * aN];
 	}
 
 	/**
@@ -369,20 +425,58 @@ export class PulseTracker {
 			this.aN = (Math.exp(-lmax) * this.aN) / s;
 			for (let j = 0; j < n; j++) this.a[j] /= s;
 		}
+		const now = this.summary(this.a, this.aN, spectrum, !!ev.none);
+		// Rule startEvidence: the growing window judged alone against the prior, when the filter itself shows nothing yet.
+		if (!now.shown && !ev.none && spectrum.length && ev.wholeS != null && ev.wholeS > 0 && this.p.startWeight > 0) {
+			const r = this.evidence(spectrum, ev.capBpm ?? Infinity, ev.suppressBpm ?? [], 1);
+			const f = Float64Array.from(this.b);
+			let lmax = 0;
+			const l = new Float64Array(n);
+			for (let j = 0; j < n; j++) {
+				l[j] = r[j] === 0 ? 0 : this.p.startWeight * (Math.exp(r[j]) - 1);
+				if (l[j] > lmax) lmax = l[j];
+			}
+			let s = Math.exp(-lmax) * this.bN;
+			for (let j = 0; j < n; j++) {
+				f[j] *= Math.exp(l[j] - lmax);
+				s += f[j];
+			}
+			const fN = (Math.exp(-lmax) * this.bN) / s;
+			for (let j = 0; j < n; j++) f[j] /= s;
+			const alone = this.summary(f, fN, spectrum, false);
+			if (alone.shown) {
+				this.looks = this.lookBpm != null && Math.abs(alone.bpm - this.lookBpm) <= 5 ? this.looks + 1 : 1;
+				this.lookBpm = alone.bpm;
+				if (this.looks >= this.p.startLooks) {
+					this.a = f;
+					this.aN = fN;
+					return alone;
+				}
+			} else {
+				this.looks = 0;
+				this.lookBpm = null;
+			}
+		}
+		return now;
+	}
+
+	/** A belief's summary: the mass within the bar of its mode, the mean rate there, and whether it shows. */
+	private summary(a: Float64Array, aN: number, spectrum: ReadonlyArray<readonly [number, number]>, none: boolean): TrackerStep {
+		const n = this.rates.length;
 		let m = 0;
-		for (let j = 1; j < n; j++) if (this.a[j] > this.a[m]) m = j;
+		for (let j = 1; j < n; j++) if (a[j] > a[m]) m = j;
 		const mode = this.rates[m];
 		const half = Math.max(5, 0.1 * mode);
 		let mass = 0;
 		let wsum = 0;
 		for (let j = 0; j < n; j++) {
 			if (Math.abs(this.rates[j] - mode) > half) continue;
-			mass += this.a[j];
-			wsum += this.a[j] * this.rates[j];
+			mass += a[j];
+			wsum += a[j] * this.rates[j];
 		}
 		const bpm = mass > 0 ? wsum / mass : mode;
-		const shown = mass >= this.showBar && !(this.p.interHarmonicK > 0 && !ev.none && slowHeartHarmonics(spectrum, Math.round(bpm), this.p.interHarmonicK));
-		return { mass, bpm, pPulse: 1 - this.aN, shown };
+		const shown = mass >= this.showBar && !(this.p.interHarmonicK > 0 && !none && slowHeartHarmonics(spectrum, Math.round(bpm), this.p.interHarmonicK));
+		return { mass, bpm, pPulse: 1 - aN, shown };
 	}
 }
 

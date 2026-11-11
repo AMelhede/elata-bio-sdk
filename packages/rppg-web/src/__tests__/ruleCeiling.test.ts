@@ -8,8 +8,10 @@ import { PULSE_CHECK_RULE_NAMES } from "../pulseCheck";
 // day for rule tracker, the mechanism itself, and back to 25 when rule trackLine, which it supersedes, was deleted.
 // 24 the same day: harmonicStart deleted (its case passes on the tracker). When the tracker passes its gate, the rules
 // it replaces are deleted. 25 on 2026-11-10 for skinFallback (off; named debt in evsave TRIED FB2a and QUEUE FB2-M:
-// deleted when skin is found from the mesh's own skin colour).
-const RULE_CEILING = 25;
+// deleted when skin is found from the mesh's own skin colour). 26 on 2026-11-11 for startEvidence (off; part of the
+// tracker, not a guard around it: the growing window judged alone against the prior. Its switch is deleted, the tracker
+// always doing it, or its code removed, by its expiry; evsave TRIED FB3).
+const RULE_CEILING = 26;
 
 describe("rule ceiling", () => {
 	it("the count of the pulse check's rules never grows without a deliberate change here", () => {

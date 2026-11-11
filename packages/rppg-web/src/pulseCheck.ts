@@ -23,7 +23,7 @@ import { FACE_PATCH_COUNT } from "./facePatches";
 import { SKIN_FALLBACK_SHARE } from "./frameSource";
 import type { FacePatches } from "./facePatches";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion";
-import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker";
+import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S, TRACKER_START_BEGIN_S } from "./pulseTracker";
 import { SLOW_SWITCH_RULES } from "./slowSwitch";
 import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
@@ -379,6 +379,13 @@ export type PulseCheckRules = {
 	 * the rules it replaces are deleted.
 	 */
 	tracker?: boolean;
+	/**
+	 * OFF unless true, being measured (2026-11-11), with rule tracker: while the window is still growing after a start or
+	 * reset it holds every second the face has given, so it is also judged alone, as a sequential test against the prior
+	 * (the person's own rate when the device knows it): when the prior times that one window clears the show bar twice in
+	 * a row, the number shows without waiting for the filter's slower count (pulseTracker.ts TRACKER_START_WEIGHT).
+	 */
+	startEvidence?: boolean;
 };
 
 /**
@@ -471,6 +478,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"skinFallback",
 	"fpsCeiling",
 	"tracker",
+	"startEvidence",
 ] as const;
 
 /**
@@ -867,6 +875,7 @@ export function resolvePulseCheckRules(
 		skinFallback: rules?.skinFallback === true,
 		fpsCeiling: rules?.fpsCeiling === true,
 		tracker: rules?.tracker === true,
+		startEvidence: rules?.startEvidence === true,
 	};
 }
 
@@ -1868,6 +1877,8 @@ export class PulseCheck {
 	private tracker = new PulseTracker();
 	/** Rule tracker: a reset (or a resume point) happened; seed the filter from followKept at the next window. */
 	private trackerSeedPending = true;
+	/** Rule startEvidence: the first frame of the buffer when it last started empty (the growing window's start), or null. */
+	private growStartMs: number | null = null;
 	/** Rule tracker: the person's own rate as handed in (constructor personalRate), or null. */
 	readonly personalRate: number | null;
 	/** Rule tracker: the person's own spread, or null. */
@@ -1923,6 +1934,16 @@ export class PulseCheck {
 			}
 		}
 		this.trackerSeedPending = false;
+		// Rule startEvidence: the buffer started empty within the last seconds (its first frame is new and under
+		// TRACKER_START_BEGIN_S old): a growing window begins, judged against the belief as it stands now. It lasts until the
+		// buffer is full (its span reaches the window plus the settle; from then on its first frame moves every frame).
+		const first = this.samples.length ? this.samples[0][0] : null;
+		const span = first != null ? (t - first) / 1000 : 0;
+		if (this.rules.startEvidence && first != null && first !== this.growStartMs && span < TRACKER_START_BEGIN_S) {
+			this.growStartMs = first;
+			this.tracker.markStart();
+		}
+		const growing = first != null && first === this.growStartMs && span < OWN_PULSE_WINDOW_S + settle - 0.5;
 		const band = est?.measuredBand ?? null;
 		// No evidence: no window, or a light stepping on the face. A window with held frames (a slow camera repeating
 		// frames, a frozen or low-bitrate stream) still carries the face: treated as no evidence it cost slow devices their
@@ -1958,7 +1979,10 @@ export class PulseCheck {
 					)
 				: null;
 		const recent = recentEst?.measuredBand ?? null;
-		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm, recent });
+		// Rule startEvidence: while the buffer has not yet filled since it last started empty (a start, a reset, a break
+		// longer than it keeps), the window read is the growing window: every second there is, after the settle.
+		const wholeS = this.rules.startEvidence && growing && est ? est.windowS : null;
+		const s = this.tracker.step(t, band ?? [], { none, suppressBpm: suppress, capBpm, recent, wholeS });
 		// Rule blinkGate: nothing shows until the eyes have blinked since the face appeared (a photo does not blink); the
 		// tracker keeps its evidence meanwhile, so the number shows the second the gate opens.
 		const waiting = this.rules.blinkGate && !this.blinks.seen && s.shown;

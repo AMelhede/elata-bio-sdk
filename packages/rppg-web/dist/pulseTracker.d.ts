@@ -91,6 +91,23 @@ export declare const TRACKER_FIRST_WINDOW_S = 6;
  */
 export declare const TRACKER_SETTLE_S = 2;
 /**
+ * Rule startEvidence. Until a full window has come in since a start or reset, the tracker's window is the growing window:
+ * it holds every second the face has given so far, so it is by itself all the evidence there is. The filter steps on it
+ * like any other window, one second's worth a look (TRACKER_TAU assumes a window that shares all but one second with the
+ * last), which is safe and slow. With the rule on, the same window is ALSO judged alone, as a sequential test against the
+ * prior: the prior (the person's own rate when the device knows it, even entry when it does not) moved to now, times this
+ * one window's evidence at an honest weight, TRACKER_START_WEIGHT x (power over the floor - 1) per rate (for a line in
+ * noise the log likelihood ratio is the power over the floor itself; real camera noise has a heavier tail, hence under 1).
+ * When that belief alone clears the show bar on TRACKER_START_LOOKS looks in a row at one rate, it becomes the filter's
+ * belief and the number shows. Each look starts again from the prior, so nothing is counted twice, and a prior at the wrong
+ * rate (another person, a heart after exercise) gets no help: the window's own line then has to outweigh it as for a
+ * stranger. Measured on the library's own spectra (evsave TRIED FB3, 2026-11-11).
+ */
+export declare const TRACKER_START_WEIGHT = 0.35;
+export declare const TRACKER_START_LOOKS = 2;
+/** Rule startEvidence: a buffer whose first frame is new and under this many seconds old has just started empty. */
+export declare const TRACKER_START_BEGIN_S = 3;
+/**
  * A heart under the band (25 to 42 bpm) reads as its 2nd or 3rd harmonic, since the band starts at 42. Physics tells the
  * two apart without reading under 42, where breathing, sway and drift lines live on real recordings: a heart truly at the
  * shown rate m has nothing at 1.5 m (or at 2/3 and 4/3 of m), while the 2nd harmonic of a heart at m / 2 brings its 3rd
@@ -116,6 +133,8 @@ export type TrackerParams = {
     priorSd: number;
     priorMass: number;
     priorShow: number;
+    startWeight: number;
+    startLooks: number;
 };
 export declare const TRACKER_DEFAULTS: TrackerParams;
 export type TrackerStep = {
@@ -137,6 +156,11 @@ export type TrackerEvidence = {
     none?: boolean;
     /** The newest TRACKER_RECENT_S seconds' in-band spectrum, as measured (second evidence; see TRACKER_RECENT_TAU_FACTOR). */
     recent?: ReadonlyArray<readonly [number, number]> | null;
+    /**
+     * Rule startEvidence: the spectrum is the growing window's, holding this many seconds, all there is since the start or
+     * reset. It is also judged alone against the prior (TRACKER_START_WEIGHT).
+     */
+    wholeS?: number | null;
 };
 export declare class PulseTracker {
     readonly rates: number[];
@@ -144,6 +168,12 @@ export declare class PulseTracker {
     private readonly near;
     private a;
     private aN;
+    /** Rule startEvidence: the prior alone (the last seed or reset, moved in time, no evidence taken). */
+    private b;
+    private bN;
+    /** Rule startEvidence: looks in a row on which the window alone showed, and the rate it showed. */
+    private looks;
+    private lookBpm;
     private lastMs;
     private showBar;
     private prior;
@@ -160,16 +190,25 @@ export declare class PulseTracker {
      * show bar to priorShow until the next reset.
      */
     seedPrior(bpm: number, sd?: number): void;
+    /**
+     * Rule startEvidence: a growing window begins now (a start, a reset, or frames coming back after a break longer than the
+     * buffer), so the belief as it stands is the prior that window is judged against.
+     */
+    markStart(): void;
     /** True while a personal prior is in the filter (seedPrior since the last reset). */
     get priorSeeded(): boolean;
     reset(): void;
     /** One second of time with no evidence (the prior moves; nothing is learned). */
     private predict;
+    /** A belief (rates and no-pulse) one second on. */
+    private moved;
     /**
      * Advance to `timestampMs` and take one window's in-band power spectrum ([bpm, power], ascending, as measured,
      * not whitened). Returns the posterior summary.
      */
     step(timestampMs: number, spectrum: ReadonlyArray<readonly [number, number]>, ev?: TrackerEvidence): TrackerStep;
+    /** A belief's summary: the mass within the bar of its mode, the mean rate there, and whether it shows. */
+    private summary;
 }
 /** TRACKER_INTERHARMONIC_K: true when the shown rate `mode` reads as the 2nd or 3rd harmonic of a heart under 42. */
 export declare function slowHeartHarmonics(spectrum: ReadonlyArray<readonly [number, number]>, mode: number, k: number): boolean;

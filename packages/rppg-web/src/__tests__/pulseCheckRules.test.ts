@@ -76,6 +76,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			skinFallback: false,
 			fpsCeiling: false,
 			tracker: false,
+			startEvidence: false,
 			slowDouble: true,
 		});
 		expect(resolvePulseCheckRules({ restBand: false }).restBand).toBe(false);

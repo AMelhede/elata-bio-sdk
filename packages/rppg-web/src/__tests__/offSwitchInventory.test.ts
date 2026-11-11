@@ -12,6 +12,7 @@ const OFF_SWITCHES: Record<string, string> = {
 	moreReadings: "2026-11-30", // testers' paired runs; shows more numbers on photos, needs liveness first
 	skinFallback: "2026-12-15", // patch layout v2 files from Mac, Windows and Firefox, the bench colour-cast copies and the full gate before it is turned on (evsave QUEUE FB2-M)
 	fpsCeiling: "2026-11-30", // being measured on received files and the full gate before it is turned on
+	startEvidence: "2026-12-10", // the first number's sequential start test: blind check and full gate, then on with the tracker or removed (evsave TRIED FB3)
 	tracker: "2026-12-31", // the one-model redesign: measured on every received file, the lab and the full gate before it replaces the streak rules
 	blinkGate: "2026-11-30",
 	experimentalVitals: "2026-12-31", // research box, never shown as a reading (a session option, not a rule)
@@ -22,7 +23,8 @@ const OFF_SWITCHES: Record<string, string> = {
 // 2026-10-30), decided by 2026-11-15: turned on and its switch deleted, or removed. Back to 6 then.
 // 6 since roomLight was deleted (2026-10-30, it changed no shown second on real-device or lab recordings).
 // Still 6 on 2026-10-30: shortStreak decided on received recordings and turned on (its off slot gone), followRecent in.
-const MAX_OFF = 6;
+// 7 on 2026-11-11 for startEvidence, until 2026-12-10 (decided on the blind check and the gate: on, or removed). Back to 6 then.
+const MAX_OFF = 7;
 
 describe("off-by-default switch inventory", () => {
 	it("every rule off by default is listed with an expiry, and nothing listed is gone", () => {

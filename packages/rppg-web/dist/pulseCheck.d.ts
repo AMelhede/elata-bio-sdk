@@ -334,6 +334,13 @@ export type PulseCheckRules = {
      * the rules it replaces are deleted.
      */
     tracker?: boolean;
+    /**
+     * OFF unless true, being measured (2026-11-11), with rule tracker: while the window is still growing after a start or
+     * reset it holds every second the face has given, so it is also judged alone, as a sequential test against the prior
+     * (the person's own rate when the device knows it): when the prior times that one window clears the show bar twice in
+     * a row, the number shows without waiting for the filter's slower count (pulseTracker.ts TRACKER_START_WEIGHT).
+     */
+    startEvidence?: boolean;
 };
 /**
  * Rule bridgeGap: the longest frame gap read across, set to take the camera stalls seen while the page stays visible
@@ -359,7 +366,7 @@ export declare const HELD_MAX_SHARE = 0.1;
 /** Rule heldFrames: the share of the window's frames (OWN_PULSE_WINDOW_S up to atMs) held in runs (see HELD_EPS). */
 export declare function heldFrameShare(samples: readonly (readonly number[])[], atMs: number): number;
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames", "allPatches", "skinFallback", "fpsCeiling", "tracker"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames", "allPatches", "skinFallback", "fpsCeiling", "tracker", "startEvidence"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
@@ -820,6 +827,8 @@ export declare class PulseCheck {
     private tracker;
     /** Rule tracker: a reset (or a resume point) happened; seed the filter from followKept at the next window. */
     private trackerSeedPending;
+    /** Rule startEvidence: the first frame of the buffer when it last started empty (the growing window's start), or null. */
+    private growStartMs;
     /** Rule tracker: the person's own rate as handed in (constructor personalRate), or null. */
     readonly personalRate: number | null;
     /** Rule tracker: the person's own spread, or null. */
