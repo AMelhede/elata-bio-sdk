@@ -27,7 +27,13 @@
 import type { Frame } from "./frameSource";
 
 /** The layout's name in a recording; a new layout takes a new name. */
-export const FACE_PATCH_LAYOUT_ID = "lane-subregion-115-v1";
+export const FACE_PATCH_LAYOUT_ID = "lane-subregion-115-v2";
+/**
+ * From layout v2 (2026-11-10): after the FACE_PATCH_COUNT x FACE_PATCH_FIELDS block, per patch the integer sums of R, G
+ * and B over ALL its pixels, so a file can be re-read without the skin test (rule skinFallback; evsave TRIED FB2a). A v1
+ * reader that indexes only the first block reads a v2 file unchanged.
+ */
+export const FACE_PATCH_ALL_FIELDS = Object.freeze(["allR", "allG", "allB"] as const);
 
 type Frac = readonly [number, number, number, number];
 const grid = (x0: number, y0: number, x1: number, y1: number, nx: number, ny: number): Frac[] => {
@@ -77,7 +83,7 @@ const MAX_LANDMARK = Math.max(...FACE_PATCH_LANDMARKS);
 
 /**
  * One frame's patches. `box`: the percentile box [x0, y0, w, h] in pixels the layout was placed in. `values`:
- * FACE_PATCH_COUNT x FACE_PATCH_FIELDS integers, patch after patch.
+ * FACE_PATCH_COUNT x FACE_PATCH_FIELDS integers, patch after patch, then FACE_PATCH_COUNT x FACE_PATCH_ALL_FIELDS.
  */
 export type FacePatches = { box: [number, number, number, number]; values: Uint32Array };
 
@@ -116,18 +122,22 @@ export function facePatchesFromFrame(
 	const by1 = pick(ysBuf, 0.97) * H;
 	const bw = Math.max(1, bx1 - bx0);
 	const bh = Math.max(1, by1 - by0);
-	const values = new Uint32Array(FACE_PATCH_COUNT * PF);
+	const values = new Uint32Array(FACE_PATCH_COUNT * (PF + 3));
+	const ALL = FACE_PATCH_COUNT * PF;
 	const patch = (px0: number, py0: number, px1: number, py1: number, o: number) => {
 		const x0 = Math.max(0, Math.min(W, px0));
 		const x1 = Math.max(0, Math.min(W, px1));
 		const y0 = Math.max(0, Math.min(H, py0));
 		const y1 = Math.max(0, Math.min(H, py1));
-		let sR = 0, sG = 0, sB = 0, sk = 0, n = 0;
+		let sR = 0, sG = 0, sB = 0, sk = 0, n = 0, aR = 0, aG = 0, aB = 0;
 		for (let row = y0; row < y1; row++) {
 			let i = (row * W + x0) * 4;
 			for (let col = x0; col < x1; col++, i += 4) {
 				const r = data[i], g = data[i + 1], b = data[i + 2];
 				n++;
+				aR += r;
+				aG += g;
+				aB += b;
 				const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
 				const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 				if (cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) {
@@ -143,6 +153,10 @@ export function facePatchesFromFrame(
 		values[o + 2] = sB;
 		values[o + 3] = sk;
 		values[o + 4] = n;
+		const a = ALL + (o / PF) * 3;
+		values[a] = aR;
+		values[a + 1] = aG;
+		values[a + 2] = aB;
 	};
 	let o = 0;
 	for (const [fx0, fy0, fx1, fy1] of FACE_PATCH_GRID) {

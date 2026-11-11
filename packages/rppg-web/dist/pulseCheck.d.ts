@@ -1,24 +1,3 @@
-/**
- * Real-pulse check (`createRppgSession({ pulseCheck })`, ON by default in this test build;
- * `pulseCheck: false` turns it off).
- *
- * Why: the heart rate is the strongest rhythm in the colour signal, and there is always a
- * strongest rhythm, including when no pulse is visible (noise, light, motion). Nothing in
- * the pipeline asks whether the rhythm is a pulse, so a number is reported either way.
- *
- * What this does: it keeps the mean skin colour of the three face regions the SDK already
- * samples (forehead, left cheek, right cheek) and, once a second, runs the checker in
- * pulseCheckCore.ts. A pulse counts as proven only when the regions agree on the same rate
- * across 8 consecutive windows with the line clearly above the noise. Noise does not agree
- * across separate patches of skin for that long; a heartbeat does. While proven, the
- * session reports the rate the check measured; otherwise it reports no rate.
- *
- * Wall check (used when the frames carry face landmarks): a heartbeat is only in skin, a light
- * that pulses changes the wall as well. If the wall's brightness pulses at the proven rate, far
- * above its noise, in each of the last 4 one-second windows, the rate is withheld. Only wall
- * pixels that do not look like skin are used: a face edge or an ear in the patch carries the
- * person's own pulse.
- */
 import type { FacePatches } from "./facePatches.js";
 import { type Frame } from "./frameSource.js";
 export type PulseCheckState = {
@@ -333,6 +312,14 @@ export type PulseCheckRules = {
      */
     allPatches?: boolean;
     /**
+     * OFF unless true, being measured (2026-11-10): a face patch or region whose fixed skin-colour test keeps under half
+     * of its pixels (frameSource SKIN_FALLBACK_SHARE) is read from all its pixels: the face mesh already placed it on the
+     * face, so the test is rejecting this camera's skin colour (evsave TRIED FB2a: 0-5% kept on a Mac). Patches need
+     * patch layout v2 (all-pixel sums); a v1 recording replays as before. Named debt: deleted when skin is found from
+     * the mesh's own skin colour (evsave QUEUE FB2-M long-term mechanism).
+     */
+    skinFallback?: boolean;
+    /**
      * OFF unless true, being measured (2026-11-06): a window's line above 0.4 times its own frame rate (pulseCheckCore
      * FPS_CEILING_SHARE: past what the camera's frames resolve, where fast rates fold onto wrong ones) is not a line.
      * Changes nothing at 30 fps; acts only on slow cameras.
@@ -372,7 +359,7 @@ export declare const HELD_MAX_SHARE = 0.1;
 /** Rule heldFrames: the share of the window's frames (OWN_PULSE_WINDOW_S up to atMs) held in runs (see HELD_EPS). */
 export declare function heldFrameShare(samples: readonly (readonly number[])[], atMs: number): number;
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames", "allPatches", "fpsCeiling", "tracker"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames", "allPatches", "skinFallback", "fpsCeiling", "tracker"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the

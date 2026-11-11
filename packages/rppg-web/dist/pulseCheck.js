@@ -1,3 +1,26 @@
+/**
+ * Real-pulse check (`createRppgSession({ pulseCheck })`, ON by default in this test build;
+ * `pulseCheck: false` turns it off).
+ *
+ * Why: the heart rate is the strongest rhythm in the colour signal, and there is always a
+ * strongest rhythm, including when no pulse is visible (noise, light, motion). Nothing in
+ * the pipeline asks whether the rhythm is a pulse, so a number is reported either way.
+ *
+ * What this does: it keeps the mean skin colour of the three face regions the SDK already
+ * samples (forehead, left cheek, right cheek) and, once a second, runs the checker in
+ * pulseCheckCore.ts. A pulse counts as proven only when the regions agree on the same rate
+ * across 8 consecutive windows with the line clearly above the noise. Noise does not agree
+ * across separate patches of skin for that long; a heartbeat does. While proven, the
+ * session reports the rate the check measured; otherwise it reports no rate.
+ *
+ * Wall check (used when the frames carry face landmarks): a heartbeat is only in skin, a light
+ * that pulses changes the wall as well. If the wall's brightness pulses at the proven rate, far
+ * above its noise, in each of the last 4 one-second windows, the rate is withheld. Only wall
+ * pixels that do not look like skin are used: a face edge or an ear in the patch carries the
+ * person's own pulse.
+ */
+import { FACE_PATCH_COUNT } from "./facePatches.js";
+import { SKIN_FALLBACK_SHARE } from "./frameSource.js";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion.js";
 import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker.js";
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
@@ -112,6 +135,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "bridgeGap",
     "heldFrames",
     "allPatches",
+    "skinFallback",
     "fpsCeiling",
     "tracker",
 ];
@@ -429,6 +453,7 @@ export function resolvePulseCheckRules(rules) {
         bridgeGap: rules?.bridgeGap !== false,
         heldFrames: rules?.heldFrames !== false,
         allPatches: rules?.allPatches !== false,
+        skinFallback: rules?.skinFallback === true,
         fpsCeiling: rules?.fpsCeiling === true,
         tracker: rules?.tracker === true,
     };
@@ -914,12 +939,21 @@ export class PulseCheck {
         // Rule allPatches: the frame's patches as means; a frame without them (no mesh) is simply not kept.
         const fp = this.rules.allPatches ? diag?.facePatches : null;
         if (fp) {
-            const n = fp.values.length / 5;
+            // Layout v2 appends 3 all-pixel sums per patch after the 5-field block; v1 has the block only.
+            const v2 = fp.values.length === FACE_PATCH_COUNT * 8;
+            const n = v2 ? FACE_PATCH_COUNT : fp.values.length / 5;
             const means = new Float32Array(n * 3);
+            const all = this.rules.skinFallback && v2;
             for (let i = 0; i < n; i++) {
                 const sk = fp.values[i * 5 + 3];
-                for (let c = 0; c < 3; c++)
-                    means[i * 3 + c] = sk > 0 ? fp.values[i * 5 + c] / sk : Number.NaN;
+                const px = fp.values[i * 5 + 4];
+                if (all && px > 0 && sk < px * SKIN_FALLBACK_SHARE) {
+                    for (let c = 0; c < 3; c++)
+                        means[i * 3 + c] = fp.values[n * 5 + i * 3 + c] / px;
+                }
+                else
+                    for (let c = 0; c < 3; c++)
+                        means[i * 3 + c] = sk > 0 ? fp.values[i * 5 + c] / sk : Number.NaN;
             }
             this.patchRows.push([timestampMs, means]);
         }

@@ -19,6 +19,8 @@
  * pixels that do not look like skin are used: a face edge or an ear in the patch carries the
  * person's own pulse.
  */
+import { FACE_PATCH_COUNT } from "./facePatches";
+import { SKIN_FALLBACK_SHARE } from "./frameSource";
 import type { FacePatches } from "./facePatches";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion";
 import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker";
@@ -354,6 +356,14 @@ export type PulseCheckRules = {
 	 */
 	allPatches?: boolean;
 	/**
+	 * OFF unless true, being measured (2026-11-10): a face patch or region whose fixed skin-colour test keeps under half
+	 * of its pixels (frameSource SKIN_FALLBACK_SHARE) is read from all its pixels: the face mesh already placed it on the
+	 * face, so the test is rejecting this camera's skin colour (evsave TRIED FB2a: 0-5% kept on a Mac). Patches need
+	 * patch layout v2 (all-pixel sums); a v1 recording replays as before. Named debt: deleted when skin is found from
+	 * the mesh's own skin colour (evsave QUEUE FB2-M long-term mechanism).
+	 */
+	skinFallback?: boolean;
+	/**
 	 * OFF unless true, being measured (2026-11-06): a window's line above 0.4 times its own frame rate (pulseCheckCore
 	 * FPS_CEILING_SHARE: past what the camera's frames resolve, where fast rates fold onto wrong ones) is not a line.
 	 * Changes nothing at 30 fps; acts only on slow cameras.
@@ -457,6 +467,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"bridgeGap",
 	"heldFrames",
 	"allPatches",
+	"skinFallback",
 	"fpsCeiling",
 	"tracker",
 ] as const;
@@ -852,6 +863,7 @@ export function resolvePulseCheckRules(
 		bridgeGap: rules?.bridgeGap !== false,
 		heldFrames: rules?.heldFrames !== false,
 		allPatches: rules?.allPatches !== false,
+		skinFallback: rules?.skinFallback === true,
 		fpsCeiling: rules?.fpsCeiling === true,
 		tracker: rules?.tracker === true,
 	};
@@ -1502,11 +1514,17 @@ export class PulseCheck {
 		// Rule allPatches: the frame's patches as means; a frame without them (no mesh) is simply not kept.
 		const fp = this.rules.allPatches ? diag?.facePatches : null;
 		if (fp) {
-			const n = fp.values.length / 5;
+			// Layout v2 appends 3 all-pixel sums per patch after the 5-field block; v1 has the block only.
+			const v2 = fp.values.length === FACE_PATCH_COUNT * 8;
+			const n = v2 ? FACE_PATCH_COUNT : fp.values.length / 5;
 			const means = new Float32Array(n * 3);
+			const all = this.rules.skinFallback && v2;
 			for (let i = 0; i < n; i++) {
 				const sk = fp.values[i * 5 + 3];
-				for (let c = 0; c < 3; c++) means[i * 3 + c] = sk > 0 ? fp.values[i * 5 + c] / sk : Number.NaN;
+				const px = fp.values[i * 5 + 4];
+				if (all && px > 0 && sk < px * SKIN_FALLBACK_SHARE) {
+					for (let c = 0; c < 3; c++) means[i * 3 + c] = fp.values[n * 5 + i * 3 + c] / px;
+				} else for (let c = 0; c < 3; c++) means[i * 3 + c] = sk > 0 ? fp.values[i * 5 + c] / sk : Number.NaN;
 			}
 			this.patchRows.push([timestampMs, means]);
 		}

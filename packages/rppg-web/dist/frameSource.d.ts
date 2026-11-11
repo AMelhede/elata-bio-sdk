@@ -73,7 +73,18 @@ export declare function averageRgbInROINonSkinCounted(frame: Frame, x: number, y
     b: number;
     n: number;
 } | null;
-export declare function averageRgbInROIWithSkinMaskStats(frame: Frame, x: number, y: number, w: number, h: number): {
+/**
+ * Rule skinFallback (pulseCheck): below this share of a box or patch passing the fixed YCbCr skin test, the box or patch
+ * is read from ALL its pixels. The face mesh has already placed it on the face, so a test that rejects most of it is
+ * rejecting this camera's or this light's skin colour, not hair (evsave TRIED FB2a, 2026-11-10: kept 0-5% on a Mac's
+ * Safari and Chrome, 0% on one Windows laptop's forehead, 12-57% on Firefox, 71-100% everywhere else; in the lab, where the
+ * test keeps about 100%, "skin pixels unless half are rejected" equals today's line to 0.0 dB on all 3 cameras).
+ * Without the rule the share is 0.1, as before.
+ */
+export declare const SKIN_FALLBACK_SHARE = 0.5;
+export declare function averageRgbInROIWithSkinMaskStats(frame: Frame, x: number, y: number, w: number, h: number, 
+/** Below this share of skin-test pixels the box is read from all its pixels (SKIN_FALLBACK_SHARE with rule skinFallback). */
+fallbackShare?: number): {
     r: number;
     g: number;
     b: number;

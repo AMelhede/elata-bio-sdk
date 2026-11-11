@@ -114,7 +114,8 @@ export type PulseCheckInputEvent =
 			// rendered], the face values null when unmeasured; [9] is then written null when the pool is off. Recorded only.
 			[number | null, number | null, number, number]?,
 			// Only in a recording made with facePatches: the 115 skin patches (facePatches.ts, layout facePatchLayout):
-			// the percentile box [x, y, w, h] in pixels to 1 decimal, then per patch [sumR, sumG, sumB, skin, pixels];
+			// the percentile box [x, y, w, h] in pixels to 1 decimal, then per patch [sumR, sumG, sumB, skin, pixels], then
+			// (layout v2, 2026-11-10) per patch [allR, allG, allB] over all its pixels;
 			// null when the frame had no mesh. [9] and [10] are then written null when their switches are off.
 			(number[] | null)?,
 	  ]

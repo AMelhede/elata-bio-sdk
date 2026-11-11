@@ -64,7 +64,7 @@ describe("facePatches: the recorded field", () => {
 	const patches = facePatchesFromFrame(frameAt(0), MESH);
 	test("the fixture mesh gives every patch", () => {
 		expect(patches).not.toBeNull();
-		expect(patches?.values.length).toBe(FACE_PATCH_COUNT * 5);
+		expect(patches?.values.length).toBe(FACE_PATCH_COUNT * 8);
 	});
 
 	test("event [11] holds the box (1 decimal) and every value; [9] and [10] null when their switches are off", () => {
@@ -101,7 +101,7 @@ describe("facePatches: the recorded field", () => {
 		const e = rec.getRecording().events[0] as unknown[];
 		expect(e[9]).toEqual([0.8, 0.5, 0.4]);
 		expect(e[10]).toBeNull();
-		expect((e[11] as number[]).length).toBe(4 + FACE_PATCH_COUNT * 5);
+		expect((e[11] as number[]).length).toBe(4 + FACE_PATCH_COUNT * 8);
 	});
 });
 

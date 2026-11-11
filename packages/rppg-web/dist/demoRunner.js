@@ -1,7 +1,7 @@
 import { FOREHEAD_POOL_SIZE, facePatchesFromFrame, foreheadPoolFromFrame } from "./facePatches.js";
 import { ForeheadPool } from "./foreheadPool.js";
 import { LIGHT_START, centreLightFromFrame, faceLightFromFrame, lightAfter } from "./lightLevel.js";
-import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, } from "./frameSource.js";
+import { averageRgbInROI, averageRgbInROIWithSkinMaskStats, SKIN_FALLBACK_SHARE, } from "./frameSource.js";
 import { faceBoxFromLandmarks, padFaceBoxToHead, } from "./faceFraming.js";
 import { resolveFixSwitches, } from "./fixSwitches.js";
 import { FUSION_ROIS, MultiRoiRppgFuser, } from "./multiRoiFusion.js";
@@ -349,7 +349,7 @@ export class DemoRunner {
                     : null;
                 let foreheadBox = null;
                 const rects = rois.slice(0, 3).map((roi) => clampRoiToFrame(roi, frame.width, frame.height));
-                const boxes = rects.map((c) => averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h));
+                const boxes = rects.map((c) => averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h, this.opts.pulseChecker?.rules.skinFallback ? SKIN_FALLBACK_SHARE : 0.1));
                 // Switch light: the face's light from the same boxes, before the pool swaps the forehead.
                 if (this.opts.light) {
                     this.faceLight = faceLightFromFrame(frame.data, frame.width, rects, boxes);

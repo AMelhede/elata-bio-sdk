@@ -6,6 +6,7 @@ import { PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules } from "../pulseCheck";
 // deleted) or its code removed. A new off switch, or one past its date, fails this test. The cap only goes down.
 const OFF_SWITCHES: Record<string, string> = {
 	moreReadings: "2026-11-30", // testers' paired runs; shows more numbers on photos, needs liveness first
+	skinFallback: "2026-12-15", // patch layout v2 files from Mac, Windows and Firefox, the bench colour-cast copies and the full gate before it is turned on (evsave QUEUE FB2-M)
 	fpsCeiling: "2026-11-30", // being measured on received files and the full gate before it is turned on
 	tracker: "2026-12-31", // the one-model redesign: measured on every received file, the lab and the full gate before it replaces the streak rules
 	blinkGate: "2026-11-30",

@@ -26,7 +26,13 @@
  */
 import type { Frame } from "./frameSource.js";
 /** The layout's name in a recording; a new layout takes a new name. */
-export declare const FACE_PATCH_LAYOUT_ID = "lane-subregion-115-v1";
+export declare const FACE_PATCH_LAYOUT_ID = "lane-subregion-115-v2";
+/**
+ * From layout v2 (2026-11-10): after the FACE_PATCH_COUNT x FACE_PATCH_FIELDS block, per patch the integer sums of R, G
+ * and B over ALL its pixels, so a file can be re-read without the skin test (rule skinFallback; evsave TRIED FB2a). A v1
+ * reader that indexes only the first block reads a v2 file unchanged.
+ */
+export declare const FACE_PATCH_ALL_FIELDS: readonly ["allR", "allG", "allB"];
 type Frac = readonly [number, number, number, number];
 /**
  * Family G, in percentile-box fractions [x0, y0, x1, y1], in this order (harness/main.ts G_FOREHEAD, G_BROW,
@@ -59,7 +65,7 @@ export declare const FACE_PATCH_COUNT: number;
 export declare const FACE_PATCH_FIELDS: readonly ["sumR", "sumG", "sumB", "skin", "n"];
 /**
  * One frame's patches. `box`: the percentile box [x0, y0, w, h] in pixels the layout was placed in. `values`:
- * FACE_PATCH_COUNT x FACE_PATCH_FIELDS integers, patch after patch.
+ * FACE_PATCH_COUNT x FACE_PATCH_FIELDS integers, patch after patch, then FACE_PATCH_COUNT x FACE_PATCH_ALL_FIELDS.
  */
 export type FacePatches = {
     box: [number, number, number, number];

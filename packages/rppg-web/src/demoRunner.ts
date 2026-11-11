@@ -9,6 +9,7 @@ import {
 	averageGreenInROIWithSkinMaskStats,
 	averageRgbInROI,
 	averageRgbInROIWithSkinMaskStats,
+	SKIN_FALLBACK_SHARE,
 } from "./frameSource";
 import {
 	faceBoxFromLandmarks,
@@ -600,7 +601,7 @@ export class DemoRunner {
 				let foreheadBox: { r: number; g: number; b: number } | null = null;
 				const rects = rois.slice(0, 3).map((roi) => clampRoiToFrame(roi, frame.width, frame.height));
 				const boxes: { r: number; g: number; b: number }[] = rects.map((c) =>
-					averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h),
+					averageRgbInROIWithSkinMaskStats(frame, c.x, c.y, c.w, c.h, this.opts.pulseChecker?.rules.skinFallback ? SKIN_FALLBACK_SHARE : 0.1),
 				);
 				// Switch light: the face's light from the same boxes, before the pool swaps the forehead.
 				if (this.opts.light) {

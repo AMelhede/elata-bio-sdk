@@ -73,6 +73,7 @@ describe("PulseCheck light rules, one switch each", () => {
 			bridgeGap: true,
 			heldFrames: true,
 			allPatches: true,
+			skinFallback: false,
 			fpsCeiling: false,
 			tracker: false,
 			slowDouble: true,

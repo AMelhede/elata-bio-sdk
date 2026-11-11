@@ -7,8 +7,9 @@ import { PULSE_CHECK_RULE_NAMES } from "../pulseCheck";
 // lowers the ceiling. Set 2026-11-06 at 25 (22 on the 5th, plus allPatches, fpsCeiling, harmonicStart); 26 the same
 // day for rule tracker, the mechanism itself, and back to 25 when rule trackLine, which it supersedes, was deleted.
 // 24 the same day: harmonicStart deleted (its case passes on the tracker). When the tracker passes its gate, the rules
-// it replaces are deleted.
-const RULE_CEILING = 24;
+// it replaces are deleted. 25 on 2026-11-10 for skinFallback (off; named debt in evsave TRIED FB2a and QUEUE FB2-M:
+// deleted when skin is found from the mesh's own skin colour).
+const RULE_CEILING = 25;
 
 describe("rule ceiling", () => {
 	it("the count of the pulse check's rules never grows without a deliberate change here", () => {
