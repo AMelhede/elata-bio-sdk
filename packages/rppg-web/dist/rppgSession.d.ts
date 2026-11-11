@@ -2,6 +2,7 @@ import { type LightLevel } from "./lightLevel.js";
 import type { FrameSource } from "./frameSource.js";
 import { type LastRateStore, type LastReading } from "./lastRate.js";
 import { type FaceLandmarkerLike } from "./mediapipeLoader.js";
+import { SlowSwitch, type SlowSwitchRecord } from "./slowSwitch.js";
 import { PulseCheck, type PulseCheckResume, type PulseCheckRules, type PulseCheckState, type ResolvedPulseCheckRules } from "./pulseCheck.js";
 import { type PulseCheckRecording } from "./pulseCheckRecording.js";
 import { ChestMotion, type ChestSample } from "./chestBreathing.js";
@@ -70,7 +71,7 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
     framesStopped: boolean;
     modelDiagnostics?: RppgModelDiagnosticsV1 | null;
 };
-export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker" | "chestMotion" | "hrvRegions"> & {
+export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" | "onError" | "pulseChecker" | "chestMotion" | "hrvRegions" | "slowSwitch"> & {
     video: HTMLVideoElement;
     /**
      * The real-pulse check (see pulseCheck.ts). ON by default in this test build. A heart rate
@@ -128,6 +129,18 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
      * keeps the finder on this thread. Being measured: frames analysed on slowed browsers and phones.
      */
     faceFinderWorker?: boolean;
+    /**
+     * Slow-device switch (slowSwitch.ts), off unless set: when fewer than SLOW_SWITCH_FPS frames a second reach the
+     * check in each of SLOW_SWITCH_SECONDS whole seconds in a row (face tracked, page visible, after the first
+     * SLOW_SWITCH_WARMUP_MS), the session moves the face finder to its Web Worker (as `faceFinderWorker`) and the check
+     * to SLOW_SWITCH_RULES, once and for the rest of the session, and calls `onSlowSwitch`. `{ remembered: true }`, for
+     * a camera the app remembers as slow, starts switched. `getSlowSwitch()` gives what it did, for the saved file.
+     */
+    slowSwitch?: boolean | {
+        remembered?: boolean;
+    };
+    /** With `slowSwitch`: called once when the measured rate switches the session (not when it starts switched). */
+    onSlowSwitch?: (record: SlowSwitchRecord) => void;
     /**
      * Keep reading frames while the page is hidden (backgroundFrames.ts): the camera track is read in a Web Worker and
      * each frame handed to the same analysis, so the pulse check and the passive reader continue behind other tabs and
@@ -286,6 +299,8 @@ type SessionInternals = {
     hrvRegions?: Pick<HrvRegionBuffer, "read"> | null;
     foreheadPool?: boolean;
     light?: boolean;
+    /** With `slowSwitch`, the switch. */
+    slowSwitch?: SlowSwitch | null;
 };
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
 export type ExperimentalVitals = {
@@ -392,6 +407,12 @@ export declare class RppgSession {
      * the option. Copies, so an app can save them.
      */
     backgroundBursts(): BackgroundBurst[];
+    /**
+     * With `slowSwitch`: what the switch did (when, the analysed rate before and after, whether it started switched from
+     * memory), in the field names of a saved file's device.slow_switch; null while it has not switched or without the
+     * option. A copy.
+     */
+    getSlowSwitch(): SlowSwitchRecord | null;
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck(): PulseCheckState | null;
     /** The chest motion kept (`experimentalVitals`), for recording and replay; empty when off. */

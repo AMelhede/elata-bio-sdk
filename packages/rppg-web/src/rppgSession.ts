@@ -17,6 +17,7 @@ import {
 } from "./lastRate";
 import { loadFaceLandmarker, type FaceLandmarkerLike } from "./mediapipeLoader";
 import { createWorkerFaceFinder } from "./faceFinderWorker";
+import { SLOW_SWITCH_RULES, SlowSwitch, type SlowSwitchRecord } from "./slowSwitch";
 import {
 	PulseCheck,
 	type PulseCheckResume,
@@ -162,7 +163,7 @@ export type RppgSessionDiagnostics = DemoRunnerDiagnostics & {
 
 export type CreateRppgSessionOptions = Omit<
 	DemoRunnerOptions,
-	"onDiagnostics" | "onError" | "pulseChecker" | "chestMotion" | "hrvRegions"
+	"onDiagnostics" | "onError" | "pulseChecker" | "chestMotion" | "hrvRegions" | "slowSwitch"
 > & {
 	video: HTMLVideoElement;
 	/**
@@ -219,6 +220,16 @@ export type CreateRppgSessionOptions = Omit<
 	 * keeps the finder on this thread. Being measured: frames analysed on slowed browsers and phones.
 	 */
 	faceFinderWorker?: boolean;
+	/**
+	 * Slow-device switch (slowSwitch.ts), off unless set: when fewer than SLOW_SWITCH_FPS frames a second reach the
+	 * check in each of SLOW_SWITCH_SECONDS whole seconds in a row (face tracked, page visible, after the first
+	 * SLOW_SWITCH_WARMUP_MS), the session moves the face finder to its Web Worker (as `faceFinderWorker`) and the check
+	 * to SLOW_SWITCH_RULES, once and for the rest of the session, and calls `onSlowSwitch`. `{ remembered: true }`, for
+	 * a camera the app remembers as slow, starts switched. `getSlowSwitch()` gives what it did, for the saved file.
+	 */
+	slowSwitch?: boolean | { remembered?: boolean };
+	/** With `slowSwitch`: called once when the measured rate switches the session (not when it starts switched). */
+	onSlowSwitch?: (record: SlowSwitchRecord) => void;
 	/**
 	 * Keep reading frames while the page is hidden (backgroundFrames.ts): the camera track is read in a Web Worker and
 	 * each frame handed to the same analysis, so the pulse check and the passive reader continue behind other tabs and
@@ -379,6 +390,8 @@ type SessionInternals = {
 	hrvRegions?: Pick<HrvRegionBuffer, "read"> | null;
 	foreheadPool?: boolean;
 	light?: boolean;
+	/** With `slowSwitch`, the switch. */
+	slowSwitch?: SlowSwitch | null;
 };
 
 /** HRV and breathing as `experimentalVitals` hands them over: research outputs, not measurements. */
@@ -699,6 +712,15 @@ export class RppgSession {
 	backgroundBursts(): BackgroundBurst[] {
 		const src = this.source as { backgroundDuty?: BackgroundDuty | null };
 		return (src.backgroundDuty?.bursts ?? []).map((b) => ({ ...b }));
+	}
+
+	/**
+	 * With `slowSwitch`: what the switch did (when, the analysed rate before and after, whether it started switched from
+	 * memory), in the field names of a saved file's device.slow_switch; null while it has not switched or without the
+	 * option. A copy.
+	 */
+	getSlowSwitch(): SlowSwitchRecord | null {
+		return this.internals.slowSwitch?.record() ?? null;
 	}
 
 	/** State of the real-pulse check; null when `pulseCheck` is off. */
@@ -1028,8 +1050,15 @@ export async function createRppgSession(
 		options.pulseCheck === false
 			? null
 			: readLastReading(rateStore, Date.now());
+	// slowSwitch: a camera remembered as slow starts with the switched rules (and below, the finder in its worker).
+	const slowRemembered =
+		typeof options.slowSwitch === "object" && options.slowSwitch?.remembered === true;
+	const startRules = slowRemembered
+		? { ...options.pulseCheckRules, ...SLOW_SWITCH_RULES }
+		: options.pulseCheckRules;
 	const checkOptions = {
 		...options,
+		pulseCheckRules: startRules,
 		pulseCheckResume:
 			options.pulseCheckResume ?? lastReadingResume(lastReading),
 		// The person's own rate on this device (lastRate.ts), the tracker's prior at each start (rule tracker).
@@ -1043,7 +1072,7 @@ export async function createRppgSession(
 	// people: moreReadings with blinkGate. Without it blinkGate would withhold every rate, so they stay off. Rebuilt
 	// before any frame, so nothing is lost; an app's own rule settings win. (Testbed DECISIONS.md#library-defaults.)
 	if (pulseCheck && faceMeshResult.faceMesh)
-		pulseCheck = sessionPulseCheck({ ...checkOptions, pulseCheckRules: meshRuleDefaults(options.pulseCheckRules) });
+		pulseCheck = sessionPulseCheck({ ...checkOptions, pulseCheckRules: meshRuleDefaults(startRules) });
 	// Passive readings made (option backgroundEveryMs reads it to know a burst's reading stood).
 	let passiveMade = 0;
 	const passive = passiveReaderFor(
@@ -1096,7 +1125,9 @@ export async function createRppgSession(
 			};
 		}
 	}
-	if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
+	// One way to start the worker, for faceFinderWorker at the start and for the slow-device switch later.
+	const startWorker = () => {
+		if (closeWorker || !(source instanceof MediaPipeFaceFrameSource)) return;
 		closeWorker = () => {
 			workerClosed = true;
 			source.asyncFinder?.close();
@@ -1107,7 +1138,18 @@ export async function createRppgSession(
 			if (workerClosed) finder.close();
 			else source.asyncFinder = finder;
 		});
-	}
+	};
+	const slowSwitch =
+		options.slowSwitch === true || typeof options.slowSwitch === "object"
+			? new SlowSwitch({ remembered: slowRemembered })
+			: null;
+	if (options.faceFinderWorker === true || slowRemembered) startWorker();
+	if (slowSwitch && !slowRemembered)
+		slowSwitch.onSwitch = (record) => {
+			startWorker();
+			pulseCheck?.switchToTracker();
+			options.onSlowSwitch?.(record);
+		};
 
 	const backendResult = await resolveBackend(backendPreference, {
 		wasmJsUrl: options.wasmJsUrl,
@@ -1146,6 +1188,7 @@ export async function createRppgSession(
 	const runner = new DemoRunner(source, processor, {
 		fixes: options.fixes,
 		pulseChecker: pulseCheck,
+		slowSwitch,
 		hrvRegions,
 		foreheadPool: options.foreheadPool ?? faceMeshResult.faceMesh != null,
 		light: options.light === true && pulseCheck != null,
@@ -1221,7 +1264,8 @@ export async function createRppgSession(
 			backendDegraded: backendResult.mode !== "wasm",
 			faceTrackingDegraded: faceMeshResult.error != null,
 			waveformController,
-			onDispose: closeWorker,
+			onDispose: () => closeWorker?.(),
+			slowSwitch,
 			beforeStart: async () => {
 				await waveformController?.init();
 				if (options.ensureVideoPlayback !== false) {

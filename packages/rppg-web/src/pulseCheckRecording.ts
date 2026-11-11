@@ -14,6 +14,7 @@
  *   wall as the camera read it, why no wall was found, and the head's position (or that the face
  *   mesh found none, or that none was handed over);
  * - every `faceLost` (a frame with no forehead and cheeks);
+ * - the session's slow-device switch (slowSwitch.ts), when it happened, so a replay switches at the same frame;
  * - every `getMetrics()` read of the session: the rate it showed, and the session's own reason for
  *   showing none whatever the check held ("no_face", "no_frames", "processor_failed").
  *
@@ -87,6 +88,8 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  *   [r, g, b, pixels]), which rule roomLight reads, and the wall patch ([x, y, w, h, pixels]),
  *   recorded only; each null when none.
  * - `["l", t]`: a `faceLost`.
+ * - `["s", t]`: from test.65, `switchToTracker` (session option slowSwitch): the check runs SLOW_SWITCH_RULES from here.
+ *   The recording's `rules` are then the ones it started with.
  * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
  * - `["r", t, bpm, reason]`: a session `getMetrics()` read: the rate it showed (or null) and the
  *   session's own reason for showing none (PulseCheckReadReason).
@@ -120,6 +123,7 @@ export type PulseCheckInputEvent =
 			(number[] | null)?,
 	  ]
 	| ["l", number]
+	| ["s", number | null]
 	| ["o", number | null, number | null]
 	| ["r", number | null, number | null, PulseCheckReadReason];
 
@@ -129,7 +133,7 @@ export type PulseCheckRecording = {
 	version: typeof PULSE_CHECK_RECORDING_VERSION;
 	/** The build that made it (RPPG_WEB_BUILD_VERSION). */
 	build: string;
-	/** The rules the live check ran (every rule named). */
+	/** The rules the live check ran (every rule named); with an "s" event, the ones it ran until then. */
 	rules: ResolvedPulseCheckRules;
 	/** Written only by builds before 0.15.0-test.25 (the removed agreement path); ignored. */
 	agreement?: boolean;
@@ -181,12 +185,20 @@ export class RecordingPulseCheck extends PulseCheck {
 	/** The newest finite frame time seen, the clock that events without their own time are filed under. */
 	private recLastT: number | null = null;
 
-	private readonly recPatches: boolean;
+	/** Built with facePatches; the patches are kept then, and whenever the check itself reads them (rule allPatches). */
+	private readonly recPatchesAsked: boolean;
+	private get recPatches(): boolean {
+		return this.recPatchesAsked || this.rules.allPatches;
+	}
+	/** The rules the check started with: a switch later changes this.rules, and a replay starts from these. */
+	private readonly recStartRules: ResolvedPulseCheckRules;
+	private recSwitched = false;
 
 	constructor(opts: { rules?: PulseCheckRules; seconds?: number; facePatches?: boolean; resumeFrom?: PulseCheckResume | null; now?: () => number; personalRate?: number | null; personalSpread?: number | null } = {}) {
 		super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now, personalRate: opts.personalRate, personalSpread: opts.personalSpread });
 		// Kept when asked for, and whenever the check itself reads them (rule allPatches), so a replay sees what it saw.
-		this.recPatches = opts.facePatches === true || resolvePulseCheckRules(opts.rules).allPatches;
+		this.recPatchesAsked = opts.facePatches === true;
+		this.recStartRules = { ...this.rules };
 		const seconds = opts.seconds ?? PULSE_CHECK_RECORDING_SECONDS;
 		if (!(seconds > 0) || !Number.isFinite(seconds))
 			throw new RangeError(`recordPulseCheckInputs seconds must be a positive number, not ${seconds}`);
@@ -247,7 +259,14 @@ export class RecordingPulseCheck extends PulseCheck {
 		return true;
 	}
 
-	/** True only when built with facePatches: the frame source then computes the 115 patches for the record. */
+	/** The switch, kept as an event in its place, so a replay switches between the same two frames. */
+	override switchToTracker(): void {
+		this.keep(["s", this.recLastT], null);
+		this.recSwitched = true;
+		super.switchToTracker();
+	}
+
+	/** True when built with facePatches, or while rule allPatches is on: the frame source then computes the 115 patches. */
 	override get wantsFacePatches(): boolean {
 		return this.recPatches;
 	}
@@ -270,7 +289,8 @@ export class RecordingPulseCheck extends PulseCheck {
 			format: PULSE_CHECK_RECORDING_FORMAT,
 			version: PULSE_CHECK_RECORDING_VERSION,
 			build: RPPG_WEB_BUILD_VERSION,
-			rules: { ...this.rules },
+			// A switch whose event was let go from the start ran before every kept event: the rules after it apply throughout.
+			rules: !this.recSwitched || events.some((e) => e[0] === "s") ? { ...this.recStartRules } : { ...this.rules },
 			seconds: this.recSeconds,
 			...(this.recPatches ? { facePatchLayout: FACE_PATCH_LAYOUT_ID } : {}),
 			...(this.resumeSeed ? { resume: { ...this.resumeSeed } } : {}),
@@ -386,6 +406,7 @@ export function replayPulseCheck(
 				evaluations.push({ t, bpm: shownPulseBpm(state), state });
 			}
 		} else if (e[0] === "l") check.faceLost(e[1]);
+		else if (e[0] === "s") check.switchToTracker();
 		else if (e[0] === "r") {
 			const state = check.getState();
 			const reason = e[3];

@@ -24,6 +24,7 @@ import { SKIN_FALLBACK_SHARE } from "./frameSource";
 import type { FacePatches } from "./facePatches";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion";
 import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker";
+import { SLOW_SWITCH_RULES } from "./slowSwitch";
 import { type Frame, averageRgbInROINonSkinCounted } from "./frameSource";
 import {
 	FPS_CEILING_SHARE,
@@ -1256,7 +1257,7 @@ export class PulseCheck {
 			personalSpread?: number | null;
 		} = {},
 	) {
-		this.rules = resolvePulseCheckRules(opts.rules);
+		this.rulesNow = resolvePulseCheckRules(opts.rules);
 		const pr = opts.personalRate;
 		if (pr != null && !(pr > 0 && Number.isFinite(pr)))
 			throw new RangeError(`personalRate must be a finite bpm above 0, not ${pr}`);
@@ -1353,8 +1354,19 @@ export class PulseCheck {
 		};
 	}
 
-	/** Which light rules this check runs (see PulseCheckRules). */
-	readonly rules: ResolvedPulseCheckRules;
+	/** Which light rules this check runs (see PulseCheckRules); fixed, except switchToTracker turns two on. */
+	get rules(): ResolvedPulseCheckRules {
+		return this.rulesNow;
+	}
+	private rulesNow: ResolvedPulseCheckRules;
+
+	/**
+	 * Session option slowSwitch (slowSwitch.ts): from the next frame on, the check runs the tracker on the face patches
+	 * (SLOW_SWITCH_RULES), as if it had started with them; the evidence it holds is kept. One way.
+	 */
+	switchToTracker(): void {
+		this.rulesNow = { ...this.rulesNow, ...SLOW_SWITCH_RULES };
+	}
 
 	/** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */
 	private get swapMinWall(): number {

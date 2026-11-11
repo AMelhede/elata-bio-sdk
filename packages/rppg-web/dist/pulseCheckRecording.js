@@ -14,6 +14,7 @@
  *   wall as the camera read it, why no wall was found, and the head's position (or that the face
  *   mesh found none, or that none was handed over);
  * - every `faceLost` (a frame with no forehead and cheeks);
+ * - the session's slow-device switch (slowSwitch.ts), when it happened, so a replay switches at the same frame;
  * - every `getMetrics()` read of the session: the rate it showed, and the session's own reason for
  *   showing none whatever the check held ("no_face", "no_frames", "processor_failed").
  *
@@ -33,7 +34,7 @@
  */
 import { FACE_PATCH_LAYOUT_ID } from "./facePatches.js";
 import { RPPG_WEB_BUILD_VERSION } from "./buildInfo.js";
-import { PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules, PulseCheck, shownPulseBpm, } from "./pulseCheck.js";
+import { PULSE_CHECK_RULE_NAMES, PulseCheck, shownPulseBpm, } from "./pulseCheck.js";
 /** The `format` field of every recording. */
 export const PULSE_CHECK_RECORDING_FORMAT = "rppg-web/pulse-check-inputs";
 /** The `version` field: raised whenever the meaning of a field changes. A replay refuses other versions. */
@@ -66,6 +67,9 @@ const roomOf = (r) => {
  * pass one as their check.
  */
 export class RecordingPulseCheck extends PulseCheck {
+    get recPatches() {
+        return this.recPatchesAsked || this.rules.allPatches;
+    }
     constructor(opts = {}) {
         super({ rules: opts.rules, resumeFrom: opts.resumeFrom, now: opts.now, personalRate: opts.personalRate, personalSpread: opts.personalSpread });
         /** A fixed-size circular buffer: `recCount` events from index `recHead`, oldest first. */
@@ -77,8 +81,10 @@ export class RecordingPulseCheck extends PulseCheck {
         this.recDropped = 0;
         /** The newest finite frame time seen, the clock that events without their own time are filed under. */
         this.recLastT = null;
+        this.recSwitched = false;
         // Kept when asked for, and whenever the check itself reads them (rule allPatches), so a replay sees what it saw.
-        this.recPatches = opts.facePatches === true || resolvePulseCheckRules(opts.rules).allPatches;
+        this.recPatchesAsked = opts.facePatches === true;
+        this.recStartRules = { ...this.rules };
         const seconds = opts.seconds ?? PULSE_CHECK_RECORDING_SECONDS;
         if (!(seconds > 0) || !Number.isFinite(seconds))
             throw new RangeError(`recordPulseCheckInputs seconds must be a positive number, not ${seconds}`);
@@ -131,7 +137,13 @@ export class RecordingPulseCheck extends PulseCheck {
     get wantsDiagnostics() {
         return true;
     }
-    /** True only when built with facePatches: the frame source then computes the 115 patches for the record. */
+    /** The switch, kept as an event in its place, so a replay switches between the same two frames. */
+    switchToTracker() {
+        this.keep(["s", this.recLastT], null);
+        this.recSwitched = true;
+        super.switchToTracker();
+    }
+    /** True when built with facePatches, or while rule allPatches is on: the frame source then computes the 115 patches. */
     get wantsFacePatches() {
         return this.recPatches;
     }
@@ -152,7 +164,8 @@ export class RecordingPulseCheck extends PulseCheck {
             format: PULSE_CHECK_RECORDING_FORMAT,
             version: PULSE_CHECK_RECORDING_VERSION,
             build: RPPG_WEB_BUILD_VERSION,
-            rules: { ...this.rules },
+            // A switch whose event was let go from the start ran before every kept event: the rules after it apply throughout.
+            rules: !this.recSwitched || events.some((e) => e[0] === "s") ? { ...this.recStartRules } : { ...this.rules },
             seconds: this.recSeconds,
             ...(this.recPatches ? { facePatchLayout: FACE_PATCH_LAYOUT_ID } : {}),
             ...(this.resumeSeed ? { resume: { ...this.resumeSeed } } : {}),
@@ -228,6 +241,8 @@ export function replayPulseCheck(recording, options = {}) {
         }
         else if (e[0] === "l")
             check.faceLost(e[1]);
+        else if (e[0] === "s")
+            check.switchToTracker();
         else if (e[0] === "r") {
             const state = check.getState();
             const reason = e[3];

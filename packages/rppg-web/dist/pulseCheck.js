@@ -23,6 +23,7 @@ import { FACE_PATCH_COUNT } from "./facePatches.js";
 import { SKIN_FALLBACK_SHARE } from "./frameSource.js";
 import { headKeepsTime, headKeepsTimeAll, headMoving } from "./headMotion.js";
 import { PulseTracker, TRACKER_FIRST_WINDOW_S, TRACKER_RECENT_S, TRACKER_SETTLE_S } from "./pulseTracker.js";
+import { SLOW_SWITCH_RULES } from "./slowSwitch.js";
 import { averageRgbInROINonSkinCounted } from "./frameSource.js";
 import { FPS_CEILING_SHARE, OWN_PULSE_AGREE_BPM, OWN_PULSE_BAND_HZ, OWN_PULSE_DETREND_S, OWN_PULSE_COLOUR_SWITCH, OWN_PULSE_EDGE_BPM, OWN_PULSE_LOW_BAND_BPM, OWN_PULSE_MIN_AGREEING, OWN_PULSE_ONE_REGION_MIN_AGREEING, OWN_PULSE_STRONG_STREAK, OWN_PULSE_MIN_SNR_DB, OWN_PULSE_STREAK, OWN_PULSE_WINDOW_S, detrend, estimateOwnPulse, ownPulseVerdict, peakOfSpectrum, resample, spectrum, } from "./pulseCheckCore.js";
 /**
@@ -748,7 +749,7 @@ export class PulseCheck {
         /** Consecutive evaluations in which the newest OWN_PULSE_SUPPORT_S seconds did not carry the proven rate. */
         this.unsupported = 0;
         this.evaluationCount = 0;
-        this.rules = resolvePulseCheckRules(opts.rules);
+        this.rulesNow = resolvePulseCheckRules(opts.rules);
         const pr = opts.personalRate;
         if (pr != null && !(pr > 0 && Number.isFinite(pr)))
             throw new RangeError(`personalRate must be a finite bpm above 0, not ${pr}`);
@@ -823,6 +824,17 @@ export class PulseCheck {
                 ? { maxAgeMs: this.keptMaxAgeMs }
                 : {}),
         };
+    }
+    /** Which light rules this check runs (see PulseCheckRules); fixed, except switchToTracker turns two on. */
+    get rules() {
+        return this.rulesNow;
+    }
+    /**
+     * Session option slowSwitch (slowSwitch.ts): from the next frame on, the check runs the tracker on the face patches
+     * (SLOW_SWITCH_RULES), as if it had started with them; the evidence it holds is kept. One way.
+     */
+    switchToTracker() {
+        this.rulesNow = { ...this.rulesNow, ...SLOW_SWITCH_RULES };
     }
     /** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */
     get swapMinWall() {

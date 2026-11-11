@@ -413,11 +413,21 @@ export {
 	PulseDisplay,
 	type PulseDisplayView,
 	PULSE_DISPLAY_MEDIAN_MS,
+	PULSE_DISPLAY_HYST_HOLD_MS,
 	PULSE_DISPLAY_LIVE_MS,
 	PULSE_DISPLAY_RECENT_MS,
 	PULSE_DISPLAY_RECOMMENDED,
 	PULSE_DISPLAY_SHOW_EVERY_MS,
 } from "./pulseDisplay";
+export {
+	SlowSwitch,
+	type SlowSwitchRecord,
+	SLOW_SWITCH_AFTER_S,
+	SLOW_SWITCH_FPS,
+	SLOW_SWITCH_RULES,
+	SLOW_SWITCH_SECONDS,
+	SLOW_SWITCH_WARMUP_MS,
+} from "./slowSwitch";
 export {
 	RecordingPulseCheck,
 	replayPulseCheck,

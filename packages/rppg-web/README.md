@@ -195,6 +195,20 @@ resting heart rate has moved by more than 5 bpm in 15% of cases, so the value is
 (the first window filling to 0.5, then the counting streak; 1 with a number), back as well as forward.
 `new PulseDisplay({ showEveryMs: PULSE_DISPLAY_SHOW_EVERY_MS })` changes the number on screen at most every 5 s, as Apple
 Heart Rate does while it measures: on real-device recordings half the changes a minute at the same readings and error.
+Two more options, each off (today's display) unless set, for a check whose tracker already smooths: `medianMs` (how far
+back the median reaches, 5000 by default; 0 shows the newest number alone) and `hystBpm` (the number on screen changes
+only by hystBpm or more, or by less once the new number has held for `PULSE_DISPLAY_HYST_HOLD_MS`, 3 s; 0 by default).
+
+## Slow devices
+
+`slowSwitch: true` (off unless set) watches the frames that reach the check: under `SLOW_SWITCH_FPS` (9) in each of
+`SLOW_SWITCH_SECONDS` (5) whole seconds in a row, counted only while the face is tracked and the page visible and not in
+the first 3 s, the session moves the face finder to its Web Worker (as `faceFinderWorker: true`) and the check to
+`SLOW_SWITCH_RULES` (rules `tracker` and `allPatches`), once, and calls `onSlowSwitch(record)`. Keep that per camera
+and pass `slowSwitch: { remembered: true }` next time to start switched. `session.getSlowSwitch()` gives
+`{ at_s, fps_before, fps_after_10s, remembered }` (null before a switch) for the saved file, and a recording keeps the
+switch as an `"s"` event, so `replayPulseCheck` switches at the same frame. The trigger is a measured rate, never a
+device name. The finder's worker needs a browser that can run it there.
 
 ## Why no number, in one word
 

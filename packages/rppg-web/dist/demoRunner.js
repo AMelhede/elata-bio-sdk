@@ -308,6 +308,7 @@ export class DemoRunner {
             (!rois || rois.length < 3) &&
             frame.timestampMs != null) {
             this.opts.pulseChecker.faceLost(frame.timestampMs);
+            this.opts.slowSwitch?.frame(frame.timestampMs, false);
         }
         if ((rois || frame.roi) && this.noFaceSinceMs != null) {
             // The face is back. After an absence long enough for the session to have stopped
@@ -383,6 +384,7 @@ export class DemoRunner {
                         this.opts.pulseChecker.wantsFacePatches
                             ? { facePatches: facePatchesFromFrame(frame, frame.landmarks) }
                             : undefined);
+                this.opts.slowSwitch?.frame(frame.timestampMs, true);
             }
             if (frame.roi) {
                 motion = computeMotion(frame.roi, this.lastCenter);

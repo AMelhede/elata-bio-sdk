@@ -4,6 +4,7 @@ import { MediaPipeFrameSource } from "./mediaPipeFrameSource.js";
 import { defaultLastRateStore, lastReadingResume, readLastReading, readPersonalPrior, writeLastReading, } from "./lastRate.js";
 import { loadFaceLandmarker } from "./mediapipeLoader.js";
 import { createWorkerFaceFinder } from "./faceFinderWorker.js";
+import { SLOW_SWITCH_RULES, SlowSwitch } from "./slowSwitch.js";
 import { PulseCheck, pulseCheckCause, pulseCheckColourDamaged, shownPulseBpm, } from "./pulseCheck.js";
 import { RecordingPulseCheck, } from "./pulseCheckRecording.js";
 import { ChestMotion } from "./chestBreathing.js";
@@ -254,6 +255,14 @@ export class RppgSession {
     backgroundBursts() {
         const src = this.source;
         return (src.backgroundDuty?.bursts ?? []).map((b) => ({ ...b }));
+    }
+    /**
+     * With `slowSwitch`: what the switch did (when, the analysed rate before and after, whether it started switched from
+     * memory), in the field names of a saved file's device.slow_switch; null while it has not switched or without the
+     * option. A copy.
+     */
+    getSlowSwitch() {
+        return this.internals.slowSwitch?.record() ?? null;
     }
     /** State of the real-pulse check; null when `pulseCheck` is off. */
     getPulseCheck() {
@@ -541,8 +550,14 @@ export async function createRppgSession(options) {
     const lastReading = options.pulseCheck === false
         ? null
         : readLastReading(rateStore, Date.now());
+    // slowSwitch: a camera remembered as slow starts with the switched rules (and below, the finder in its worker).
+    const slowRemembered = typeof options.slowSwitch === "object" && options.slowSwitch?.remembered === true;
+    const startRules = slowRemembered
+        ? { ...options.pulseCheckRules, ...SLOW_SWITCH_RULES }
+        : options.pulseCheckRules;
     const checkOptions = {
         ...options,
+        pulseCheckRules: startRules,
         pulseCheckResume: options.pulseCheckResume ?? lastReadingResume(lastReading),
         // The person's own rate on this device (lastRate.ts), the tracker's prior at each start (rule tracker).
         ...(() => { const p = options.pulseCheck === false ? null : readPersonalPrior(rateStore, Date.now()); return { personalRate: p?.bpm ?? null, personalSpread: p?.sd ?? null }; })(),
@@ -555,7 +570,7 @@ export async function createRppgSession(options) {
     // people: moreReadings with blinkGate. Without it blinkGate would withhold every rate, so they stay off. Rebuilt
     // before any frame, so nothing is lost; an app's own rule settings win. (Testbed DECISIONS.md#library-defaults.)
     if (pulseCheck && faceMeshResult.faceMesh)
-        pulseCheck = sessionPulseCheck({ ...checkOptions, pulseCheckRules: meshRuleDefaults(options.pulseCheckRules) });
+        pulseCheck = sessionPulseCheck({ ...checkOptions, pulseCheckRules: meshRuleDefaults(startRules) });
     // Passive readings made (option backgroundEveryMs reads it to know a burst's reading stood).
     let passiveMade = 0;
     const passive = passiveReaderFor({
@@ -598,7 +613,10 @@ export async function createRppgSession(options) {
             };
         }
     }
-    if (options.faceFinderWorker === true && source instanceof MediaPipeFaceFrameSource) {
+    // One way to start the worker, for faceFinderWorker at the start and for the slow-device switch later.
+    const startWorker = () => {
+        if (closeWorker || !(source instanceof MediaPipeFaceFrameSource))
+            return;
         closeWorker = () => {
             workerClosed = true;
             source.asyncFinder?.close();
@@ -612,7 +630,18 @@ export async function createRppgSession(options) {
             else
                 source.asyncFinder = finder;
         });
-    }
+    };
+    const slowSwitch = options.slowSwitch === true || typeof options.slowSwitch === "object"
+        ? new SlowSwitch({ remembered: slowRemembered })
+        : null;
+    if (options.faceFinderWorker === true || slowRemembered)
+        startWorker();
+    if (slowSwitch && !slowRemembered)
+        slowSwitch.onSwitch = (record) => {
+            startWorker();
+            pulseCheck?.switchToTracker();
+            options.onSlowSwitch?.(record);
+        };
     const backendResult = await resolveBackend(backendPreference, {
         wasmJsUrl: options.wasmJsUrl,
         wasmBinaryUrl: options.wasmBinaryUrl,
@@ -641,6 +670,7 @@ export async function createRppgSession(options) {
     const runner = new DemoRunner(source, processor, {
         fixes: options.fixes,
         pulseChecker: pulseCheck,
+        slowSwitch,
         hrvRegions,
         foreheadPool: options.foreheadPool ?? faceMeshResult.faceMesh != null,
         light: options.light === true && pulseCheck != null,
@@ -707,7 +737,8 @@ export async function createRppgSession(options) {
         backendDegraded: backendResult.mode !== "wasm",
         faceTrackingDegraded: faceMeshResult.error != null,
         waveformController,
-        onDispose: closeWorker,
+        onDispose: () => closeWorker?.(),
+        slowSwitch,
         beforeStart: async () => {
             await waveformController?.init();
             if (options.ensureVideoPlayback !== false) {

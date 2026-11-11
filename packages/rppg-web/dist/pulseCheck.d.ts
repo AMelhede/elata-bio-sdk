@@ -745,8 +745,14 @@ export declare class PulseCheck {
     headRows(windowMs: number): readonly HeadRow[];
     /** The rate to hand to the check after a camera restart: the last proven rate and when, or null before one. */
     resumePoint(): PulseCheckResume | null;
-    /** Which light rules this check runs (see PulseCheckRules). */
-    readonly rules: ResolvedPulseCheckRules;
+    /** Which light rules this check runs (see PulseCheckRules); fixed, except switchToTracker turns two on. */
+    get rules(): ResolvedPulseCheckRules;
+    private rulesNow;
+    /**
+     * Session option slowSwitch (slowSwitch.ts): from the next frame on, the check runs the tracker on the face patches
+     * (SLOW_SWITCH_RULES), as if it had started with them; the evidence it holds is kept. One way.
+     */
+    switchToTracker(): void;
     /** The least wall against the face for green minus the wall: any wall seen (rule darkWall deleted 2026-10-30). */
     private get swapMinWall();
     private samples;

@@ -37,6 +37,8 @@ export type PulseCheckReadReason = "no_face" | "no_frames" | "processor_failed" 
  *   [r, g, b, pixels]), which rule roomLight reads, and the wall patch ([x, y, w, h, pixels]),
  *   recorded only; each null when none.
  * - `["l", t]`: a `faceLost`.
+ * - `["s", t]`: from test.65, `switchToTracker` (session option slowSwitch): the check runs SLOW_SWITCH_RULES from here.
+ *   The recording's `rules` are then the ones it started with.
  * - `["o", t, bpm]`: written only by builds before 0.15.0-test.25 (the removed agreement path); replay skips it.
  * - `["r", t, bpm, reason]`: a session `getMetrics()` read: the rate it showed (or null) and the
  *   session's own reason for showing none (PulseCheckReadReason).
@@ -63,14 +65,14 @@ export type PulseCheckInputEvent = [
         number
     ]?,
     (number[] | null)?
-] | ["l", number] | ["o", number | null, number | null] | ["r", number | null, number | null, PulseCheckReadReason];
+] | ["l", number] | ["s", number | null] | ["o", number | null, number | null] | ["r", number | null, number | null, PulseCheckReadReason];
 /** A recording: what one session's pulse check was fed, with what it needs to be replayed. */
 export type PulseCheckRecording = {
     format: typeof PULSE_CHECK_RECORDING_FORMAT;
     version: typeof PULSE_CHECK_RECORDING_VERSION;
     /** The build that made it (RPPG_WEB_BUILD_VERSION). */
     build: string;
-    /** The rules the live check ran (every rule named). */
+    /** The rules the live check ran (every rule named); with an "s" event, the ones it ran until then. */
     rules: ResolvedPulseCheckRules;
     /** Written only by builds before 0.15.0-test.25 (the removed agreement path); ignored. */
     agreement?: boolean;
@@ -109,7 +111,12 @@ export declare class RecordingPulseCheck extends PulseCheck {
     private recDropped;
     /** The newest finite frame time seen, the clock that events without their own time are filed under. */
     private recLastT;
-    private readonly recPatches;
+    /** Built with facePatches; the patches are kept then, and whenever the check itself reads them (rule allPatches). */
+    private readonly recPatchesAsked;
+    private get recPatches();
+    /** The rules the check started with: a switch later changes this.rules, and a replay starts from these. */
+    private readonly recStartRules;
+    private recSwitched;
     constructor(opts?: {
         rules?: PulseCheckRules;
         seconds?: number;
@@ -122,7 +129,9 @@ export declare class RecordingPulseCheck extends PulseCheck {
     push(timestampMs: number, regions: readonly Rgb[], wall?: Rgb, wallMiss?: WallMiss, head?: HeadPosition | null, wallRaw?: Rgb, diag?: PulseCheckFrameDiag): void;
     /** True: a recording keeps the per-frame diagnostics, so a frame source should compute them. */
     get wantsDiagnostics(): boolean;
-    /** True only when built with facePatches: the frame source then computes the 115 patches for the record. */
+    /** The switch, kept as an event in its place, so a replay switches between the same two frames. */
+    switchToTracker(): void;
+    /** True when built with facePatches, or while rule allPatches is on: the frame source then computes the 115 patches. */
     get wantsFacePatches(): boolean;
     faceLost(timestampMs: number): void;
     /** A session read: the rate it showed, and its own reason for showing none (RppgSession.getMetrics calls this). */

@@ -7,6 +7,7 @@ import { type PulseCheck } from "./pulseCheck.js";
 import type { ChestMotion } from "./chestBreathing.js";
 import type { HrvRegionBuffer } from "./hrvTracking.js";
 import { RppgProcessor } from "./rppgProcessor.js";
+import type { SlowSwitch } from "./slowSwitch.js";
 import { type RoiPixelSampler, type RppgRoiSampleV1 } from "./roiPixelSampler.js";
 import { type RoiGeometryProfile } from "./roiProfile.js";
 export type LastBlendshapes = {
@@ -35,6 +36,11 @@ export type DemoRunnerOptions = {
      * null or left out: no check.
      */
     pulseChecker?: PulseCheck | null;
+    /**
+     * Session option slowSwitch (slowSwitch.ts): told of every frame that reached the check and every frame with no
+     * face, on the frames' clock. The session creates it; null or left out: none.
+     */
+    slowSwitch?: SlowSwitch | null;
     /**
      * Read the forehead region the check is fed from 49 small skin patches, weighted toward the cleanest
      * (foreheadPool.ts), instead of one box. The cheeks stay boxes. Off unless true. The session creates it

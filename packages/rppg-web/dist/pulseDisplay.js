@@ -22,6 +22,11 @@ export const PULSE_DISPLAY_LIVE_MS = 5000;
 /** With `follow`, how recent the number on screen must be to be followed from: 15 s, three refreshes of 5 s. */
 export const PULSE_DISPLAY_FOLLOW_FRESH_MS = 15000;
 /**
+ * With `hystBpm`: a change smaller than hystBpm shows once the new number has differed from the one on screen in the
+ * same direction for this long, so a steady heart does not flicker by 1 bpm and a slow true drift still reaches the screen.
+ */
+export const PULSE_DISPLAY_HYST_HOLD_MS = 3000;
+/**
  * Up to this long after the last number the value is shown greyed as recent; after it, as the last reading with its age.
  * At rest a true heart rate (finger reference) stays within 5 bpm of itself for 10 s in 85% of cases and for 30 s in 67%,
  * so past 10 s it is a past reading, not the current rate.
@@ -59,10 +64,18 @@ export class PulseDisplay {
      * phones and 10.8% to 6.0% in the lab, every watch reference staying within the bar and lab within-bar 80.8% to 80.4%.
      * A number older than PULSE_DISPLAY_FOLLOW_FRESH_MS is not followed from: the median shows as it is.
      */
+    /**
+     * `medianMs`: the numbers within this long of the newest form the median, PULSE_DISPLAY_MEDIAN_MS by default; 0 shows
+     * the newest number alone (for a check whose own tracker already smooths). `hystBpm`: at a refresh the number on
+     * screen changes only when the new one differs from it by hystBpm or more, or has differed by less for
+     * PULSE_DISPLAY_HYST_HOLD_MS in the same direction; 0, the default, is off. Both change nothing unless set.
+     */
     constructor(options = {}) {
         this.numbers = [];
         this.shown = null;
         this.lastRefreshMs = Number.NEGATIVE_INFINITY;
+        /** With `hystBpm`: since when, and in which direction, the new number has differed by less than hystBpm, or null. */
+        this.hystPending = null;
         this.last = null;
         this.recentMs = options.recentMs ?? PULSE_DISPLAY_RECENT_MS;
         this.showEveryMs = options.showEveryMs ?? 0;
@@ -70,13 +83,22 @@ export class PulseDisplay {
         if (!(f > 0 && f <= 1))
             throw new RangeError(`PulseDisplay follow must be in (0, 1], not ${f}`);
         this.follow = f;
+        const m = options.medianMs ?? PULSE_DISPLAY_MEDIAN_MS;
+        if (!(m >= 0 && Number.isFinite(m)))
+            throw new RangeError(`PulseDisplay medianMs must be 0 or more, not ${m}`);
+        this.medianMs = m;
+        const h = options.hystBpm ?? 0;
+        if (!(h >= 0 && Number.isFinite(h)))
+            throw new RangeError(`PulseDisplay hystBpm must be 0 or more, not ${h}`);
+        this.hystBpm = h;
     }
     /** One read of the check: the number it shows now (shownPulseBpm), or null when it shows none. */
     push(atMs, bpm) {
         if (bpm == null || !Number.isFinite(bpm))
             return;
-        this.numbers.push({ atMs, bpm });
-        this.numbers = this.numbers.filter((n) => n.atMs > atMs - PULSE_DISPLAY_MEDIAN_MS);
+        const newest = { atMs, bpm };
+        this.numbers.push(newest);
+        this.numbers = this.numbers.filter((n) => n === newest || n.atMs > atMs - this.medianMs);
         const sorted = this.numbers.map((n) => n.bpm).sort((a, b) => a - b);
         const mid = sorted.length >> 1;
         const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
@@ -90,10 +112,28 @@ export class PulseDisplay {
             ? this.shown.bpm
             : null;
         const next = from == null ? median : from + this.follow * (median - from);
-        this.shown = {
-            atMs,
-            bpm: keep && this.shown ? this.shown.bpm : Math.round(next),
-        };
+        let onScreen = keep && this.shown ? this.shown.bpm : Math.round(next);
+        if (!keep && this.hystBpm > 0)
+            onScreen = this.hysteresis(atMs, onScreen);
+        this.shown = { atMs, bpm: onScreen };
+    }
+    /**
+     * `hystBpm`: the number a refresh puts on screen, given the one it would put there without the option. A smaller
+     * change waits until it has held PULSE_DISPLAY_HYST_HOLD_MS in the same direction; a change of direction starts over.
+     */
+    hysteresis(atMs, bpm) {
+        const on = this.shown;
+        const d = on ? bpm - on.bpm : 0;
+        if (!on || d === 0 || Math.abs(d) >= this.hystBpm) {
+            this.hystPending = null;
+            return bpm;
+        }
+        if (!this.hystPending || this.hystPending.dir !== Math.sign(d))
+            this.hystPending = { dir: Math.sign(d), sinceMs: atMs };
+        if (atMs - this.hystPending.sinceMs < PULSE_DISPLAY_HYST_HOLD_MS)
+            return on.bpm;
+        this.hystPending = null;
+        return bpm;
     }
     /**
      * The person's last reading from before this session (RppgSession.getLastReading), on the same clock as push and
@@ -133,5 +173,6 @@ export class PulseDisplay {
         this.numbers = [];
         this.shown = null;
         this.lastRefreshMs = Number.NEGATIVE_INFINITY;
+        this.hystPending = null;
     }
 }

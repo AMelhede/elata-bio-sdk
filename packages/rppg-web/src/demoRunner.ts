@@ -33,6 +33,7 @@ import { FRAME_BRIDGE_MS, type HeadPosition, type PulseCheck, WallTracker, eyeBl
 import type { ChestMotion } from "./chestBreathing";
 import type { HrvRegionBuffer } from "./hrvTracking";
 import { RppgProcessor } from "./rppgProcessor";
+import type { SlowSwitch } from "./slowSwitch";
 import {
 	ELATA_YCBCR_V1_PIXEL_SAMPLER,
 	type RoiPixelSampler,
@@ -72,6 +73,11 @@ export type DemoRunnerOptions = {
 	 * null or left out: no check.
 	 */
 	pulseChecker?: PulseCheck | null;
+	/**
+	 * Session option slowSwitch (slowSwitch.ts): told of every frame that reached the check and every frame with no
+	 * face, on the frames' clock. The session creates it; null or left out: none.
+	 */
+	slowSwitch?: SlowSwitch | null;
 	/**
 	 * Read the forehead region the check is fed from 49 small skin patches, weighted toward the cleanest
 	 * (foreheadPool.ts), instead of one box. The cheeks stay boxes. Off unless true. The session creates it
@@ -553,6 +559,7 @@ export class DemoRunner {
 			frame.timestampMs != null
 		) {
 			this.opts.pulseChecker.faceLost(frame.timestampMs);
+			this.opts.slowSwitch?.frame(frame.timestampMs, false);
 		}
 		if ((rois || frame.roi) && this.noFaceSinceMs != null) {
 			// The face is back. After an absence long enough for the session to have stopped
@@ -641,6 +648,7 @@ export class DemoRunner {
 							? { facePatches: facePatchesFromFrame(frame, frame.landmarks) }
 							: undefined,
 				);
+				this.opts.slowSwitch?.frame(frame.timestampMs, true);
 			}
 			if (frame.roi) {
 				motion = computeMotion(frame.roi, this.lastCenter);
