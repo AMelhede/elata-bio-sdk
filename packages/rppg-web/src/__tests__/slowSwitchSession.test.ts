@@ -92,16 +92,17 @@ describe("createRppgSession slowSwitch", () => {
 		const sw = runnerOpts().slowSwitch as SlowSwitch;
 		expect(sw).not.toBeNull();
 		expect(s.getBuildSwitches().pulseCheckRules).toMatchObject({ tracker: false, allPatches: false });
-		slowFrames(sw, 8);
+		// Warm-up 3 s plus the 16 s window: nothing through second 17.
+		slowFrames(sw, 18);
 		expect(s.getSlowSwitch()).toBeNull();
 		expect(createWorkerFaceFinder).not.toHaveBeenCalled();
-		slowFrames(sw, 20, 8);
+		slowFrames(sw, 32, 18);
 		await flush();
 		expect(s.getBuildSwitches().pulseCheckRules).toMatchObject({ tracker: true, allPatches: true });
 		expect(createWorkerFaceFinder).toHaveBeenCalledTimes(1);
 		expect(source().asyncFinder).toBe(fakeFinder);
-		expect(heard).toEqual([{ at_s: 8, fps_before: 7.4, fps_after_10s: null, remembered: false }]);
-		expect(s.getSlowSwitch()).toEqual({ at_s: 8, fps_before: 7.4, fps_after_10s: 7.5, remembered: false });
+		expect(heard).toEqual([{ at_s: 19.1, fps_before: 7.5, fps_after_10s: null, remembered: false }]);
+		expect(s.getSlowSwitch()).toEqual({ at_s: 19.1, fps_before: 7.5, fps_after_10s: 7.5, remembered: false });
 		await s.dispose();
 		expect(fakeFinder.close).toHaveBeenCalled();
 	});
@@ -144,7 +145,7 @@ describe("createRppgSession slowSwitch", () => {
 		const check = runnerOpts().pulseChecker as RecordingPulseCheck;
 		const sw = runnerOpts().slowSwitch as SlowSwitch;
 		const rgb = { r: 120, g: 90, b: 70 };
-		for (let i = 0; i < 20 * 7.5; i++) {
+		for (let i = 0; i < 24 * 7.5; i++) {
 			const t = 1000 + (i * 1000) / 7.5;
 			check.push(t, [rgb, rgb, rgb]);
 			sw.frame(t, true);
@@ -153,8 +154,10 @@ describe("createRppgSession slowSwitch", () => {
 		expect(rec.rules.tracker).toBe(false);
 		const at = rec.events.findIndex((e) => e[0] === "s");
 		expect(at).toBeGreaterThan(0);
-		expect(rec.events[at]).toEqual(["s", 9000]);
+		// The first frame of second 19 (frame 143) switches it.
+		const tSwitch = 1000 + (143 * 1000) / 7.5;
+		expect(rec.events[at]).toEqual(["s", tSwitch]);
 		expect(rec.events[at - 1][0]).toBe("f");
-		expect(rec.events[at - 1][1]).toBe(9000);
+		expect(rec.events[at - 1][1]).toBe(tSwitch);
 	});
 });

@@ -131,8 +131,8 @@ export type CreateRppgSessionOptions = Omit<DemoRunnerOptions, "onDiagnostics" |
     faceFinderWorker?: boolean;
     /**
      * Slow-device switch (slowSwitch.ts), off unless set: when fewer than SLOW_SWITCH_FPS frames a second reach the
-     * check in each of SLOW_SWITCH_SECONDS whole seconds in a row (face tracked, page visible, after the first
-     * SLOW_SWITCH_WARMUP_MS), the session moves the face finder to its Web Worker (as `faceFinderWorker`) and the check
+     * check on average across the SLOW_SWITCH_WINDOW_S whole seconds of its analysis window, all in a row (face tracked,
+     * page visible, after the first SLOW_SWITCH_WARMUP_MS), the session moves the face finder to its Web Worker (as `faceFinderWorker`) and the check
      * to SLOW_SWITCH_RULES, once and for the rest of the session, and calls `onSlowSwitch`. `{ remembered: true }`, for
      * a camera the app remembers as slow, starts switched. `getSlowSwitch()` gives what it did, for the saved file.
      */

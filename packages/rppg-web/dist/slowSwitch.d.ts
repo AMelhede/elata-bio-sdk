@@ -7,17 +7,20 @@
  *
  * The trigger is the measured rate, never a device name, so it acts the same on every camera and device: the frames
  * that reached pulse analysis in each whole second, counted only while the face is tracked in every frame of that
- * second and the page is visible, never in the first SLOW_SWITCH_WARMUP_MS after the first analysed frame. Under
- * SLOW_SWITCH_FPS in each of SLOW_SWITCH_SECONDS consecutive such seconds, it switches. A second with no frame at all,
- * a lost face or a hidden page breaks the run. There is no way back within the session.
+ * second and the page is visible, never in the first SLOW_SWITCH_WARMUP_MS after the first analysed frame. When the
+ * mean over the last SLOW_SWITCH_WINDOW_S consecutive such seconds (the check's analysis window) is under
+ * SLOW_SWITCH_FPS, the window itself is under-sampled and it switches. A second with no frame at all, a lost face or a
+ * hidden page breaks the run. A dip on a faster device does not switch it: on 146 received files a run of 5 slow
+ * seconds fired on 6, 4 of them dips on devices whose session median was 11 to 19 frames a second. There is no way
+ * back within the session.
  *
  * The app keeps the outcome per camera (as the testbed keeps "HD too heavy") and passes `{ remembered: true }` at the
  * next start, which then starts switched. What it did is in `record()`, in the field names a saved file uses.
  */
-/** Analysed frames a second under which a second counts as slow. */
+/** Mean analysed frames a second over the window under which it switches. */
 export declare const SLOW_SWITCH_FPS = 9;
-/** Slow seconds in a row that switch. */
-export declare const SLOW_SWITCH_SECONDS = 5;
+/** Counted seconds in a row whose mean is judged: the check's 16 s analysis window. */
+export declare const SLOW_SWITCH_WINDOW_S = 16;
 /** After the first analysed frame, how long no second is counted (the camera and the finder settle). */
 export declare const SLOW_SWITCH_WARMUP_MS = 3000;
 /** The analysed rate after the switch is the mean over this many whole seconds after it (record fps_after_10s). */
@@ -31,7 +34,7 @@ export declare const SLOW_SWITCH_RULES: Readonly<{
 export type SlowSwitchRecord = {
     /** When it switched, in s (0 when it started switched from memory). */
     at_s: number;
-    /** Mean analysed frames a second over the slow seconds that switched it; null when it started switched. */
+    /** Mean analysed frames a second over the SLOW_SWITCH_WINDOW_S seconds that switched it; null when it started switched. */
     fps_before: number | null;
     /** Mean analysed frames a second over the counted seconds of the SLOW_SWITCH_AFTER_S after it; null until known. */
     fps_after_10s: number | null;

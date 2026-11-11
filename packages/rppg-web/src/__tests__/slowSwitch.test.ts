@@ -1,14 +1,15 @@
 import {
 	SLOW_SWITCH_FPS,
 	SLOW_SWITCH_RULES,
-	SLOW_SWITCH_SECONDS,
 	SLOW_SWITCH_WARMUP_MS,
+	SLOW_SWITCH_WINDOW_S,
 	SlowSwitch,
 } from "../slowSwitch";
 
 // The slow-device switch's trigger (2026-11-11, owner: ship, off by default): the frames that reached pulse analysis in
-// each whole second, under SLOW_SWITCH_FPS in SLOW_SWITCH_SECONDS seconds in a row, counted only while the face is
-// tracked and the page visible, never in the first SLOW_SWITCH_WARMUP_MS. One way.
+// each whole second, a mean under SLOW_SWITCH_FPS across the last SLOW_SWITCH_WINDOW_S seconds in a row (the analysis
+// window), counted only while the face is tracked and the page visible, never in the first SLOW_SWITCH_WARMUP_MS. One way.
+// 2026-11-11: 5 slow seconds in a row fired on 6 of 146 received files, 4 of them dips on faster devices.
 
 /** Frames at `fps` from `fromMs` for `seconds`, each handed to the switch; returns the times of the frames that switched it. */
 function feed(
@@ -28,21 +29,40 @@ function feed(
 }
 
 describe("SlowSwitch trigger", () => {
-	test("the tested settings: under 9 a second in 5 seconds in a row, after 3 s, tracker on the face patches", () => {
-		expect([SLOW_SWITCH_FPS, SLOW_SWITCH_SECONDS, SLOW_SWITCH_WARMUP_MS]).toEqual([9, 5, 3000]);
+	test("the tested settings: a mean under 9 a second across 16 seconds in a row, after 3 s, tracker on the face patches", () => {
+		expect([SLOW_SWITCH_FPS, SLOW_SWITCH_WINDOW_S, SLOW_SWITCH_WARMUP_MS]).toEqual([9, 16, 3000]);
 		expect(SLOW_SWITCH_RULES).toEqual({ tracker: true, allPatches: true });
 	});
 
-	test("fires at a 7.5 fps clock once 5 counted seconds are over, at the first frame of the next second", () => {
+	test("fires at a steady 7.5 fps clock at 19 s: 3 s warm-up plus the 16 s window, at the first frame of second 19", () => {
 		const s = new SlowSwitch({ visible: () => true });
-		const fired = feed(s, 7.5, 20);
+		const fired = feed(s, 7.5, 32);
 		expect(fired).toHaveLength(1);
-		// Seconds 0 to 2 are warm-up; seconds 3 to 7 are slow; the first frame of second 8 switches it.
-		expect(fired[0]).toBe(1000 + 8000);
+		// Seconds 0 to 2 are warm-up; seconds 3 to 18 are the window; the first frame of second 19 (frame 143) switches it.
+		expect(fired[0]).toBe(1000 + (143 * 1000) / 7.5);
 		expect(s.switched).toBe(true);
-		const r = s.record();
-		// Seconds 3 to 7 held 7, 8, 7, 8 and 7 frames; seconds 8 to 17 averaged 7.5.
-		expect(r).toEqual({ at_s: 8, fps_before: 7.4, fps_after_10s: 7.5, remembered: false });
+		// Seconds 3 to 18 held 7 and 8 frames in turn (mean 7.5); seconds 19 to 28 averaged 7.5.
+		expect(s.record()).toEqual({ at_s: 19.1, fps_before: 7.5, fps_after_10s: 7.5, remembered: false });
+	});
+
+	test("a dip on a faster device does not switch it: 19 fps with 6 s at 4 fps", () => {
+		const s = new SlowSwitch({ visible: () => true });
+		expect(feed(s, 19, 10, 0)).toEqual([]);
+		expect(feed(s, 4, 6, 10_000)).toEqual([]);
+		expect(feed(s, 19, 40, 16_000)).toEqual([]);
+		expect(s.switched).toBe(false);
+	});
+
+	test("an 8 fps clock with one uncounted second restarts the 16", () => {
+		const s = new SlowSwitch({ visible: () => true });
+		// The face is lost on the first frame of second 10: seconds 3 to 9 counted, then the window starts again at 11,
+		// so the first frame of second 27 switches it (11 + 16), not of second 19.
+		const lost = (t: number) => t !== 10_000;
+		const fired = feed(s, 8, 40, 0, lost);
+		expect(fired).toEqual([27_000]);
+		expect(s.record()?.fps_before).toBe(8);
+		// The same clock with every second counted switches at the first frame of second 19.
+		expect(feed(new SlowSwitch({ visible: () => true }), 8, 40, 0)).toEqual([19_000]);
 	});
 
 	test("does not fire at 10 fps", () => {
@@ -79,10 +99,10 @@ describe("SlowSwitch trigger", () => {
 	test("a second with no frame at all breaks the run", () => {
 		const s = new SlowSwitch({ visible: () => true });
 		feed(s, 7.5, 7, 0);
-		// Seconds 3 to 6 slow, then seconds 7 and 8 empty, then slow again from second 9: the run starts over after the
-		// gap, so it switches at the first frame of second 14 (frame 38 of the second feed), not at the first of second 10.
-		const fired = feed(s, 7.5, 12, 9000);
-		expect(fired).toEqual([9000 + (38 * 1000) / 7.5]);
+		// Seconds 3 to 6 counted, then seconds 7 and 8 empty, then slow again from second 9: the run starts over after
+		// the gap, so it switches at the first frame of second 25 (frame 120 of the second feed), not of second 19.
+		const fired = feed(s, 7.5, 20, 9000);
+		expect(fired).toEqual([9000 + (120 * 1000) / 7.5]);
 	});
 
 	test("one way: it fires once, and a fast device afterwards does not switch it back", () => {

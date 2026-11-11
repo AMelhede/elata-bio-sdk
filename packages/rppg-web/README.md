@@ -201,9 +201,9 @@ only by hystBpm or more, or by less once the new number has held for `PULSE_DISP
 
 ## Slow devices
 
-`slowSwitch: true` (off unless set) watches the frames that reach the check: under `SLOW_SWITCH_FPS` (9) in each of
-`SLOW_SWITCH_SECONDS` (5) whole seconds in a row, counted only while the face is tracked and the page visible and not in
-the first 3 s, the session moves the face finder to its Web Worker (as `faceFinderWorker: true`) and the check to
+`slowSwitch: true` (off unless set) watches the frames that reach the check: under `SLOW_SWITCH_FPS` (9) a second on
+average across the `SLOW_SWITCH_WINDOW_S` (16) whole seconds of the analysis window, in a row, counted only while the face
+is tracked and the page visible and not in the first 3 s (a dip on a faster device does not switch it), the session moves the face finder to its Web Worker (as `faceFinderWorker: true`) and the check to
 `SLOW_SWITCH_RULES` (rules `tracker` and `allPatches`), once, and calls `onSlowSwitch(record)`. Keep that per camera
 and pass `slowSwitch: { remembered: true }` next time to start switched. `session.getSlowSwitch()` gives
 `{ at_s, fps_before, fps_after_10s, remembered }` (null before a switch) for the saved file, and a recording keeps the
