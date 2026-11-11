@@ -371,12 +371,16 @@ const toRgb = (c: PulseCheckRgb): Rgb => ({ r: c[0], g: c[1], b: c[2] });
  * `rules`: as the session option `pulseCheckRules` (each rule left out takes its default); left out,
  * the rules the recording was made with, and a rule the recording does not name is off: it did not
  * exist in the build that made it, so its check ran without it. With the recording's own rules and
- * `dropped: 0`, every read's `bpm` equals its `live`.
+ * `dropped: 0`, every read's `bpm` equals its `live`. `slowSwitch`: "recorded" (default) applies a recorded slow-device
+ * switch where it happened; "ignore" leaves it out, so the same file can be scored with and without it.
  */
 export function replayPulseCheck(
 	recording: PulseCheckRecording,
-	options: { rules?: PulseCheckRules; personalRate?: number | null; personalSpread?: number | null } = {},
+	options: { rules?: PulseCheckRules; personalRate?: number | null; personalSpread?: number | null; slowSwitch?: "recorded" | "ignore" } = {},
 ): PulseCheckReplay {
+	// slowSwitch: "recorded" (the default) switches where the live check did (an "s" event); "ignore" replays as if the
+	// switch never fired, on the rules the session started with.
+	const switchAt = options.slowSwitch !== "ignore";
 	checkHeader(recording);
 	const own: PulseCheckRules = Object.fromEntries(
 		PULSE_CHECK_RULE_NAMES.map((name) => [name, recording.rules[name] === true || (name === "moreReadings" && legacyMoreReadings(recording.rules))]),
@@ -406,7 +410,9 @@ export function replayPulseCheck(
 				evaluations.push({ t, bpm: shownPulseBpm(state), state });
 			}
 		} else if (e[0] === "l") check.faceLost(e[1]);
-		else if (e[0] === "s") check.switchToTracker();
+		else if (e[0] === "s") {
+			if (switchAt) check.switchToTracker();
+		}
 		else if (e[0] === "r") {
 			const state = check.getState();
 			const reason = e[3];

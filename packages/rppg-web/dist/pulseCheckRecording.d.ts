@@ -174,12 +174,14 @@ export type PulseCheckReplay = {
  * `rules`: as the session option `pulseCheckRules` (each rule left out takes its default); left out,
  * the rules the recording was made with, and a rule the recording does not name is off: it did not
  * exist in the build that made it, so its check ran without it. With the recording's own rules and
- * `dropped: 0`, every read's `bpm` equals its `live`.
+ * `dropped: 0`, every read's `bpm` equals its `live`. `slowSwitch`: "recorded" (default) applies a recorded slow-device
+ * switch where it happened; "ignore" leaves it out, so the same file can be scored with and without it.
  */
 export declare function replayPulseCheck(recording: PulseCheckRecording, options?: {
     rules?: PulseCheckRules;
     personalRate?: number | null;
     personalSpread?: number | null;
+    slowSwitch?: "recorded" | "ignore";
 }): PulseCheckReplay;
 /** A recording as JSON text, every number kept exactly (see parsePulseCheckRecording). */
 export declare function serializePulseCheckRecording(recording: PulseCheckRecording): string;

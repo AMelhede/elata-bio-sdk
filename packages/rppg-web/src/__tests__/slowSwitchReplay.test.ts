@@ -53,4 +53,22 @@ describe("a recording of a switched check replays exactly", () => {
 		const replayed = replayPulseCheck(without).evaluations.map((e) => JSON.stringify(e.state));
 		expect(replayed).not.toEqual(states);
 	});
+
+	test("slowSwitch 'ignore' replays as if the switch never fired; the default is 'recorded'", () => {
+		const { check, states } = live();
+		const rec = check.getRecording();
+		const without = { ...rec, events: rec.events.filter((e) => e[0] !== "s") };
+		const st = (r: ReturnType<typeof replayPulseCheck>) => r.evaluations.map((e) => JSON.stringify(e.state));
+		const ignored = st(replayPulseCheck(rec, { slowSwitch: "ignore" }));
+		expect(ignored).toEqual(st(replayPulseCheck(without)));
+		const recorded = st(replayPulseCheck(rec, { slowSwitch: "recorded" }));
+		expect(recorded).toEqual(states);
+		expect(st(replayPulseCheck(rec))).toEqual(recorded);
+		// Identical up to the switch frame, different after it.
+		const switchT = frames[30 * 15].t;
+		const evs = replayPulseCheck(rec).evaluations;
+		const before = evs.filter((e) => e.t <= switchT).length;
+		expect(ignored.slice(0, before)).toEqual(recorded.slice(0, before));
+		expect(ignored.slice(before)).not.toEqual(recorded.slice(before));
+	});
 });

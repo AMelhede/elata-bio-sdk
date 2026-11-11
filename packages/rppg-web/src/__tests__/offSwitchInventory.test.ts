@@ -1,5 +1,9 @@
 import { PULSE_CHECK_RULE_NAMES, resolvePulseCheckRules } from "../pulseCheck";
 
+// Jest provides require and __dirname; this package's tests carry no Node type declarations.
+declare const require: (id: string) => any;
+declare const __dirname: string;
+
 // Off switches are inventory with a carrying cost (Hodgson, "Feature Toggles", martinfowler.com: keep the inventory
 // low, give each release toggle an expiry, cap the count, a "time bomb" test that fails once a toggle outlives it).
 // Every switch that is off by default is listed here with the date by which it is either turned on (and its switch
@@ -36,3 +40,30 @@ describe("off-by-default switch inventory", () => {
 		for (const [n, d] of Object.entries(OFF_SWITCHES)) expect(`${n} ${today <= d ? "in date" : "expired " + d}`).toBe(`${n} in date`);
 	});
 });
+
+// Session-level switches (createRppgSession options, off unless set; an app turns each on per device kind) are inventory
+// too, with their own list and ceiling, so a fourth cannot be added silently (2026-11-11). The rules' ceiling is apart.
+const SESSION_SWITCHES: Record<string, string> = {
+	faceFinderWorker: "2026-12-31", // the finder in a worker; the slow-device switch turns it on where frames are too few
+	backgroundFrames: "2026-12-31", // reading while hidden; the page turns it on per device kind
+	slowSwitch: "2026-12-31", // the slow-device switch; the page turns it on per device kind after the slow cells
+};
+const MAX_SESSION_OFF = 3;
+
+describe("off-by-default session switch inventory", () => {
+	const src = (require("fs") as { readFileSync: (p: string, e: string) => string }).readFileSync(
+		(require("path") as { join: (...p: string[]) => string }).join(__dirname, "..", "rppgSession.ts"),
+		"utf8",
+	);
+	it("every listed switch is a session option", () => {
+		for (const n of Object.keys(SESSION_SWITCHES)) expect(src).toMatch(new RegExp(`^\\t${n}\\?:`, "m"));
+	});
+	it("stays at or under its own cap", () => {
+		expect(Object.keys(SESSION_SWITCHES).length).toBeLessThanOrEqual(MAX_SESSION_OFF);
+	});
+	it("no session switch is past its date", () => {
+		const today = new Date().toISOString().slice(0, 10);
+		for (const [n, d] of Object.entries(SESSION_SWITCHES)) expect(`${n} ${today <= d ? "in date" : "expired " + d}`).toBe(`${n} in date`);
+	});
+});
+

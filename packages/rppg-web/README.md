@@ -207,7 +207,8 @@ the first 3 s, the session moves the face finder to its Web Worker (as `faceFind
 `SLOW_SWITCH_RULES` (rules `tracker` and `allPatches`), once, and calls `onSlowSwitch(record)`. Keep that per camera
 and pass `slowSwitch: { remembered: true }` next time to start switched. `session.getSlowSwitch()` gives
 `{ at_s, fps_before, fps_after_10s, remembered }` (null before a switch) for the saved file, and a recording keeps the
-switch as an `"s"` event, so `replayPulseCheck` switches at the same frame. The trigger is a measured rate, never a
+switch as an `"s"` event, so `replayPulseCheck` switches at the same frame (`{ slowSwitch: "ignore" }` replays as if it
+never fired). The trigger is a measured rate, never a
 device name. The finder's worker needs a browser that can run it there.
 
 ## Why no number, in one word
