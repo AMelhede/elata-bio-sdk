@@ -140,6 +140,7 @@ export const PULSE_CHECK_RULE_NAMES = [
     "fpsCeiling",
     "tracker",
     "startEvidence",
+    "localSpread",
 ];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
@@ -459,6 +460,7 @@ export function resolvePulseCheckRules(rules) {
         fpsCeiling: rules?.fpsCeiling === true,
         tracker: rules?.tracker === true,
         startEvidence: rules?.startEvidence === true,
+        localSpread: rules?.localSpread === true,
     };
 }
 /**
@@ -1003,7 +1005,7 @@ export class PulseCheck {
         this.lastEvalMs = timestampMs;
         const wallFrames = this.wallTally;
         this.wallTally = { seen: 0, noRoom: 0, skin: 0 };
-        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, this.rules.tracker, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling);
+        const est = estimateOwnPulse(this.samples, OWN_PULSE_WINDOW_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, this.rules.tracker, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling, this.rules.localSpread);
         if (est && est.skip)
             return;
         // The wall's line for a window end, found once per evaluation: the taint, the wall check and
@@ -1215,7 +1217,7 @@ export class PulseCheck {
                 kept != null &&
                 timestampMs - kept.t <= this.keptMaxAgeMs &&
                 span >= FOLLOW_RESUME_MIN_S) {
-                const e = estimateOwnPulse(this.samples, span, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, false, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling);
+                const e = estimateOwnPulse(this.samples, span, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, false, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling, this.rules.localSpread);
                 if (e &&
                     e.bpm != null &&
                     e.snrDb != null &&
@@ -1245,7 +1247,7 @@ export class PulseCheck {
         if ((!est || (settle > 0 && have < OWN_PULSE_WINDOW_S + settle)) && this.samples.length) {
             const usable = Math.min(OWN_PULSE_WINDOW_S, have - settle);
             if (usable >= TRACKER_FIRST_WINDOW_S && (settle > 0 || have < OWN_PULSE_WINDOW_S))
-                est = estimateOwnPulse(this.samples, usable, t, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, true, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling);
+                est = estimateOwnPulse(this.samples, usable, t, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, true, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling, this.rules.localSpread);
         }
         // After a break, the rate shown before it (or the page's resume point) seeds the filter as a prior.
         // A rate from this face within a short break seeds the walk from it; anything older, or nothing, starts from the
@@ -1299,7 +1301,7 @@ export class PulseCheck {
         // The newest TRACKER_RECENT_S seconds, read only once a full window exists (before it, the growing window is recent).
         // Only computed while it counts: on a 2-core budget phone the extra window cost frames (6.7 to 5.5 a second).
         const recentEst = !none && est && est.windowS >= OWN_PULSE_WINDOW_S && Number.isFinite(this.tracker.p.recentTauFactor)
-            ? estimateOwnPulse(this.samples, TRACKER_RECENT_S, t, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, true, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling)
+            ? estimateOwnPulse(this.samples, TRACKER_RECENT_S, t, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, true, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling, this.rules.localSpread)
             : null;
         const recent = recentEst?.measuredBand ?? null;
         // Rule startEvidence: while the buffer has not yet filled since it last started empty (a start, a reset, a break
@@ -1390,7 +1392,7 @@ export class PulseCheck {
             this.unsupported = 0;
             return null;
         }
-        const recent = estimateOwnPulse(this.samples, OWN_PULSE_SUPPORT_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, false, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling);
+        const recent = estimateOwnPulse(this.samples, OWN_PULSE_SUPPORT_S, timestampMs, OWN_PULSE_COLOUR_SWITCH, this.swapMinWall, this.rules.coherentFusion, this.rules.driftLine, this.rules.slowDouble, false, this.rules.allPatches ? this.patchRows : null, this.rules.fpsCeiling, this.rules.localSpread);
         const rate = recent?.bpmFine ?? recent?.bpm ?? null;
         if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {
             this.unsupported = 0;

@@ -200,7 +200,7 @@ export function peakAndSnr(x) {
  * adds in amplitude while noise that the regions do not share adds only in power; the spectra's sum (combinedSpectrum)
  * gains nothing from that. The cost: a light that steps every region alike adds coherently too.
  */
-export function coherentSpectrum(pulses) {
+export function coherentSpectrum(pulses, localSpread = false) {
     const N = pulses[0].length;
     const sum = new Array(N).fill(0);
     for (const d of pulses) {
@@ -215,7 +215,31 @@ export function coherentSpectrum(pulses) {
         for (let k = 0; k < N; k++)
             sum[k] += (d[k] - m) / sd;
     }
-    return spectrum(sum);
+    return spectrum(localSpread ? overLocalSpread(sum) : sum);
+}
+/** Rule localSpread: the least a sample's local spread counts as, as a share of the window's median local spread. */
+export const LOCAL_SPREAD_FLOOR = 0.05;
+/**
+ * Rule localSpread: the line divided, sample by sample, by its own spread over the seconds around it (the root of a
+ * double moving mean of its square, as wide as the detrend's: OWN_PULSE_DETREND_S).
+ *
+ * Why: a spectrum weighs every sample of the window alike, which is right only while the noise is the same size all
+ * through it. It is not when the head moves or the camera re-adjusts: for some seconds the line is several times
+ * larger, and those seconds then set the spectrum's floor for the whole window. A sample whose noise is k times larger
+ * should count k times less; dividing by the local spread does that with nothing fitted and no reference, on any
+ * camera, and leaves a window of even noise as it was. The spread is taken over a span longer than a beat of the
+ * slowest rate read, so it follows bursts and not the pulse's own cycle. Measured (evsave TRIED 2026-11-11 ML4): on
+ * windows with a movement burst inside, received Windows laptops 38 to 43 of 100 windows right and clear, wrong 8.1 to
+ * 5.9; noise lines (the patches' own noise with the bursts kept) clear the bar as often as before.
+ */
+export function overLocalSpread(x, seconds = OWN_PULSE_DETREND_S) {
+    const w = Math.max(1, Math.round(OWN_PULSE_FS * seconds));
+    const local = movingMean(movingMean(x.map((v) => v * v), w), w).map((v) => Math.sqrt(Math.max(v, 0)));
+    const sorted = [...local].sort((p, q) => p - q);
+    const floor = LOCAL_SPREAD_FLOOR * sorted[sorted.length >> 1];
+    if (!(floor > 0))
+        return x;
+    return x.map((v, k) => v / Math.max(local[k], floor));
 }
 /**
  * Rule coherentFusion: dB taken off the coherent line's SNR so that on pure noise it clears the check's bars as often
@@ -594,7 +618,9 @@ wantBand = false,
 /** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
 patches = null, 
 /** Rule fpsCeiling: a line above what the window's own frame rate resolves (FPS_CEILING_SHARE) is not a line. */
-fpsCeiling = false) {
+fpsCeiling = false, 
+/** Rule localSpread: the coherent line over its own local spread before the spectrum (overLocalSpread). */
+localSpread = false) {
     if (samples.length < 8)
         return null;
     const end = atMs;
@@ -652,7 +678,7 @@ fpsCeiling = false) {
     // (whitenedSpectrum); its SNR is judged on the spectrum as measured.
     // Rule allPatches: the coherent line from every valid face patch instead of the three regions (patchPulses).
     const fromPatches = coherent && method === "pos" && patches ? patchPulses(patches, from, to, start, end, win.length) : null;
-    const measured = coherent ? coherentSpectrum(fromPatches ?? pulses) : combinedSpectrum(spectra);
+    const measured = coherent ? coherentSpectrum(fromPatches ?? pulses, localSpread) : combinedSpectrum(spectra);
     const comb = whitenedSpectrum(measured);
     let line = peakOfSpectrum(comb, OWN_PULSE_HARMONIC_WEIGHT, measured);
     if (driftLine)

@@ -10,8 +10,10 @@ import { PULSE_CHECK_RULE_NAMES } from "../pulseCheck";
 // it replaces are deleted. 25 on 2026-11-10 for skinFallback (off; named debt in evsave TRIED FB2a and QUEUE FB2-M:
 // deleted when skin is found from the mesh's own skin colour). 26 on 2026-11-11 for startEvidence (off; part of the
 // tracker, not a guard around it: the growing window judged alone against the prior. Its switch is deleted, the tracker
-// always doing it, or its code removed, by its expiry; evsave TRIED FB3).
-const RULE_CEILING = 26;
+// always doing it, or its code removed, by its expiry; evsave TRIED FB3). 27 on 2026-11-11 for localSpread (off; named
+// debt: the line over its own local spread, for windows a movement burst falls inside. Deleted, the line always read
+// that way, or its code removed, by its expiry; evsave TRIED ML4).
+const RULE_CEILING = 27;
 
 describe("rule ceiling", () => {
 	it("the count of the pulse check's rules never grows without a deliberate change here", () => {

@@ -386,6 +386,13 @@ export type PulseCheckRules = {
 	 * a row, the number shows without waiting for the filter's slower count (pulseTracker.ts TRACKER_START_WEIGHT).
 	 */
 	startEvidence?: boolean;
+	/**
+	 * OFF unless true, being measured (2026-11-11): with coherentFusion, the line is divided sample by sample by its own
+	 * spread over the 1.5 s around it before the spectrum (pulseCheckCore overLocalSpread), so the seconds of a window in
+	 * which the head moved or the camera re-adjusted, where the line is several times larger, no longer set the noise
+	 * floor of the whole window. Nothing is fitted and no reference is used; a window of even noise reads as before.
+	 */
+	localSpread?: boolean;
 };
 
 /**
@@ -479,6 +486,7 @@ export const PULSE_CHECK_RULE_NAMES = [
 	"fpsCeiling",
 	"tracker",
 	"startEvidence",
+	"localSpread",
 ] as const;
 
 /**
@@ -876,6 +884,7 @@ export function resolvePulseCheckRules(
 		fpsCeiling: rules?.fpsCeiling === true,
 		tracker: rules?.tracker === true,
 		startEvidence: rules?.startEvidence === true,
+		localSpread: rules?.localSpread === true,
 	};
 }
 
@@ -1587,6 +1596,7 @@ export class PulseCheck {
 			this.rules.tracker,
 			this.rules.allPatches ? this.patchRows : null,
 			this.rules.fpsCeiling,
+			this.rules.localSpread,
 		);
 		if (est && (est as { skip?: boolean }).skip) return;
 		// The wall's line for a window end, found once per evaluation: the taint, the wall check and
@@ -1850,6 +1860,7 @@ export class PulseCheck {
 					false,
 					this.rules.allPatches ? this.patchRows : null,
 			this.rules.fpsCeiling,
+			this.rules.localSpread,
 				);
 				if (
 					e &&
@@ -1913,6 +1924,7 @@ export class PulseCheck {
 					true,
 					this.rules.allPatches ? this.patchRows : null,
 					this.rules.fpsCeiling,
+					this.rules.localSpread,
 				);
 		}
 		// After a break, the rate shown before it (or the page's resume point) seeds the filter as a prior.
@@ -1976,6 +1988,7 @@ export class PulseCheck {
 						true,
 						this.rules.allPatches ? this.patchRows : null,
 						this.rules.fpsCeiling,
+						this.rules.localSpread,
 					)
 				: null;
 		const recent = recentEst?.measuredBand ?? null;
@@ -2086,6 +2099,7 @@ export class PulseCheck {
 			false,
 			this.rules.allPatches ? this.patchRows : null,
 			this.rules.fpsCeiling,
+			this.rules.localSpread,
 		);
 		const rate = recent?.bpmFine ?? recent?.bpm ?? null;
 		if (rate != null && Math.abs(rate - this.held) <= OWN_PULSE_TRACK_BPM) {

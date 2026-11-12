@@ -160,7 +160,23 @@ export declare function peakAndSnr(x: number[]): {
  * adds in amplitude while noise that the regions do not share adds only in power; the spectra's sum (combinedSpectrum)
  * gains nothing from that. The cost: a light that steps every region alike adds coherently too.
  */
-export declare function coherentSpectrum(pulses: readonly number[][]): Array<[number, number]>;
+export declare function coherentSpectrum(pulses: readonly number[][], localSpread?: boolean): Array<[number, number]>;
+/** Rule localSpread: the least a sample's local spread counts as, as a share of the window's median local spread. */
+export declare const LOCAL_SPREAD_FLOOR = 0.05;
+/**
+ * Rule localSpread: the line divided, sample by sample, by its own spread over the seconds around it (the root of a
+ * double moving mean of its square, as wide as the detrend's: OWN_PULSE_DETREND_S).
+ *
+ * Why: a spectrum weighs every sample of the window alike, which is right only while the noise is the same size all
+ * through it. It is not when the head moves or the camera re-adjusts: for some seconds the line is several times
+ * larger, and those seconds then set the spectrum's floor for the whole window. A sample whose noise is k times larger
+ * should count k times less; dividing by the local spread does that with nothing fitted and no reference, on any
+ * camera, and leaves a window of even noise as it was. The spread is taken over a span longer than a beat of the
+ * slowest rate read, so it follows bursts and not the pulse's own cycle. Measured (evsave TRIED 2026-11-11 ML4): on
+ * windows with a movement burst inside, received Windows laptops 38 to 43 of 100 windows right and clear, wrong 8.1 to
+ * 5.9; noise lines (the patches' own noise with the bursts kept) clear the bar as often as before.
+ */
+export declare function overLocalSpread(x: number[], seconds?: number): number[];
 /**
  * Rule coherentFusion: dB taken off the coherent line's SNR so that on pure noise it clears the check's bars as often
  * as the spectra's sum does (white-noise simulation, the null's own calibration; it is not tuned on people).
@@ -315,7 +331,9 @@ wantBand?: boolean,
 /** Rule allPatches: the frames' face patches (PatchSample); with coherent on and POS in use, the line is read from them. */
 patches?: readonly PatchSample[] | null, 
 /** Rule fpsCeiling: a line above what the window's own frame rate resolves (FPS_CEILING_SHARE) is not a line. */
-fpsCeiling?: boolean): OwnPulseEstimate | null;
+fpsCeiling?: boolean, 
+/** Rule localSpread: the coherent line over its own local spread before the spectrum (overLocalSpread). */
+localSpread?: boolean): OwnPulseEstimate | null;
 /**
  * Walk a whole recording in `stepS` steps and return the estimate at each
  * step: what the app would have concluded, second by second, offline.

@@ -341,6 +341,13 @@ export type PulseCheckRules = {
      * a row, the number shows without waiting for the filter's slower count (pulseTracker.ts TRACKER_START_WEIGHT).
      */
     startEvidence?: boolean;
+    /**
+     * OFF unless true, being measured (2026-11-11): with coherentFusion, the line is divided sample by sample by its own
+     * spread over the 1.5 s around it before the spectrum (pulseCheckCore overLocalSpread), so the seconds of a window in
+     * which the head moved or the camera re-adjusted, where the line is several times larger, no longer set the noise
+     * floor of the whole window. Nothing is fitted and no reference is used; a window of even noise reads as before.
+     */
+    localSpread?: boolean;
 };
 /**
  * Rule bridgeGap: the longest frame gap read across, set to take the camera stalls seen while the page stays visible
@@ -366,7 +373,7 @@ export declare const HELD_MAX_SHARE = 0.1;
 /** Rule heldFrames: the share of the window's frames (OWN_PULSE_WINDOW_S up to atMs) held in runs (see HELD_EPS). */
 export declare function heldFrameShare(samples: readonly (readonly number[])[], atMs: number): number;
 export type ResolvedPulseCheckRules = Required<PulseCheckRules>;
-export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames", "allPatches", "skinFallback", "fpsCeiling", "tracker", "startEvidence"];
+export declare const PULSE_CHECK_RULE_NAMES: readonly ["screenLight", "restBand", "moreReadings", "blinkGate", "coherentFusion", "clearWindows", "shortStreak", "steadyLight", "roomLight", "followRecent", "coherentStart", "oneRegion", "headMotion", "driftLine", "slowDouble", "lightTaint", "quickerProof", "keptFollow", "movingFollow", "bridgeGap", "heldFrames", "allPatches", "skinFallback", "fpsCeiling", "tracker", "startEvidence", "localSpread"];
 /**
  * Rule moreReadings (re-lock): how long a proven rate stays the one a new streak may return to. Measured on recorded webcam sessions
  * (lane/sessionbar): 15, 30 and 60 s gave the same shown seconds and wrong rate, so the middle one; about two of the
